@@ -3741,6 +3741,63 @@ exprCodeVector(Parse * pParse, Expr * p, int *piFreeable)
 	return iResult;
 }
 
+struct sql_expr_node {
+	struct Expr *expr;
+	int count;
+	int reg;
+	int args[2];
+	int tmp[2];
+};
+
+struct sql_expr_stack {
+	struct sql_expr_node *nodes;
+	int count;
+	int size;
+};
+
+static void
+node_set(struct sql_expr_stack *stack, struct Expr *expr, int reg)
+{
+	struct sql_expr_node *node = &stack->nodes[stack->count];
+	node->expr = expr;
+	node->count = 0;
+	node->args[0] = 0;
+	node->args[1] = 0;
+	node->reg = reg;
+	node->tmp[0] = 0;
+	node->tmp[1] = 0;
+	if (expr != NULL && expr->pLeft != NULL)
+		++node->count;
+	if (expr != NULL && expr->pRight != NULL)
+		++node->count;
+	++stack->count;
+}
+
+static bool
+is_const(struct Parse *parse, struct Expr *expr)
+{
+	return ConstFactorOk(parse) != 0 && expr->op != TK_REGISTER &&
+	       sqlExprIsConstantNotJoin(expr);
+}
+
+static int
+code_const(struct Parse *parse, struct Expr *expr)
+{
+	struct ExprList *list = parse->pConstExpr;
+	int i;
+	if (list != NULL) {
+		struct ExprList_item *it;
+		for (it = list->a, i = list->nExpr; i > 0; it++, i--) {
+			if (it->reusable &&
+			    sqlExprCompare(it->pExpr, expr, -1) == 0)
+				return it->u.iConstExprReg;
+		}
+	}
+	int reg = ++parse->nMem;
+	sqlExprCodeAtInit(parse, expr, reg, 1);
+	return reg;
+}
+
 /*
  * Generate code into the current Vdbe to evaluate the given
  * expression.  Attempt to store the results in register "target".
@@ -3753,14 +3810,17 @@ exprCodeVector(Parse * pParse, Expr * p, int *piFreeable)
  * register.
  */
 int
-sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
+sql_expr_code_node(struct Parse *pParse, struct sql_expr_stack *stack)
 {
+	struct sql_expr_node *node = &stack->nodes[stack->count - 1];
+	struct Expr *pExpr = node->expr;
+	int target = node->reg;
+
 	Vdbe *v = pParse->pVdbe;	/* The VM under construction */
 	int op;			/* The opcode being coded */
 	int inReg = target;	/* Results stored in register inReg */
 	int regFree1 = 0;	/* If non-zero free this temporary register */
-	int regFree2 = 0;	/* If non-zero free this temporary register */
-	int r1, r2;		/* Various register numbers */
+	int r1;			/* Various register numbers */
 	Expr tempX;		/* Temporary expression node */
 
 	assert(target > 0 && target <= pParse->nMem);
@@ -3881,18 +3941,18 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			return pExpr->iTable;
 		}
 
-	case TK_CAST:{
-			/* Expressions of the form:   CAST(pLeft AS token) */
-			inReg =
-			    sqlExprCodeTarget(pParse, pExpr->pLeft, target);
-			if (inReg != target) {
-				sqlVdbeAddOp2(v, OP_SCopy, inReg, target);
-				inReg = target;
-			}
-			sqlVdbeAddOp2(v, OP_Cast, target, pExpr->type);
-			sql_expr_type_cache_change(pParse, inReg, 1);
-			return inReg;
+	case TK_CAST:
+		if (node->count == 1) {
+			node_set(stack, pExpr->pLeft, target);
+			--node->count;
+			return 0;
 		}
+		assert(node->count == 0);
+		if (node->args[0] != target)
+			sqlVdbeAddOp2(v, OP_SCopy, node->args[0], target);
+		sqlVdbeAddOp2(v, OP_Cast, target, pExpr->type);
+		sql_expr_type_cache_change(pParse, target, 1);
+		return target;
 
 	case TK_ARRAY:
 		expr_code_array(pParse, pExpr, target);
@@ -3911,26 +3971,45 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 	case TK_GT:
 	case TK_GE:
 	case TK_NE:
-	case TK_EQ:{
-			Expr *pLeft = pExpr->pLeft;
-			if (sqlExprIsVector(pLeft)) {
-				codeVectorCompare(pParse, pExpr, target);
-			} else {
-				r1 = sqlExprCodeTemp(pParse, pLeft,
-							 &regFree1);
-				r2 = sqlExprCodeTemp(pParse, pExpr->pRight,
-							 &regFree2);
-				codeCompare(pParse, pLeft, pExpr->pRight, op,
-					    r1, r2, inReg, SQL_STOREP2);
-				assert(TK_LT == OP_Lt);
-				assert(TK_LE == OP_Le);
-				assert(TK_GT == OP_Gt);
-				assert(TK_GE == OP_Ge);
-				assert(TK_EQ == OP_Eq);
-				assert(TK_NE == OP_Ne);
+	case TK_EQ:
+		assert(TK_LT == OP_Lt);
+		assert(TK_LE == OP_Le);
+		assert(TK_GT == OP_Gt);
+		assert(TK_GE == OP_Ge);
+		assert(TK_EQ == OP_Eq);
+		assert(TK_NE == OP_Ne);
+		if (sqlExprIsVector(pExpr->pLeft)) {
+			codeVectorCompare(pParse, pExpr, target);
+		} else if (node->count == 2) {
+			--node->count;
+			if (is_const(pParse, pExpr->pLeft)) {
+				node->args[1] = code_const(pParse,
+							   pExpr->pLeft);
+				return 0;
 			}
-			break;
+			node->tmp[1] = sqlGetTempReg(pParse);
+			node_set(stack, pExpr->pLeft, node->tmp[1]);
+			return 0;
+		} else if (node->count == 1) {
+			--node->count;
+			if (is_const(pParse, pExpr->pRight)) {
+				node->args[0] = code_const(pParse,
+							   pExpr->pRight);
+				return 0;
+			}
+			node->tmp[0] = sqlGetTempReg(pParse);
+			node_set(stack, pExpr->pRight, node->tmp[0]);
+			return 0;
+		} else {
+			assert(node->count == 0);
+			codeCompare(pParse, pExpr->pLeft, pExpr->pRight, op,
+				    node->args[1], node->args[0], target,
+				    SQL_STOREP2);
+			sqlReleaseTempReg(pParse, node->tmp[0]);
+			sqlReleaseTempReg(pParse, node->tmp[1]);
 		}
+		break;
+
 	case TK_AND:
 	case TK_OR:
 	case TK_PLUS:
@@ -3942,74 +4021,132 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 	case TK_SLASH:
 	case TK_LSHIFT:
 	case TK_RSHIFT:
-	case TK_CONCAT:{
-			assert(TK_AND == OP_And);
-			assert(TK_OR == OP_Or);
-			assert(TK_PLUS == OP_Add);
-			assert(TK_MINUS == OP_Subtract);
-			assert(TK_REM == OP_Remainder);
-			assert(TK_BITAND == OP_BitAnd);
-			assert(TK_BITOR == OP_BitOr);
-			assert(TK_SLASH == OP_Divide);
-			assert(TK_LSHIFT == OP_ShiftLeft);
-			assert(TK_RSHIFT == OP_ShiftRight);
-			assert(TK_CONCAT == OP_Concat);
-			r1 = sqlExprCodeTemp(pParse, pExpr->pLeft,
-						 &regFree1);
-			r2 = sqlExprCodeTemp(pParse, pExpr->pRight,
-						 &regFree2);
-			sqlVdbeAddOp3(v, op, r2, r1, target);
-			break;
-		}
-	case TK_UMINUS:{
-			Expr *pLeft = pExpr->pLeft;
-			assert(pLeft);
-			if (pLeft->op == TK_INTEGER) {
-				expr_code_int(pParse, pLeft, true, target);
-				return target;
-			} else if (pLeft->op == TK_FLOAT) {
-				assert(!ExprHasProperty(pExpr, EP_IntValue));
-				codeReal(v, pLeft->u.zToken, 1, target);
-				return target;
-			} else if (pLeft->op == TK_DECIMAL) {
-				expr_code_dec(pParse, pLeft, true, target);
-				return target;
-			} else {
-				tempX.op = TK_INTEGER;
-				tempX.type = FIELD_TYPE_INTEGER;
-				tempX.flags = EP_IntValue | EP_TokenOnly;
-				tempX.u.iValue = 0;
-				r1 = sqlExprCodeTemp(pParse, &tempX,
-							 &regFree1);
-				r2 = sqlExprCodeTemp(pParse, pExpr->pLeft,
-							 &regFree2);
-				sqlVdbeAddOp3(v, OP_Subtract, r2, r1,
-						  target);
+	case TK_CONCAT:
+		assert(TK_AND == OP_And);
+		assert(TK_OR == OP_Or);
+		assert(TK_PLUS == OP_Add);
+		assert(TK_MINUS == OP_Subtract);
+		assert(TK_REM == OP_Remainder);
+		assert(TK_BITAND == OP_BitAnd);
+		assert(TK_BITOR == OP_BitOr);
+		assert(TK_SLASH == OP_Divide);
+		assert(TK_LSHIFT == OP_ShiftLeft);
+		assert(TK_RSHIFT == OP_ShiftRight);
+		assert(TK_CONCAT == OP_Concat);
+		if (node->count == 2) {
+			--node->count;
+			if (is_const(pParse, pExpr->pLeft)) {
+				node->args[1] = code_const(pParse,
+							   pExpr->pLeft);
+				return 0;
 			}
-			break;
+			node->tmp[1] = sqlGetTempReg(pParse);
+			node_set(stack, pExpr->pLeft, node->tmp[1]);
+			return 0;
+		} else if (node->count == 1) {
+			--node->count;
+			if (is_const(pParse, pExpr->pRight)) {
+				node->args[0] = code_const(pParse,
+							   pExpr->pRight);
+				return 0;
+			}
+			node->tmp[0] = sqlGetTempReg(pParse);
+			node_set(stack, pExpr->pRight, node->tmp[0]);
+			return 0;
+		} else {
+			assert(node->count == 0);
+			sqlVdbeAddOp3(v, op, node->args[0], node->args[1],
+				      target);
+			sqlReleaseTempReg(pParse, node->tmp[0]);
+			sqlReleaseTempReg(pParse, node->tmp[1]);
 		}
+		break;
+
+	case TK_UMINUS:
+		assert(pExpr->pLeft != NULL);
+		if (pExpr->pLeft->op == TK_INTEGER) {
+			expr_code_int(pParse, pExpr->pLeft, true, target);
+			return target;
+		}
+		if (pExpr->pLeft->op == TK_FLOAT) {
+			assert(!ExprHasProperty(pExpr, EP_IntValue));
+			codeReal(v, pExpr->pLeft->u.zToken, 1, target);
+			return target;
+		}
+		if (pExpr->pLeft->op == TK_DECIMAL) {
+			expr_code_dec(pParse, pExpr->pLeft, true, target);
+			return target;
+		}
+		if (node->count == 1 && node->args[1] == 0) {
+			struct Expr tmp;
+			tmp.op = TK_INTEGER;
+			tmp.type = FIELD_TYPE_INTEGER;
+			tmp.flags = EP_IntValue | EP_TokenOnly;
+			tmp.u.iValue = 0;
+			if (is_const(pParse, &tmp)) {
+				node->args[1] = code_const(pParse, &tmp);
+				return 0;
+			}
+			node->tmp[1] = sqlGetTempReg(pParse);
+			node_set(stack, &tmp, node->tmp[1]);
+			return 0;
+		}
+		if (node->count == 1) {
+			--node->count;
+			if (is_const(pParse, pExpr->pLeft)) {
+				node->args[0] = code_const(pParse,
+							   pExpr->pLeft);
+				return 0;
+			}
+			node->tmp[0] = sqlGetTempReg(pParse);
+			node_set(stack, pExpr->pLeft, node->tmp[0]);
+			return 0;
+		}
+		assert(node->count == 0);
+		sqlVdbeAddOp3(v, OP_Subtract, node->args[0], node->args[1],
+			      target);
+		sqlReleaseTempReg(pParse, node->tmp[0]);
+		sqlReleaseTempReg(pParse, node->tmp[1]);
+		break;
+
 	case TK_BITNOT:
-	case TK_NOT:{
-			assert(TK_BITNOT == OP_BitNot);
-			assert(TK_NOT == OP_Not);
-			r1 = sqlExprCodeTemp(pParse, pExpr->pLeft,
-						 &regFree1);
-			sqlVdbeAddOp2(v, op, r1, inReg);
-			break;
+	case TK_NOT:
+		if (node->count == 1) {
+			--node->count;
+			if (is_const(pParse, pExpr->pLeft)) {
+				node->args[0] = code_const(pParse,
+							   pExpr->pLeft);
+				return 0;
+			}
+			node->tmp[0] = sqlGetTempReg(pParse);
+			node_set(stack, pExpr->pLeft, node->tmp[0]);
+			return 0;
 		}
+		assert(node->count == 0);
+		sqlVdbeAddOp2(v, op, node->args[0], target);
+		sqlReleaseTempReg(pParse, node->tmp[0]);
+		break;
 	case TK_ISNULL:
-	case TK_NOTNULL:{
-			int addr;
-			assert(TK_ISNULL == OP_IsNull);
-			assert(TK_NOTNULL == OP_NotNull);
-			sqlVdbeAddOp2(v, OP_Bool, true, target);
-			r1 = sqlExprCodeTemp(pParse, pExpr->pLeft,
-						 &regFree1);
-			addr = sqlVdbeAddOp1(v, op, r1);
-			sqlVdbeAddOp2(v, OP_Bool, false, target);
-			sqlVdbeJumpHere(v, addr);
-			break;
+	case TK_NOTNULL:
+		if (node->count == 1) {
+			--node->count;
+			if (is_const(pParse, pExpr->pLeft)) {
+				node->args[0] = code_const(pParse,
+							   pExpr->pLeft);
+				return 0;
+			}
+			node->tmp[0] = sqlGetTempReg(pParse);
+			node_set(stack, pExpr->pLeft, node->tmp[0]);
+			return 0;
 		}
+		assert(node->count == 0);
+		sqlVdbeAddOp2(v, OP_Bool, true, target);
+		int addr = sqlVdbeAddOp1(v, op, node->args[0]);
+		sqlVdbeAddOp2(v, OP_Bool, false, target);
+		sqlVdbeJumpHere(v, addr);
+		sqlReleaseTempReg(pParse, node->tmp[0]);
+		break;
+
 	case TK_AGG_FUNCTION:{
 			AggInfo *pInfo = pExpr->pAggInfo;
 			if (pInfo == 0) {
@@ -4027,7 +4164,6 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			ExprList *pFarg;	/* List of function arguments */
 			int nFarg;	/* Number of function arguments */
 			u32 constMask = 0;	/* Mask of function arguments that are constant */
-			int i;	/* Loop counter */
 			struct coll *coll = NULL;
 
 			assert(!ExprHasProperty(pExpr, EP_xIsSelect));
@@ -4059,7 +4195,7 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 				}
 				sqlExprCode(pParse, pFarg->a[0].pExpr,
 						target);
-				for (i = 1; i < nFarg; i++) {
+				for (int i = 1; i < nFarg; i++) {
 					sqlVdbeAddOp2(v, OP_NotNull, target,
 							  endCoalesce);
 					sqlExprCacheRemove(pParse, target,
@@ -4086,12 +4222,12 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 					pParse->is_aborted = true;
 					break;
 				}
-				return sqlExprCodeTarget(pParse,
-							     pFarg->a[0].pExpr,
-							     target);
+				--stack->count;
+				node_set(stack, pFarg->a[0].pExpr, target);
+				return 0;
 			}
 
-			for (i = 0; i < nFarg; i++) {
+			for (int i = 0; i < nFarg; i++) {
 				if (i < 32
 				    && sqlExprIsConstant(pFarg->a[i].
 							     pExpr)) {
@@ -4269,16 +4405,17 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			return target;
 		}
 	case TK_SPAN:
-	case TK_COLLATE:{
+	case TK_COLLATE:
 			if (check_collate_arg(pParse, pExpr) != 0)
 				break;
-			return sqlExprCodeTarget(pParse, pExpr->pLeft,
-						     target);
-		}
-	case TK_UPLUS:{
-			return sqlExprCodeTarget(pParse, pExpr->pLeft,
-						     target);
-		}
+			--stack->count;
+			node_set(stack, pExpr->pLeft, target);
+			return 0;
+
+	case TK_UPLUS:
+			--stack->count;
+			node_set(stack, pExpr->pLeft, target);
+			return 0;
 
 	case TK_TRIGGER:{
 			/* If the opcode is TK_TRIGGER, then the expression is a reference
@@ -4441,8 +4578,35 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 		break;
 	}
 	sqlReleaseTempReg(pParse, regFree1);
-	sqlReleaseTempReg(pParse, regFree2);
 	return inReg;
+}
+
+int
+sqlExprCodeTarget(struct Parse *parse, struct Expr *expr, int reg)
+{
+	struct sql_expr_stack stack;
+	uint32_t size = SQL_MAX_EXPR_DEPTH * sizeof(struct sql_expr_node);
+	stack.nodes = sqlDbMallocRaw(sql_get(), size);
+	// if stack.nodes == NULL
+	stack.count = 0;
+	node_set(&stack, expr, reg);
+	int res = 0;
+	while(stack.count > 0) {
+		res = sql_expr_code_node(parse, &stack);
+		if (parse->is_aborted) {
+			sqlDbFree(sql_get(), stack.nodes);
+			return 0;
+		}
+		if (res != 0)
+			--stack.count;
+		if (res > 0 && stack.count > 0) {
+			struct sql_expr_node *node =
+				&stack.nodes[stack.count - 1];
+			node->args[node->count] = res;
+		}
+	}
+	sqlDbFree(sql_get(), stack.nodes);
+	return res;
 }
 
 /*
