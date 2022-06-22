@@ -3348,7 +3348,7 @@ int_overflow:
 			  is_neg ? P4_INT64 : P4_UINT64);
 }
 
-static void
+void
 expr_code_array(struct Parse *parser, struct Expr *expr, int reg)
 {
 	struct Vdbe *vdbe = parser->pVdbe;
@@ -3747,18 +3747,19 @@ struct sql_expr_node {
 	int reg;
 	int args[2];
 	int tmp[2];
+	int arr;
 };
 
 struct sql_expr_stack {
 	struct sql_expr_node *nodes;
 	int count;
-	int size;
 };
 
 static void
 node_set(struct sql_expr_stack *stack, struct Expr *expr, int reg)
 {
 	struct sql_expr_node *node = &stack->nodes[stack->count];
+	++stack->count;
 	node->expr = expr;
 	node->count = 0;
 	node->args[0] = 0;
@@ -3766,11 +3767,15 @@ node_set(struct sql_expr_stack *stack, struct Expr *expr, int reg)
 	node->reg = reg;
 	node->tmp[0] = 0;
 	node->tmp[1] = 0;
-	if (expr != NULL && expr->pLeft != NULL)
+	node->arr = 0;
+	if (expr == NULL)
+		return;
+	if (expr->pLeft != NULL)
 		++node->count;
-	if (expr != NULL && expr->pRight != NULL)
+	if (expr->pRight != NULL)
 		++node->count;
-	++stack->count;
+	if (expr->x.pList != NULL)
+		node->count = expr->x.pList->nExpr;
 }
 
 static bool
@@ -3955,7 +3960,21 @@ sql_expr_code_node(struct Parse *pParse, struct sql_expr_stack *stack)
 		return target;
 
 	case TK_ARRAY:
-		expr_code_array(pParse, pExpr, target);
+		if (node->arr == 0) {
+			node->arr = pParse->nMem + 1;
+			pParse->nMem += pExpr->x.pList->nExpr;
+		}
+		if (node->count > 0) {
+			--node->count;
+			int id = node->arr + node->count;
+			assert(id <= pParse->nMem);
+			struct Expr *e = pExpr->x.pList->a[node->count].pExpr;
+			node_set(stack, e, id);
+			return 0;
+		} else {
+			int count = pExpr->x.pList->nExpr;
+			sqlVdbeAddOp3(v, OP_Array, count, target, node->arr);
+		}
 		break;
 
 	case TK_MAP:
@@ -4602,7 +4621,14 @@ sqlExprCodeTarget(struct Parse *parse, struct Expr *expr, int reg)
 		if (res > 0 && stack.count > 0) {
 			struct sql_expr_node *node =
 				&stack.nodes[stack.count - 1];
-			node->args[node->count] = res;
+			if (node->arr != 0) {
+				if (res != node->reg) {
+					struct Vdbe *v = parse->pVdbe;
+					sqlVdbeAddOp2(v, OP_SCopy, res, node->reg);
+				}
+			} else {
+				node->args[node->count] = res;
+			}
 		}
 	}
 	sqlDbFree(sql_get(), stack.nodes);
