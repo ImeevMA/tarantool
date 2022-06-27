@@ -59,6 +59,76 @@
 #include "box/user.h"
 #include "box/constraint_id.h"
 #include "box/session_settings.h"
+#include "mpstream/mpstream.h"
+
+/**
+ * Encode format as entry to be inserted to _space on @region.
+ *
+ * @param region Region to allocate temporary objects.
+ * @param def Space definition to encode.
+ * @param[out] size Size of result allocation.
+ *
+ * @retval NULL Error.
+ * @retval not NULL Pointer to msgpack on success.
+ */
+static char *
+sql_encode_format(struct region *region, const struct space_def *def,
+		  uint32_t *size)
+{
+	size_t used = region_used(region);
+	struct mpstream stream;
+	bool is_error = false;
+	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
+		      set_encode_error, &is_error);
+
+	assert(def != NULL);
+	uint32_t field_count = def->field_count;
+	mpstream_encode_array(&stream, field_count);
+	for (uint32_t i = 0; i < field_count && !is_error; i++) {
+		uint32_t cid = def->fields[i].coll_id;
+		struct field_def *field = &def->fields[i];
+		const char *default_str = field->default_value;
+		int base_len = 4;
+		if (cid != COLL_NONE)
+			base_len += 1;
+		if (default_str != NULL)
+			base_len += 1;
+		mpstream_encode_map(&stream, base_len);
+		mpstream_encode_str(&stream, "name");
+		mpstream_encode_str(&stream, field->name);
+		mpstream_encode_str(&stream, "type");
+		assert(def->fields[i].is_nullable ==
+		       action_is_nullable(def->fields[i].nullable_action));
+		mpstream_encode_str(&stream, field_type_strs[field->type]);
+		mpstream_encode_str(&stream, "is_nullable");
+		mpstream_encode_bool(&stream, def->fields[i].is_nullable);
+		mpstream_encode_str(&stream, "nullable_action");
+
+		assert(def->fields[i].nullable_action < on_conflict_action_MAX);
+		const char *action =
+			on_conflict_action_strs[def->fields[i].nullable_action];
+		mpstream_encode_str(&stream, action);
+		if (cid != COLL_NONE) {
+			mpstream_encode_str(&stream, "collation");
+			mpstream_encode_uint(&stream, cid);
+		}
+		if (default_str != NULL) {
+			mpstream_encode_str(&stream, "default");
+			mpstream_encode_str(&stream, default_str);
+		}
+	}
+	mpstream_flush(&stream);
+	if (is_error) {
+		diag_set(OutOfMemory, stream.pos - stream.buf, "mpstream_flush",
+			 "stream");
+		return NULL;
+	}
+	*size = region_used(region) - used;
+	char *raw = region_join(region, *size);
+	if (raw == NULL)
+		diag_set(OutOfMemory, *size, "region_join", "raw");
+	return raw;
+}
 
 void
 sql_finish_coding(struct Parse *parse_context)
@@ -426,10 +496,14 @@ sql_create_column_end(struct Parse *parse)
 	 * Encode the format array and emit code to update _space.
 	 */
 	uint32_t table_stmt_sz = 0;
-	struct region *region = &parse->region;
-	char *table_stmt = sql_encode_table(region, def, &table_stmt_sz);
+	char *table_stmt = sql_encode_format(&parse->region, def,
+					     &table_stmt_sz);
+	if (table_stmt == NULL) {
+		parse->is_aborted = true;
+		return;
+	}
 	char *raw = sqlDbMallocRaw(parse->db, table_stmt_sz);
-	if (table_stmt == NULL || raw == NULL) {
+	if (raw == NULL) {
 		parse->is_aborted = true;
 		return;
 	}
@@ -998,13 +1072,14 @@ vdbe_emit_space_create(struct Parse *pParse, int space_id_reg,
 	if (table_opts_stmt == NULL)
 		goto error;
 	uint32_t table_stmt_sz = 0;
-	char *table_stmt = sql_encode_table(region, space->def, &table_stmt_sz);
+	char *table_stmt = sql_encode_format(region, space->def,
+					     &table_stmt_sz);
 	if (table_stmt == NULL)
 		goto error;
 	char *raw = sqlDbMallocRaw(pParse->db,
 				       table_stmt_sz + table_opts_stmt_sz);
 	if (raw == NULL)
-		return;
+		goto error;
 
 	memcpy(raw, table_opts_stmt, table_opts_stmt_sz);
 	table_opts_stmt = raw;

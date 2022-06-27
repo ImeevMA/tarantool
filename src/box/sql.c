@@ -987,64 +987,6 @@ cursor_advance(BtCursor *pCur, int *pRes)
  */
 
 char *
-sql_encode_table(struct region *region, struct space_def *def, uint32_t *size)
-{
-	size_t used = region_used(region);
-	struct mpstream stream;
-	bool is_error = false;
-	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
-		      set_encode_error, &is_error);
-
-	assert(def != NULL);
-	uint32_t field_count = def->field_count;
-	mpstream_encode_array(&stream, field_count);
-	for (uint32_t i = 0; i < field_count && !is_error; i++) {
-		uint32_t cid = def->fields[i].coll_id;
-		struct field_def *field = &def->fields[i];
-		const char *default_str = field->default_value;
-		int base_len = 4;
-		if (cid != COLL_NONE)
-			base_len += 1;
-		if (default_str != NULL)
-			base_len += 1;
-		mpstream_encode_map(&stream, base_len);
-		mpstream_encode_str(&stream, "name");
-		mpstream_encode_str(&stream, field->name);
-		mpstream_encode_str(&stream, "type");
-		assert(def->fields[i].is_nullable ==
-		       action_is_nullable(def->fields[i].nullable_action));
-		mpstream_encode_str(&stream, field_type_strs[field->type]);
-		mpstream_encode_str(&stream, "is_nullable");
-		mpstream_encode_bool(&stream, def->fields[i].is_nullable);
-		mpstream_encode_str(&stream, "nullable_action");
-
-		assert(def->fields[i].nullable_action < on_conflict_action_MAX);
-		const char *action =
-			on_conflict_action_strs[def->fields[i].nullable_action];
-		mpstream_encode_str(&stream, action);
-		if (cid != COLL_NONE) {
-			mpstream_encode_str(&stream, "collation");
-			mpstream_encode_uint(&stream, cid);
-		}
-		if (default_str != NULL) {
-			mpstream_encode_str(&stream, "default");
-			mpstream_encode_str(&stream, default_str);
-		}
-	}
-	mpstream_flush(&stream);
-	if (is_error) {
-		diag_set(OutOfMemory, stream.pos - stream.buf,
-			"mpstream_flush", "stream");
-		return NULL;
-	}
-	*size = region_used(region) - used;
-	char *raw = region_join(region, *size);
-	if (raw == NULL)
-		diag_set(OutOfMemory, *size, "region_join", "raw");
-	return raw;
-}
-
-char *
 sql_encode_table_opts(struct region *region, struct space_def *def,
 		      uint32_t *size)
 {
