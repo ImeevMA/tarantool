@@ -104,19 +104,6 @@ int
 tarantoolsqlIncrementMaxid(uint64_t *space_max_id);
 
 /**
- * Encode "opts" dictionary for _space entry on @region.
- * @param region Region to use.
- * @param def Space definition containing opts to encode.
- * @param[out] size Size of result allocation.
- *
- * @retval NULL Error.
- * @retval not NULL Pointer to msgpack on success.
- */
-char *
-sql_encode_table_opts(struct region *region, struct space_def *def,
-		      uint32_t *size);
-
-/**
  * Encode links of given foreign key constraint into MsgPack on
  * @region.
  * @param region Wegion to use.

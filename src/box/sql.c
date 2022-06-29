@@ -987,38 +987,6 @@ cursor_advance(BtCursor *pCur, int *pRes)
  */
 
 char *
-sql_encode_table_opts(struct region *region, struct space_def *def,
-		      uint32_t *size)
-{
-	size_t used = region_used(region);
-	struct mpstream stream;
-	bool is_error = false;
-	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
-		      set_encode_error, &is_error);
-	bool is_view = def->opts.is_view;
-	mpstream_encode_map(&stream, 2 * is_view);
-
-	if (is_view) {
-		assert(def->opts.sql != NULL);
-		mpstream_encode_str(&stream, "sql");
-		mpstream_encode_str(&stream, def->opts.sql);
-		mpstream_encode_str(&stream, "view");
-		mpstream_encode_bool(&stream, true);
-	}
-	mpstream_flush(&stream);
-	if (is_error) {
-		diag_set(OutOfMemory, stream.pos - stream.buf,
-			 "mpstream_flush", "stream");
-		return NULL;
-	}
-	*size = region_used(region) - used;
-	char *raw = region_join(region, *size);
-	if (raw == NULL)
-		diag_set(OutOfMemory, *size, "region_join", "raw");
-	return raw;
-}
-
-char *
 fk_constraint_encode_links(struct region *region, const struct fk_constraint_def *def,
 			   int type, uint32_t *size)
 {

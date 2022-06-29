@@ -130,6 +130,48 @@ sql_encode_format(struct region *region, const struct space_def *def,
 	return raw;
 }
 
+/**
+ * Encode "opts" dictionary for _space entry on @region.
+ *
+ * @param region Region to allocate temporary objects.
+ * @param def Space definition containing opts to encode.
+ * @param[out] size Size of result allocation.
+ *
+ * @retval NULL Error.
+ * @retval not NULL Pointer to msgpack on success.
+ */
+static char *
+sql_encode_opts(struct region *region, const struct space_opts *opts,
+		uint32_t *size)
+{
+	size_t used = region_used(region);
+	struct mpstream stream;
+	bool is_error = false;
+	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
+		      set_encode_error, &is_error);
+	bool is_view = opts->is_view;
+	mpstream_encode_map(&stream, 2 * is_view);
+
+	if (is_view) {
+		assert(opts->sql != NULL);
+		mpstream_encode_str(&stream, "sql");
+		mpstream_encode_str(&stream, opts->sql);
+		mpstream_encode_str(&stream, "view");
+		mpstream_encode_bool(&stream, true);
+	}
+	mpstream_flush(&stream);
+	if (is_error) {
+		diag_set(OutOfMemory, stream.pos - stream.buf,
+			 "mpstream_flush", "stream");
+		return NULL;
+	}
+	*size = region_used(region) - used;
+	char *raw = region_join(region, *size);
+	if (raw == NULL)
+		diag_set(OutOfMemory, *size, "region_join", "raw");
+	return raw;
+}
+
 void
 sql_finish_coding(struct Parse *parse_context)
 {
@@ -1067,8 +1109,8 @@ vdbe_emit_space_create(struct Parse *pParse, int space_id_reg,
 	int tuple_reg = (pParse->nMem += 7);
 	struct region *region = &pParse->region;
 	uint32_t table_opts_stmt_sz = 0;
-	char *table_opts_stmt = sql_encode_table_opts(region, space->def,
-						      &table_opts_stmt_sz);
+	char *table_opts_stmt = sql_encode_opts(region, &space->def->opts,
+						&table_opts_stmt_sz);
 	if (table_opts_stmt == NULL)
 		goto error;
 	uint32_t table_stmt_sz = 0;
