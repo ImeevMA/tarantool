@@ -3090,6 +3090,12 @@ sqlVdbeRecordCompareMsgpack(const void *key1,
 int
 mem_from_mp_ephemeral(struct Mem *mem, const char *buf, uint32_t *len)
 {
+	if (buf == NULL) {
+		mem->type = MEM_TYPE_NULL;
+		mem->flags = 0;
+		*len = 0;
+		return 0;
+	}
 	const char *start_buf = buf;
 	switch (mp_typeof(*buf)) {
 	case MP_ARRAY: {

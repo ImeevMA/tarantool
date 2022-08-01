@@ -124,14 +124,14 @@ ck_constraint_program_compile(struct ck_constraint_def *ck_constraint_def,
 		return NULL;
 	}
 	/*
-	 * Generate a prologue code that introduces variables to
-	 * bind vdbe_field_ref before execution.
+	 * Generate a prologue code that introduces variables to bind tuple
+	 * before execution.
 	 */
-	int vdbe_field_ref_reg = sqlGetTempReg(&parser);
-	sqlVdbeAddOp2(v, OP_Variable, ++parser.nVar, vdbe_field_ref_reg);
+	int reg = sqlGetTempReg(&parser);
+	sqlVdbeAddOp2(v, OP_Variable, ++parser.nVar, reg);
 	/* Generate ck constraint test code. */
 	vdbe_emit_ck_constraint(&parser, expr, ck_constraint_def->name,
-				ck_constraint_def->expr_str, vdbe_field_ref_reg);
+				ck_constraint_def->expr_str, reg);
 
 	/* Clean-up and restore user-defined sql context. */
 	bool is_error = parser.is_aborted;
@@ -158,9 +158,9 @@ ck_constraint_program_compile(struct ck_constraint_def *ck_constraint_def,
  */
 static int
 ck_constraint_program_run(struct ck_constraint *ck_constraint,
-			  struct vdbe_field_ref *field_ref)
+			  struct tuple *tuple)
 {
-	if (sql_bind_ptr(ck_constraint->stmt, 1, field_ref) != 0) {
+	if (sql_bind_tuple(ck_constraint->stmt, 1, tuple) != 0) {
 		diag_set(ClientError, ER_CK_CONSTRAINT_FAILED,
 			 ck_constraint->def->name,
 			 ck_constraint->def->expr_str);
@@ -190,22 +190,10 @@ ck_constraint_on_replace_trigger(struct trigger *trigger, void *event)
 
 	struct space *space = stmt->space;
 	assert(space != NULL);
-	struct vdbe_field_ref *field_ref;
-	size_t size = sizeof(field_ref->slots[0]) * space->def->field_count +
-		      sizeof(*field_ref);
-	field_ref = (struct vdbe_field_ref *)
-		region_aligned_alloc(&fiber()->gc, size, alignof(*field_ref));
-	if (field_ref == NULL) {
-		diag_set(OutOfMemory, size, "region_aligned_alloc",
-			 "field_ref");
-		return -1;
-	}
-	vdbe_field_ref_prepare_tuple(field_ref, new_tuple);
-
 	struct ck_constraint *ck_constraint;
 	rlist_foreach_entry(ck_constraint, &space->ck_constraint, link) {
 		if (ck_constraint->def->is_enabled &&
-		    ck_constraint_program_run(ck_constraint, field_ref) != 0)
+		    ck_constraint_program_run(ck_constraint, new_tuple) != 0)
 			return -1;
 	}
 	return 0;

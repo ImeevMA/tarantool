@@ -3802,9 +3802,9 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 					 * constraints.
 					 */
 					assert(iTab < 0);
-					sqlVdbeAddOp3(v, OP_Fetch,
+					sqlVdbeAddOp3(v, OP_FieldByFieldno,
 						      pParse->vdbe_field_ref_reg,
-						      col, target);
+						      target, col);
 					return target;
 				} else {
 					/* Coding an expression that is part of an index where column names

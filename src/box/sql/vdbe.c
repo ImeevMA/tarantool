@@ -1956,24 +1956,16 @@ op_column_out:
 	break;
 }
 
-/* Opcode: Fetch P1 P2 P3 * *
- * Synopsis: r[P3]=PX
- *
- * Interpret data P1 points at as an initialized vdbe_field_ref
- * object.
- *
- * Fetch the P2-th column from its tuple. The value extracted
- * is stored in register P3. If the column contains fewer than
- * P2 fields, then extract a NULL.
+/**
+ * Opcode: FieldByFieldno P1 P2 P3 * *
+ * Synopsis: r[P2] = tuple[P3]
  */
-case OP_Fetch: {
-	struct vdbe_field_ref *field_ref =
-		(struct vdbe_field_ref *) p->aMem[pOp->p1].u.p;
-	uint32_t field_idx = pOp->p2;
-	struct Mem *dest_mem = vdbe_prepare_null_out(p, pOp->p3);
-	if (vdbe_field_ref_fetch(field_ref, field_idx, dest_mem) != 0)
+case OP_FieldByFieldno: {
+	struct Mem *res = vdbe_prepare_null_out(p, pOp->p2);
+	const char *field = box_tuple_field(aMem[pOp->p1].u.tuple, pOp->p3);
+	uint32_t len;
+	if (mem_from_mp(res, field, &len) != 0)
 		goto abort_due_to_error;
-	REGISTER_TRACE(p, pOp->p3, dest_mem);
 	break;
 }
 
