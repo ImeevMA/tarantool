@@ -1869,7 +1869,7 @@ case OP_NotNull: {            /* same as TK_NOTNULL, jump, in1 */
 	break;
 }
 
-/* Opcode: Column P1 P2 P3 P4 P5
+/* Opcode: Column P1 P2 P3 * P5
  * Synopsis: r[P3]=PX
  *
  * Interpret the data that cursor P1 points to as a structure built using
@@ -1880,9 +1880,7 @@ case OP_NotNull: {            /* same as TK_NOTNULL, jump, in1 */
  *
  * The value extracted is stored in register P3.
  *
- * If the column contains fewer than P2 fields, then extract a NULL.  Or,
- * if the P4 argument is a P4_MEM use the value of the P4 argument as
- * the result.
+ * If the column contains fewer than P2 fields, then extract a NULL.
  *
  * If the OPFLAG_CLEARCACHE bit is set on P5 and P1 is a pseudo-table cursor,
  * then the cache of the cursor is reset prior to extracting the column.
@@ -1938,16 +1936,9 @@ case OP_Column: {
 	}
 	assert(pC->eCurType == CURTYPE_TARANTOOL ||
 	       pC->eCurType == CURTYPE_PSEUDO);
-	struct Mem *default_val_mem =
-		pOp->p4type == P4_MEM ? pOp->p4.pMem : NULL;
 	if (vdbe_field_ref_fetch(&pC->field_ref, p2, pDest) != 0)
 		goto abort_due_to_error;
 
-	if (mem_is_null(pDest) &&
-	    (uint32_t) p2  >= pC->field_ref.field_count &&
-	    default_val_mem != NULL) {
-		mem_copy_as_ephemeral(pDest, default_val_mem);
-	}
 	if (pDest->type == MEM_TYPE_NULL)
 		goto op_column_out;
 	enum field_type field_type = field_type_MAX;

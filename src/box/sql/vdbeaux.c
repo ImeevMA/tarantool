@@ -597,9 +597,6 @@ freeP4(sql * db, int p4type, void *p4)
 	case P4_KEYINFO:
 		sql_key_info_unref(p4);
 		break;
-	case P4_MEM:
-		sqlValueFree((sql_value *) p4);
-		break;
 	default:
 		break;
 	}
@@ -1065,11 +1062,6 @@ displayP4(Op * pOp, char *zTemp, int nTemp)
 		}
 	case P4_DEC:{
 			sqlXPrintf(&x, "%s", decimal_str(pOp->p4.dec));
-			break;
-		}
-	case P4_MEM:{
-			const char *value = mem_str(pOp->p4.pMem);
-			sqlStrAccumAppend(&x, value, strlen(value));
 			break;
 		}
 	case P4_INTARRAY:{

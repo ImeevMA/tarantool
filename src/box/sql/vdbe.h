@@ -79,7 +79,6 @@ struct VdbeOp {
 		struct func *func;
 		sql_context *pCtx;	/* Used when p4type is P4_FUNCCTX */
 		struct coll *pColl;	/* Used when p4type is P4_COLLSEQ */
-		Mem *pMem;	/* Used when p4type is P4_MEM */
 		bool b;         /* Used when p4type is P4_BOOL */
 		int *ai;	/* Used when p4type is P4_INTARRAY */
 		SubProgram *pProgram;	/* Used when p4type is P4_SUBPROGRAM */
@@ -127,7 +126,6 @@ struct SubProgram {
 #define P4_FUNC     (-4)
 /** P4 is a pointer to a decimal. */
 #define P4_DEC      (-5)
-#define P4_MEM      (-7)	/* P4 is a pointer to a Mem*    structure */
 #define P4_TRANSIENT  0		/* P4 is a pointer to a transient string */
 #define P4_REAL     (-9)	/* P4 is a 64-bit floating point value */
 #define P4_INT64    (-10)	/* P4 is a 64-bit signed integer */
