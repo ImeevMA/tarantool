@@ -278,6 +278,8 @@ mem_clear(struct Mem *mem)
 		struct VdbeFrame *frame = mem->u.pFrame;
 		frame->pParent = frame->v->pDelFrame;
 		frame->v->pDelFrame = frame;
+	} else if (mem->type == MEM_TYPE_TUPLE) {
+		box_tuple_unref(mem->u.tuple);
 	}
 	mem->type = MEM_TYPE_NULL;
 	mem->flags = 0;
@@ -612,6 +614,31 @@ mem_set_ptr(struct Mem *mem, void *ptr)
 	mem->type = MEM_TYPE_PTR;
 	assert(mem->flags == 0);
 	mem->u.p = ptr;
+}
+
+void
+mem_set_tuple(struct Mem *mem, struct tuple *tuple)
+{
+	mem_clear(mem);
+	mem->type = MEM_TYPE_TUPLE;
+	assert(mem->flags == 0);
+	mem->u.tuple = tuple;
+	box_tuple_ref(tuple);
+}
+
+int
+mem_tuple_new(struct Mem *mem, const char *data, uint32_t size)
+{
+	struct tuple *tuple = box_tuple_new(box_tuple_format_default(), data,
+					    data + size);
+	if (tuple == NULL)
+		return -1;
+	mem_clear(mem);
+	mem->type = MEM_TYPE_TUPLE;
+	assert(mem->flags == 0);
+	mem->u.tuple = tuple;
+	box_tuple_ref(tuple);
+	return 0;
 }
 
 void
@@ -1918,6 +1945,8 @@ mem_copy(struct Mem *to, const struct Mem *from)
 	to->flags = from->flags;
 	to->n = from->n;
 	to->z = from->z;
+	if (mem_is_tuple(to))
+		return box_tuple_ref(to->u.tuple);
 	if (!mem_is_bytes(to))
 		return 0;
 	if ((to->flags & MEM_Static) != 0)
@@ -1942,6 +1971,10 @@ mem_copy_as_ephemeral(struct Mem *to, const struct Mem *from)
 	to->flags = from->flags;
 	to->n = from->n;
 	to->z = from->z;
+	if (mem_is_tuple(to)) {
+		box_tuple_ref(to->u.tuple);
+		return;
+	}
 	if (!mem_is_bytes(to))
 		return;
 	if ((to->flags & (MEM_Static | MEM_Ephem)) != 0)

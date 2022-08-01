@@ -54,9 +54,10 @@ enum mem_type {
 	MEM_TYPE_DEC		= 1 << 10,
 	MEM_TYPE_DATETIME	= 1 << 11,
 	MEM_TYPE_INTERVAL	= 1 << 12,
-	MEM_TYPE_INVALID	= 1 << 13,
-	MEM_TYPE_FRAME		= 1 << 14,
-	MEM_TYPE_PTR		= 1 << 15,
+	MEM_TYPE_TUPLE		= 1 << 13,
+	MEM_TYPE_INVALID	= 1 << 14,
+	MEM_TYPE_FRAME		= 1 << 15,
+	MEM_TYPE_PTR		= 1 << 16,
 };
 
 /*
@@ -83,6 +84,8 @@ struct Mem {
 		struct datetime dt;
 		/** INTERVAL value. */
 		struct interval itv;
+		/** TUPLE value. */
+		struct tuple *tuple;
 	} u;
 	/** Type of the value this MEM contains. */
 	enum mem_type type;
@@ -225,6 +228,12 @@ static inline bool
 mem_is_frame(const struct Mem *mem)
 {
 	return mem->type == MEM_TYPE_FRAME;
+}
+
+static inline bool
+mem_is_tuple(const struct Mem *mem)
+{
+	return mem->type == MEM_TYPE_TUPLE;
 }
 
 static inline bool
@@ -510,6 +519,14 @@ mem_set_invalid(struct Mem *mem);
 /** Clear MEM and set pointer to be its value. */
 void
 mem_set_ptr(struct Mem *mem, void *ptr);
+
+/** Clear MEM and set tuple to be its value. */
+void
+mem_set_tuple(struct Mem *mem, struct tuple *tuple);
+
+/** Clear MEM and set it to a tuple created using given data. */
+int
+mem_tuple_new(struct Mem *mem, const char *data, uint32_t size);
 
 /** Clear MEM and set frame to be its value. */
 void

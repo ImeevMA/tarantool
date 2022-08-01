@@ -509,6 +509,18 @@ sql_bind_ptr(struct sql_stmt *stmt, int i, void *ptr)
 }
 
 int
+sql_bind_tuple(struct sql_stmt *stmt, int i, struct tuple *tuple)
+{
+	struct Vdbe *p = (struct Vdbe *)stmt;
+	int rc = vdbeUnbind(p, i);
+	if (rc == 0) {
+		rc = sql_bind_type(p, i, "tuple");
+		mem_set_tuple(&p->aVar[i - 1], tuple);
+	}
+	return rc;
+}
+
+int
 sql_bind_str_static(sql_stmt *stmt, int i, const char *str, uint32_t len)
 {
 	struct Vdbe *vdbe = (struct Vdbe *)stmt;

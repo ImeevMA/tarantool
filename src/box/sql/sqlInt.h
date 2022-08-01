@@ -576,6 +576,10 @@ sql_bind_parameter_name(const struct sql_stmt *stmt, int i);
 int
 sql_bind_ptr(struct sql_stmt *stmt, int i, void *ptr);
 
+/** Perform pointer to struct tuple parameter binding for the SQL statement. */
+int
+sql_bind_tuple(struct sql_stmt *stmt, int i, struct tuple *tuple);
+
 int
 sql_init_db(sql **db);
 
