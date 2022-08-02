@@ -3781,9 +3781,9 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 				assert(pCol->iMem > 0);
 				return pCol->iMem;
 			} else if (pAggInfo->useSortingIdx) {
-				sqlVdbeAddOp3(v, OP_Column,
+				sqlVdbeAddOp3(v, OP_FieldByFieldno,
 						  pAggInfo->sortingIdxPTab,
-						  pCol->iSorterColumn, target);
+						  target, pCol->iSorterColumn);
 				return target;
 			}
 			/*

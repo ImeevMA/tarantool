@@ -1802,7 +1802,6 @@ generateSortTail(Parse * pParse,	/* Parsing context */
 	int addrBreak = pSort->labelDone;	/* Jump here to exit loop */
 	int addrContinue = sqlVdbeMakeLabel(v);	/* Jump here for next cycle */
 	int addr;
-	int addrOnce = 0;
 	int iTab;
 	ExprList *pOrderBy = pSort->pOrderBy;
 	int eDest = pDest->eDest;
@@ -1836,17 +1835,19 @@ generateSortTail(Parse * pParse,	/* Parsing context */
 	nKey = pOrderBy->nExpr - pSort->nOBSat;
 	if (pSort->sortFlags & SORTFLAG_UseSorter) {
 		int regSortOut = ++pParse->nMem;
-		iSortTab = pParse->nTab++;
-		if (pSort->labelBkOut)
-			addrOnce = sqlVdbeAddOp0(v, OP_Once);
-		sqlVdbeAddOp3(v, OP_OpenPseudo, iSortTab, regSortOut,
-				  nKey + 1 + nSortData);
-		if (addrOnce)
-			sqlVdbeJumpHere(v, addrOnce);
 		addr = 1 + sqlVdbeAddOp2(v, OP_SorterSort, iTab, addrBreak);
 		codeOffset(v, p->iOffset, addrContinue);
-		sqlVdbeAddOp3(v, OP_SorterData, iTab, regSortOut, iSortTab);
+		sqlVdbeAddOp3(v, OP_SorterData, iTab, regSortOut, 0);
 		bSeq = 0;
+		for (i = 0, iCol = nKey + bSeq; i < nSortData; i++) {
+			int fieldno;
+			if (aOutEx[i].u.x.iOrderByCol)
+				fieldno = aOutEx[i].u.x.iOrderByCol - 1;
+			else
+				fieldno = iCol++;
+			sqlVdbeAddOp3(v, OP_FieldByFieldno, regSortOut,
+				      regRow + i, fieldno);
+		}
 	} else {
 		/* In case of DESC sorting order data should be taken from
 		 * the end of table. */
@@ -1856,18 +1857,17 @@ generateSortTail(Parse * pParse,	/* Parsing context */
 		codeOffset(v, p->iOffset, addrContinue);
 		iSortTab = iTab;
 		bSeq = 1;
-	}
-	for (i = 0, iCol = nKey + bSeq; i < nSortData; i++) {
-		int iRead;
-		if (aOutEx[i].u.x.iOrderByCol) {
-			iRead = aOutEx[i].u.x.iOrderByCol - 1;
-		} else {
-			iRead = iCol++;
+		for (i = 0, iCol = nKey + bSeq; i < nSortData; i++) {
+			int read;
+			if (aOutEx[i].u.x.iOrderByCol)
+				read = aOutEx[i].u.x.iOrderByCol - 1;
+			else
+				read = iCol++;
+			sqlVdbeAddOp3(v, OP_Column, iSortTab, read, regRow + i);
+			VdbeComment((v, "%s", aOutEx[i].zName ?
+					      aOutEx[i].zName :
+					      aOutEx[i].zSpan));
 		}
-		sqlVdbeAddOp3(v, OP_Column, iSortTab, iRead, regRow + i);
-		VdbeComment((v, "%s",
-			     aOutEx[i].zName ? aOutEx[i].zName : aOutEx[i].
-			     zSpan));
 	}
 	switch (eDest) {
 	case SRT_Table:
@@ -6201,7 +6201,6 @@ sqlSelect(Parse * pParse,		/* The parser context */
 		int iAbortFlag;	/* Mem address which causes query abort if positive */
 		int groupBySort;	/* Rows come from source in GROUP BY order */
 		int addrEnd;	/* End of processing for this SELECT */
-		int sortPTab = 0;	/* Pseudotable used to decode sorting results */
 		int sortOut = 0;	/* Output register from the sorter */
 		int orderByGrp = 0;	/* True if the GROUP BY and ORDER BY are the same */
 
@@ -6392,11 +6391,8 @@ sqlSelect(Parse * pParse,		/* The parser context */
 				sqlReleaseTempReg(pParse, regRecord);
 				sqlReleaseTempRange(pParse, regBase, nCol);
 				sqlWhereEnd(pWInfo);
-				sAggInfo.sortingIdxPTab = sortPTab =
-				    pParse->nTab++;
 				sortOut = sqlGetTempReg(pParse);
-				sqlVdbeAddOp3(v, OP_OpenPseudo, sortPTab,
-						  sortOut, nCol);
+				sAggInfo.sortingIdxPTab = sortOut;
 				sqlVdbeAddOp2(v, OP_SorterSort,
 						  sAggInfo.sortingIdx, addrEnd);
 				VdbeComment((v, "GROUP BY sort"));
@@ -6432,13 +6428,12 @@ sqlSelect(Parse * pParse,		/* The parser context */
 			if (groupBySort) {
 				sqlVdbeAddOp3(v, OP_SorterData,
 						  sAggInfo.sortingIdx, sortOut,
-						  sortPTab);
+						  0);
 			}
 			for (j = 0; j < pGroupBy->nExpr; j++) {
 				if (groupBySort) {
-					sqlVdbeAddOp3(v, OP_Column,
-							  sortPTab, j,
-							  iBMem + j);
+					sqlVdbeAddOp3(v, OP_FieldByFieldno,
+						      sortOut, iBMem + j, j);
 				} else {
 					sAggInfo.directMode = 1;
 					sqlExprCode(pParse,

@@ -2978,9 +2978,8 @@ case OP_SorterData: {
 	assert(isSorter(pC));
 	if (sqlVdbeSorterRowkey(pC, pOut) != 0)
 		goto abort_due_to_error;
-	assert(mem_is_bin(pOut));
+	assert(mem_is_tuple(pOut));
 	assert(pOp->p1>=0 && pOp->p1<p->nCursor);
-	p->apCsr[pOp->p3]->cacheStatus = CACHE_STALE;
 	break;
 }
 
