@@ -1220,8 +1220,9 @@ selectInnerLoop(Parse * pParse,		/* The parser context */
 	regOrig = regResult = pDest->iSdst;
 	if (srcTab >= 0) {
 		for (i = 0; i < nResultCol; i++) {
-			sqlVdbeAddOp3(v, OP_Column, srcTab, i,
-					  regResult + i);
+			int reg = ++pParse->nMem;
+			sqlVdbeAddOp2(v, OP_Tuple, srcTab, reg);
+			sqlVdbeAddOp3(v, OP_Field, reg, regResult + i, i);
 			VdbeComment((v, "%s", pEList->a[i].zName));
 		}
 	} else if (eDest != SRT_Exists) {

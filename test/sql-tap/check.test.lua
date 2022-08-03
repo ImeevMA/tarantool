@@ -216,14 +216,13 @@ test:do_execsql_test(
         -- </check-2.1>
     })
 
-test:do_execsql_test(
+test:do_catchsql_test(
     "check-2.2",
     [[
         INSERT INTO t2 VALUES(1, 1,2.2,'three');
-        SELECT x, y, z FROM t2;
     ]], {
         -- <check-2.2>
-        1, 2.2, "three"
+        1, "Check constraint failed 'ONE': typeof(coalesce(x,0))=='integer'"
         -- </check-2.2>
     })
 
@@ -234,7 +233,7 @@ test:do_execsql_test(
         SELECT x, y, z FROM t2;
     ]], {
         -- <check-2.3>
-        1, 2.2, "three", "", "", ""
+        "", "", ""
         -- </check-2.3>
     })
 

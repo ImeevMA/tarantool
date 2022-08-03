@@ -1957,15 +1957,53 @@ op_column_out:
 }
 
 /**
+ * Opcode: Tuple P1 P2 P3 * *
+ * Synopsis: r[P2] = tuple
+ */
+case OP_Tuple: {
+	struct VdbeCursor *cur = p->apCsr[pOp->p1];
+	struct Mem *res = &aMem[pOp->p2];
+	if (cur->nullRow != 0) {
+		if (cur->eCurType == CURTYPE_PSEUDO) {
+			struct Mem *data = &aMem[cur->uc.pseudoTableReg];
+			if (mem_tuple_new(res, data->z, data->n) != 0)
+				goto abort_due_to_error;
+		} else {
+			mem_set_null(res);
+		}
+	} else {
+		mem_set_tuple(res, cur->uc.pCursor->last_tuple);
+	}
+	break;
+}
+
+/**
  * Opcode: Field P1 P2 P3 * *
  * Synopsis: r[P2] = tuple[P3]
  */
 case OP_Field: {
-	struct Mem *res = vdbe_prepare_null_out(p, pOp->p2);
-	const char *field = box_tuple_field(aMem[pOp->p1].u.tuple, pOp->p3);
+	struct Mem *res = &aMem[pOp->p2];
+	struct Mem *mem = &aMem[pOp->p1];
+	if (!mem_is_tuple(mem)) {
+		assert(mem_is_null(mem));
+		mem_set_null(res);
+		break;
+	}
+	uint32_t fieldno = pOp->p3;
+	const char *field = box_tuple_field(mem->u.tuple, fieldno);
 	uint32_t len;
 	if (mem_from_mp(res, field, &len) != 0)
 		goto abort_due_to_error;
+	enum field_type field_type = field_type_MAX;
+	struct tuple_format *format = box_tuple_format(mem->u.tuple);
+	if (fieldno < tuple_format_field_count(format))
+		field_type = tuple_format_field(format, fieldno)->type;
+	if (field_type == FIELD_TYPE_ANY)
+		res->flags |= MEM_Any;
+	else if (field_type == FIELD_TYPE_SCALAR)
+		res->flags |= MEM_Scalar;
+	else if (field_type == FIELD_TYPE_NUMBER)
+		res->flags |= MEM_Number;
 	break;
 }
 

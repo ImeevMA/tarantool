@@ -538,7 +538,7 @@ s:insert({1, 3.14})
 ...
 s:insert({1, 666})
 ---
-- [1, 666]
+- error: 'Check constraint failed ''complex2'': typeof(coalesce(z,0))==''integer'''
 ...
 s:drop()
 ---
