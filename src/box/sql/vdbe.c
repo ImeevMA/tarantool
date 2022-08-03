@@ -1957,10 +1957,10 @@ op_column_out:
 }
 
 /**
- * Opcode: FieldByFieldno P1 P2 P3 * *
+ * Opcode: Field P1 P2 P3 * *
  * Synopsis: r[P2] = tuple[P3]
  */
-case OP_FieldByFieldno: {
+case OP_Field: {
 	struct Mem *res = vdbe_prepare_null_out(p, pOp->p2);
 	const char *field = box_tuple_field(aMem[pOp->p1].u.tuple, pOp->p3);
 	uint32_t len;

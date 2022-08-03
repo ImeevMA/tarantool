@@ -1845,8 +1845,8 @@ generateSortTail(Parse * pParse,	/* Parsing context */
 				fieldno = aOutEx[i].u.x.iOrderByCol - 1;
 			else
 				fieldno = iCol++;
-			sqlVdbeAddOp3(v, OP_FieldByFieldno, regSortOut,
-				      regRow + i, fieldno);
+			sqlVdbeAddOp3(v, OP_Field, regSortOut, regRow + i,
+				      fieldno);
 		}
 	} else {
 		/* In case of DESC sorting order data should be taken from
@@ -6432,8 +6432,8 @@ sqlSelect(Parse * pParse,		/* The parser context */
 			}
 			for (j = 0; j < pGroupBy->nExpr; j++) {
 				if (groupBySort) {
-					sqlVdbeAddOp3(v, OP_FieldByFieldno,
-						      sortOut, iBMem + j, j);
+					sqlVdbeAddOp3(v, OP_Field, sortOut,
+						      iBMem + j, j);
 				} else {
 					sAggInfo.directMode = 1;
 					sqlExprCode(pParse,
