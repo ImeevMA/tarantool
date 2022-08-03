@@ -97,9 +97,9 @@ struct VdbeCursor {
 	 */
 	union {
 		BtCursor *pCursor;	/* CURTYPE_TARANTOOL */
-		int pseudoTableReg;	/* CURTYPE_PSEUDO. Reg holding content. */
 		VdbeSorter *pSorter;	/* CURTYPE_SORTER. Sorter object */
 	} uc;
+	int reg_value;
 	/** Info about keys needed by index cursors. */
 	struct key_def *key_def;
 	i16 nField;		/* Number of fields in the header */

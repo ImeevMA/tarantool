@@ -1913,8 +1913,8 @@ case OP_Column: {
 	if (pC->cacheStatus!=p->cacheCtr) {                /*OPTIMIZATION-IF-FALSE*/
 		if (pC->nullRow) {
 			if (pC->eCurType==CURTYPE_PSEUDO) {
-				assert(pC->uc.pseudoTableReg>0);
-				pReg = &aMem[pC->uc.pseudoTableReg];
+				assert(pC->reg_value>0);
+				pReg = &aMem[pC->reg_value];
 				assert(mem_is_bin(pReg));
 				assert(memIsValid(pReg));
 				vdbe_field_ref_prepare_data(&pC->field_ref,
@@ -1965,7 +1965,7 @@ case OP_Tuple: {
 	struct Mem *res = &aMem[pOp->p2];
 	if (cur->nullRow != 0) {
 		if (cur->eCurType == CURTYPE_PSEUDO) {
-			struct Mem *data = &aMem[cur->uc.pseudoTableReg];
+			struct Mem *data = &aMem[cur->reg_value];
 			if (mem_tuple_new(res, data->z, data->n) != 0)
 				goto abort_due_to_error;
 		} else {
@@ -2333,6 +2333,7 @@ case OP_IteratorOpen: {
 	cur->key_def = index->def->key_def;
 	cur->nullRow = 1;
 	cur->uc.pCursor->hints = pOp->p5 & OPFLAG_SEEKEQ;
+	cur->reg_value = pOp->p4.i;
 	break;
 }
 
@@ -2441,7 +2442,7 @@ case OP_OpenPseudo: {
 	pCx = allocateCursor(p, pOp->p1, pOp->p3, CURTYPE_PSEUDO);
 	if (pCx==0) goto no_mem;
 	pCx->nullRow = 1;
-	pCx->uc.pseudoTableReg = pOp->p2;
+	pCx->reg_value = pOp->p2;
 	assert(pOp->p5==0);
 	break;
 }
