@@ -2707,7 +2707,28 @@ generateWithRecursiveQuery(Parse * pParse,	/* Parsing context */
 	/* Output the single row in Current */
 	addrCont = sqlVdbeMakeLabel(v);
 	codeOffset(v, regOffset, addrCont);
-	read_all_columns(pParse, p->pEList, pDest, iCurrent);
+
+
+
+
+
+	int count = p->pEList->nExpr;
+	if (pDest->iSdst == 0) {
+		pDest->iSdst = pParse->nMem + 1;
+		pParse->nMem += count;
+	}
+	int res = pDest->iSdst;
+	for (int i = 0; i < count; i++) {
+		sqlVdbeAddOp3(v, OP_MsgPackField, regCurrent, res + i, i);
+		VdbeComment((v, "%s", p->pEList->a[i].zName));
+	}
+
+
+
+
+
+
+
 	selectInnerLoop(pParse, p, p->pEList, 0,
 			0, 0, pDest, addrCont, addrBreak);
 	if (regLimit)

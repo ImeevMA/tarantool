@@ -1978,7 +1978,7 @@ case OP_Tuple: {
 }
 
 /**
- * Opcode: Field P1 P2 P3 * *
+ * Opcode: TupleField P1 P2 P3 * *
  * Synopsis: r[P2] = tuple[P3]
  */
 case OP_TupleField: {
@@ -2004,6 +2004,29 @@ case OP_TupleField: {
 		res->flags |= MEM_Scalar;
 	else if (field_type == FIELD_TYPE_NUMBER)
 		res->flags |= MEM_Number;
+	break;
+}
+
+/**
+ * Opcode: MsgPackField P1 P2 P3 * *
+ * Synopsis: r[P2] = tuple[P3]
+ */
+case OP_MsgPackField: {
+	struct Mem *res = &aMem[pOp->p2];
+	struct Mem *mem = &aMem[pOp->p1];
+	if (!mem_is_bin(mem)) {
+		assert(mem_is_null(mem));
+		mem_set_null(res);
+		break;
+	}
+	uint32_t fieldno = pOp->p3;
+	const char *data = mem->z;
+	mp_decode_array(&data);
+	for (uint32_t i = 0; i < fieldno; ++i)
+		mp_next(&data);
+	uint32_t len;
+	if (mem_from_mp(res, data, &len) != 0)
+		goto abort_due_to_error;
 	break;
 }
 
