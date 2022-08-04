@@ -1147,6 +1147,26 @@ vdbe_insert_distinct(struct Parse *parse, int cursor, int reg_eph,
 	sqlReleaseTempReg(parse, r1);
 }
 
+static void
+read_all_columns(struct Parse *parse, struct ExprList *list,
+		 struct SelectDest *dest, int cur)
+{
+	assert(cur >= 0);
+	struct Vdbe *v = parse->pVdbe;
+	int count = list->nExpr;
+	if (dest->iSdst == 0) {
+		dest->iSdst = parse->nMem + 1;
+		parse->nMem += count;
+	}
+	int res = dest->iSdst;
+	int reg = ++parse->nMem;
+	sqlVdbeAddOp2(v, OP_Tuple, cur, reg);
+	for (int i = 0; i < count; i++) {
+		sqlVdbeAddOp3(v, OP_TupleField, reg, res + i, i);
+		VdbeComment((v, "%s", list->a[i].zName));
+	}
+}
+
 /*
  * This routine generates the code for the inside of the inner loop
  * of a SELECT.
@@ -1218,14 +1238,7 @@ selectInnerLoop(Parse * pParse,		/* The parser context */
 	}
 	pDest->nSdst = nResultCol;
 	regOrig = regResult = pDest->iSdst;
-	if (srcTab >= 0) {
-		for (i = 0; i < nResultCol; i++) {
-			int reg = ++pParse->nMem;
-			sqlVdbeAddOp2(v, OP_Tuple, srcTab, reg);
-			sqlVdbeAddOp3(v, OP_Field, reg, regResult + i, i);
-			VdbeComment((v, "%s", pEList->a[i].zName));
-		}
-	} else if (eDest != SRT_Exists) {
+	if (srcTab < 0 && eDest != SRT_Exists) {
 		/* If the destination is an EXISTS(...) expression, the actual
 		 * values returned by the SELECT are not required.
 		 */
@@ -1846,7 +1859,7 @@ generateSortTail(Parse * pParse,	/* Parsing context */
 				fieldno = aOutEx[i].u.x.iOrderByCol - 1;
 			else
 				fieldno = iCol++;
-			sqlVdbeAddOp3(v, OP_Field, regSortOut, regRow + i,
+			sqlVdbeAddOp3(v, OP_TupleField, regSortOut, regRow + i,
 				      fieldno);
 		}
 	} else {
@@ -2694,7 +2707,8 @@ generateWithRecursiveQuery(Parse * pParse,	/* Parsing context */
 	/* Output the single row in Current */
 	addrCont = sqlVdbeMakeLabel(v);
 	codeOffset(v, regOffset, addrCont);
-	selectInnerLoop(pParse, p, p->pEList, iCurrent,
+	read_all_columns(pParse, p->pEList, pDest, iCurrent);
+	selectInnerLoop(pParse, p, p->pEList, 0,
 			0, 0, pDest, addrCont, addrBreak);
 	if (regLimit)
 		sqlVdbeAddOp2(v, OP_DecrJumpZero, regLimit, addrBreak);
@@ -3065,8 +3079,10 @@ multiSelect(Parse * pParse,	/* Parsing context */
 					sqlVdbeAddOp2(v, OP_Rewind,
 							  unionTab, iBreak);
 					iStart = sqlVdbeCurrentAddr(v);
+					read_all_columns(pParse, p->pEList,
+							 &dest, unionTab);
 					selectInnerLoop(pParse, p, p->pEList,
-							unionTab, 0, 0, &dest,
+							0, 0, 0, &dest,
 							iCont, iBreak);
 					sqlVdbeResolveLabel(v, iCont);
 					sqlVdbeAddOp2(v, OP_Next, unionTab,
@@ -3162,7 +3178,9 @@ multiSelect(Parse * pParse,	/* Parsing context */
 				sqlVdbeAddOp4Int(v, OP_NotFound, tab2,
 						     iCont, r1, 0);
 				sqlReleaseTempReg(pParse, r1);
-				selectInnerLoop(pParse, p, p->pEList, tab1,
+				read_all_columns(pParse, p->pEList, &dest,
+						 tab1);
+				selectInnerLoop(pParse, p, p->pEList, 0,
 						0, 0, &dest, iCont, iBreak);
 				sqlVdbeResolveLabel(v, iCont);
 				sqlVdbeAddOp2(v, OP_Next, tab1, iStart);
@@ -6433,7 +6451,7 @@ sqlSelect(Parse * pParse,		/* The parser context */
 			}
 			for (j = 0; j < pGroupBy->nExpr; j++) {
 				if (groupBySort) {
-					sqlVdbeAddOp3(v, OP_Field, sortOut,
+					sqlVdbeAddOp3(v, OP_TupleField, sortOut,
 						      iBMem + j, j);
 				} else {
 					sAggInfo.directMode = 1;

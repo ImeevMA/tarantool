@@ -1981,7 +1981,7 @@ case OP_Tuple: {
  * Opcode: Field P1 P2 P3 * *
  * Synopsis: r[P2] = tuple[P3]
  */
-case OP_Field: {
+case OP_TupleField: {
 	struct Mem *res = &aMem[pOp->p2];
 	struct Mem *mem = &aMem[pOp->p1];
 	if (!mem_is_tuple(mem)) {
