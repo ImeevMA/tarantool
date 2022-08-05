@@ -1978,48 +1978,35 @@ case OP_Tuple: {
 }
 
 /**
- * Opcode: TupleField P1 P2 P3 * *
+ * Opcode: Field P1 P2 P3 * *
  * Synopsis: r[P2] = tuple[P3]
  */
-case OP_TupleField: {
+case OP_Field: {
 	struct Mem *res = &aMem[pOp->p2];
 	struct Mem *mem = &aMem[pOp->p1];
-	if (!mem_is_tuple(mem)) {
-		assert(mem_is_null(mem));
+	if (mem_is_null(mem)) {
 		mem_set_null(res);
 		break;
 	}
 	uint32_t fieldno = pOp->p3;
-	const char *field = box_tuple_field(mem->u.tuple, fieldno);
-	uint32_t len;
-	if (mem_from_mp(res, field, &len) != 0)
-		goto abort_due_to_error;
-	enum field_type field_type = field_type_MAX;
-	struct tuple_format *format = box_tuple_format(mem->u.tuple);
-	if (fieldno < tuple_format_field_count(format))
-		field_type = tuple_format_field(format, fieldno)->type;
-	if (field_type == FIELD_TYPE_ANY)
-		res->flags |= MEM_Any;
-	else if (field_type == FIELD_TYPE_SCALAR)
-		res->flags |= MEM_Scalar;
-	else if (field_type == FIELD_TYPE_NUMBER)
-		res->flags |= MEM_Number;
-	break;
-}
-
-/**
- * Opcode: MsgPackField P1 P2 P3 * *
- * Synopsis: r[P2] = tuple[P3]
- */
-case OP_MsgPackField: {
-	struct Mem *res = &aMem[pOp->p2];
-	struct Mem *mem = &aMem[pOp->p1];
-	if (!mem_is_bin(mem)) {
-		assert(mem_is_null(mem));
-		mem_set_null(res);
+	if (mem_is_tuple(mem)) {
+		const char *field = box_tuple_field(mem->u.tuple, fieldno);
+		uint32_t len;
+		if (mem_from_mp(res, field, &len) != 0)
+			goto abort_due_to_error;
+		enum field_type field_type = field_type_MAX;
+		struct tuple_format *format = box_tuple_format(mem->u.tuple);
+		if (fieldno < tuple_format_field_count(format))
+			field_type = tuple_format_field(format, fieldno)->type;
+		if (field_type == FIELD_TYPE_ANY)
+			res->flags |= MEM_Any;
+		else if (field_type == FIELD_TYPE_SCALAR)
+			res->flags |= MEM_Scalar;
+		else if (field_type == FIELD_TYPE_NUMBER)
+			res->flags |= MEM_Number;
 		break;
 	}
-	uint32_t fieldno = pOp->p3;
+	assert(mem_is_bin(mem));
 	const char *data = mem->z;
 	mp_decode_array(&data);
 	for (uint32_t i = 0; i < fieldno; ++i)

@@ -1162,7 +1162,7 @@ read_all_columns(struct Parse *parse, struct ExprList *list,
 	int reg = ++parse->nMem;
 	sqlVdbeAddOp2(v, OP_Tuple, cur, reg);
 	for (int i = 0; i < count; i++) {
-		sqlVdbeAddOp3(v, OP_TupleField, reg, res + i, i);
+		sqlVdbeAddOp3(v, OP_Field, reg, res + i, i);
 		VdbeComment((v, "%s", list->a[i].zName));
 	}
 }
@@ -1859,7 +1859,7 @@ generateSortTail(Parse * pParse,	/* Parsing context */
 				fieldno = aOutEx[i].u.x.iOrderByCol - 1;
 			else
 				fieldno = iCol++;
-			sqlVdbeAddOp3(v, OP_TupleField, regSortOut, regRow + i,
+			sqlVdbeAddOp3(v, OP_Field, regSortOut, regRow + i,
 				      fieldno);
 		}
 	} else {
@@ -2631,6 +2631,7 @@ generateWithRecursiveQuery(Parse * pParse,	/* Parsing context */
 
 	/* Locate the cursor number of the Current table */
 	for (i = 0; ALWAYS(i < pSrc->nSrc); i++) {
+		assert(pSrc->nSrc);
 		if (pSrc->a[i].fg.isRecursive) {
 			iCurrent = pSrc->a[i].iCursor;
 			break;
@@ -2719,7 +2720,7 @@ generateWithRecursiveQuery(Parse * pParse,	/* Parsing context */
 	}
 	int res = pDest->iSdst;
 	for (int i = 0; i < count; i++) {
-		sqlVdbeAddOp3(v, OP_MsgPackField, regCurrent, res + i, i);
+		sqlVdbeAddOp3(v, OP_Field, regCurrent, res + i, i);
 		VdbeComment((v, "%s", p->pEList->a[i].zName));
 	}
 
@@ -6472,7 +6473,7 @@ sqlSelect(Parse * pParse,		/* The parser context */
 			}
 			for (j = 0; j < pGroupBy->nExpr; j++) {
 				if (groupBySort) {
-					sqlVdbeAddOp3(v, OP_TupleField, sortOut,
+					sqlVdbeAddOp3(v, OP_Field, sortOut,
 						      iBMem + j, j);
 				} else {
 					sAggInfo.directMode = 1;

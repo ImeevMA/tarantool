@@ -3781,7 +3781,7 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 				assert(pCol->iMem > 0);
 				return pCol->iMem;
 			} else if (pAggInfo->useSortingIdx) {
-				sqlVdbeAddOp3(v, OP_TupleField,
+				sqlVdbeAddOp3(v, OP_Field,
 						  pAggInfo->sortingIdxPTab,
 						  target, pCol->iSorterColumn);
 				return target;
@@ -3802,7 +3802,7 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 					 * constraints.
 					 */
 					assert(iTab < 0);
-					sqlVdbeAddOp3(v, OP_TupleField,
+					sqlVdbeAddOp3(v, OP_Field,
 						      pParse->vdbe_field_ref_reg,
 						      target, col);
 					return target;
