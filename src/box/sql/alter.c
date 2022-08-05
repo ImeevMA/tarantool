@@ -122,8 +122,10 @@ sql_alter_ck_constraint_enable(struct Parse *parse)
 
 	const int field_count = 6;
 	int tuple_reg = sqlGetTempRange(parse, field_count + 1);
+	int tmp_reg = ++parse->nMem;
+	sqlVdbeAddOp2(v, OP_Tuple, cursor, tmp_reg);
 	for (int i = 0; i < field_count - 1; ++i)
-		sqlVdbeAddOp3(v, OP_Column, cursor, i, tuple_reg + i);
+		sqlVdbeAddOp3(v, OP_Field, tmp_reg, tuple_reg + i, i);
 	sqlVdbeAddOp1(v, OP_Close, cursor);
 	sqlVdbeAddOp2(v, OP_Bool, enable_def->is_enabled,
 		      tuple_reg + field_count - 1);

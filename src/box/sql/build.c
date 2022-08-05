@@ -450,8 +450,10 @@ sql_create_column_end(struct Parse *parse)
 	sqlVdbeJumpHere(v, addr);
 
 	int tuple_reg = sqlGetTempRange(parse, box_space_field_MAX + 1);
+	int tmp_reg = ++parse->nMem;
+	sqlVdbeAddOp2(v, OP_Tuple, cursor, tmp_reg);
 	for (int i = 0; i < box_space_field_MAX - 1; ++i)
-		sqlVdbeAddOp3(v, OP_Column, cursor, i, tuple_reg + i);
+		sqlVdbeAddOp3(v, OP_Field, tmp_reg, tuple_reg + i, i);
 	sqlVdbeAddOp1(v, OP_Close, cursor);
 
 	sqlVdbeAddOp2(v, OP_Integer, def->field_count,
@@ -2432,7 +2434,9 @@ vdbe_emit_new_sec_index_id(struct Parse *parse, uint32_t space_id,
 	int iid_reg = ++parse->nMem;
 	sqlVdbeJumpHere(v, found_addr);
 	/* Fetch iid from the row and increment it. */
-	sqlVdbeAddOp3(v, OP_Column, _index_cursor, BOX_INDEX_FIELD_ID, iid_reg);
+	int tmp_reg = ++parse->nMem;
+	sqlVdbeAddOp2(v, OP_Tuple, _index_cursor, tmp_reg);
+	sqlVdbeAddOp3(v, OP_Field, tmp_reg, iid_reg, BOX_INDEX_FIELD_ID);
 	sqlVdbeAddOp2(v, OP_AddImm, iid_reg, 1);
 	/* Jump over block assigning wrong index id. */
 	int skip_bad_iid = sqlVdbeAddOp0(v, OP_Goto);
