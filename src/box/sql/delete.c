@@ -293,17 +293,18 @@ sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 		/* assert(is_complex || one_pass != ONEPASS_OFF); */
 
 		/* Extract the primary key for the current row */
+		int reg = ++parse->nMem;
+		sqlVdbeAddOp2(v, OP_Tuple, tab_cursor, reg);
 		if (!is_view) {
 			struct key_def *def = space->index[0]->def->key_def;
 			for (int i = 0; i < pk_len; i++) {
 				struct key_part *part = &def->parts[i];
-				sqlVdbeAddOp3(v, OP_Column, tab_cursor,
-					      part->fieldno, reg_pk + i);
+				sqlVdbeAddOp3(v, OP_Field, reg, reg_pk + i,
+					      part->fieldno);
 			}
 		} else {
 			for (int i = 0; i < pk_len; i++) {
-				sqlVdbeAddOp3(v, OP_Column, tab_cursor,
-						  i, reg_pk + i);
+				sqlVdbeAddOp3(v, OP_Field, reg, reg_pk + i, i);
 			}
 		}
 
@@ -455,10 +456,12 @@ sql_generate_row_delete(struct Parse *parse, struct space *space,
 		 * AFTER triggers that exist.
 		 */
 		sqlVdbeAddOp2(v, OP_Copy, reg_pk, first_old_reg);
+		int reg = ++parse->nMem;
+		sqlVdbeAddOp2(v, OP_Tuple, cursor, reg);
 		for (int i = 0; i < (int)space->def->field_count; i++) {
 			if (column_mask_fieldno_is_set(mask, i)) {
-				sqlVdbeAddOp3(v, OP_Column, cursor, i,
-					      first_old_reg + i + 1);
+				sqlVdbeAddOp3(v, OP_Field, reg,
+					      first_old_reg + i + 1, i);
 			}
 		}
 

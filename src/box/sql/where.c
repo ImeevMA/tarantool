@@ -4809,7 +4809,8 @@ sqlWhereEnd(WhereInfo * pWInfo)
 			for (; k < last; k++, pOp++) {
 				if (pOp->p1 != pLevel->iTabCur)
 					continue;
-				if (pOp->opcode != OP_Column)
+				if (pOp->opcode != OP_Column &&
+				    pOp->opcode != OP_Tuple)
 					continue;
 				assert(def == NULL || def->space_id ==
 						      pTabItem->space->def->id);
