@@ -289,7 +289,6 @@ struct SortSubtask {
 	UnpackedRecord *pUnpacked;	/* Space to unpack a record */
 	SorterList list;	/* List for thread to write to a PMA */
 	int nPMA;		/* Number of PMAs currently in file */
-	SorterCompare xCompare;	/* Compare function to use */
 	SorterFile file;	/* Temp file for level-0 PMAs */
 	SorterFile file2;	/* Space for other PMAs */
 };
@@ -1069,10 +1068,8 @@ vdbeSorterMerge(SortSubtask * pTask,	/* Calling thread context */
 
 	assert(p1 != 0 && p2 != 0);
 	for (;;) {
-		int res;
-		res =
-		    pTask->xCompare(pTask, &bCached, SRVAL(p1),
-				    SRVAL(p2));
+		int res = vdbeSorterCompare(pTask, &bCached, SRVAL(p1),
+					    SRVAL(p2));
 
 		if (res <= 0) {
 			*pp = p1;
@@ -1097,17 +1094,6 @@ vdbeSorterMerge(SortSubtask * pTask,	/* Calling thread context */
 }
 
 /*
- * Return the SorterCompare function to compare values collected by the
- * sorter object passed as the only argument.
- */
-static SorterCompare
-vdbeSorterGetCompare(VdbeSorter * p)
-{
-	(void)p;
-	return vdbeSorterCompare;
-}
-
-/*
  * Sort the linked list of records headed at pTask->pList. Return
  * 0 if successful, or an sql error code (i.e. -1) if
  * an error occurs.
@@ -1125,7 +1111,6 @@ vdbeSorterSort(SortSubtask * pTask, SorterList * pList)
 		return rc;
 
 	p = pList->pList;
-	pTask->xCompare = vdbeSorterGetCompare(pTask->pSorter);
 
 	aSlot =
 	    (SorterRecord **) sqlMallocZero(64 * sizeof(SorterRecord *));
@@ -1375,9 +1360,9 @@ vdbeMergeEngineStep(MergeEngine * pMerger,	/* The merge engine to advance to the
 			} else if (pReadr2->pFd == 0) {
 				iRes = -1;
 			} else {
-				iRes = pTask->xCompare(pTask, &bCached,
-						       pReadr1->aKey,
-						       pReadr2->aKey);
+				iRes = vdbeSorterCompare(pTask, &bCached,
+							 pReadr1->aKey,
+							 pReadr2->aKey);
 			}
 
 			/* If pReadr1 contained the smaller value, set aTree[i] to its index.
@@ -1680,10 +1665,8 @@ vdbeMergeEngineCompare(MergeEngine * pMerger,	/* Merge engine containing PmaRead
 	} else {
 		SortSubtask *pTask = pMerger->pTask;
 		bool cached = false;
-		int res;
 		assert(pTask->pUnpacked != 0);	/* from vdbeSortSubtaskMain() */
-		res =
-		    pTask->xCompare(pTask, &cached, p1->aKey, p2->aKey);
+		int res = vdbeSorterCompare(pTask, &cached, p1->aKey, p2->aKey);
 		if (res <= 0) {
 			iRes = i1;
 		} else {
