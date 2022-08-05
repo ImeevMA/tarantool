@@ -1080,8 +1080,6 @@ struct type_def {
 /*
  * Value constraints (enforced via assert()):
  *     NC_MinMaxAgg      == SF_MinMaxAgg
- *     SQL_FUNC_LENGTH    ==  OPFLAG_LENGTHARG
- *     SQL_FUNC_TYPEOF    ==  OPFLAG_TYPEOFARG
  */
 /** Function is one of aggregate functions. */
 #define SQL_FUNC_AGG      0x0001
@@ -1093,8 +1091,6 @@ struct type_def {
 					 * collations_check_compatibility()
 					 * function.
 					 */
-#define SQL_FUNC_LENGTH   0x0040	/* Built-in length() function */
-#define SQL_FUNC_TYPEOF   0x0080	/* Built-in typeof() function */
 #define SQL_FUNC_COALESCE 0x0200	/* Built-in coalesce() or ifnull() */
 #define SQL_FUNC_UNLIKELY 0x0400	/* Built-in unlikely() function */
 /** Built-in min() or least() function. */
@@ -2113,8 +2109,6 @@ struct Parse {
  * Bitfield flags for P5 value in various opcodes.
  *
  * Value constraints (enforced via assert()):
- *    OPFLAG_LENGTHARG    == sql_FUNC_LENGTH
- *    OPFLAG_TYPEOFARG    == sql_FUNC_TYPEOF
  *    OPFLAG_FORDELETE    == BTREE_FORDELETE
  *    OPFLAG_SAVEPOSITION == BTREE_SAVEPOSITION
  *    OPFLAG_AUXDELETE    == BTREE_AUXDELETE
@@ -2125,8 +2119,6 @@ struct Parse {
 #define OPFLAG_OE_IGNORE    0x200	/* OP_IdxInsert: Ignore flag */
 #define OPFLAG_OE_FAIL      0x400	/* OP_IdxInsert: Fail flag */
 #define OPFLAG_OE_ROLLBACK  0x800	/* OP_IdxInsert: Rollback flag. */
-#define OPFLAG_LENGTHARG     0x40	/* OP_Column only used for length() */
-#define OPFLAG_TYPEOFARG     0x80	/* OP_Column only used for typeof() */
 #define OPFLAG_SEEKEQ        0x02	/* OP_Open** cursor uses EQ seek only */
 #define OPFLAG_FORDELETE     0x08	/* OP_Open should use BTREE_FORDELETE */
 #define OPFLAG_P2ISREG       0x10	/* P2 to OP_Open** is a register number */

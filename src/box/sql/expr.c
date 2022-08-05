@@ -2341,7 +2341,6 @@ sqlSetHasNullFlag(Vdbe * v, int iCur, int iCol, int regHasNull)
 	sqlVdbeAddOp2(v, OP_Integer, 0, regHasNull);
 	addr1 = sqlVdbeAddOp1(v, OP_Rewind, iCur);
 	sqlVdbeAddOp3(v, OP_Column, iCur, iCol, regHasNull);
-	sqlVdbeChangeP5(v, OPFLAG_TYPEOFARG);
 	VdbeComment((v, "first_entry_in(%d)", iCur));
 	sqlVdbeJumpHere(v, addr1);
 }
@@ -4146,27 +4145,6 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 					pParse->nMem += nFarg;
 				} else {
 					r1 = sqlGetTempRange(pParse, nFarg);
-				}
-
-				/* For length() and typeof() functions with a column argument,
-				 * set the P5 parameter to the OP_Column opcode to OPFLAG_LENGTHARG
-				 * or OPFLAG_TYPEOFARG respectively, to avoid unnecessary data
-				 * loading.
-				 */
-				if (sql_func_flag_is_set(func, SQL_FUNC_LENGTH |
-							       SQL_FUNC_TYPEOF)) {
-					u8 exprOp;
-					assert(nFarg == 1);
-					assert(pFarg->a[0].pExpr != 0);
-					exprOp = pFarg->a[0].pExpr->op;
-					if (exprOp == TK_COLUMN_REF
-					    || exprOp == TK_AGG_COLUMN) {
-						assert(SQL_FUNC_LENGTH ==
-						       OPFLAG_LENGTHARG);
-						assert(SQL_FUNC_TYPEOF ==
-						       OPFLAG_TYPEOFARG);
-						pFarg->a[0].pExpr->op2 = true;
-					}
 				}
 
 				sqlExprCachePush(pParse);	/* Ticket 2ea2425d34be */

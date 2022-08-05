@@ -1886,11 +1886,6 @@ case OP_NotNull: {            /* same as TK_NOTNULL, jump, in1 */
  * then the cache of the cursor is reset prior to extracting the column.
  * The first OP_Column against a pseudo-table after the value of the content
  * register has changed should have this bit set.
- *
- * If the OPFLAG_LENGTHARG and OPFLAG_TYPEOFARG bits are set on P5 when
- * the result is guaranteed to only be used as the argument of a length()
- * or typeof() function, respectively.  The loading of large blobs can be
- * skipped for length() and all content loading can be skipped for typeof().
  */
 case OP_Column: {
 	int p2;            /* column number to retrieve */
