@@ -282,8 +282,6 @@ struct MergeEngine {
  * each thread requires its own UnpackedRecord object to unpack records in
  * as part of comparison operations.
  */
-typedef int (*SorterCompare) (SortSubtask *, bool *, const void *,
-			      const void *);
 struct SortSubtask {
 	VdbeSorter *pSorter;	/* Sorter that owns this sub-task */
 	UnpackedRecord *pUnpacked;	/* Space to unpack a record */
@@ -880,8 +878,6 @@ vdbeSortSubtaskCleanup(sql * db, SortSubtask * pTask)
 	memset(pTask, 0, sizeof(SortSubtask));
 }
 
-#define vdbeSorterJoinAll(x,rcin) (rcin)
-
 /*
  * Allocate a new MergeEngine object capable of handling up to
  * nReader PmaReader inputs.
@@ -946,7 +942,6 @@ vdbeIncrFree(IncrMerger * pIncr)
 void
 sqlVdbeSorterReset(sql * db, VdbeSorter * pSorter)
 {
-	(void)vdbeSorterJoinAll(pSorter, 0);
 	assert(pSorter->pReader == 0);
 	vdbeMergeEngineFree(pSorter->pMerger);
 	pSorter->pMerger = 0;
@@ -2052,9 +2047,6 @@ sqlVdbeSorterRewind(const VdbeCursor * pCsr, int *pbEof)
 	 */
 	assert(pSorter->list.pList);
 	rc = vdbeSorterFlushPMA(pSorter);
-
-	/* Join all threads */
-	rc = vdbeSorterJoinAll(pSorter, rc);
 
 	/* Assuming no errors have occurred, set up a merger structure to
 	 * incrementally read and merge all remaining PMAs.
