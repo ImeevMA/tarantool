@@ -3201,6 +3201,8 @@ sqlExprCodeIN(Parse * pParse,	/* Parsing and code generating context */
 		 */
 		destNotNull = destIfFalse;
 	}
+	int reg = ++pParse->nMem;
+	sqlVdbeAddOp2(v, OP_Tuple, pExpr->iTable, reg);
 	for (i = 0; i < nVector; i++) {
 		bool unused;
 		uint32_t id;
@@ -3212,7 +3214,7 @@ sqlExprCodeIN(Parse * pParse,	/* Parsing and code generating context */
 		/* Tarantool: Replace i -> aiMap [i], since original order of columns
 		 * is preserved.
 		 */
-		sqlVdbeAddOp3(v, OP_Column, pExpr->iTable, aiMap[i], r3);
+		sqlVdbeAddOp3(v, OP_Field, reg, r3, aiMap[i]);
 		sqlVdbeAddOp4(v, OP_Ne, rLhs + i, destNotNull, r3,
 				  (void *)pColl, P4_COLLSEQ);
 		sqlReleaseTempReg(pParse, r3);
