@@ -304,8 +304,6 @@ struct create_fk_def {
 	struct ExprList *child_cols;
 	struct Token *parent_name;
 	struct ExprList *parent_cols;
-	/** Encoded actions for ON DELETE and ON UPDATE clauses. */
-	int actions;
 };
 
 struct create_index_def {
@@ -463,15 +461,13 @@ create_index_def_init(struct create_index_def *index_def,
 static inline void
 create_fk_def_init(struct create_fk_def *fk_def, struct SrcList *table_name,
 		   struct Token *name, struct ExprList *child_cols,
-		   struct Token *parent_name, struct ExprList *parent_cols,
-		   int actions)
+		   struct Token *parent_name, struct ExprList *parent_cols)
 {
 	create_constraint_def_init(&fk_def->base, table_name, name,
 				   false, ENTITY_TYPE_FK);
 	fk_def->child_cols = child_cols;
 	fk_def->parent_name = parent_name;
 	fk_def->parent_cols = parent_cols;
-	fk_def->actions = actions;
 }
 
 static inline void

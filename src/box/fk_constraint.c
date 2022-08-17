@@ -32,19 +32,9 @@
 #include "sql.h"
 #include "sql/sqlInt.h"
 
-const char *fk_constraint_action_strs[] = {
-	/* [FKEY_ACTION_RESTRICT]    = */ "no_action",
-	/* [FKEY_ACTION_SET_NULL]    = */ "set_null",
-	/* [FKEY_ACTION_SET_DEFAULT] = */ "set_default",
-	/* [FKEY_ACTION_CASCADE]     = */ "cascade",
-	/* [FKEY_ACTION_NO_ACTION]   = */ "restrict"
-};
-
 void
 fk_constraint_delete(struct fk_constraint *fk)
 {
-	sql_trigger_delete(sql_get(), fk->on_delete_trigger);
-	sql_trigger_delete(sql_get(), fk->on_update_trigger);
 	free(fk->def);
 	free(fk);
 }

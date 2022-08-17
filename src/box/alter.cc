@@ -5093,28 +5093,6 @@ fk_constraint_def_new_from_tuple(struct tuple *tuple, uint32_t errcode)
 	if (tuple_field_u32(tuple, BOX_FK_CONSTRAINT_FIELD_PARENT_ID,
 			    &(fk_def->parent_id)) != 0)
 		return NULL;
-	const char *on_delete_action = tuple_field_str(tuple,
-		BOX_FK_CONSTRAINT_FIELD_ON_DELETE, &name_len);
-	if (on_delete_action == NULL)
-		return NULL;
-	fk_def->on_delete = STRN2ENUM(fk_constraint_action,
-				      on_delete_action, name_len);
-	if (fk_def->on_delete == fk_constraint_action_MAX) {
-		diag_set(ClientError, errcode, fk_def->name,
-			  "unknown ON DELETE action");
-		return NULL;
-	}
-	const char *on_update_action = tuple_field_str(tuple,
-		BOX_FK_CONSTRAINT_FIELD_ON_UPDATE, &name_len);
-	if (on_update_action == NULL)
-		return NULL;
-	fk_def->on_update = STRN2ENUM(fk_constraint_action,
-				      on_update_action, name_len);
-	if (fk_def->on_update == fk_constraint_action_MAX) {
-		diag_set(ClientError, errcode, fk_def->name,
-			  "unknown ON UPDATE action");
-		return NULL;
-	}
 	def_guard.is_active = false;
 	return fk_def;
 }

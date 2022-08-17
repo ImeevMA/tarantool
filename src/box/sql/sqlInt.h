@@ -4135,18 +4135,6 @@ fk_constraint_emit_check(struct Parse *parser, struct space *space, int reg_old,
 		int reg_new, const int *changed_cols);
 
 /**
- * Emit VDBE code to do CASCADE, SET NULL or SET DEFAULT actions
- * when deleting or updating a row.
- * @param parser SQL parser.
- * @param space Space being updated or deleted from.
- * @param reg_old Register of the old record.
- * param changes Array of numbers of changed columns.
- */
-void
-fk_constraint_emit_actions(struct Parse *parser, struct space *space, int reg_old,
-		  const int *changes);
-
-/**
  * This function is called before generating code to update or
  * delete a row contained in given space. If the operation is
  * a DELETE, then parameter changes is passed a NULL value.
