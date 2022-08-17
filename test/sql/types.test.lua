@@ -448,7 +448,7 @@ box.execute("CREATE TABLE t1 (d DOUBLE PRIMARY KEY);")
 box.execute("INSERT INTO t1 VALUES (1), (2.2), (3.5);")
 box.execute("INSERT INTO t1 VALUES (1);")
 
-box.execute("CREATE TABLE t2 (i INT PRIMARY KEY, d DOUBLE REFERENCES t1);")
+box.execute("CREATE TABLE t2 (i INT PRIMARY KEY, d DOUBLE REFERENCES t1(d));")
 box.execute("INSERT INTO t2 VALUES (1,1), (2,2.2), (100, 3.5), (4, 1);")
 box.execute("INSERT INTO t2 VALUES (5,10);")
 box.execute("DROP TABLE t2;")

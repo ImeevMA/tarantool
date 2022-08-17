@@ -31,8 +31,8 @@ test:do_execsql_test(
         );
         CREATE TABLE track(
           tid INTEGER PRIMARY KEY,
-          cid INTEGER REFERENCES composer,
-          aid INTEGER REFERENCES album,
+          cid INTEGER REFERENCES composer(cid),
+          aid INTEGER REFERENCES album(aid),
           title TEXT
         );
         CREATE INDEX track_i1 ON track(cid);

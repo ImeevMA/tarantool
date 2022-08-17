@@ -112,7 +112,10 @@ execute(s.stmt_id)
 unprepare(s.stmt_id)
 
 box.execute("CREATE TABLE test2 (id INT PRIMARY KEY);")
-s = prepare("ALTER TABLE test2 ADD CONSTRAINT fk1 FOREIGN KEY (id) REFERENCES test2")
+_ = test_run:cmd("setopt delimiter ';'")
+s = prepare([[ALTER TABLE test2 ADD CONSTRAINT fk1
+              FOREIGN KEY (id) REFERENCES test2(id)]]);
+_ = test_run:cmd("setopt delimiter ''");
 execute(s.stmt_id)
 execute(s.stmt_id)
 unprepare(s.stmt_id)

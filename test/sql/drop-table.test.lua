@@ -101,7 +101,10 @@ box.execute('CREATE TABLE t3(a INTEGER PRIMARY KEY);')
 --
 -- Error: Failed to create foreign key constraint.
 --
-box.execute('CREATE TABLE t4(x INTEGER PRIMARY KEY REFERENCES t3, a INT UNIQUE, c TEXT REFERENCES t3);')
+_ = test_run:cmd("setopt delimiter ';'")
+box.execute([[CREATE TABLE t4(x INTEGER PRIMARY KEY REFERENCES t3(a),
+              a INT UNIQUE, c TEXT REFERENCES t3(a));]]);
+_ = test_run:cmd("setopt delimiter ''");
 box.execute('DROP TABLE t3;')
 
 --

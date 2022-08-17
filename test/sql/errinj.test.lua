@@ -95,7 +95,10 @@ box.execute("DROP TABLE t2;")
 -- Tests which are aimed at verifying work of commit/rollback
 -- triggers on _fk_constraint space.
 --
-box.execute("CREATE TABLE t3 (id NUMBER PRIMARY KEY, a INT REFERENCES t3, b INT UNIQUE);")
+_ = test_run:cmd("setopt delimiter ';'")
+box.execute([[CREATE TABLE t3 (id NUMBER PRIMARY KEY, a INT REFERENCES t3(id),
+              b INT UNIQUE);]]);
+_ = test_run:cmd("setopt delimiter ''");
 t = box.space._fk_constraint:select{}[1]:totable()
 errinj = box.error.injection
 errinj.set("ERRINJ_WAL_IO", true)
@@ -105,12 +108,18 @@ box.space._fk_constraint:replace(t)
 errinj.set("ERRINJ_WAL_IO", false)
 box.execute("INSERT INTO t3 VALUES (1, 2, 2);")
 errinj.set("ERRINJ_WAL_IO", true)
-box.execute("ALTER TABLE t3 ADD CONSTRAINT fk1 FOREIGN KEY (b) REFERENCES t3;")
+_ = test_run:cmd("setopt delimiter ';'")
+box.execute([[ALTER TABLE t3 ADD CONSTRAINT fk1 FOREIGN KEY (b)
+              REFERENCES t3(id);]]);
+_ = test_run:cmd("setopt delimiter ''");
 errinj.set("ERRINJ_WAL_IO", false)
 box.execute("INSERT INTO t3 VALUES(1, 1, 3);")
 box.execute("DELETE FROM t3;")
 box.snapshot()
-box.execute("ALTER TABLE t3 ADD CONSTRAINT fk1 FOREIGN KEY (b) REFERENCES t3;")
+_ = test_run:cmd("setopt delimiter ';'")
+box.execute([[ALTER TABLE t3 ADD CONSTRAINT fk1 FOREIGN KEY (b)
+              REFERENCES t3(id);]]);
+_ = test_run:cmd("setopt delimiter ''");
 box.execute("INSERT INTO t3 VALUES(1, 1, 3);")
 errinj.set("ERRINJ_WAL_IO", true)
 box.execute("ALTER TABLE t3 DROP CONSTRAINT fk1;")

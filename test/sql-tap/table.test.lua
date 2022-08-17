@@ -781,7 +781,9 @@ test:do_catchsql_test(
         );
     ]], {
         -- <table-10.9>
-        1, "Failed to create foreign key constraint 'fk_unnamed_T6_1': number of columns in foreign key does not match the number of columns in the primary index of referenced table"
+        1, "Failed to create foreign key constraint 'fk_unnamed_T6_1': "..
+        "number of referenced columns not match the number of referencing "..
+        "columns"
         -- </table-10.9>
     })
 
@@ -796,7 +798,9 @@ test:do_test(
         ]]
     end, {
         -- <table-10.10>
-        1, "Failed to create foreign key constraint 'fk_unnamed_T6_1': number of columns in foreign key does not match the number of columns in the primary index of referenced table"
+        1, "Failed to create foreign key constraint 'fk_unnamed_T6_1': "..
+        "number of referenced columns not match the number of referencing "..
+        "columns"
         -- </table-10.10>
     })
 
@@ -809,7 +813,9 @@ test:do_test(
         ]]
     end, {
         -- <table-10.11>
-        1, "Failed to create foreign key constraint 'fk_unnamed_T6_1': number of columns in foreign key does not match the number of columns in the primary index of referenced table"
+        1, "Failed to create foreign key constraint 'fk_unnamed_T6_1': "..
+        "number of referenced columns not match the number of referencing "..
+        "columns"
         -- </table-10.11>
     })
 

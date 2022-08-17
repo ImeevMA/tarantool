@@ -396,7 +396,7 @@ test:do_catchsql_test("5.6.7", [[
 --
 test:do_execsql_test(6.1, [[
   CREATE TABLE f(
-      id INTEGER PRIMARY KEY, parentid  INT REFERENCES f, name TEXT
+      id INTEGER PRIMARY KEY, parentid  INT REFERENCES f(id), name TEXT
   );
 
   INSERT INTO f VALUES(0, NULL, '');

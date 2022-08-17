@@ -35,7 +35,7 @@ test:do_test(
             CREATE TABLE track(
 
               tid INTEGER PRIMARY KEY,
-              aid INTEGER NOT NULL REFERENCES album,
+              aid INTEGER NOT NULL REFERENCES album(aid),
               tn INTEGER NOT NULL,
               name TEXT,
               UNIQUE(aid, tn)
@@ -422,7 +422,7 @@ test:do_test(
             );
             CREATE TABLE track(
               tid INTEGER PRIMARY KEY,
-              aid INTEGER NOT NULL REFERENCES album,
+              aid INTEGER NOT NULL REFERENCES album(aid),
               tn INTEGER NOT NULL,
               name TEXT,
               UNIQUE(aid ASC, tn DESC)

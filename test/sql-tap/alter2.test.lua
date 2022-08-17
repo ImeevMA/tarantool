@@ -10,7 +10,7 @@ test:do_catchsql_test(
     [[
         CREATE TABLE t1(id INT PRIMARY KEY, a INT, b INT);
         ALTER TABLE t1 ADD CONSTRAINT fk1 FOREIGN KEY (a) REFERENCES t1(id);
-        ALTER TABLE t1 ADD CONSTRAINT fk2 FOREIGN KEY (a) REFERENCES t1;
+        ALTER TABLE t1 ADD CONSTRAINT fk2 FOREIGN KEY (a) REFERENCES t1(id);
         INSERT INTO t1 VALUES(1, 1, 2);
     ]], {
         -- <alter2-1.1>
@@ -138,8 +138,10 @@ test:do_catchsql_test(
     [[
         CREATE TABLE child (id INT PRIMARY KEY, a INT, b INT);
         CREATE TABLE parent (id INT PRIMARY KEY, c INT UNIQUE, d INT);
-        ALTER TABLE child ADD CONSTRAINT fk FOREIGN KEY (id) REFERENCES parent(c);
-        ALTER TABLE parent ADD CONSTRAINT fk FOREIGN KEY (c) REFERENCES parent;
+        ALTER TABLE child ADD CONSTRAINT fk
+        FOREIGN KEY (id) REFERENCES parent(c);
+        ALTER TABLE parent ADD CONSTRAINT fk
+        FOREIGN KEY (c) REFERENCES parent(id);
         INSERT INTO parent VALUES(1, 2, 3);
     ]], {
         -- <alter2-2.1>
@@ -206,8 +208,10 @@ test:do_catchsql_test(
     [[
         DROP TABLE child;
         CREATE TABLE child (id INT PRIMARY KEY, a INT UNIQUE);
-        ALTER TABLE child ADD CONSTRAINT fk FOREIGN KEY (id) REFERENCES child;
-        ALTER TABLE child ADD CONSTRAINT fk FOREIGN KEY (a) REFERENCES child;
+        ALTER TABLE child ADD CONSTRAINT fk
+        FOREIGN KEY (id) REFERENCES child(id);
+        ALTER TABLE child ADD CONSTRAINT fk
+        FOREIGN KEY (a) REFERENCES child(id);
     ]], {
         -- <alter2-5.1>
         1, "FOREIGN KEY constraint 'FK' already exists in space 'CHILD'"

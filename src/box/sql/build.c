@@ -2199,6 +2199,7 @@ sql_create_foreign_key(struct Parse *parse_context)
 		child_cols_count = child_cols->nExpr;
 	}
 	struct ExprList *parent_cols = create_fk_def->parent_cols;
+	assert(parent_cols != NULL);
 	struct space *child_space = NULL;
 	if (is_alter_add_constr) {
 		const char *child_name = alter_def->entity_name->a[0].zName;
@@ -2296,32 +2297,11 @@ sql_create_foreign_key(struct Parse *parse_context)
 			"referenced space can't be VIEW");
 		goto tnt_error;
 	}
-	const char *error_msg = "number of columns in foreign key does not "
-				"match the number of columns in the primary "
-				"index of referenced table";
-	if (parent_cols != NULL) {
-		if (parent_cols->nExpr != (int) child_cols_count) {
-			diag_set(ClientError, ER_CREATE_FK_CONSTRAINT,
-				 constraint_name, error_msg);
-			goto tnt_error;
-		}
-	} else if (!is_self_referenced) {
-		/*
-		 * If parent columns are not specified, then PK
-		 * columns of parent table are used as referenced.
-		 */
-		struct index *parent_pk = space_index(parent_space, 0);
-		if (parent_pk == NULL) {
-			diag_set(ClientError, ER_CREATE_FK_CONSTRAINT,
-				 constraint_name,
-				 "referenced space doesn't feature PRIMARY KEY");
-			goto tnt_error;
-		}
-		if (parent_pk->def->key_def->part_count != child_cols_count) {
-			diag_set(ClientError, ER_CREATE_FK_CONSTRAINT,
-				 constraint_name, error_msg);
-			goto tnt_error;
-		}
+	if (parent_cols->nExpr != (int)child_cols_count) {
+		diag_set(ClientError, ER_CREATE_FK_CONSTRAINT,
+			 constraint_name, "number of referenced columns not "
+			 "match the number of referencing columns");
+		goto tnt_error;
 	}
 	int name_len = strlen(constraint_name);
 	uint32_t links_offset;
@@ -2341,15 +2321,11 @@ sql_create_foreign_key(struct Parse *parse_context)
 	fk_def->links = (struct field_link *)((char *)fk_def + links_offset);
 	/* Fill links map. */
 	for (uint32_t i = 0; i < fk_def->field_count; ++i) {
-		if (!is_self_referenced && parent_cols == NULL) {
-			struct key_def *pk_def =
-				parent_space->index[0]->def->key_def;
-			fk_def->links[i].parent_field = pk_def->parts[i].fieldno;
-		} else if (!is_self_referenced &&
-			   columnno_by_name(parse_context, parent_space,
-					    parent_cols->a[i].zName,
-					    &fk_def->links[i].parent_field,
-					    constraint_name) != 0) {
+		if (!is_self_referenced &&
+		    columnno_by_name(parse_context, parent_space,
+				     parent_cols->a[i].zName,
+				     &fk_def->links[i].parent_field,
+				     constraint_name) != 0) {
 			goto exit_create_fk;
 		}
 		if (!is_alter_add_constr) {
