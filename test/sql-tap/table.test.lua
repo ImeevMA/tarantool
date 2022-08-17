@@ -731,7 +731,7 @@ test:do_catchsql_test(
     [[
         DROP TABLE t6;
         CREATE TABLE t4(a INT PRIMARY KEY);
-        CREATE TABLE t6(a INTEGER REFERENCES t4(a) MATCH PARTIAL primary key);
+        CREATE TABLE t6(a INTEGER REFERENCES t4(a) primary key);
     ]], {
         -- <table-10.2>
         0
@@ -742,7 +742,8 @@ test:do_catchsql_test(
     "table-10.3",
     [[
         DROP TABLE t6;
-        CREATE TABLE t6(a INTEGER REFERENCES t4 MATCH FULL ON DELETE SET NULL NOT NULL primary key);
+        CREATE TABLE t6(a INTEGER REFERENCES t4 ON DELETE SET NULL NOT NULL
+                        primary key);
     ]], {
         -- <table-10.3>
         0
@@ -753,7 +754,8 @@ test:do_catchsql_test(
     "table-10.4",
     [[
         DROP TABLE t6;
-        CREATE TABLE t6(a INT REFERENCES t4 MATCH FULL ON UPDATE SET DEFAULT DEFAULT 1 primary key);
+        CREATE TABLE t6(a INT REFERENCES t4 ON UPDATE SET DEFAULT DEFAULT 1
+                        PRIMARY KEY);
     ]], {
         -- <table-10.4>
         0
@@ -802,7 +804,7 @@ test:do_catchsql_test(
         DROP TABLE IF EXISTS t4;
         CREATE TABLE t4(x INT UNIQUE, y INT, PRIMARY KEY (x, y));
         CREATE TABLE t6(a INT primary key,b INT,c INT,
-          FOREIGN KEY (b,c) REFERENCES t4(x,y) MATCH PARTIAL
+          FOREIGN KEY (b,c) REFERENCES t4(x,y)
             ON UPDATE SET NULL ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
         );
     ]], {

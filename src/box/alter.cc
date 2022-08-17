@@ -5096,16 +5096,6 @@ fk_constraint_def_new_from_tuple(struct tuple *tuple, uint32_t errcode)
 	if (tuple_field_bool(tuple, BOX_FK_CONSTRAINT_FIELD_DEFERRED,
 			     &(fk_def->is_deferred)) != 0)
 		return NULL;
-	const char *match = tuple_field_str(tuple,
-		BOX_FK_CONSTRAINT_FIELD_MATCH, &name_len);
-	if (match == NULL)
-		return NULL;
-	fk_def->match = STRN2ENUM(fk_constraint_match, match, name_len);
-	if (fk_def->match == fk_constraint_match_MAX) {
-		diag_set(ClientError, errcode, fk_def->name,
-			  "unknown MATCH clause");
-		return NULL;
-	}
 	const char *on_delete_action = tuple_field_str(tuple,
 		BOX_FK_CONSTRAINT_FIELD_ON_DELETE, &name_len);
 	if (on_delete_action == NULL)

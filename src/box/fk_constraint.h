@@ -51,21 +51,12 @@ enum fk_constraint_action {
 	fk_constraint_action_MAX
 };
 
-enum fk_constraint_match {
-	FKEY_MATCH_SIMPLE = 0,
-	FKEY_MATCH_PARTIAL,
-	FKEY_MATCH_FULL,
-	fk_constraint_match_MAX
-};
-
 enum {
 	FIELD_LINK_PARENT = 0,
 	FIELD_LINK_CHILD = 1,
 };
 
 extern const char *fk_constraint_action_strs[];
-
-extern const char *fk_constraint_match_strs[];
 
 /** Structure describing field dependencies for foreign keys. */
 struct field_link {
@@ -92,8 +83,6 @@ struct fk_constraint_def {
 	uint32_t field_count;
 	/** True if constraint checking is deferred till COMMIT. */
 	bool is_deferred;
-	/** Match condition for foreign key. SIMPLE by default. */
-	enum fk_constraint_match match;
 	/** ON DELETE action. NO ACTION by default. */
 	enum fk_constraint_action on_delete;
 	/** ON UPDATE action. NO ACTION by default. */

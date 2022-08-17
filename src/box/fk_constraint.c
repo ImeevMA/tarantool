@@ -40,12 +40,6 @@ const char *fk_constraint_action_strs[] = {
 	/* [FKEY_ACTION_NO_ACTION]   = */ "restrict"
 };
 
-const char *fk_constraint_match_strs[] = {
-	/* [FKEY_MATCH_SIMPLE]  = */ "simple",
-	/* [FKEY_MATCH_PARTIAL] = */ "partial",
-	/* [FKEY_MATCH_FULL]    = */ "full"
-};
-
 void
 fk_constraint_delete(struct fk_constraint *fk)
 {

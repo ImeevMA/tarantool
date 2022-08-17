@@ -334,9 +334,8 @@ check_constraint_def ::= cconsname(N) CHECK LP expr(X) RP. {
   sql_create_check_contraint(pParse);
 }
 
-ccons ::= cconsname(N) REFERENCES nm(T) eidlist_opt(TA) matcharg(M) refargs(R). {
-  create_fk_def_init(&pParse->create_fk_def, NULL, &N, NULL, &T, TA, M, R,
-                     false);
+ccons ::= cconsname(N) REFERENCES nm(T) eidlist_opt(TA) refargs(R). {
+  create_fk_def_init(&pParse->create_fk_def, NULL, &N, NULL, &T, TA, R, false);
   sql_create_foreign_key(pParse);
 }
 ccons ::= defer_subclause(D).    {fk_constraint_change_defer_mode(pParse, D);}
@@ -363,12 +362,6 @@ refargs(A) ::= . { A = 0; }
 refact_update(A) ::= ON UPDATE refact(X). { A = X; }
 %type refact_delete {int}
 refact_delete(A) ::= ON DELETE refact(X). { A = X; }
-
-%type matcharg {int}
-matcharg(A) ::= MATCH SIMPLE.  { A = FKEY_MATCH_SIMPLE; }
-matcharg(A) ::= MATCH PARTIAL. { A = FKEY_MATCH_PARTIAL; }
-matcharg(A) ::= MATCH FULL.    { A = FKEY_MATCH_FULL; }
-matcharg(A) ::= .              { A = FKEY_MATCH_SIMPLE; }
 
 %type refact {int}
 refact(A) ::= SET NULL.              { A = FKEY_ACTION_SET_NULL; }
@@ -397,8 +390,8 @@ tcons ::= cconsname(N) UNIQUE LP sortlist(X) RP. {
 }
 tcons ::= check_constraint_def .
 tcons ::= cconsname(N) FOREIGN KEY LP eidlist(FA) RP
-          REFERENCES nm(T) eidlist_opt(TA) matcharg(M) refargs(R) defer_subclause_opt(D). {
-  create_fk_def_init(&pParse->create_fk_def, NULL, &N, FA, &T, TA, M, R, D);
+          REFERENCES nm(T) eidlist_opt(TA) refargs(R) defer_subclause_opt(D). {
+  create_fk_def_init(&pParse->create_fk_def, NULL, &N, FA, &T, TA, R, D);
   sql_create_foreign_key(pParse);
 }
 %type defer_subclause_opt {int}
@@ -1813,9 +1806,9 @@ alter_column_def ::= alter_add_column(N) typedef(Y). {
 }
 
 cmd ::= alter_add_constraint(N) FOREIGN KEY LP eidlist(FA) RP REFERENCES
-        nm(T) eidlist_opt(TA) matcharg(M) refargs(R) defer_subclause_opt(D). {
+        nm(T) eidlist_opt(TA) refargs(R) defer_subclause_opt(D). {
   create_fk_def_init(&pParse->create_fk_def, N.table_name, &N.name, FA, &T, TA,
-                     M, R, D);
+                     R, D);
   sql_create_foreign_key(pParse);
 }
 

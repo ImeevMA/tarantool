@@ -1340,8 +1340,8 @@ vdbe_emit_fk_constraint_create(struct Parse *parse_context,
 					      false, OP_NoConflict) != 0)
 		return;
 	sqlVdbeAddOp2(vdbe, OP_Bool, fk->is_deferred, constr_tuple_reg + 3);
-	sqlVdbeAddOp4(vdbe, OP_String8, 0, constr_tuple_reg + 4, 0,
-			  fk_constraint_match_strs[fk->match], P4_STATIC);
+	sqlVdbeAddOp4(vdbe, OP_String8, 0, constr_tuple_reg + 4, 0, "simple",
+		      P4_STATIC);
 	sqlVdbeAddOp4(vdbe, OP_String8, 0, constr_tuple_reg + 5, 0,
 			  fk_constraint_action_strs[fk->on_delete], P4_STATIC);
 	sqlVdbeAddOp4(vdbe, OP_String8, 0, constr_tuple_reg + 6, 0,
@@ -2340,7 +2340,6 @@ sql_create_foreign_key(struct Parse *parse_context)
 	fk_def->child_id = child_space != NULL ? child_space->def->id : 0;
 	fk_def->parent_id = parent_space != NULL ? parent_space->def->id : 0;
 	fk_def->is_deferred = create_constr_def->is_deferred;
-	fk_def->match = (enum fk_constraint_match) (create_fk_def->match);
 	fk_def->on_update = (enum fk_constraint_action) ((actions >> 8) & 0xff);
 	fk_def->on_delete = (enum fk_constraint_action) (actions & 0xff);
 	fk_def->links = (struct field_link *)((char *)fk_def + links_offset);
