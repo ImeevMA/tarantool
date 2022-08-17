@@ -766,7 +766,7 @@ test:do_catchsql_test(
     "table-10.5",
     [[
         DROP TABLE t6;
-        CREATE TABLE t6(a int NOT NULL NOT DEFERRABLE INITIALLY IMMEDIATE primary key);
+        CREATE TABLE t6(a int NOT NULL primary key);
     ]], {
         -- <table-10.5>
         0
@@ -777,7 +777,7 @@ test:do_catchsql_test(
     "table-10.6",
     [[
         DROP TABLE t6;
-        CREATE TABLE t6(a int NOT NULL DEFERRABLE INITIALLY DEFERRED primary key);
+        CREATE TABLE t6(a int NOT NULL primary key);
     ]], {
         -- <table-10.6>
         0
@@ -789,7 +789,7 @@ test:do_catchsql_test(
     [[
         DROP TABLE t6;
         CREATE TABLE t6(a int primary key,
-          FOREIGN KEY (a) REFERENCES t4(b) DEFERRABLE INITIALLY DEFERRED
+          FOREIGN KEY (a) REFERENCES t4(b)
         );
     ]], {
         -- <table-10.7>
@@ -805,7 +805,7 @@ test:do_catchsql_test(
         CREATE TABLE t4(x INT UNIQUE, y INT, PRIMARY KEY (x, y));
         CREATE TABLE t6(a INT primary key,b INT,c INT,
           FOREIGN KEY (b,c) REFERENCES t4(x,y)
-            ON UPDATE SET NULL ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+            ON UPDATE SET NULL ON DELETE CASCADE
         );
     ]], {
         -- <table-10.8>

@@ -335,10 +335,9 @@ check_constraint_def ::= cconsname(N) CHECK LP expr(X) RP. {
 }
 
 ccons ::= cconsname(N) REFERENCES nm(T) eidlist_opt(TA) refargs(R). {
-  create_fk_def_init(&pParse->create_fk_def, NULL, &N, NULL, &T, TA, R, false);
+  create_fk_def_init(&pParse->create_fk_def, NULL, &N, NULL, &T, TA, R);
   sql_create_foreign_key(pParse);
 }
-ccons ::= defer_subclause(D).    {fk_constraint_change_defer_mode(pParse, D);}
 ccons ::= COLLATE id(C).        {sqlAddCollateType(pParse, &C);}
 
 // The optional AUTOINCREMENT keyword
@@ -369,13 +368,6 @@ refact(A) ::= SET DEFAULT.           { A = FKEY_ACTION_SET_DEFAULT; }
 refact(A) ::= CASCADE.               { A = FKEY_ACTION_CASCADE; }
 refact(A) ::= RESTRICT.              { A = FKEY_ACTION_RESTRICT; }
 refact(A) ::= NO ACTION.             { A = FKEY_NO_ACTION; }
-%type defer_subclause {int}
-defer_subclause(A) ::= NOT DEFERRABLE init_deferred_pred_opt.     {A = 0;}
-defer_subclause(A) ::= DEFERRABLE init_deferred_pred_opt(X).      {A = X;}
-%type init_deferred_pred_opt {int}
-init_deferred_pred_opt(A) ::= .                       {A = 0;}
-init_deferred_pred_opt(A) ::= INITIALLY DEFERRED.     {A = 1;}
-init_deferred_pred_opt(A) ::= INITIALLY IMMEDIATE.    {A = 0;}
 
 tcons ::= cconsname(N) PRIMARY KEY LP col_list_with_autoinc(X) RP. {
   create_index_def_init(&pParse->create_index_def, NULL, &N, X,
@@ -390,13 +382,10 @@ tcons ::= cconsname(N) UNIQUE LP sortlist(X) RP. {
 }
 tcons ::= check_constraint_def .
 tcons ::= cconsname(N) FOREIGN KEY LP eidlist(FA) RP
-          REFERENCES nm(T) eidlist_opt(TA) refargs(R) defer_subclause_opt(D). {
-  create_fk_def_init(&pParse->create_fk_def, NULL, &N, FA, &T, TA, R, D);
+          REFERENCES nm(T) eidlist_opt(TA) refargs(R). {
+  create_fk_def_init(&pParse->create_fk_def, NULL, &N, FA, &T, TA, R);
   sql_create_foreign_key(pParse);
 }
-%type defer_subclause_opt {int}
-defer_subclause_opt(A) ::= .                    {A = 0;}
-defer_subclause_opt(A) ::= defer_subclause(A).
 
 // The following is a non-standard extension that allows us to declare the
 // default behavior when there is a constraint conflict.
@@ -1806,9 +1795,9 @@ alter_column_def ::= alter_add_column(N) typedef(Y). {
 }
 
 cmd ::= alter_add_constraint(N) FOREIGN KEY LP eidlist(FA) RP REFERENCES
-        nm(T) eidlist_opt(TA) refargs(R) defer_subclause_opt(D). {
+        nm(T) eidlist_opt(TA) refargs(R). {
   create_fk_def_init(&pParse->create_fk_def, N.table_name, &N.name, FA, &T, TA,
-                     R, D);
+                     R);
   sql_create_foreign_key(pParse);
 }
 

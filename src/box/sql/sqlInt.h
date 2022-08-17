@@ -3509,16 +3509,6 @@ sql_trigger_colmask(Parse *parser, struct sql_trigger *trigger,
 int sqlJoinType(Parse *, Token *, Token *, Token *);
 
 /**
- * Change defer mode of last FK constraint processed during
- * <CREATE TABLE> statement.
- *
- * @param parse_context Current parsing context.
- * @param is_deferred Change defer mode to this value.
- */
-void
-fk_constraint_change_defer_mode(struct Parse *parse_context, bool is_deferred);
-
-/**
  * Function called from parser to handle
  * <ALTER TABLE child ADD CONSTRAINT constraint
  *     FOREIGN KEY (child_cols) REFERENCES parent (parent_cols)>

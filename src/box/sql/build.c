@@ -1339,7 +1339,7 @@ vdbe_emit_fk_constraint_create(struct Parse *parse_context,
 					      ER_CONSTRAINT_EXISTS, error_msg,
 					      false, OP_NoConflict) != 0)
 		return;
-	sqlVdbeAddOp2(vdbe, OP_Bool, fk->is_deferred, constr_tuple_reg + 3);
+	sqlVdbeAddOp2(vdbe, OP_Bool, false, constr_tuple_reg + 3);
 	sqlVdbeAddOp4(vdbe, OP_String8, 0, constr_tuple_reg + 4, 0, "simple",
 		      P4_STATIC);
 	sqlVdbeAddOp4(vdbe, OP_String8, 0, constr_tuple_reg + 5, 0,
@@ -2339,7 +2339,6 @@ sql_create_foreign_key(struct Parse *parse_context)
 	fk_def->field_count = child_cols_count;
 	fk_def->child_id = child_space != NULL ? child_space->def->id : 0;
 	fk_def->parent_id = parent_space != NULL ? parent_space->def->id : 0;
-	fk_def->is_deferred = create_constr_def->is_deferred;
 	fk_def->on_update = (enum fk_constraint_action) ((actions >> 8) & 0xff);
 	fk_def->on_delete = (enum fk_constraint_action) (actions & 0xff);
 	fk_def->links = (struct field_link *)((char *)fk_def + links_offset);
@@ -2414,17 +2413,6 @@ exit_create_fk:
 tnt_error:
 	parse_context->is_aborted = true;
 	goto exit_create_fk;
-}
-
-void
-fk_constraint_change_defer_mode(struct Parse *parse_context, bool is_deferred)
-{
-	struct rlist *fkeys =
-		&parse_context->create_fk_constraint_parse_def.fkeys;
-	if (parse_context->db->init.busy || rlist_empty(fkeys))
-		return;
-	rlist_first_entry(fkeys, struct fk_constraint_parse,
-			  link)->fk_def->is_deferred = is_deferred;
 }
 
 /**

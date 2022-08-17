@@ -212,8 +212,7 @@ fk_constraint_lookup_parent(struct Parse *parse_context, struct space *parent,
 	 * parent table.
 	 */
 	if (incr_count < 0) {
-		sqlVdbeAddOp2(v, OP_FkIfZero, fk_def->is_deferred,
-				  ok_label);
+		sqlVdbeAddOp2(v, OP_FkIfZero, false, ok_label);
 	}
 	struct field_link *link = fk_def->links;
 	for (uint32_t i = 0; i < fk_def->field_count; ++i, ++link) {
@@ -269,8 +268,7 @@ fk_constraint_lookup_parent(struct Parse *parse_context, struct space *parent,
 		sqlReleaseTempReg(parse_context, rec_reg);
 		sqlReleaseTempRange(parse_context, temp_regs, field_count);
 	}
-	if (!fk_def->is_deferred &&
-	    (parse_context->sql_flags & SQL_DeferFKs) == 0 &&
+	if ((parse_context->sql_flags & SQL_DeferFKs) == 0 &&
 	    parse_context->pToplevel == NULL && !parse_context->isMultiWrite) {
 		/*
 		 * If this is an INSERT statement that will insert
@@ -287,8 +285,7 @@ fk_constraint_lookup_parent(struct Parse *parse_context, struct space *parent,
 			      P4_STATIC);
 		sqlVdbeAddOp1(v, OP_Halt, -1);
 	} else {
-		sqlVdbeAddOp2(v, OP_FkCounter, fk_def->is_deferred,
-				  incr_count);
+		sqlVdbeAddOp2(v, OP_FkCounter, false, incr_count);
 	}
 	sqlVdbeResolveLabel(v, ok_label);
 	sqlVdbeAddOp1(v, OP_Close, cursor);
@@ -399,8 +396,7 @@ fk_constraint_scan_children(struct Parse *parser, struct SrcList *src,
 	struct Vdbe *v = sqlGetVdbe(parser);
 
 	if (incr_count < 0) {
-		fkifzero_label = sqlVdbeAddOp2(v, OP_FkIfZero,
-						   fk_def->is_deferred, 0);
+		fkifzero_label = sqlVdbeAddOp2(v, OP_FkIfZero, false, 0);
 	}
 
 	struct space *child_space = src->a[0].space;
@@ -473,7 +469,7 @@ fk_constraint_scan_children(struct Parse *parser, struct SrcList *src,
 	 */
 	struct WhereInfo *info =
 		sqlWhereBegin(parser, src, where, NULL, NULL, 0, 0);
-	sqlVdbeAddOp2(v, OP_FkCounter, fk_def->is_deferred, incr_count);
+	sqlVdbeAddOp2(v, OP_FkCounter, false, incr_count);
 	if (info != NULL)
 		sqlWhereEnd(info);
 
@@ -590,8 +586,7 @@ fk_constraint_emit_check(struct Parse *parser, struct space *space, int reg_old,
 		    !fk_constraint_is_modified(fk_def, FIELD_LINK_PARENT,
 					       changed_cols))
 			continue;
-		if (!fk_def->is_deferred &&
-		    (parser->sql_flags & SQL_DeferFKs) == 0 &&
+		if ((parser->sql_flags & SQL_DeferFKs) == 0 &&
 		    parser->pToplevel == NULL && !parser->isMultiWrite) {
 			assert(reg_old == 0 && reg_new != 0);
 			/*

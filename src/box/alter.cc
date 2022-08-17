@@ -5093,9 +5093,6 @@ fk_constraint_def_new_from_tuple(struct tuple *tuple, uint32_t errcode)
 	if (tuple_field_u32(tuple, BOX_FK_CONSTRAINT_FIELD_PARENT_ID,
 			    &(fk_def->parent_id)) != 0)
 		return NULL;
-	if (tuple_field_bool(tuple, BOX_FK_CONSTRAINT_FIELD_DEFERRED,
-			     &(fk_def->is_deferred)) != 0)
-		return NULL;
 	const char *on_delete_action = tuple_field_str(tuple,
 		BOX_FK_CONSTRAINT_FIELD_ON_DELETE, &name_len);
 	if (on_delete_action == NULL)
@@ -5647,15 +5644,6 @@ on_replace_dd_ck_constraint(struct trigger * /* trigger*/, void *event)
 		return -1;
 
 	if (new_tuple != NULL) {
-		bool is_deferred;
-		if (tuple_field_bool(new_tuple,
-			BOX_CK_CONSTRAINT_FIELD_DEFERRED, &is_deferred) != 0)
-			return -1;
-		if (is_deferred) {
-			diag_set(ClientError, ER_UNSUPPORTED, "Tarantool",
-				  "deferred ck constraints");
-			return -1;
-		}
 		/* Create or replace check constraint. */
 		struct ck_constraint_def *ck_def =
 			ck_constraint_def_new_from_tuple(new_tuple);

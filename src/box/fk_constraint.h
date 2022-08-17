@@ -81,8 +81,6 @@ struct fk_constraint_def {
 	uint32_t parent_id;
 	/** Number of fields in this key. */
 	uint32_t field_count;
-	/** True if constraint checking is deferred till COMMIT. */
-	bool is_deferred;
 	/** ON DELETE action. NO ACTION by default. */
 	enum fk_constraint_action on_delete;
 	/** ON UPDATE action. NO ACTION by default. */
