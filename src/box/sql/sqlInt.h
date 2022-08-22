@@ -2085,6 +2085,7 @@ struct Parse {
 	 * <AUTOINCREMENT>.
 	 */
 	bool has_autoinc;
+	uint32_t constr_count;
 	/* Id of field with <AUTOINCREMENT>. */
 	uint32_t autoinc_fieldno;
 	bool initiateTTrans;	/* Initiate Tarantool transaction */

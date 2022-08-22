@@ -335,7 +335,9 @@ check_constraint_def ::= cconsname(N) CHECK LP expr(X) RP. {
 }
 
 ccons ::= cconsname(N) REFERENCES nm(T) LP eidlist(TA) RP. {
-  create_fk_def_init(&pParse->create_fk_def, NULL, &N, NULL, &T, TA);
+  struct Token *field_name = &pParse->create_column_def.base.name;
+  struct ExprList *list = parserAddExprIdListTerm(pParse, NULL, field_name);
+  create_fk_def_init(&pParse->create_fk_def, NULL, &N, list, &T, TA);
   sql_create_foreign_key(pParse);
 }
 ccons ::= COLLATE id(C).        {sqlAddCollateType(pParse, &C);}
