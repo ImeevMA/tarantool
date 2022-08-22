@@ -2278,24 +2278,19 @@ void
 sql_create_foreign_key(struct Parse *parse)
 {
 	++parse->constr_count;
-	struct space *space;
-	struct space_opts opts;
-	if (parse->create_column_def.space == NULL) {
+	struct space *space = parse->create_column_def.space;
+	if (space == NULL) {
 		struct create_constraint_def *def = &parse->create_fk_def.base;
 		const char *name = def->base.base.entity_name->a[0].zName;
 		space = space_by_name(name);
 		assert(space != NULL);
-		opts = space->def->opts;
-	} else {
-		space = parse->create_column_def.space;
-		opts = parse->create_column_def.space->def->opts;
 	}
 
 	struct tuple_constraint_def fk;
 	sql_create_fk(parse, space->def->name, &fk);
 
-	uint32_t fk_count = opts.constraint_count;
-	struct tuple_constraint_def *old_fks = opts.constraint_def;
+	uint32_t fk_count = space->def->opts.constraint_count;
+	struct tuple_constraint_def *old_fks = space->def->opts.constraint_def;
 	for (uint32_t i = 0; i < fk_count; ++i) {
 		if (strcmp(old_fks[i].name, fk.name) == 0) {
 			diag_set(ClientError, ER_CONSTRAINT_EXISTS,
@@ -2308,7 +2303,7 @@ sql_create_foreign_key(struct Parse *parse)
 	uint32_t size;
 	struct region *region = &parse->region;
 	struct tuple_constraint_def *fks =
-		region_alloc_array(region, typeof(*fks), fk_count, &size);
+		region_alloc_array(region, typeof(*fks), fk_count + 1, &size);
 	if (fks == NULL) {
 		diag_set(OutOfMemory, size, "region_alloc_array", "fks");
 		parse->is_aborted = true;
@@ -2317,8 +2312,56 @@ sql_create_foreign_key(struct Parse *parse)
 	for (uint32_t i = 0; i < fk_count; ++i)
 		fks[i] = old_fks[i];
 	fks[fk_count] = fk;
+	if (parse->create_column_def.space != NULL) {
+		++space->def->opts.constraint_count;
+		space->def->opts.constraint_def = fks;
+		return;
+	}
+	struct space_opts opts = space->def->opts;
 	++opts.constraint_count;
 	opts.constraint_def = fks;
+	uint32_t data_size;
+	const char *data = sql_encode_opts(region, &opts, &data_size);
+	char *raw = sqlDbMallocRaw(parse->db, data_size);
+	if (raw == NULL) {
+		parse->is_aborted = true;
+		return;
+	}
+	memcpy(raw, data, data_size);
+
+	struct Vdbe *v = sqlGetVdbe(parse);
+	assert(v != NULL);
+
+	struct space *s_space = space_by_id(BOX_SPACE_ID);
+	assert(s_space != NULL);
+	int cursor = parse->nTab++;
+	vdbe_emit_open_cursor(parse, cursor, 0, s_space);
+	sqlVdbeChangeP5(v, OPFLAG_SYSTEMSP);
+	assert(v->aOp[v->nOp - 1].opcode == OP_IteratorOpen);
+	int64_t reg = v->aOp[v->nOp - 1].p3;
+
+	int key_reg = ++parse->nMem;
+	sqlVdbeAddOp2(v, OP_Integer, space->def->id, key_reg);
+
+	int coded_key_reg = ++parse->nMem;
+	sqlVdbeAddOp3(v, OP_MakeRecord, key_reg, 1, coded_key_reg);
+
+	uint32_t upd_cols_sz = sizeof(uint32_t);
+	uint32_t *upd_cols = sqlDbMallocRaw(parse->db, upd_cols_sz);
+	if (upd_cols == NULL)
+		return;
+	upd_cols[0] = 5;
+	int upd_cols_reg = sqlGetTempReg(parse);
+	sqlVdbeAddOp4(v, OP_Blob, upd_cols_sz, upd_cols_reg,
+			0, (const char *)upd_cols, P4_DYNAMIC);
+	int val_reg = parse->nMem + 1;
+	parse->nMem += 6;
+	sqlVdbeAddOp4(v, OP_Blob, data_size, val_reg + 5, SQL_SUBTYPE_MSGPACK,
+		      raw, P4_DYNAMIC);
+	uint32_t pik_flags = OPFLAG_NCHANGE | ON_CONFLICT_ACTION_FAIL;
+	sqlVdbeAddOp4(v, OP_Update, val_reg, coded_key_reg, upd_cols_reg,
+		      (char *)reg, P4_INT32);
+	sqlVdbeChangeP5(v, pik_flags);
 }
 
 /**
