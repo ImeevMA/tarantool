@@ -172,10 +172,14 @@ sql_encode_opts(struct region *region, const struct space_opts *opts,
 			struct tuple_constraint_def *cdef =
 				&opts->constraint_def[i];
 			mpstream_encode_str(&stream, cdef->name);
-			mpstream_encode_map(&stream, 2);
 			struct tuple_constraint_fkey_def *fkey = &cdef->fkey;
-			mpstream_encode_str(&stream, "space");
-			mpstream_encode_uint(&stream, fkey->space_id);
+			bool is_self_ref = fkey->space_id == 0;
+			uint32_t map_size = is_self_ref ? 1 : 2;
+			mpstream_encode_map(&stream, map_size);
+			if (!is_self_ref) {
+				mpstream_encode_str(&stream, "space");
+				mpstream_encode_uint(&stream, fkey->space_id);
+			}
 			mpstream_encode_str(&stream, "field");
 			uint32_t mapping_size = fkey->field_mapping_size;
 			mpstream_encode_map(&stream, mapping_size);
@@ -2332,36 +2336,32 @@ sql_create_foreign_key(struct Parse *parse)
 	struct Vdbe *v = sqlGetVdbe(parse);
 	assert(v != NULL);
 
-	struct space *s_space = space_by_id(BOX_SPACE_ID);
-	assert(s_space != NULL);
-	int cursor = parse->nTab++;
-	vdbe_emit_open_cursor(parse, cursor, 0, s_space);
-	sqlVdbeChangeP5(v, OPFLAG_SYSTEMSP);
-	assert(v->aOp[v->nOp - 1].opcode == OP_IteratorOpen);
-	int64_t reg = v->aOp[v->nOp - 1].p3;
+	int id_reg = sqlGetTempReg(parse);
+	sqlVdbeAddOp2(v, OP_Integer, space->def->id, id_reg);
 
-	int key_reg = ++parse->nMem;
-	sqlVdbeAddOp2(v, OP_Integer, space->def->id, key_reg);
+	int key_reg = sqlGetTempReg(parse);
+	sqlVdbeAddOp3(v, OP_MakeRecord, id_reg, 1, key_reg);
 
-	int coded_key_reg = ++parse->nMem;
-	sqlVdbeAddOp3(v, OP_MakeRecord, key_reg, 1, coded_key_reg);
+	int val_reg = sqlGetTempReg(parse);
+	sqlVdbeAddOp4(v, OP_Blob, data_size, val_reg, SQL_SUBTYPE_MSGPACK, raw,
+		      P4_DYNAMIC);
 
-	uint32_t upd_cols_sz = sizeof(uint32_t);
-	uint32_t *upd_cols = sqlDbMallocRaw(parse->db, upd_cols_sz);
+	uint32_t *upd_cols = sqlDbMallocRaw(parse->db, sizeof(*upd_cols) * 2);
 	if (upd_cols == NULL)
 		return;
-	upd_cols[0] = 5;
-	int upd_cols_reg = sqlGetTempReg(parse);
-	sqlVdbeAddOp4(v, OP_Blob, upd_cols_sz, upd_cols_reg,
-			0, (const char *)upd_cols, P4_DYNAMIC);
-	int val_reg = parse->nMem + 1;
-	parse->nMem += 6;
-	sqlVdbeAddOp4(v, OP_Blob, data_size, val_reg + 5, SQL_SUBTYPE_MSGPACK,
-		      raw, P4_DYNAMIC);
-	uint32_t pik_flags = OPFLAG_NCHANGE | ON_CONFLICT_ACTION_FAIL;
-	sqlVdbeAddOp4(v, OP_Update, val_reg, coded_key_reg, upd_cols_reg,
-		      (char *)reg, P4_INT32);
-	sqlVdbeChangeP5(v, pik_flags);
+	upd_cols[0] = BOX_SPACE_FIELD_OPTS;
+	upd_cols[1] = val_reg;
+
+	int space_reg = sqlGetTempReg(parse);
+	sqlVdbeAddOp2(v, OP_OpenSpace, space_reg, BOX_SPACE_ID);
+
+	sqlVdbeAddOp4(v, OP_Update, 1, key_reg, space_reg, (char *)upd_cols,
+		      P4_DYNAMIC);
+	sqlVdbeChangeP5(v, OPFLAG_NCHANGE | ON_CONFLICT_ACTION_FAIL);
+	sqlReleaseTempReg(parse, space_reg);
+	sqlReleaseTempReg(parse, val_reg);
+	sqlReleaseTempReg(parse, key_reg);
+	sqlReleaseTempReg(parse, id_reg);
 }
 
 /**
