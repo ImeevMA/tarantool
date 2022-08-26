@@ -437,23 +437,22 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 			}
 
 			/* Prepare array of changed fields. */
-			uint32_t upd_cols_sz = upd_cols_cnt * sizeof(uint32_t);
-			uint32_t *upd_cols = sqlDbMallocRaw(db, upd_cols_sz);
+			uint32_t size = upd_cols_cnt * sizeof(uint32_t) * 2;
+			uint32_t *upd_cols = sqlDbMallocRaw(db, size);
 			if (upd_cols == NULL)
 				goto update_cleanup;
-			upd_cols_cnt = 0;
+			int count = 0;
 			for (uint32_t i = 0; i < def->field_count; i++) {
 				if (aXRef[i] == -1)
 					continue;
-				upd_cols[upd_cols_cnt++] = i;
+				upd_cols[count++] = i;
+				upd_cols[count++] = regNew + i;
 			}
-			int upd_cols_reg = sqlGetTempReg(pParse);
-			sqlVdbeAddOp4(v, OP_Blob, upd_cols_sz, upd_cols_reg,
-					0, (const char *)upd_cols, P4_DYNAMIC);
+			assert(count == upd_cols_cnt * 2);
 			u16 pik_flags = OPFLAG_NCHANGE;
 			SET_CONFLICT_FLAG(pik_flags, on_error);
-			sqlVdbeAddOp4(v, OP_Update, regNew, key_reg,
-				      upd_cols_reg, (char *)reg, P4_INT32);
+			sqlVdbeAddOp4(v, OP_Update, upd_cols_cnt, key_reg, reg,
+				      (char *)upd_cols, P4_DYNAMIC);
 			sqlVdbeChangeP5(v, pik_flags);
 		}
 		/*

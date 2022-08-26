@@ -3445,44 +3445,33 @@ case OP_IdxInsert: {
 /* Opcode: Update P1 P2 P3 P4 P5
  * Synopsis: key=r[P1]
  *
- * Process UPDATE operation. Primary key fields can not be
- * modified.
- * Under the hood it performs box_update() call.
- * For the performance sake, it takes whole affected row (P1)
- * and encodes into msgpack only fields to be updated (P3).
+ * Process UPDATE operation. Under the hood it performs box_update() call. It
+ * takes an array of <fieldno, register containing the new value> pairs. The
+ * number of elements in the array is P1. These fields will be updated in space
+ * from register P3 using the key from register P2. If P5 contains
+ * OPFLAG_NCHANGE, then VDBE accounts the change in a case of successful
+ * insertion in nChange counter. If P5 contains OPFLAG_OE_IGNORE, then we are
+ * processing INSERT OR INGORE statement. Thus, in case of conflict we don't
+ * raise an error.
  *
- * @param P1 The first field to be updated. Fields are located
- *           in the range of [P1...] in decoded state.
- *           Encoded only fields which numbers are presented
- *           in @P3 array.
- * @param P2 P2 Encoded key to be passed to box_update().
- * @param P3 Index of a register with upd_fields blob.
- *           It's items are numbers of fields to be replaced with
- *           new values from P1. They must be sorted in ascending
- *           order.
- * @param P4 Register containing pointer to space to update.
- * @param P5 Flags. If P5 contains OPFLAG_NCHANGE, then VDBE
- *           accounts the change in a case of successful
- *           insertion in nChange counter. If P5 contains
- *           OPFLAG_OE_IGNORE, then we are processing INSERT OR
- *           INGORE statement. Thus, in case of conflict we don't
- *           raise an error.
+ * @param P1 Number of fields to be updated.
+ * @param P2 Register containing encoded key to be passed to box_update().
+ * @param P3 Register containing the pointer to space to update.
+ * @param P4 An array of pairs <fieldno, register containing the new value>.
+ * @param P5 Flags.
  */
 case OP_Update: {
-	struct Mem *new_tuple = &aMem[pOp->p1];
 	if (pOp->p5 & OPFLAG_NCHANGE)
 		p->nChange++;
 
-	struct space *space = aMem[pOp->p4.i].u.p;
-	assert(pOp->p4type == P4_INT32);
+	struct space *space = aMem[pOp->p3].u.p;
 
 	struct Mem *key_mem = &aMem[pOp->p2];
 	assert(mem_is_bin(key_mem));
 
-	struct Mem *upd_fields_mem = &aMem[pOp->p3];
-	assert(mem_is_bin(upd_fields_mem));
-	uint32_t *upd_fields = (uint32_t *)upd_fields_mem->z;
-	uint32_t upd_fields_cnt = upd_fields_mem->n / sizeof(uint32_t);
+	assert(pOp->p4type == P4_DYNAMIC || pOp->p4type == P4_STATIC);
+	uint32_t *upd_fields = (uint32_t *)pOp->p4.z;
+	uint32_t upd_fields_cnt = pOp->p1;
 
 	/* Prepare Tarantool update ops msgpack. */
 	struct region *region = &fiber()->gc;
@@ -3493,12 +3482,14 @@ case OP_Update: {
 		      set_encode_error, &is_error);
 	mpstream_encode_array(&stream, upd_fields_cnt);
 	for (uint32_t i = 0; i < upd_fields_cnt; i++) {
-		uint32_t field_idx = upd_fields[i];
-		assert(field_idx < space->def->field_count);
+		uint32_t id = i * 2;
+		uint32_t fieldno = upd_fields[id];
+		uint32_t mem_pos = upd_fields[id + 1];
+		assert(fieldno < space->def->field_count);
 		mpstream_encode_array(&stream, 3);
 		mpstream_encode_strn(&stream, "=", 1);
-		mpstream_encode_uint(&stream, field_idx);
-		mem_to_mpstream(new_tuple + field_idx, &stream);
+		mpstream_encode_uint(&stream, fieldno);
+		mem_to_mpstream(&aMem[mem_pos], &stream);
 	}
 	mpstream_flush(&stream);
 	if (is_error) {
