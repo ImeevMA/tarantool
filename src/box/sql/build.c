@@ -59,6 +59,7 @@
 #include "box/user.h"
 #include "box/constraint_id.h"
 #include "box/session_settings.h"
+#include "box/tuple_constraint_def.h"
 
 void
 sql_finish_coding(struct Parse *parse_context)
@@ -2008,6 +2009,61 @@ sql_drop_table(struct Parse *parse_context)
 	sqlSrcListDelete(db, table_name_list);
 }
 
+/** Generate code to change the definition of tuple constraint. */
+static void
+vdbe_emit_alter_constraint(struct Parse *parse, struct space_def *def)
+{
+	struct region *region = &parse->region;
+	uint32_t opts_size;
+	const char *opts = sql_encode_table_opts(region, def, &opts_size);
+	if (opts == NULL) {
+		parse->is_aborted = true;
+		return;
+	}
+	uint32_t format_size;
+	const char *format = sql_encode_table(region, def, &format_size);
+	if (format == NULL) {
+		parse->is_aborted = true;
+		return;
+	}
+	char *raw = sqlDbMallocRaw(parse->db, opts_size + format_size);
+	if (raw == NULL) {
+		parse->is_aborted = true;
+		return;
+	}
+	memcpy(raw, opts, opts_size);
+	memcpy(raw + opts_size, format, format_size);
+	struct Vdbe *v = sqlGetVdbe(parse);
+	assert(v != NULL);
+	int id_reg = sqlGetTempReg(parse);
+	sqlVdbeAddOp2(v, OP_Integer, def->id, id_reg);
+	int key_reg = sqlGetTempReg(parse);
+	sqlVdbeAddOp3(v, OP_MakeRecord, id_reg, 1, key_reg);
+	int format_reg = sqlGetTempReg(parse);
+	sqlVdbeAddOp4(v, OP_Blob, format_size, format_reg, SQL_SUBTYPE_MSGPACK,
+		      raw + opts_size, P4_STATIC);
+	int opts_reg = sqlGetTempReg(parse);
+	sqlVdbeAddOp4(v, OP_Blob, opts_size, opts_reg, SQL_SUBTYPE_MSGPACK, raw,
+		      P4_DYNAMIC);
+	uint32_t *upd_cols = sqlDbMallocRaw(parse->db, sizeof(*upd_cols) * 4);
+	if (upd_cols == NULL)
+		return;
+	upd_cols[0] = BOX_SPACE_FIELD_OPTS;
+	upd_cols[1] = opts_reg;
+	upd_cols[2] = BOX_SPACE_FIELD_FORMAT;
+	upd_cols[3] = format_reg;
+	int space_reg = sqlGetTempReg(parse);
+	sqlVdbeAddOp2(v, OP_OpenSpace, space_reg, BOX_SPACE_ID);
+	sqlVdbeAddOp4(v, OP_Update, 2, key_reg, space_reg, (char *)upd_cols,
+		      P4_DYNAMIC);
+	sqlVdbeChangeP5(v, OPFLAG_NCHANGE | ON_CONFLICT_ACTION_FAIL);
+	sqlReleaseTempReg(parse, space_reg);
+	sqlReleaseTempReg(parse, opts_reg);
+	sqlReleaseTempReg(parse, format_reg);
+	sqlReleaseTempReg(parse, key_reg);
+	sqlReleaseTempReg(parse, id_reg);
+}
+
 /**
  * Return ordinal number of column by name. In case of error,
  * set error message.
@@ -2312,6 +2368,104 @@ fk_constraint_change_defer_mode(struct Parse *parse_context, bool is_deferred)
 }
 
 /**
+ * Drop the tuple or field constraint. If there is a tuple constraint with the
+ * given name, it will be dropped. Otherwise, the constraint with the given name
+ * will be searched for in all fields. If it is found, it will be dropped,
+ * otherwise an error is thrown.
+ */
+static void
+sql_drop_core_constraint(struct Parse *parse)
+{
+	struct drop_entity_def *drop_def = &parse->drop_constraint_def.base;
+	const char *space_name = drop_def->base.entity_name->a[0].zName;
+	assert(space_name != NULL);
+	struct space *space = space_by_name(space_name);
+	if (space == NULL) {
+		diag_set(ClientError, ER_NO_SUCH_SPACE, space_name);
+		parse->is_aborted = true;
+		return;
+	}
+	char *name = sql_name_from_token(parse->db, &drop_def->name);
+	if (name == NULL) {
+		parse->is_aborted = true;
+		return;
+	}
+	struct tuple_constraint_def *cdefs = space->def->opts.constraint_def;
+	uint32_t count = space->def->opts.constraint_count;
+	uint32_t id;
+	for (id = 0; id < count; ++id) {
+		if (strcmp(cdefs[id].name, name) == 0)
+			break;
+	}
+	if (id < count) {
+		uint32_t size;
+		struct region *region = &parse->region;
+		struct tuple_constraint_def *new_cdefs =
+			region_alloc_array(region, typeof(*new_cdefs),
+					   count - 1, &size);
+		if (new_cdefs == NULL) {
+			diag_set(OutOfMemory, size, "region_alloc_array",
+				 "new_cdefs");
+			parse->is_aborted = true;
+			return;
+		}
+		for (uint32_t i = 0, j = 0; i < count; ++i) {
+			if (i != id)
+				new_cdefs[j++] = cdefs[i];
+		}
+
+		struct space_def *new_def = space_def_dup(space->def);
+		--new_def->opts.constraint_count;
+		free(new_def->opts.constraint_def);
+		new_def->opts.constraint_def = new_cdefs;
+		vdbe_emit_alter_constraint(parse, new_def);
+		new_def->opts.constraint_count = 0;
+		new_def->opts.constraint_def = NULL;
+		space_def_delete(new_def);
+		return;
+	}
+	uint32_t field_count = space->def->field_count;
+	for (uint32_t fieldno = 0; fieldno < field_count; ++fieldno) {
+		cdefs = space->def->fields[fieldno].constraint_def;
+		count = space->def->fields[fieldno].constraint_count;
+		for (id = 0; id < count; ++id) {
+			if (strcmp(cdefs[id].name, name) == 0)
+				break;
+		}
+		if (id == count)
+			continue;
+
+		uint32_t size;
+		struct region *region = &parse->region;
+		struct tuple_constraint_def *new_cdefs =
+			region_alloc_array(region, typeof(*new_cdefs),
+					   count - 1, &size);
+		if (new_cdefs == NULL) {
+			diag_set(OutOfMemory, size, "region_alloc_array",
+				 "new_cdefs");
+			parse->is_aborted = true;
+			return;
+		}
+		for (uint32_t i = 0, j = 0; i < count; ++i) {
+			if (i != id)
+				new_cdefs[j++] = cdefs[i];
+		}
+
+		struct space_def *new_def = space_def_dup(space->def);
+		--new_def->fields[fieldno].constraint_count;
+		free(new_def->fields[fieldno].constraint_def);
+		new_def->fields[fieldno].constraint_def = new_cdefs;
+		vdbe_emit_alter_constraint(parse, new_def);
+		new_def->fields[fieldno].constraint_count = 0;
+		new_def->fields[fieldno].constraint_def = NULL;
+		space_def_delete(new_def);
+		return;
+	}
+	diag_set(ClientError, ER_NO_SUCH_CONSTRAINT, name, space_name);
+	parse->is_aborted = true;
+}
+
+/**
  * Emit code to drop the entry from _index or _ck_contstraint or
  * _fk_constraint space corresponding with the constraint type.
  */
@@ -2338,11 +2492,8 @@ sql_drop_constraint(struct Parse *parse_context)
 		return;
 	}
 	struct constraint_id *id = space_find_constraint_id(space, name);
-	if (id == NULL) {
-		diag_set(ClientError, ER_NO_SUCH_CONSTRAINT, name, table_name);
-		parse_context->is_aborted = true;
-		return;
-	}
+	if (id == NULL)
+		return sql_drop_core_constraint(parse_context);
 	/*
 	 * We account changes to row count only if drop of
 	 * foreign keys take place in a separate

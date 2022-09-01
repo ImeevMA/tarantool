@@ -1012,8 +1012,21 @@ sql_mpstream_encode_constraints(struct mpstream *stream,
 				mpstream_encode_map(stream, 1);
 			}
 			mpstream_encode_str(stream, "field");
-			assert(fkey->field.name_len != 0);
-			mpstream_encode_str(stream, fkey->field.name);
+			uint32_t mapping_size = fkey->field_mapping_size;
+			if (mapping_size == 0) {
+				mpstream_encode_str(stream, fkey->field.name);
+				continue;
+			}
+			mpstream_encode_map(stream, mapping_size);
+			for (uint32_t j = 0; j < mapping_size; ++j) {
+				struct tuple_constraint_field_id *field =
+					&fkey->field_mapping[j].local_field;
+				assert(field->name_len != 0);
+				mpstream_encode_str(stream, field->name);
+				field = &fkey->field_mapping[j].foreign_field;
+				assert(field->name_len != 0);
+				mpstream_encode_str(stream, field->name);
+			}
 		}
 	}
 	if (ck_count > 0) {
@@ -1114,7 +1127,25 @@ sql_encode_table_opts(struct region *region, struct space_def *def,
 	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
 		      set_encode_error, &is_error);
 	bool is_view = def->opts.is_view;
-	mpstream_encode_map(&stream, 2 * is_view);
+	uint32_t base_len = 0;
+	if (is_view)
+		base_len += 2;
+	uint32_t ck_count = 0;
+	uint32_t fk_count = 0;
+	struct tuple_constraint_def *cdefs = def->opts.constraint_def;
+	for (uint32_t i = 0; i < def->opts.constraint_count; ++i) {
+		assert(cdefs[i].type == CONSTR_FUNC ||
+		       cdefs[i].type == CONSTR_FKEY);
+		if (cdefs[i].type == CONSTR_FUNC)
+			++ck_count;
+		else
+			++fk_count;
+	}
+	if (ck_count > 0)
+		++base_len;
+	if (fk_count > 0)
+		++base_len;
+	mpstream_encode_map(&stream, base_len);
 
 	if (is_view) {
 		assert(def->opts.sql != NULL);
@@ -1123,6 +1154,7 @@ sql_encode_table_opts(struct region *region, struct space_def *def,
 		mpstream_encode_str(&stream, "view");
 		mpstream_encode_bool(&stream, true);
 	}
+	sql_mpstream_encode_constraints(&stream, cdefs, ck_count, fk_count);
 	mpstream_flush(&stream);
 	if (is_error) {
 		diag_set(OutOfMemory, stream.pos - stream.buf,
