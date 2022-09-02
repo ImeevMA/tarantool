@@ -3552,6 +3552,13 @@ void
 sql_drop_constraint(struct Parse *parse_context);
 
 /**
+ * Find the constraint by name in the constraints of the field and drop it if
+ * found. Otherwise, throw an error.
+ */
+void
+sql_drop_field_constraint(struct Parse *parse);
+
+/**
  * Now our SQL implementation can't operate on spaces which
  * lack format: it is reasonable since for instance we can't
  * resolve column names, their types etc. In case of format

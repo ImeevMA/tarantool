@@ -271,6 +271,8 @@ struct drop_trigger_def {
 
 struct drop_constraint_def {
 	struct drop_entity_def base;
+	/** Name of the field that contains the constraint to drop. */
+	struct Token field_name;
 };
 
 struct drop_index_def {
@@ -413,11 +415,12 @@ drop_trigger_def_init(struct drop_trigger_def *drop_trigger_def,
 
 static inline void
 drop_constraint_def_init(struct drop_constraint_def *drop_constraint_def,
-			 struct SrcList *parent_name, struct Token *name,
-			 bool if_exist)
+			 struct SrcList *parent_name, struct Token *field_name,
+			 struct Token *name)
 {
 	drop_entity_def_init(&drop_constraint_def->base, parent_name, name,
-			     if_exist, ENTITY_TYPE_CONSTRAINT);
+			     false, ENTITY_TYPE_CONSTRAINT);
+	drop_constraint_def->field_name = *field_name;
 }
 
 static inline void
