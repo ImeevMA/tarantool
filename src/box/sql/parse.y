@@ -1854,9 +1854,15 @@ cmd ::= alter_table_start(A) RENAME TO nm(N). {
 }
 
 cmd ::= ALTER TABLE fullname(X) DROP CONSTRAINT nm(Z). {
-  drop_constraint_def_init(&pParse->drop_constraint_def, X, &Z, false);
+  drop_constraint_def_init(&pParse->drop_constraint_def, X, &Token_nil, &Z);
   pParse->initiateTTrans = true;
   sql_drop_constraint(pParse);
+}
+
+cmd ::= ALTER TABLE fullname(X) DROP CONSTRAINT nm(Y) DOT nm(Z). {
+  drop_constraint_def_init(&pParse->drop_constraint_def, X, &Y, &Z);
+  pParse->initiateTTrans = true;
+  sql_drop_field_constraint(pParse);
 }
 
 cmd ::= alter_table_start(A) enable(E) CHECK CONSTRAINT nm(Z). {
