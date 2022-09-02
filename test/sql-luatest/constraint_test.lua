@@ -127,3 +127,53 @@ g.test_constraints_2 = function()
         box.schema.func.drop('ck1')
     end)
 end
+
+--
+-- Make sure ALTER TABLE DROP CONSTRAINT drops field constraints defined by
+-- field name and constraint name.
+--
+g.test_constraints_3 = function()
+    g.server:exec(function()
+        local t = require('luatest')
+
+        local body = "function(x) return true end"
+        box.schema.func.create('ck1', {is_deterministic = true, body = body})
+        local func_id = box.space._func.index[2]:get{'ck1'}.id
+
+        local fk = {one = {field = 'a'}, two = {field = 'b'}}
+        local ck = {three = 'ck1', four = 'ck1'}
+
+        local fmt = {{'a', 'integer'}, {'b', 'integer'}}
+        fmt[1].constraint = ck
+        fmt[2].foreign_key = fk
+
+        local s = box.schema.space.create('a', {format = fmt})
+        ck.three = func_id
+        ck.four = func_id
+        t.assert_equals(s:format()[1].constraint, ck)
+        t.assert_equals(s:format()[2].foreign_key, fk)
+
+        box.execute([[ALTER TABLE "a" DROP CONSTRAINT "b"."one";]])
+        t.assert_equals(s:format()[1].constraint, ck)
+        t.assert_equals(s:format()[2].foreign_key, {two = {field = 'b'}})
+
+        local _, err = box.execute([[ALTER TABLE "a" DROP CONSTRAINT "a"."c";]])
+        local res = [[Constraint 'a.c' does not exist in space 'a']]
+        t.assert_equals(err.message, res)
+
+        box.execute([[ALTER TABLE "a" DROP CONSTRAINT "a"."four";]])
+        t.assert_equals(s:format()[1].constraint, {three = func_id})
+        t.assert_equals(s:format()[2].foreign_key, {two = {field = 'b'}})
+
+        box.execute([[ALTER TABLE "a" DROP CONSTRAINT "a"."three";]])
+        t.assert_equals(s:format()[1].constraint, nil)
+        t.assert_equals(s:format()[2].foreign_key, {two = {field = 'b'}})
+
+        box.execute([[ALTER TABLE "a" DROP CONSTRAINT "b"."two";]])
+        t.assert_equals(s:format()[1].constraint, nil)
+        t.assert_equals(s:format()[2].foreign_key, nil)
+
+        box.space.a:drop()
+        box.schema.func.drop('ck1')
+    end)
+end

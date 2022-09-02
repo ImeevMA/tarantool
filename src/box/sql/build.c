@@ -2359,6 +2359,85 @@ vdbe_emit_alter_constraint(struct Parse *parse, struct space_def *def)
 	sqlReleaseTempReg(parse, id_reg);
 }
 
+void
+sql_drop_field_constraint(struct Parse *parse)
+{
+	struct drop_constraint_def *drop_cdef = &parse->drop_constraint_def;
+	const char *space_name = drop_cdef->base.base.entity_name->a[0].zName;
+	assert(space_name != NULL);
+	struct space *space = space_by_name(space_name);
+	if (space == NULL) {
+		diag_set(ClientError, ER_NO_SUCH_SPACE, space_name);
+		parse->is_aborted = true;
+		return;
+	}
+	struct sql *db = parse->db;
+	char *field_name = sql_name_from_token(db, &drop_cdef->field_name);
+	if (field_name == NULL) {
+		parse->is_aborted = true;
+		return;
+	}
+
+	uint32_t fieldno;
+	uint32_t len = strlen(field_name);
+	uint32_t hash = field_name_hash(field_name, len);
+	if (tuple_fieldno_by_name(space->def->dict, field_name, len, hash,
+				  &fieldno) != 0) {
+		diag_set(ClientError, ER_NO_SUCH_FIELD_NAME_IN_SPACE,
+			 field_name, space_name);
+		sqlDbFree(db, field_name);
+		parse->is_aborted = true;
+		return;
+	}
+	sqlDbFree(db, field_name);
+
+	char *name = sql_name_from_token(db, &drop_cdef->base.name);
+	if (name == NULL) {
+		parse->is_aborted = true;
+		return;
+	}
+
+	struct field_def *field = &space->def->fields[fieldno];
+	struct tuple_constraint_def *old_cdefs = field->constraint_def;
+	uint32_t id;
+	uint32_t count = field->constraint_count;
+	for (id = 0; id < count; ++id) {
+		if (strcmp(old_cdefs[id].name, name) == 0)
+			break;
+	}
+	if (id == count) {
+		const char *str = tt_sprintf("%s.%s", field->name, name);
+		sqlDbFree(db, name);
+		diag_set(ClientError, ER_NO_SUCH_CONSTRAINT, str, space_name);
+		parse->is_aborted = true;
+		return;
+	}
+	sqlDbFree(db, name);
+
+	uint32_t size;
+	struct region *region = &parse->region;
+	struct tuple_constraint_def *cdefs =
+		region_alloc_array(region, typeof(*cdefs), count - 1, &size);
+	if (cdefs == NULL) {
+		diag_set(OutOfMemory, size, "region_alloc_array", "cdefs");
+		parse->is_aborted = true;
+		return;
+	}
+	for (uint32_t i = 0, j = 0; i < count; ++i) {
+		if (i != id)
+			cdefs[j++] = old_cdefs[i];
+	}
+
+	struct space_def *new_def = space_def_dup(space->def);
+	--new_def->fields[fieldno].constraint_count;
+	free(new_def->fields[fieldno].constraint_def);
+	new_def->fields[fieldno].constraint_def = cdefs;
+	vdbe_emit_alter_constraint(parse, new_def);
+	new_def->fields[fieldno].constraint_count = 0;
+	new_def->fields[fieldno].constraint_def = NULL;
+	space_def_delete(new_def);
+}
+
 /**
  * Drop the tuple or field constraint. If there is a tuple constraint with the
  * given name, it will be dropped. Otherwise, the constraint with the given name
