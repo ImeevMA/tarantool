@@ -28,7 +28,7 @@ test_run:cmd("setopt delimiter ';'")
  | ...
 if is_remote then
     box.schema.user.grant('guest','read, write, execute', 'universe')
-    box.schema.user.grant('guest', 'create', 'space')
+    box.schema.user.grant('guest', 'create, alter', 'space')
     cn = remote.connect(box.cfg.listen)
     execute = function(...) return cn:execute(...) end
     prepare = function(...) return cn:prepare(...) end
@@ -292,7 +292,7 @@ s = prepare("ALTER TABLE test2 ADD CONSTRAINT fk1 FOREIGN KEY (id) REFERENCES te
  | ...
 execute(s.stmt_id)
  | ---
- | - row_count: 1
+ | - row_count: 0
  | ...
 execute(s.stmt_id)
  | ---

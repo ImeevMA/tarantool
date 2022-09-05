@@ -27,22 +27,8 @@ box.execute([[CREATE TABLE t2 (i INT, CONSTRAINT c CHECK (i > 0),
  | - null
  | - PRIMARY KEY constraint 'C' already exists in space 'T2'
  | ...
-box.execute([[CREATE TABLE t2 (i INT,
-                               CONSTRAINT c FOREIGN KEY(i) REFERENCES t1(i),
-                               CONSTRAINT c PRIMARY KEY (i));]]);
- | ---
- | - null
- | - PRIMARY KEY constraint 'C' already exists in space 'T2'
- | ...
 box.execute([[CREATE TABLE t2 (i INT PRIMARY KEY,
                                CONSTRAINT c CHECK (i > 0),
-                               CONSTRAINT c UNIQUE (i));]]);
- | ---
- | - null
- | - UNIQUE constraint 'C' already exists in space 'T2'
- | ...
-box.execute([[CREATE TABLE t2 (i INT PRIMARY KEY,
-                               CONSTRAINT c FOREIGN KEY(i) REFERENCES t1(i),
                                CONSTRAINT c UNIQUE (i));]]);
  | ---
  | - null
@@ -54,13 +40,6 @@ box.execute([[CREATE TABLE t2 (i INT PRIMARY KEY,
  | ---
  | - null
  | - CHECK constraint 'C' already exists in space 'T2'
- | ...
-box.execute([[CREATE TABLE t2 (i INT PRIMARY KEY,
-                               CONSTRAINT c FOREIGN KEY(i) REFERENCES t1(i),
-                               CONSTRAINT c CHECK (i > 0));]]);
- | ---
- | - null
- | - FOREIGN KEY constraint 'C' already exists in space 'T2'
  | ...
 box.execute([[CREATE TABLE t2 (i INT PRIMARY KEY CONSTRAINT c REFERENCES t1(i),
                                CONSTRAINT c FOREIGN KEY(i) REFERENCES t1(i))]]);
@@ -91,11 +70,6 @@ box.execute('ALTER TABLE t2 ADD CONSTRAINT c UNIQUE(i);')
  | - null
  | - Index 'C' already exists in space 'T2'
  | ...
-box.execute('ALTER TABLE t2 ADD CONSTRAINT c FOREIGN KEY(i) REFERENCES t1(i);')
- | ---
- | - null
- | - PRIMARY KEY constraint 'C' already exists in space 'T2'
- | ...
 
 --
 -- Make sure that a constraint's name isn't kept after the
@@ -118,11 +92,11 @@ box.space.T2.ck_constraint.D:drop()
  | ...
 box.execute('ALTER TABLE t2 ADD CONSTRAINT d FOREIGN KEY(i) REFERENCES t1(i);')
  | ---
- | - row_count: 1
+ | - row_count: 0
  | ...
 box.execute('ALTER TABLE t2 DROP CONSTRAINT d;')
  | ---
- | - row_count: 1
+ | - row_count: 0
  | ...
 
 --
@@ -359,11 +333,11 @@ box.space.T2.ck_constraint.CK_CONSTRAINT == nil
 -- Drop FOREIGN KEY constraint.
 box.execute('ALTER TABLE t2 ADD CONSTRAINT fk FOREIGN KEY(i) REFERENCES t1(i);')
  | ---
- | - row_count: 1
+ | - row_count: 0
  | ...
 box.execute('ALTER TABLE t2 DROP CONSTRAINT fk;')
  | ---
- | - row_count: 1
+ | - row_count: 0
  | ...
 -- Drop non-existing constraint.
 box.execute('ALTER TABLE t2 DROP CONSTRAINT non_existing_constraint;')

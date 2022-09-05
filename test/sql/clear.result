@@ -204,7 +204,7 @@ box.space._fk_constraint:select()
 box.execute("CREATE TABLE t3(id INT PRIMARY KEY, CONSTRAINT ck1 CHECK(id > 0), CONSTRAINT ck1 FOREIGN KEY(id) REFERENCES t3, CONSTRAINT fk1 FOREIGN KEY(id) REFERENCES t3, CONSTRAINT ck1 CHECK(id < 0));")
 ---
 - null
-- FOREIGN KEY constraint 'CK1' already exists in space 'T3'
+- CHECK constraint 'CK1' already exists in space 'T3'
 ...
 box.space.t1
 ---

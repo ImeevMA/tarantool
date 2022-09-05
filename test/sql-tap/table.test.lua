@@ -760,7 +760,7 @@ test:do_catchsql_test(
         -- </table-10.6>
     })
 
-test:do_catchsql_test(
+test:do_execsql_test(
     "table-10.7",
     [[
         DROP TABLE t6;
@@ -769,19 +769,21 @@ test:do_catchsql_test(
         );
     ]], {
         -- <table-10.7>
-        1, "Failed to create foreign key constraint 'fk_unnamed_T6_1': foreign key refers to nonexistent field B"
         -- </table-10.7>
     })
 
 test:do_catchsql_test(
     "table-10.9",
     [[
+        DROP TABLE t6;
         CREATE TABLE t6(a int primary key,b int,c int,
           FOREIGN KEY (b,c) REFERENCES t4(x)
         );
     ]], {
         -- <table-10.9>
-        1, "Failed to create foreign key constraint 'fk_unnamed_T6_1': number of columns in foreign key does not match the number of columns in the primary index of referenced table"
+        1, "Failed to create foreign key constraint 'fk_unnamed_T6_1': "..
+        "number of referenced columns not match the number of referencing "..
+        "columns"
         -- </table-10.9>
     })
 
@@ -796,7 +798,9 @@ test:do_test(
         ]]
     end, {
         -- <table-10.10>
-        1, "Failed to create foreign key constraint 'fk_unnamed_T6_1': number of columns in foreign key does not match the number of columns in the primary index of referenced table"
+        1, "Failed to create foreign key constraint 'fk_unnamed_T6_1': "..
+        "number of referenced columns not match the number of referencing "..
+        "columns"
         -- </table-10.10>
     })
 
@@ -809,7 +813,9 @@ test:do_test(
         ]]
     end, {
         -- <table-10.11>
-        1, "Failed to create foreign key constraint 'fk_unnamed_T6_1': number of columns in foreign key does not match the number of columns in the primary index of referenced table"
+        1, "Failed to create foreign key constraint 'fk_unnamed_T6_1': "..
+        "number of referenced columns not match the number of referencing "..
+        "columns"
         -- </table-10.11>
     })
 
@@ -818,14 +824,13 @@ test:do_test(
     function()
         test:catchsql "DROP TABLE t6"
         return test:catchsql [[
-            CREATE TABLE t6(a int,b int,c int,
+            CREATE TABLE t6(a INT PRIMARY KEY, b INT, c INT,
               FOREIGN KEY (b,x) REFERENCES t4(x,y)
             );
         ]]
     end, {
         -- <table-10.12>
-        1, [[Failed to create foreign key constraint 'fk_unnamed_T6_1': ]]..
-           [[foreign key refers to nonexistent field X]]
+        0
         -- </table-10.12>
     })
 
@@ -834,14 +839,13 @@ test:do_test(
     function()
         test:catchsql "DROP TABLE t6"
         return test:catchsql [[
-            CREATE TABLE t6(a int,b int,c int,
+            CREATE TABLE t6(a INT PRIMARY KEY, b INT, c INT,
               FOREIGN KEY (x,b) REFERENCES t4(x,y)
             );
         ]]
     end, {
         -- <table-10.13>
-        1, [[Failed to create foreign key constraint 'fk_unnamed_T6_1': ]]..
-           [[foreign key refers to nonexistent field X]]
+        0
         -- </table-10.13>
     })
 
