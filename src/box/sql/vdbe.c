@@ -4010,13 +4010,7 @@ case OP_Param: {           /* out2 */
  * statement counter is incremented (immediate foreign key constraints).
  */
 case OP_FkCounter: {
-	if (((p->sql_flags & SQL_DeferFKs) != 0 || pOp->p1 != 0) &&
-	    !p->auto_commit) {
-		struct txn *txn = in_txn();
-		txn->fk_deferred_count += pOp->p2;
-	} else {
-		p->nFkConstraint += pOp->p2;
-	}
+	p->nFkConstraint += pOp->p2;
 	break;
 }
 
@@ -4033,15 +4027,8 @@ case OP_FkCounter: {
  * (immediate foreign key constraint violations).
  */
 case OP_FkIfZero: {         /* jump */
-	if (((p->sql_flags & SQL_DeferFKs) != 0 || pOp->p1 != 0) &&
-	    !p->auto_commit) {
-		struct txn *txn = in_txn();
-		if (txn->fk_deferred_count == 0)
-			goto jump_to_p2;
-	} else {
-		if (p->nFkConstraint == 0)
-			goto jump_to_p2;
-	}
+	if (p->nFkConstraint == 0)
+		goto jump_to_p2;
 	break;
 }
 
