@@ -2039,6 +2039,114 @@ columnno_by_name(struct Parse *parse_context, const struct space *space,
 	return 0;
 }
 
+/**
+ * Determine the name of the foreign key. ALTER TABLE ADD CONSTRAINT always
+ * specifies a name. For CREATE TABLE and ALTER TABLE ADD COLUMN, the foreign
+ * key name can be generated if it is not provided.
+ */
+static char *
+sql_fk_name(struct Parse *parse)
+{
+	if (parse->create_fk_def.base.base.name.n != 0) {
+		struct Token *name = &parse->create_fk_def.base.base.name;
+		char *fk_name = sql_name_from_token(parse->db, name);
+		if (fk_name == NULL)
+			parse->is_aborted = true;
+		return fk_name;
+	}
+	struct space *space = parse->create_column_def.space;
+	assert(space != NULL);
+	uint32_t idx = ++parse->create_fk_constraint_parse_def.count;
+	/*
+	 * If it is <ALTER TABLE ADD COLUMN> we should count the existing FK
+	 * constraints in the space and form a name based on this.
+	 */
+	if (parse->create_table_def.new_space == NULL) {
+		struct space *origin = space_by_name(space->def->name);
+		assert(origin != NULL);
+		struct rlist *child_fk = &origin->child_fk_constraint;
+		struct fk_constraint *fk;
+		rlist_foreach_entry(fk, child_fk, in_child_space)
+			idx++;
+	}
+	return sqlMPrintf(parse->db, "fk_unnamed_%s_%u", space->def->name, idx);
+}
+
+/** Determine parent space of the foreign key. */
+static struct space *
+sql_fk_parent_space(struct Parse *parse, const char *fk_name)
+{
+	struct Token *parent_token = parse->create_fk_def.parent_name;
+	assert(parent_token != NULL);
+	char *parent_name = sql_name_from_token(parse->db, parent_token);
+	if (parent_name == NULL)
+		return NULL;
+	struct space *space = parse->create_column_def.space;
+	struct space *parent;
+	if (space == NULL || strcmp(parent_name, space->def->name) != 0) {
+		parent = space_by_name(parent_name);
+		if (parent == NULL) {
+			diag_set(ClientError, ER_NO_SUCH_SPACE, parent_name);
+			sqlDbFree(parse->db, parent_name);
+			parse->is_aborted = true;
+			return NULL;
+		}
+	} else {
+		parent = space;
+	}
+	sqlDbFree(parse->db, parent_name);
+	if (parent->def->opts.is_view) {
+		diag_set(ClientError, ER_CREATE_FK_CONSTRAINT, fk_name,
+			 "referenced space can't be VIEW");
+		parse->is_aborted = true;
+		return NULL;
+	}
+	struct index *index = parent->index[0];
+	if (index == NULL) {
+		diag_set(ClientError, ER_CREATE_FK_CONSTRAINT, fk_name,
+			 "referenced space doesn't feature PRIMARY KEY");
+		parse->is_aborted = true;
+		return NULL;
+	}
+	return parent;
+}
+
+/** Determine the referencing fields for the foreign key. */
+static int
+sql_fk_child_cols(struct Parse *parse)
+{
+	if (parse->create_fk_def.child_cols != NULL)
+		return 0;
+	struct Token *field_name = &parse->create_column_def.base.name;
+	struct ExprList *list = sql_expr_list_append(parse->db, NULL, NULL);
+	sqlExprListSetName(parse, list, field_name, true);
+	if (parse->is_aborted)
+		return -1;
+	parse->create_fk_def.child_cols = list;
+	return 0;
+}
+
+/** Determine the referenced fields for the foreign key. */
+static int
+sql_fk_parent_cols(struct Parse *parse, struct space *parent)
+{
+	if (parse->create_fk_def.parent_cols != NULL)
+		return 0;
+	assert(parent != NULL && parent->index[0] != NULL);
+	struct ExprList *list = NULL;
+	uint32_t count = parent->index[0]->def->key_def->part_count;
+	struct key_part *parts = parent->index[0]->def->key_def->parts;
+	for (uint32_t i = 0; i < count; ++i) {
+		const char *name = parent->def->fields[parts[i].fieldno].name;
+		uint32_t len = strlen(name);
+		struct Token t = {.z = name, .n = len, .isReserved = false};
+		list = sql_expr_list_append(parse->db, list, NULL);
+		sqlExprListSetName(parse, list, &t, true);
+	}
+	parse->create_fk_def.parent_cols = list;
+	return parse->is_aborted ? -1 : 0;
+}
+
 void
 sql_create_foreign_key(struct Parse *parse_context)
 {
@@ -2060,8 +2168,9 @@ sql_create_foreign_key(struct Parse *parse_context)
 	 * Beforehand initialization for correct clean-up
 	 * while emergency exiting in case of error.
 	 */
-	char *parent_name = NULL;
-	char *constraint_name = NULL;
+	char *constraint_name = sql_fk_name(parse_context);
+	if (constraint_name == NULL)
+		goto tnt_error;
 	bool is_self_referenced = false;
 	struct space *space = parse_context->create_column_def.space;
 	struct create_table_def *table_def = &parse_context->create_table_def;
@@ -2074,15 +2183,11 @@ sql_create_foreign_key(struct Parse *parse_context)
 	 * CONSTRAINT> statement handling.
 	 */
 	bool is_alter_add_constr = space == NULL;
-	uint32_t child_cols_count;
+	if (sql_fk_child_cols(parse_context) != 0)
+		goto tnt_error;
 	struct ExprList *child_cols = create_fk_def->child_cols;
-	if (child_cols == NULL) {
-		assert(!is_alter_add_constr);
-		child_cols_count = 1;
-	} else {
-		child_cols_count = child_cols->nExpr;
-	}
-	struct ExprList *parent_cols = create_fk_def->parent_cols;
+	assert(child_cols != NULL);
+	uint32_t child_cols_count = child_cols->nExpr;
 	struct space *child_space = NULL;
 	if (is_alter_add_constr) {
 		const char *child_name = alter_def->entity_name->a[0].zName;
@@ -2112,23 +2217,22 @@ sql_create_foreign_key(struct Parse *parse_context)
 			&parse_context->create_fk_constraint_parse_def.fkeys;
 		rlist_add_entry(fkeys, fk_parse, link);
 	}
-	struct Token *parent = create_fk_def->parent_name;
-	assert(parent != NULL);
-	parent_name = sql_name_from_token(db, parent);
-	if (parent_name == NULL)
+	struct space *parent_space = sql_fk_parent_space(parse_context,
+							 constraint_name);
+	if (parent_space == NULL)
 		goto tnt_error;
+	if (sql_fk_parent_cols(parse_context, parent_space) != 0)
+		goto tnt_error;
+	struct ExprList *parent_cols = create_fk_def->parent_cols;
+	assert(parent_cols != NULL);
 	/*
 	 * Within ALTER TABLE ADD CONSTRAINT FK also can be
 	 * self-referenced, but in this case parent (which is
 	 * also child) table will definitely exist.
 	 */
 	is_self_referenced = !is_alter_add_constr &&
-			     strcmp(parent_name, space->def->name) == 0;
-	struct space *parent_space = space_by_name(parent_name);
-	if (parent_space == NULL && !is_self_referenced) {
-		diag_set(ClientError, ER_NO_SUCH_SPACE, parent_name);
-		goto tnt_error;
-	}
+			     strcmp(parent_space->def->name,
+				    space->def->name) == 0;
 	if (is_self_referenced) {
 		struct rlist *fkeys =
 			&parse_context->create_fk_constraint_parse_def.fkeys;
@@ -2138,74 +2242,13 @@ sql_create_foreign_key(struct Parse *parse_context)
 		fk->selfref_cols = parent_cols;
 		fk->is_self_referenced = true;
 	}
-	if (!is_alter_add_constr) {
-		if (create_def->name.n == 0) {
-			struct create_fk_constraint_parse_def *parse_def =
-				&parse_context->create_fk_constraint_parse_def;
-			uint32_t idx = ++parse_def->count;
-			/*
-			 * If it is <ALTER TABLE ADD COLUMN> we
-			 * should count the existing FK
-			 * constraints in the space and form a
-			 * name based on this.
-			 */
-			if (table_def->new_space == NULL) {
-				struct space *original_space =
-					space_by_name(space->def->name);
-				assert(original_space != NULL);
-				struct rlist *child_fk =
-					&original_space->child_fk_constraint;
-				struct fk_constraint *fk;
-				rlist_foreach_entry(fk, child_fk,
-						    in_child_space)
-					idx++;
-			}
-			constraint_name = sqlMPrintf(db, "fk_unnamed_%s_%u",
-						     space->def->name, idx);
-		} else {
-			constraint_name =
-				sql_name_from_token(db, &create_def->name);
-			if (constraint_name == NULL)
-				parse_context->is_aborted = true;
-		}
-	} else {
-		constraint_name = sql_name_from_token(db, &create_def->name);
-		if (constraint_name == NULL)
-			parse_context->is_aborted = true;
-	}
-	if (constraint_name == NULL)
-		goto exit_create_fk;
-	if (!is_self_referenced && parent_space->def->opts.is_view) {
-		diag_set(ClientError, ER_CREATE_FK_CONSTRAINT, constraint_name,
-			"referenced space can't be VIEW");
-		goto tnt_error;
-	}
 	const char *error_msg = "number of columns in foreign key does not "
 				"match the number of columns in the primary "
 				"index of referenced table";
-	if (parent_cols != NULL) {
-		if (parent_cols->nExpr != (int) child_cols_count) {
-			diag_set(ClientError, ER_CREATE_FK_CONSTRAINT,
-				 constraint_name, error_msg);
-			goto tnt_error;
-		}
-	} else if (!is_self_referenced) {
-		/*
-		 * If parent columns are not specified, then PK
-		 * columns of parent table are used as referenced.
-		 */
-		struct index *parent_pk = space_index(parent_space, 0);
-		if (parent_pk == NULL) {
-			diag_set(ClientError, ER_CREATE_FK_CONSTRAINT,
-				 constraint_name,
-				 "referenced space doesn't feature PRIMARY KEY");
-			goto tnt_error;
-		}
-		if (parent_pk->def->key_def->part_count != child_cols_count) {
-			diag_set(ClientError, ER_CREATE_FK_CONSTRAINT,
-				 constraint_name, error_msg);
-			goto tnt_error;
-		}
+	if (parent_cols->nExpr != (int)child_cols_count) {
+		diag_set(ClientError, ER_CREATE_FK_CONSTRAINT,
+			 constraint_name, error_msg);
+		goto tnt_error;
 	}
 	int name_len = strlen(constraint_name);
 	uint32_t links_offset;
@@ -2225,30 +2268,14 @@ sql_create_foreign_key(struct Parse *parse_context)
 	fk_def->links = (struct field_link *)((char *)fk_def + links_offset);
 	/* Fill links map. */
 	for (uint32_t i = 0; i < fk_def->field_count; ++i) {
-		if (!is_self_referenced && parent_cols == NULL) {
-			struct key_def *pk_def =
-				parent_space->index[0]->def->key_def;
-			fk_def->links[i].parent_field = pk_def->parts[i].fieldno;
-		} else if (!is_self_referenced &&
-			   columnno_by_name(parse_context, parent_space,
-					    parent_cols->a[i].zName,
-					    &fk_def->links[i].parent_field,
-					    constraint_name) != 0) {
+		if (!is_self_referenced &&
+		    columnno_by_name(parse_context, parent_space,
+				     parent_cols->a[i].zName,
+				     &fk_def->links[i].parent_field,
+				     constraint_name) != 0) {
 			goto exit_create_fk;
 		}
 		if (!is_alter_add_constr) {
-			if (child_cols == NULL) {
-				assert(i == 0);
-				/*
-				 * In this case there must be only
-				 * one link (the last column
-				 * added), so we can break
-				 * immediately.
-				 */
-				fk_def->links[0].child_field =
-					space->def->field_count - 1;
-				break;
-			}
 			if (resolve_link(parse_context, space->def,
 					 child_cols->a[i].zName,
 					 &fk_def->links[i].child_field,
@@ -2285,10 +2312,9 @@ sql_create_foreign_key(struct Parse *parse_context)
 	}
 
 exit_create_fk:
-	sql_expr_list_delete(db, child_cols);
+	sql_expr_list_delete(db, create_fk_def->child_cols);
 	if (!is_self_referenced)
-		sql_expr_list_delete(db, parent_cols);
-	sqlDbFree(db, parent_name);
+		sql_expr_list_delete(db, create_fk_def->parent_cols);
 	sqlDbFree(db, constraint_name);
 	return;
 tnt_error:
