@@ -177,3 +177,220 @@ g.test_constraints_3 = function()
         box.schema.func.drop('ck1')
     end)
 end
+
+-- Make sure foreign key creation during column creation works correctly.
+g.test_constraints_4 = function()
+    g.server:exec(function()
+        local t = require('luatest')
+
+        local sql = "CREATE TABLE t (i INT PRIMARY KEY, a INT REFERENCES t(i));"
+        local res = {fk_unnamed_T_1 = {field = {A = "I"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        sql = [[CREATE TABLE t (i INT PRIMARY KEY, a INT REFERENCES t);]]
+        res = {fk_unnamed_T_1 = {field = {A = "I"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        sql = [[CREATE TABLE t (i INT PRIMARY KEY, a INT REFERENCES t(a));]]
+        res = {fk_unnamed_T_1 = {field = {A = "A"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        sql = [[CREATE TABLE t (i INT PRIMARY KEY REFERENCES t(a), a INT);]]
+        res = {fk_unnamed_T_1 = {field = {I = "A"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        sql = [[CREATE TABLE t (i INT PRIMARY KEY, ]]..
+              [[a INT CONSTRAINT one REFERENCES t);]]
+        res = {ONE = {field = {A = "I"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        box.execute([[CREATE TABLE t0 (i INT PRIMARY KEY, a INT);]])
+        local space_id = box.space.T0.id
+
+        sql = [[CREATE TABLE t (i INT PRIMARY KEY, a INT REFERENCES t0(i));]]
+        res = {fk_unnamed_T_1 = {space = space_id, field = {A = "I"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        sql = [[CREATE TABLE t (i INT PRIMARY KEY, a INT REFERENCES t0);]]
+        res = {fk_unnamed_T_1 = {space = space_id, field = {A = "I"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        sql = [[CREATE TABLE t (i INT PRIMARY KEY, a INT REFERENCES t0(a));]]
+        res = {fk_unnamed_T_1 = {space = space_id, field = {A = "A"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        sql = [[CREATE TABLE t (i INT PRIMARY KEY REFERENCES t0(a), a INT);]]
+        res = {fk_unnamed_T_1 = {space = space_id, field = {I = "A"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        sql = [[CREATE TABLE t (i INT PRIMARY KEY, ]]..
+              [[a INT CONSTRAINT one REFERENCES t0);]]
+        res = {ONE = {space = space_id, field = {A = "I"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        box.execute([[CREATE TABLE t (i INT PRIMARY KEY);]])
+        sql = [[ALTER TABLE t ADD COLUMN a INT REFERENCES t(i);]]
+        res = {fk_unnamed_T_1 = {space = box.space.T.id, field = {A = "I"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        box.execute([[CREATE TABLE t (i INT PRIMARY KEY);]])
+        sql = [[ALTER TABLE t ADD COLUMN a INT REFERENCES t;]]
+        res = {fk_unnamed_T_1 = {space = box.space.T.id, field = {A = "I"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        box.execute([[CREATE TABLE t (i INT PRIMARY KEY);]])
+        sql = [[ALTER TABLE t ADD COLUMN a INT REFERENCES t(a);]]
+        res = {fk_unnamed_T_1 = {space = box.space.T.id, field = {A = "A"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        box.execute([[CREATE TABLE t (i INT PRIMARY KEY);]])
+        sql = [[ALTER TABLE t ADD COLUMN a INT CONSTRAINT one REFERENCES t;]]
+        res = {ONE = {space = box.space.T.id, field = {A = "I"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        box.execute([[CREATE TABLE t (i INT PRIMARY KEY);]])
+        sql = [[ALTER TABLE t ADD COLUMN a INT REFERENCES t0(i);]]
+        res = {fk_unnamed_T_1 = {space = space_id, field = {A = "I"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        box.execute([[CREATE TABLE t (i INT PRIMARY KEY);]])
+        sql = [[ALTER TABLE t ADD COLUMN a INT REFERENCES t0;]]
+        res = {fk_unnamed_T_1 = {space = space_id, field = {A = "I"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        box.execute([[CREATE TABLE t (i INT PRIMARY KEY);]])
+        sql = [[ALTER TABLE t ADD COLUMN a INT REFERENCES t0(a);]]
+        res = {fk_unnamed_T_1 = {space = space_id, field = {A = "A"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        box.execute([[CREATE TABLE t (i INT PRIMARY KEY);]])
+        sql = [[ALTER TABLE t ADD COLUMN a INT CONSTRAINT one REFERENCES t0;]]
+        res = {ONE = {space = space_id, field = {A = "I"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        sql = [[CREATE TABLE t (a INT REFERENCES t, i INT PRIMARY KEY);]]
+        local _, err = box.execute(sql)
+        local res = [[Failed to create foreign key constraint ]]..
+            [['fk_unnamed_T_1': referenced space doesn't feature PRIMARY KEY]]
+        t.assert_equals(err.message, res)
+
+        sql = [[CREATE TABLE t (i INT PRIMARY KEY, a INT REFERENCES t(i, a));]]
+        local _, err = box.execute(sql)
+        local res = [[Failed to create foreign key constraint ]]..
+            [['fk_unnamed_T_1': number of referenced columns not match the ]]..
+            [[number of referencing columns]]
+        t.assert_equals(err.message, res)
+
+        box.execute([[CREATE VIEW v AS SELECT * FROM t0;]])
+        sql = [[CREATE TABLE t (a INT REFERENCES v(i), i INT PRIMARY KEY);]]
+        local _, err = box.execute(sql)
+        local res = [[Failed to create foreign key constraint ]]..
+            [['fk_unnamed_T_1': referenced space can't be VIEW]]
+        t.assert_equals(err.message, res)
+        box.execute([[DROP VIEW v;]])
+
+        box.execute([[DROP TABLE t0;]])
+    end)
+end
+
+--
+-- Make sure foreign key creation during table creation or ALTER TABLE works
+-- correctly.
+--
+g.test_constraints_5 = function()
+    g.server:exec(function()
+        local t = require('luatest')
+
+        local sql = [[CREATE TABLE t (i INT PRIMARY KEY, a INT, ]]..
+            [[FOREIGN KEY (i, a) REFERENCES t(i, a));]]
+        local res = {fk_unnamed_T_1 = {field = {I = "I", A = "A"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        sql = [[CREATE TABLE t (i INT, a INT, PRIMARY KEY(i, a), ]]..
+            [[FOREIGN KEY (i, a) REFERENCES t);]]
+        res = {fk_unnamed_T_1 = {field = {I = "I", A = "A"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        sql = [[CREATE TABLE t (i INT PRIMARY KEY, a INT, CONSTRAINT one ]]..
+            [[FOREIGN KEY (i, a) REFERENCES t(i, a));]]
+        res = {ONE = {field = {I = "I", A = "A"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        box.execute([[CREATE TABLE t0 (i INT, a INT, PRIMARY KEY (i, a));]])
+        local space_id = box.space.T0.id
+
+        sql = [[CREATE TABLE t (i INT PRIMARY KEY, a INT, ]]..
+            [[FOREIGN KEY (i, a) REFERENCES t0(a, i));]]
+        res = {fk_unnamed_T_1 = {space = space_id, field = {I = "A", A = "I"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        sql = [[CREATE TABLE t (i INT PRIMARY KEY, a INT, ]]..
+            [[FOREIGN KEY (i, a) REFERENCES t0);]]
+        res = {fk_unnamed_T_1 = {space = space_id, field = {I = "I", A = "A"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[DROP TABLE t;]])
+
+        box.execute([[CREATE TABLE t (i INT, a INT, PRIMARY KEY (i, a))]])
+
+        sql = [[ALTER TABLE t ADD CONSTRAINT c FOREIGN KEY (a) REFERENCES t(i)]]
+        res = {C = {space = box.space.T.id, field = {A = "I"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[ALTER TABLE t DROP CONSTRAINT c;]])
+
+        sql = [[ALTER TABLE t ADD CONSTRAINT c FOREIGN KEY (a, i) REFERENCES t]]
+        res = {C = {space = box.space.T.id, field = {A = "I", I = "A"}}}
+        box.execute(sql)
+        t.assert_equals(box.space.T.foreign_key, res)
+        box.execute([[ALTER TABLE t DROP CONSTRAINT c;]])
+
+        box.execute([[DROP TABLE t;]])
+
+        box.execute([[DROP TABLE t0;]])
+    end)
+end

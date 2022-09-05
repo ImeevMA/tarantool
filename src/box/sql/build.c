@@ -61,6 +61,10 @@
 #include "box/session_settings.h"
 #include "box/tuple_constraint_def.h"
 
+/** Generate code to change the definition of tuple constraint. */
+static void
+vdbe_emit_alter_constraint(struct Parse *parse, struct space_def *def);
+
 void
 sql_finish_coding(struct Parse *parse_context)
 {
@@ -470,6 +474,43 @@ sql_create_column_end(struct Parse *parse)
 	sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
 	sqlReleaseTempRange(parse, tuple_reg, box_space_field_MAX + 1);
 	vdbe_emit_create_constraints(parse, key_reg);
+
+	if (def->opts.constraint_count == 0)
+		return;
+	/*
+	 * Foreign key must be added after the field, otherwise it will be
+	 * incorrectly initialized.
+	 *
+	 * This part will not be needed when field foreign keys are introduced,
+	 * because the field foreign key will be part of the space format, not
+	 * the space opts.
+	 */
+	uint32_t opts_size;
+	const char *opts = sql_encode_table_opts(region, def, &opts_size);
+	if (opts == NULL) {
+		parse->is_aborted = true;
+		return;
+	}
+	char *buf = sqlDbMallocRaw(parse->db, opts_size);
+	if (buf == NULL) {
+		parse->is_aborted = true;
+		return;
+	}
+	memcpy(buf, opts, opts_size);
+	int id_reg = sqlGetTempReg(parse);
+	sqlVdbeAddOp3(v, OP_MakeRecord, key_reg, 1, id_reg);
+	int opts_reg = sqlGetTempReg(parse);
+	sqlVdbeAddOp4(v, OP_Blob, opts_size, opts_reg, SQL_SUBTYPE_MSGPACK, buf,
+		      P4_DYNAMIC);
+	uint32_t *upd = sqlDbMallocRaw(parse->db, sizeof(*upd) * 2);
+	if (upd == NULL)
+		return;
+	upd[0] = BOX_SPACE_FIELD_OPTS;
+	upd[1] = opts_reg;
+	sqlVdbeAddOp4(v, OP_Update, 1, id_reg, reg, (char *)upd, P4_DYNAMIC);
+	sqlVdbeChangeP5(v, OPFLAG_OE_FAIL);
+	sqlReleaseTempReg(parse, opts_reg);
+	sqlReleaseTempReg(parse, id_reg);
 }
 
 void
@@ -2010,36 +2051,6 @@ sql_drop_table(struct Parse *parse_context)
 }
 
 /**
- * Return ordinal number of column by name. In case of error,
- * set error message.
- *
- * @param parse_context Parsing context.
- * @param space Space which column belongs to.
- * @param column_name Name of column to investigate.
- * @param[out] colno Found name of column.
- * @param fk_name Name of FK constraint to be created.
- *
- * @retval 0 on success, -1 on fault.
- */
-static int
-columnno_by_name(struct Parse *parse_context, const struct space *space,
-		 const char *column_name, uint32_t *colno, const char *fk_name)
-{
-	assert(colno != NULL);
-	uint32_t column_len = strlen(column_name);
-	if (tuple_fieldno_by_name(space->def->dict, column_name, column_len,
-				  field_name_hash(column_name, column_len),
-				  colno) != 0) {
-		diag_set(ClientError, ER_CREATE_FK_CONSTRAINT, fk_name,
-			 tt_sprintf("foreign key refers to nonexistent field %s",
-				    column_name));
-		parse_context->is_aborted = true;
-		return -1;
-	}
-	return 0;
-}
-
-/**
  * Determine the name of the foreign key. ALTER TABLE ADD CONSTRAINT always
  * specifies a name. For CREATE TABLE and ALTER TABLE ADD COLUMN, the foreign
  * key name can be generated if it is not provided.
@@ -2056,19 +2067,7 @@ sql_fk_name(struct Parse *parse)
 	}
 	struct space *space = parse->create_column_def.space;
 	assert(space != NULL);
-	uint32_t idx = ++parse->create_fk_constraint_parse_def.count;
-	/*
-	 * If it is <ALTER TABLE ADD COLUMN> we should count the existing FK
-	 * constraints in the space and form a name based on this.
-	 */
-	if (parse->create_table_def.new_space == NULL) {
-		struct space *origin = space_by_name(space->def->name);
-		assert(origin != NULL);
-		struct rlist *child_fk = &origin->child_fk_constraint;
-		struct fk_constraint *fk;
-		rlist_foreach_entry(fk, child_fk, in_child_space)
-			idx++;
-	}
+	uint32_t idx = space->def->opts.constraint_count + 1;
 	return sqlMPrintf(parse->db, "fk_unnamed_%s_%u", space->def->name, idx);
 }
 
@@ -2101,8 +2100,7 @@ sql_fk_parent_space(struct Parse *parse, const char *fk_name)
 		parse->is_aborted = true;
 		return NULL;
 	}
-	struct index *index = parent->index[0];
-	if (index == NULL) {
+	if (parent->index == NULL || parent->index[0] == NULL) {
 		diag_set(ClientError, ER_CREATE_FK_CONSTRAINT, fk_name,
 			 "referenced space doesn't feature PRIMARY KEY");
 		parse->is_aborted = true;
@@ -2148,181 +2146,130 @@ sql_fk_parent_cols(struct Parse *parse, struct space *parent)
 }
 
 void
-sql_create_foreign_key(struct Parse *parse_context)
+sql_create_foreign_key(struct Parse *parse)
 {
-	struct sql *db = parse_context->db;
-	struct create_fk_def *create_fk_def = &parse_context->create_fk_def;
-	struct create_constraint_def *create_constr_def = &create_fk_def->base;
-	struct create_entity_def *create_def = &create_constr_def->base;
-	struct alter_entity_def *alter_def = &create_def->base;
-	assert(alter_def->entity_type == ENTITY_TYPE_FK);
-	assert(alter_def->alter_action == ALTER_ACTION_CREATE);
-	/*
-	 * When this function is called second time during
-	 * <CREATE TABLE ...> statement (i.e. at VDBE runtime),
-	 * don't even try to do something.
-	 */
-	if (db->init.busy)
-		return;
-	/*
-	 * Beforehand initialization for correct clean-up
-	 * while emergency exiting in case of error.
-	 */
-	char *constraint_name = sql_fk_name(parse_context);
-	if (constraint_name == NULL)
-		goto tnt_error;
-	bool is_self_referenced = false;
-	struct space *space = parse_context->create_column_def.space;
-	struct create_table_def *table_def = &parse_context->create_table_def;
-	if (space == NULL)
-		space = table_def->new_space;
-	/*
-	 * Space under construction during <CREATE TABLE>
-	 * processing or shallow copy of space during <ALTER TABLE
-	 * ... ADD COLUMN>. NULL for <ALTER TABLE ... ADD
-	 * CONSTRAINT> statement handling.
-	 */
-	bool is_alter_add_constr = space == NULL;
-	if (sql_fk_child_cols(parse_context) != 0)
-		goto tnt_error;
-	struct ExprList *child_cols = create_fk_def->child_cols;
-	assert(child_cols != NULL);
-	uint32_t child_cols_count = child_cols->nExpr;
-	struct space *child_space = NULL;
-	if (is_alter_add_constr) {
-		const char *child_name = alter_def->entity_name->a[0].zName;
-		child_space = space_by_name(child_name);
-		if (child_space == NULL) {
-			diag_set(ClientError, ER_NO_SUCH_SPACE, child_name);
-			goto tnt_error;
+	char *fk_name = sql_fk_name(parse);
+	if (fk_name == NULL)
+		goto out;
+	struct space *space = parse->create_column_def.space;
+	if (space == NULL) {
+		struct create_constraint_def *cdef = &parse->create_fk_def.base;
+		const char *name = cdef->base.base.entity_name->a[0].zName;
+		space = space_by_name(name);
+		if (space == NULL) {
+			diag_set(ClientError, ER_NO_SUCH_SPACE, name);
+			parse->is_aborted = true;
+			goto out;
 		}
-	} else {
-		size_t size;
-		struct fk_constraint_parse *fk_parse =
-			region_alloc_object(&parse_context->region,
-					    typeof(*fk_parse), &size);
-		if (fk_parse == NULL) {
-			diag_set(OutOfMemory, size, "region_alloc_object",
-				 "fk_parse");
-			goto tnt_error;
-		}
-		memset(fk_parse, 0, sizeof(*fk_parse));
-		/*
-		 * Child space already exists if it is
-		 * <ALTER TABLE ADD COLUMN>.
-		 */
-		if (table_def->new_space == NULL)
-			child_space = space;
-		struct rlist *fkeys =
-			&parse_context->create_fk_constraint_parse_def.fkeys;
-		rlist_add_entry(fkeys, fk_parse, link);
 	}
-	struct space *parent_space = sql_fk_parent_space(parse_context,
-							 constraint_name);
+	if (sql_fk_child_cols(parse) != 0)
+		goto out;
+	assert(parse->create_fk_def.child_cols != NULL);
+	struct ExprList *child_cols = parse->create_fk_def.child_cols;
+	struct space *parent_space = sql_fk_parent_space(parse, fk_name);
 	if (parent_space == NULL)
-		goto tnt_error;
-	if (sql_fk_parent_cols(parse_context, parent_space) != 0)
-		goto tnt_error;
-	struct ExprList *parent_cols = create_fk_def->parent_cols;
-	assert(parent_cols != NULL);
-	/*
-	 * Within ALTER TABLE ADD CONSTRAINT FK also can be
-	 * self-referenced, but in this case parent (which is
-	 * also child) table will definitely exist.
-	 */
-	is_self_referenced = !is_alter_add_constr &&
-			     strcmp(parent_space->def->name,
-				    space->def->name) == 0;
-	if (is_self_referenced) {
-		struct rlist *fkeys =
-			&parse_context->create_fk_constraint_parse_def.fkeys;
-		struct fk_constraint_parse *fk =
-			rlist_first_entry(fkeys, struct fk_constraint_parse,
-					  link);
-		fk->selfref_cols = parent_cols;
-		fk->is_self_referenced = true;
-	}
-	const char *error_msg = "number of columns in foreign key does not "
-				"match the number of columns in the primary "
-				"index of referenced table";
-	if (parent_cols->nExpr != (int)child_cols_count) {
-		diag_set(ClientError, ER_CREATE_FK_CONSTRAINT,
-			 constraint_name, error_msg);
-		goto tnt_error;
-	}
-	int name_len = strlen(constraint_name);
-	uint32_t links_offset;
-	size_t fk_def_sz = fk_constraint_def_sizeof(child_cols_count, name_len,
-						    &links_offset);
-	struct fk_constraint_def *fk_def = (struct fk_constraint_def *)
-		region_aligned_alloc(&parse_context->region, fk_def_sz,
-				     alignof(*fk_def));
-	if (fk_def == NULL) {
-		diag_set(OutOfMemory, fk_def_sz, "region_aligned_alloc",
-			 "fk_def");
-		goto tnt_error;
-	}
-	fk_def->field_count = child_cols_count;
-	fk_def->child_id = child_space != NULL ? child_space->def->id : 0;
-	fk_def->parent_id = parent_space != NULL ? parent_space->def->id : 0;
-	fk_def->links = (struct field_link *)((char *)fk_def + links_offset);
-	/* Fill links map. */
-	for (uint32_t i = 0; i < fk_def->field_count; ++i) {
-		if (!is_self_referenced &&
-		    columnno_by_name(parse_context, parent_space,
-				     parent_cols->a[i].zName,
-				     &fk_def->links[i].parent_field,
-				     constraint_name) != 0) {
-			goto exit_create_fk;
-		}
-		if (!is_alter_add_constr) {
-			if (resolve_link(parse_context, space->def,
-					 child_cols->a[i].zName,
-					 &fk_def->links[i].child_field,
-					 constraint_name) != 0)
-				goto exit_create_fk;
-		/* In case of ALTER parent table must exist. */
-		} else if (columnno_by_name(parse_context, child_space,
-					    child_cols->a[i].zName,
-					    &fk_def->links[i].child_field,
-					    constraint_name) != 0) {
-			goto exit_create_fk;
-		}
-	}
-	memcpy(fk_def->name, constraint_name, name_len);
-	fk_def->name[name_len] = '\0';
-	/*
-	 * In case of <СREATE TABLE> and <ALTER TABLE ADD COLUMN>
-	 * processing, all foreign keys constraints must be
-	 * created after space itself (or space altering), so let
-	 * delay it until vdbe_emit_create_constraints() call and
-	 * simply maintain list of all FK constraints inside
-	 * parser.
-	 */
-	if (!is_alter_add_constr) {
-		struct rlist *fkeys =
-			&parse_context->create_fk_constraint_parse_def.fkeys;
-		struct fk_constraint_parse *fk_parse =
-			rlist_first_entry(fkeys, struct fk_constraint_parse,
-					  link);
-		fk_parse->fk_def = fk_def;
-	} else {
-		vdbe_emit_fk_constraint_create(parse_context, fk_def,
-					       child_space->def->name);
+		goto out;
+	if (sql_fk_parent_cols(parse, parent_space) != 0)
+		goto out;
+	assert(parse->create_fk_def.parent_cols != NULL);
+	struct ExprList *parent_cols = parse->create_fk_def.parent_cols;
+	int count = child_cols->nExpr;
+	if (count != parent_cols->nExpr) {
+		diag_set(ClientError, ER_CREATE_FK_CONSTRAINT, fk_name,
+			 "number of referenced columns not match the number of "
+			 "referencing columns");
+		parse->is_aborted = true;
+		goto out;
 	}
 
-exit_create_fk:
-	sql_expr_list_delete(db, create_fk_def->child_cols);
-	if (!is_self_referenced)
-		sql_expr_list_delete(db, create_fk_def->parent_cols);
-	sqlDbFree(db, constraint_name);
-	return;
-tnt_error:
-	parse_context->is_aborted = true;
-	goto exit_create_fk;
+	uint32_t fk_name_len = strlen(fk_name);
+	uint32_t buf_size = fk_name_len + 1;
+	buf_size += sizeof(struct tuple_constraint_fkey_field_mapping) * count;
+	for (int i = 0; i < count; ++i) {
+		buf_size += strlen(parent_cols->a[i].zName) + 1;
+		buf_size += strlen(child_cols->a[i].zName) + 1;
+	}
+	struct region *region = &parse->region;
+	char *buf = region_alloc(region, buf_size);
+	if (buf == NULL) {
+		diag_set(OutOfMemory, buf_size, "region_alloc", "buf");
+		parse->is_aborted = true;
+		goto out;
+	}
+
+	struct tuple_constraint_def fk;
+	fk.type = CONSTR_FKEY;
+	fk.fkey.space_id = parent_space->def->id;
+	fk.fkey.field_mapping_size = count;
+	memcpy(buf, fk_name, fk_name_len + 1);
+	fk.name = buf;
+	fk.name_len = fk_name_len;
+	buf += fk_name_len + 1;
+	fk.fkey.field_mapping =
+		(struct tuple_constraint_fkey_field_mapping *)buf;
+	buf += sizeof(struct tuple_constraint_fkey_field_mapping) * count;
+	for (int i = 0; i < count; ++i) {
+		struct tuple_constraint_field_id *field =
+			&fk.fkey.field_mapping[i].local_field;
+		const char *str = child_cols->a[i].zName;
+		uint32_t len = strlen(str);
+		memcpy(buf, str, len + 1);
+		field->id = 0;
+		field->name = buf;
+		field->name_len = len;
+		buf += len + 1;
+
+		field = &fk.fkey.field_mapping[i].foreign_field;
+		str = parent_cols->a[i].zName;
+		len = strlen(str);
+		memcpy(buf, str, len + 1);
+		field->id = 0;
+		field->name = buf;
+		field->name_len = len;
+		buf += len + 1;
+	}
+
+	uint32_t fk_count = space->def->opts.constraint_count;
+	struct tuple_constraint_def *old_fks = space->def->opts.constraint_def;
+	for (uint32_t i = 0; i < fk_count; ++i) {
+		if (strcmp(old_fks[i].name, fk.name) == 0) {
+			diag_set(ClientError, ER_CONSTRAINT_EXISTS,
+				 "FOREIGN KEY", fk.name, space->def->name);
+			parse->is_aborted = true;
+			goto out;
+		}
+	}
+
+	uint32_t size;
+	struct tuple_constraint_def *fks =
+		region_alloc_array(region, typeof(*fks), fk_count + 1, &size);
+	if (fks == NULL) {
+		diag_set(OutOfMemory, size, "region_alloc_array", "fks");
+		parse->is_aborted = true;
+		goto out;
+	}
+	memcpy(fks, old_fks, fk_count * sizeof(*fks));
+	fks[fk_count] = fk;
+	if (parse->create_column_def.space != NULL) {
+		++space->def->opts.constraint_count;
+		space->def->opts.constraint_def = fks;
+		goto out;
+	}
+
+	struct space_def *new_def = space_def_dup(space->def);
+	free(new_def->opts.constraint_def);
+	++new_def->opts.constraint_count;
+	new_def->opts.constraint_def = fks;
+	vdbe_emit_alter_constraint(parse, new_def);
+	new_def->opts.constraint_count = 0;
+	new_def->opts.constraint_def = NULL;
+	space_def_delete(new_def);
+out:
+	sqlDbFree(parse->db, parse->create_fk_def.parent_cols);
+	sqlDbFree(parse->db, parse->create_fk_def.child_cols);
+	sqlDbFree(parse->db, fk_name);
 }
 
-/** Generate code to change the definition of tuple constraint. */
 static void
 vdbe_emit_alter_constraint(struct Parse *parse, struct space_def *def)
 {
