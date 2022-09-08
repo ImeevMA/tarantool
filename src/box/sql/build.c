@@ -739,6 +739,22 @@ vdbe_emit_ck_constraint_create(struct Parse *parser,
 			       const struct ck_constraint_def *ck_def,
 			       uint32_t reg_space_id, const char *space_name);
 
+static char *
+sql_ck_name(struct Parse *parse)
+{
+	if (parse->create_ck_def.base.base.name.n != 0) {
+		struct Token *name = &parse->create_fk_def.base.base.name;
+		char *fk_name = sql_name_from_token(parse->db, name);
+		if (fk_name == NULL)
+			parse->is_aborted = true;
+		return fk_name;
+	}
+	struct space *space = parse->create_column_def.space;
+	assert(space != NULL);
+	uint32_t idx = space->def->opts.constraint_count + 1;
+	return sqlMPrintf(parse->db, "ck_unnamed_%s_%u", space->def->name, idx);
+}
+
 void
 sql_create_check_contraint(struct Parse *parser)
 {
