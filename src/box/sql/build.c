@@ -694,51 +694,6 @@ primary_key_exit:
 	return;
 }
 
-/**
- * Prepare a 0-terminated string in the wptr memory buffer that
- * does not contain a sequence of more than one whatespace
- * character. Routine enforces ' ' (space) as whitespace
- * delimiter. When character ' or " was met, the string is copied
- * without any changes until the next ' or " sign.
- * The wptr buffer is expected to have str_len + 1 bytes
- * (this is the expected scenario where no extra whitespace
- * characters in the source string).
- * @param wptr The destination memory buffer of size
- *             @a str_len + 1.
- * @param str The source string to be copied.
- * @param str_len The source string @a str length.
- */
-static void
-trim_space_snprintf(char *wptr, const char *str, uint32_t str_len)
-{
-	const char *str_end = str + str_len;
-	char quote_type = '\0';
-	bool is_prev_chr_space = false;
-	while (str < str_end) {
-		if (quote_type == '\0') {
-			if (*str == '\'' || *str == '\"') {
-				quote_type = *str;
-			} else if (isspace((unsigned char)*str)) {
-				if (!is_prev_chr_space)
-					*wptr++ = ' ';
-				is_prev_chr_space = true;
-				str++;
-				continue;
-			}
-		} else if (*str == quote_type) {
-			quote_type = '\0';
-		}
-		is_prev_chr_space = false;
-		*wptr++ = *str++;
-	}
-	*wptr = '\0';
-}
-
-static void
-vdbe_emit_ck_constraint_create(struct Parse *parser,
-			       const struct ck_constraint_def *ck_def,
-			       uint32_t reg_space_id, const char *space_name);
-
 static char *
 sql_ck_name(struct Parse *parse)
 {
@@ -758,112 +713,133 @@ sql_ck_name(struct Parse *parse)
 void
 sql_create_check_contraint(struct Parse *parser)
 {
-	struct create_ck_def *create_ck_def = &parser->create_ck_def;
-	struct ExprSpan *expr_span = create_ck_def->expr;
+	struct ExprSpan *expr_span = parser->create_ck_def.expr;
 	sql_expr_delete(parser->db, expr_span->pExpr);
-
-	struct alter_entity_def *alter_def =
-		(struct alter_entity_def *) create_ck_def;
-	assert(alter_def->entity_type == ENTITY_TYPE_CK);
-	(void) alter_def;
-	struct space *space = parser->create_column_def.space;
-	if (space == NULL)
-		space = parser->create_table_def.new_space;
-	bool is_alter_add_constr = space == NULL;
-
-	/* Prepare payload for ck constraint definition. */
-	struct region *region = &parser->region;
-	struct Token *name_token = &create_ck_def->base.base.name;
-	const char *name;
-	if (name_token->n > 0) {
-		name = sql_normalized_name_region_new(region, name_token->z,
-						      name_token->n);
-		if (name == NULL) {
-			parser->is_aborted = true;
-			return;
-		}
-	} else {
-		assert(!is_alter_add_constr);
-		uint32_t ck_idx =
-			++parser->create_ck_constraint_parse_def.count;
-		/*
-		 * If it is <ALTER TABLE ADD COLUMN> we should
-		 * count the existing CHECK constraints in the
-		 * space and form a name based on this.
-		 */
-		if (parser->create_table_def.new_space == NULL) {
-			struct space *original_space =
-				space_by_name(space->def->name);
-			assert(original_space != NULL);
-			struct ck_constraint *ck;
-			rlist_foreach_entry(ck, &original_space->ck_constraint,
-					    link)
-				ck_idx++;
-		}
-		name = tt_sprintf("ck_unnamed_%s_%u", space->def->name, ck_idx);
-	}
-	size_t name_len = strlen(name);
-
-	uint32_t expr_str_len = (uint32_t)(expr_span->zEnd - expr_span->zStart);
+	struct Vdbe *v = sqlGetVdbe(parser);
+	assert(v != NULL);
+	int regs = parser->nMem + 1;
+	parser->nMem += 20;
+	sqlVdbeAddOp2(v, OP_SystemSpaceNewId, BOX_FUNC_ID, regs);
+	sqlVdbeAddOp2(v, OP_Integer, effective_user()->uid, regs + 1);
+	char *name = sql_ck_name(parser);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 2, 0, name, P4_DYNAMIC);
+	sqlVdbeAddOp2(v, OP_Integer, 0, regs + 3);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 4, 0, "SQL_EXPR", P4_STATIC);
+	uint32_t body_len = expr_span->zEnd - expr_span->zStart;
 	const char *expr_str = expr_span->zStart;
+	char *body = sqlDbStrNDup(parser->db, expr_str, body_len);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 5, 0, body, P4_DYNAMIC);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 6, 0, "function", P4_STATIC);
+	char *param_list = sqlDbMallocRawNN(parser->db, 32);
+	char *buf = mp_encode_array(param_list, 0);
+	sqlVdbeAddOp4(v, OP_Blob, buf - param_list, regs + 7,
+		      SQL_SUBTYPE_MSGPACK, param_list, P4_DYNAMIC);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 8, 0, "any", P4_STATIC);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 9, 0, "none", P4_STATIC);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 10, 0, "none", P4_STATIC);
+	sqlVdbeAddOp2(v, OP_Bool, true, regs + 11);
+	sqlVdbeAddOp2(v, OP_Bool, false, regs + 12);
+	sqlVdbeAddOp2(v, OP_Bool, true, regs + 13);
+	char *exports = buf;
+	buf = mp_encode_array(exports, 1);
+	buf = mp_encode_str0(buf, "LUA");
+	sqlVdbeAddOp4(v, OP_Blob, buf - exports, regs + 14, SQL_SUBTYPE_MSGPACK,
+		      exports, P4_STATIC);
+	char *opts = buf;
+	buf = mp_encode_map(opts, 0);
+	sqlVdbeAddOp4(v, OP_Blob, buf - opts, regs + 15, SQL_SUBTYPE_MSGPACK,
+		      opts, P4_STATIC);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 16, 0, "", P4_STATIC);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 17, 0, "", P4_STATIC);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 18, 0, "", P4_STATIC);
+	sqlVdbeAddOp3(v, OP_MakeRecord, regs, 19, regs + 19);
+	sqlVdbeAddOp2(v, OP_SInsert, BOX_FUNC_ID, regs + 19);
 
-	/*
-	 * Allocate memory for ck constraint parse structure and
-	 * ck constraint definition as a single memory chunk on
-	 * region:
-	 *
-	 *    [ck_parse][ck_def[name][expr_str]]
-	 *         |_____^  |_________^
-	 */
-	uint32_t expr_str_offset;
-	uint32_t ck_def_sz = ck_constraint_def_sizeof(name_len, expr_str_len,
-						      &expr_str_offset);
-	struct ck_constraint_parse *ck_parse;
-	size_t total = sizeof(*ck_parse) + ck_def_sz;
-	ck_parse = (struct ck_constraint_parse *)
-		region_aligned_alloc(region, total, alignof(*ck_parse));
-	if (ck_parse == NULL) {
-		diag_set(OutOfMemory, total, "region_aligned_alloc",
-			 "ck_parse");
-		parser->is_aborted = true;
-		return;
+
+
+
+	struct tuple_constraint_def fk;
+	fk.type = CONSTR_FUNC;
+	fk.fkey.space_id = parent_space->def->id;
+	fk.fkey.field_mapping_size = count;
+	memcpy(buf, fk_name, fk_name_len + 1);
+	fk.name = buf;
+	fk.name_len = fk_name_len;
+	buf += fk_name_len + 1;
+	fk.fkey.field_mapping =
+		(struct tuple_constraint_fkey_field_mapping *)buf;
+	buf += sizeof(struct tuple_constraint_fkey_field_mapping) * count;
+	for (int i = 0; i < count; ++i) {
+		struct tuple_constraint_field_id *field =
+			&fk.fkey.field_mapping[i].local_field;
+		const char *str = child_cols->a[i].zName;
+		uint32_t len = strlen(str);
+		memcpy(buf, str, len + 1);
+		field->id = 0;
+		field->name = buf;
+		field->name_len = len;
+		buf += len + 1;
+
+		field = &fk.fkey.field_mapping[i].foreign_field;
+		str = parent_cols->a[i].zName;
+		len = strlen(str);
+		memcpy(buf, str, len + 1);
+		field->id = 0;
+		field->name = buf;
+		field->name_len = len;
+		buf += len + 1;
 	}
-	struct ck_constraint_def *ck_def =
-		(struct ck_constraint_def *)((char *)ck_parse +
-					     sizeof(*ck_parse));
-	static_assert(alignof(*ck_def) == alignof(*ck_parse),
-		      "allocated in one block and should have the same "
-		      "alignment");
-	ck_parse->ck_def = ck_def;
-	rlist_create(&ck_parse->link);
 
-	ck_def->expr_str = (char *)ck_def + expr_str_offset;
-	ck_def->language = CK_CONSTRAINT_LANGUAGE_SQL;
-	ck_def->space_id = BOX_ID_NIL;
-	trim_space_snprintf(ck_def->expr_str, expr_str, expr_str_len);
-	memcpy(ck_def->name, name, name_len);
-	ck_def->name[name_len] = '\0';
-	if (is_alter_add_constr) {
-		const char *space_name = alter_def->entity_name->a[0].zName;
-		struct space *space = space_by_name(space_name);
-		if (space == NULL) {
-			diag_set(ClientError, ER_NO_SUCH_SPACE, space_name);
-			parser->is_aborted = true;
-			return;
+	uint32_t fk_count = space->def->opts.constraint_count;
+	struct tuple_constraint_def *old_fks = space->def->opts.constraint_def;
+	for (uint32_t i = 0; i < fk_count; ++i) {
+		if (strcmp(old_fks[i].name, fk.name) == 0) {
+			diag_set(ClientError, ER_CONSTRAINT_EXISTS,
+				 "FOREIGN KEY", fk.name, space->def->name);
+			parse->is_aborted = true;
+			goto out;
 		}
-		int space_id_reg = ++parser->nMem;
-		struct Vdbe *v = sqlGetVdbe(parser);
-		sqlVdbeAddOp2(v, OP_Integer, space->def->id,
-			      space_id_reg);
-		vdbe_emit_ck_constraint_create(parser, ck_def, space_id_reg,
-					       space->def->name);
-		assert(sqlVdbeGetOp(v, v->nOp - 1)->opcode == OP_SInsert);
-		sqlVdbeCountChanges(v);
-		sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
-	} else {
-		rlist_add_entry(&parser->create_ck_constraint_parse_def.checks,
-				ck_parse, link);
 	}
+
+	uint32_t size;
+	struct tuple_constraint_def *fks =
+		region_alloc_array(region, typeof(*fks), fk_count + 1, &size);
+	if (fks == NULL) {
+		diag_set(OutOfMemory, size, "region_alloc_array", "fks");
+		parse->is_aborted = true;
+		goto out;
+	}
+	memcpy(fks, old_fks, fk_count * sizeof(*fks));
+	fks[fk_count] = fk;
+	if (parse->create_column_def.space != NULL) {
+		++space->def->opts.constraint_count;
+		space->def->opts.constraint_def = fks;
+		goto out;
+	}
+
+	struct space_def *new_def = space_def_dup(space->def);
+	free(new_def->opts.constraint_def);
+	++new_def->opts.constraint_count;
+	new_def->opts.constraint_def = fks;
+	vdbe_emit_alter_constraint(parse, new_def);
+	new_def->opts.constraint_count = 0;
+	new_def->opts.constraint_def = NULL;
+	space_def_delete(new_def);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 }
 
 /*
