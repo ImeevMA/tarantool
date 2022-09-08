@@ -872,7 +872,7 @@ sql_system_space_new_id(uint32_t space_id, uint64_t *id)
 	if (space_id == BOX_SPACE_ID)
 		return tarantoolsqlIncrementMaxid(id);
 
-	assert(space_id == BOX_SEQUENCE_ID);
+	assert(space_id == BOX_SEQUENCE_ID || space_id == BOX_FUNC_ID);
 	char key[1];
 	struct tuple *tuple;
 	char *key_end = mp_encode_array(key, 0);
@@ -885,7 +885,10 @@ sql_system_space_new_id(uint32_t space_id, uint64_t *id)
 		*id = 1;
 		return 0;
 	}
-	if (tuple_field_u64(tuple, BOX_SEQUENCE_FIELD_ID, id) != 0)
+
+	uint32_t fieldno = space_id == BOX_FUNC_ID ? BOX_FUNC_FIELD_ID :
+			   BOX_SEQUENCE_FIELD_ID;
+	if (tuple_field_u64(tuple, fieldno, id) != 0)
 		return -1;
 	++*id;
 	return 0;
