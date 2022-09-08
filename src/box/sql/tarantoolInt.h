@@ -96,12 +96,14 @@ tarantoolsqlIdxKeyCompare(struct BtCursor *cursor,
 			      struct UnpackedRecord *unpacked);
 
 /**
- * The function assumes the cursor is open on _schema.
- * Increment max_id and store updated value it output parameter.
- * @param[out] New space id, available for usage.
+ * Generate an ID for a new tuple in system space. System space is defined by
+ * space_id.
+ *
+ * Currently supported system spaces are _space and _sequence. For _space, the
+ * new ID is also updated in _schema.
  */
 int
-tarantoolsqlIncrementMaxid(uint64_t *space_max_id);
+sql_system_space_new_id(uint32_t space_id, uint64_t *id);
 
 /**
  * Encode format as entry to be inserted to _space on @region.
@@ -170,13 +172,3 @@ sql_encode_index_parts(struct region *region, const struct field_def *fields,
 char *
 sql_encode_index_opts(struct region *region, const struct index_opts *opts,
 		      uint32_t *size);
-
-/**
- * Extract next id from _sequence space.
- * If index is empty - return 0 in max_id and success status
- *
- * @param[out] max_id Fetched value.
- * @retval 0 on success, -1 otherwise.
- */
-int
-tarantoolSqlNextSeqId(uint64_t *max_id);

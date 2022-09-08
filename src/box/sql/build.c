@@ -928,21 +928,6 @@ vdbe_emit_open_cursor(struct Parse *parse_context, int cursor, int index_id,
 	return sqlVdbeAddOp3(vdbe, OP_IteratorOpen, cursor, index_id, reg);
 }
 
-/*
- * Generate code to determine the new space Id.
- * Fetch the max space id seen so far from _schema and increment it.
- * Return register storing the result.
- */
-static int
-getNewSpaceId(Parse * pParse)
-{
-	Vdbe *v = sqlGetVdbe(pParse);
-	int iRes = ++pParse->nMem;
-
-	sqlVdbeAddOp1(v, OP_IncMaxid, iRes);
-	return iRes;
-}
-
 /**
  * Generate VDBE code to create an Index. This is accomplished by
  * adding an entry to the _index table.
@@ -1385,7 +1370,8 @@ vdbe_emit_create_constraints(struct Parse *parse, int reg_space_id)
 		int reg_seq_id = ++parse->nMem;
 		struct Vdbe *v = sqlGetVdbe(parse);
 		assert(v != NULL);
-		sqlVdbeAddOp2(v, OP_NextSequenceId, 0, reg_seq_id);
+		sqlVdbeAddOp2(v, OP_SystemSpaceNewId, BOX_SEQUENCE_ID,
+			      reg_seq_id);
 		int reg_seq_rec = emitNewSysSequenceRecord(parse, reg_seq_id,
 							   space->def->name);
 		if (is_alter) {
@@ -1523,7 +1509,8 @@ sqlEndTable(struct Parse *pParse)
 					      OP_NoConflict) != 0)
 		return;
 
-	int reg_space_id = getNewSpaceId(pParse);
+	int reg_space_id = ++pParse->nMem;
+	sqlVdbeAddOp2(v, OP_SystemSpaceNewId, BOX_SPACE_ID, reg_space_id);
 	vdbe_emit_space_create(pParse, reg_space_id, name_reg, new_space);
 	vdbe_emit_create_constraints(pParse, reg_space_id);
 }
@@ -1613,8 +1600,10 @@ sql_create_view(struct Parse *parse_context)
 					      OP_NoConflict) != 0)
 		goto create_view_fail;
 
-	vdbe_emit_space_create(parse_context, getNewSpaceId(parse_context),
-			       name_reg, space);
+	int reg_space_id = ++parse_context->nMem;
+	struct Vdbe *v = sqlGetVdbe(parse_context);
+	sqlVdbeAddOp2(v, OP_SystemSpaceNewId, BOX_SPACE_ID, reg_space_id);
+	vdbe_emit_space_create(parse_context, reg_space_id, name_reg, space);
 
  create_view_fail:
 	sql_expr_list_delete(db, view_def->aliases);

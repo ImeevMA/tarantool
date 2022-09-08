@@ -2799,22 +2799,6 @@ case OP_Sequence: {           /* out2 */
 	break;
 }
 
-/* Opcode: NextSequenceId * P2 * * *
- * Synopsis: r[P2]=get_max(_sequence)
- *
- * Get next Id of the _sequence space.
- * Return in P2 maximum id found in _sequence,
- * incremented by one.
- */
-case OP_NextSequenceId: {
-	pOut = vdbe_prepare_null_out(p, pOp->p2);
-	uint64_t id = 0;
-	tarantoolSqlNextSeqId(&id);
-	id++;
-	mem_set_uint(pOut, id);
-	break;
-}
-
 /* Opcode: NextIdEphemeral P1 P2 * * *
  * Synopsis: r[P2]=get_next_rowid(space[P1])
  *
@@ -4252,17 +4236,17 @@ case OP_Init: {          /* jump */
 	goto jump_to_p2;
 }
 
-/* Opcode: IncMaxid P1 * * * *
+/* Opcode: SystemSpaceNewId P1 P2 * * *
+ * Synopsis: r[P2] = new ID for box.space[P1]
  *
- * Increment the max_id from _schema (max space id)
- * and store updated id in register specified by first operand.
- * It is system opcode and must be used only during DDL routine.
+ * Generate an ID for a new tuple in system space. System space is defined by
+ * P1. For _space, the new ID is also updated in _schema.
  */
-case OP_IncMaxid: {
-	assert(pOp->p1 > 0);
-	pOut = vdbe_prepare_null_out(p, pOp->p1);
+case OP_SystemSpaceNewId: {
+	assert(pOp->p1 > 0 && pOp->p2 > 0);
+	pOut = vdbe_prepare_null_out(p, pOp->p2);
 	uint64_t u;
-	if (tarantoolsqlIncrementMaxid(&u) != 0)
+	if (sql_system_space_new_id(pOp->p1, &u) != 0)
 		goto abort_due_to_error;
 	mem_set_uint(pOut, u);
 	break;

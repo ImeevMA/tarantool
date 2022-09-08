@@ -829,7 +829,8 @@ out:
 	return rc;
 }
 
-int
+/** Generate an ID for a new tuple in _space. Update max_id in _schema. */
+static int
 tarantoolsqlIncrementMaxid(uint64_t *space_max_id)
 {
 	/* ["max_id"] */
@@ -862,6 +863,31 @@ tarantoolsqlIncrementMaxid(uint64_t *space_max_id)
 	if (box_process1(&request, &res) != 0 || res == NULL ||
 	    tuple_field_u64(res, 1, space_max_id) != 0)
 		return -1;
+	return 0;
+}
+
+int
+sql_system_space_new_id(uint32_t space_id, uint64_t *id)
+{
+	if (space_id == BOX_SPACE_ID)
+		return tarantoolsqlIncrementMaxid(id);
+
+	assert(space_id == BOX_SEQUENCE_ID);
+	char key[1];
+	struct tuple *tuple;
+	char *key_end = mp_encode_array(key, 0);
+	assert(key_end - key == 1);
+	if (box_index_max(space_id, 0, key, key_end, &tuple) != 0)
+		return -1;
+
+	/* Index is empty  */
+	if (tuple == NULL) {
+		*id = 1;
+		return 0;
+	}
+	if (tuple_field_u64(tuple, BOX_SEQUENCE_FIELD_ID, id) != 0)
+		return -1;
+	++*id;
 	return 0;
 }
 
@@ -1307,26 +1333,6 @@ sql_debug_info(struct info_handler *h)
 	info_append_int(h, "sql_found_count", sql_found_count);
 	info_append_int(h, "sql_xfer_count", sql_xfer_count);
 	info_end(h);
-}
-
-int
-tarantoolSqlNextSeqId(uint64_t *max_id)
-{
-	char key[1];
-	struct tuple *tuple;
-	char *key_end = mp_encode_array(key, 0);
-	assert(key_end - key == 1);
-	if (box_index_max(BOX_SEQUENCE_ID, 0 /* PK */, key,
-			  key_end, &tuple) != 0)
-		return -1;
-
-	/* Index is empty  */
-	if (tuple == NULL) {
-		*max_id = 0;
-		return 0;
-	}
-
-	return tuple_field_u64(tuple, BOX_SEQUENCE_FIELD_ID, max_id);
 }
 
 struct Expr*
