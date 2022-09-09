@@ -64,6 +64,33 @@ ffi.cdef[[
     ssize_t
     box_index_count(uint32_t space_id, uint32_t index_id, int type,
                     const char *key, const char *key_end);
+    int
+    box_tuple_constraint_create(uint32_t space_id, const char *name,
+                                uint32_t name_len, uint32_t func_id);
+    int
+    box_tuple_constraint_drop(uint32_t space_id, const char *name,
+                              uint32_t name_len);
+    int
+    box_field_constraint_create(uint32_t space_id, const char *name,
+                                uint32_t name_len, uint32_t fieldno,
+                                uint32_t func_id);
+    int
+    box_field_constraint_drop(uint32_t space_id, const char *name,
+                              uint32_t name_len, uint32_t fieldno);
+    int
+    box_tuple_foreign_key_drop(uint32_t space_id, const char *name,
+                               uint32_t name_len);
+    int
+    box_field_foreign_key_create(uint32_t space_id, const char *name,
+                                 uint32_t name_len, uint32_t fieldno,
+                                 uint32_t parent_id, uint32_t parent_fieldno);
+    int
+    box_field_foreign_key_drop(uint32_t space_id, const char *name,
+                               uint32_t name_len, uint32_t fieldno);
+    int
+    box_tuple_foreign_key_create(uint32_t space_id, const char *name,
+                                 uint32_t name_len, uint32_t parent_id,
+                                 const char *mapping, uint32_t mapping_size);
     /** \endcond public */
     /** \cond public */
     bool
@@ -2514,6 +2541,26 @@ vinyl_index_mt.__ipairs = vinyl_index_mt.pairs
 memtx_index_mt.__pairs = memtx_index_mt.pairs
 memtx_index_mt.__ipairs = memtx_index_mt.pairs
 
+local function get_fieldno(space, field)
+    check_space_exists(space)
+    if param_type(field) == 'string' then
+        for k, v in pairs(space:format()) do
+            if field == v.name then
+                return k - 1
+            end
+        end
+        box.error(box.error.NO_SUCH_FIELD_NAME_IN_SPACE, field, space.name)
+    end
+    if param_type(field) ~= 'number' then
+        box.error(box.error.ILLEGAL_PARAMS,
+                  "field should be a string or a number")
+    end
+    if field <= 0 then
+        box.error(box.error.ILLEGAL_PARAMS, "field (number) must be one-based")
+    end
+    return field - 1
+end
+
 local space_mt = {}
 space_mt.len = function(space)
     check_space_arg(space, 'len')
@@ -2660,6 +2707,88 @@ space_mt.run_triggers = function(space, yesno)
         box.error(box.error.NO_SUCH_SPACE, space.name)
     end
     builtin.space_run_triggers(s, yesno)
+end
+space_mt.drop_constraint = function(space, name, field)
+    check_space_arg(space, 'drop_constraint')
+    check_space_exists(space)
+    check_param(name, 'name', 'string')
+    if field == nil then
+        if builtin.box_tuple_constraint_drop(space.id, name, #name) ~= 0 then
+            box.error()
+        end
+        return
+    end
+    local fieldno = get_fieldno(space, field)
+    if builtin.box_field_constraint_drop(space.id, name, #name,
+                                         fieldno) ~= 0 then
+        box.error()
+    end
+end
+space_mt.create_constraint = function(space, name, func, field)
+    check_space_arg(space, 'create_constraint')
+    check_space_exists(space)
+    check_param(name, 'name', 'string')
+    local constr;
+    if (func == nil) then
+        constr = name
+    else
+        constr = {[name] = func}
+    end
+    constr = normalize_constraint(constr, "")
+    assert(constr ~= nil and type(constr) == 'table')
+    if field == nil then
+        if builtin.box_tuple_constraint_create(space.id, name, #name,
+                                               constr[name]) ~= 0 then
+            box.error()
+        end
+        return
+    end
+    local fieldno = get_fieldno(space, field)
+    if builtin.box_field_constraint_create(space.id, name, #name, fieldno,
+                                           constr[name]) ~= 0 then
+        box.error()
+    end
+end
+space_mt.drop_foreign_key = function(space, name, field)
+    check_space_arg(space, 'drop_foreign_key')
+    check_space_exists(space)
+    check_param(name, 'name', 'string')
+    if field == nil then
+        if builtin.box_tuple_foreign_key_drop(space.id, name, #name) ~= 0 then
+            box.error()
+        end
+        return
+    end
+    local fieldno = get_fieldno(space, field)
+    if builtin.box_field_foreign_key_drop(space.id, name, #name,
+                                          fieldno) ~= 0 then
+        box.error()
+    end
+end
+space_mt.create_foreign_key = function(space, name, foreign, relation, field)
+    check_space_arg(space, 'create_foreign_key')
+    check_space_exists(space)
+    check_param(name, 'name', 'string')
+    local def = {[name] = {space = foreign, field = relation}}
+    local is_complex = field == nil
+    local fk = normalize_foreign_key(space.id, space.name, def, "", is_complex)
+    local foreign_id = fk[name].space or space.id
+    local foreign_field = fk[name].field
+    if not is_complex then
+        local fieldno = get_fieldno(space, field)
+        local foreign_fieldno = get_fieldno(box.space[foreign_id], relation)
+        if builtin.box_field_foreign_key_create(space.id, name, #name,
+                                                fieldno, foreign_id,
+                                                foreign_fieldno) ~= 0 then
+            box.error()
+        end
+        return
+    end
+    local mapping = msgpack.encode(setmap(table.deepcopy(foreign_field)))
+    if builtin.box_tuple_foreign_key_create(space.id, name, #name, foreign_id,
+                                            mapping, #mapping) ~= 0 then
+        box.error()
+    end
 end
 space_mt.frommap = box.internal.space.frommap
 space_mt.__index = space_mt
