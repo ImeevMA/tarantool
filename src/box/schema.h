@@ -83,6 +83,10 @@ int
 schema_find_id(uint32_t system_space_id, uint32_t index_id, const char *name,
 	       uint32_t len, uint32_t *object_id);
 
+int
+box_tuple_constraint_drop(uint32_t space_id, const char *name,
+			  uint32_t name_len);
+
 #if defined(__cplusplus)
 } /* extern "C" */
 

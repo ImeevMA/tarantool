@@ -64,6 +64,9 @@ ffi.cdef[[
     ssize_t
     box_index_count(uint32_t space_id, uint32_t index_id, int type,
                     const char *key, const char *key_end);
+    int
+    box_tuple_constraint_drop(uint32_t space_id, const char *name,
+                              uint32_t name_len);
     /** \endcond public */
     /** \cond public */
     bool
@@ -2660,6 +2663,13 @@ space_mt.run_triggers = function(space, yesno)
         box.error(box.error.NO_SUCH_SPACE, space.name)
     end
     builtin.space_run_triggers(s, yesno)
+end
+space_mt.drop_constraint = function(space, name)
+    check_space_arg(space, 'drop_constraint')
+    check_space_exists(space)
+    if builtin.box_tuple_constraint_drop(space.id, name, #name) ~= 0 then
+        box.error(box.error.last())
+    end
 end
 space_mt.frommap = box.internal.space.frommap
 space_mt.__index = space_mt

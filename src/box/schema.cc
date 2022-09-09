@@ -38,6 +38,7 @@
 #include "fiber.h"
 #include "memtx_tx.h"
 #include "txn.h"
+#include "box.h"
 
 /**
  * @module Data Dictionary
@@ -487,3 +488,99 @@ schema_find_name(enum schema_object_type type, uint32_t object_id)
 	return NULL;
 }
 
+int
+box_tuple_constraint_drop(uint32_t space_id, const char *name,
+			  uint32_t name_len)
+{
+	struct space *space = space_by_id(BOX_SPACE_ID);
+	assert(space != NULL);
+	struct index *index = space_index(space, 0);
+	if (index == NULL) {
+		diag_set(ClientError, ER_NO_SUCH_INDEX_ID, 0,
+			 space_name(space));
+		return -1;
+	}
+	char key[16];
+	mp_encode_uint(key, space_id);
+	struct tuple *tuple;
+	if (index_get(index, key, 1, &tuple) != 0)
+		return -1;
+	if (tuple == NULL) {
+		diag_set(ClientError, ER_NO_SUCH_SPACE, space_name(space));
+		return -1;
+	}
+	const char *data = tuple_data(tuple);
+	const char *data_end = data;
+	mp_next(&data_end);
+
+	const char *str = tuple_field(tuple, BOX_SPACE_FIELD_OPTS);
+	assert(str != NULL);
+
+	const char *opts = str;
+	uint32_t opts_count = mp_decode_map(&str);
+	const char *opts_begin = str;
+	uint32_t opts_id = 0;
+	const char *constraints = str;
+	for (; opts_id < opts_count; ++opts_id) {
+		uint32_t len;
+		const char *tmp = mp_decode_str(&str, &len);
+		if (len == strlen("constraint") &&
+		    memcmp(tmp, "constraint", len) == 0)
+			break;
+		mp_next(&str);
+		constraints = str;
+	}
+	if (opts_id == opts_count) {
+		diag_set(ClientError, ER_NO_SUCH_CONSTRAINT, name,
+			 space_name(space));
+		return -1;
+	}
+
+	uint32_t constraint_count = mp_decode_map(&str);
+	const char *constraint_begin = str;
+	const char *constraint = str;
+	uint32_t constraint_id = 0;
+	for (; constraint_id < constraint_count; ++constraint_id) {
+		uint32_t len;
+		const char *tmp = mp_decode_str(&str, &len);
+		if (name_len == len && memcmp(tmp, name, len) == 0)
+			break;
+		mp_next(&str);
+		constraint = str;
+	}
+	if (constraint_id == constraint_count) {
+		diag_set(ClientError, ER_NO_SUCH_CONSTRAINT, name,
+			 space_name(space));
+		return -1;
+	}
+	const char *constraint_end = constraint;
+	mp_next(&constraint_end);
+	mp_next(&constraint_end);
+	--constraint_count;
+	if (constraint_count == 0)
+		--opts_count;
+
+	uint32_t size = (data_end - data) - (constraint_end - constraint);
+	char *new_data = (char *)xmalloc(size);
+	char *new_data_end = new_data;
+	uint32_t prev_size = opts - data;
+	memcpy(new_data_end, data, opts - data);
+	new_data_end += prev_size;
+	new_data_end = mp_encode_map(new_data_end, opts_count);
+	uint32_t opts_size = constraints - opts_begin;
+	memcpy(new_data_end, opts_begin, opts_size);
+	new_data_end += opts_size;
+	if (constraint_count > 0) {
+		new_data_end = mp_encode_str0(new_data_end, "constraint");
+		new_data_end = mp_encode_map(new_data_end, constraint_count);
+		uint32_t constraint_size = constraint - constraint_begin;
+		memcpy(new_data_end, constraint_begin, constraint_size);
+		new_data_end += constraint_size;
+	}
+	uint32_t post_size = data_end - constraint_end;
+	memcpy(new_data_end, constraint_end, post_size);
+	new_data_end += post_size;
+	if (box_replace(BOX_SPACE_ID, new_data, new_data_end, NULL) != 0)
+		return -1;
+	return 0;
+}
