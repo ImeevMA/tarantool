@@ -89,6 +89,7 @@
 #include "mp_uuid.h"
 #include "flightrec.h"
 #include "wal_ext.h"
+#include "tuple_constraint_def.h"
 
 static char status[64] = "unknown";
 
@@ -4295,4 +4296,232 @@ box_read_ffi_enable(void)
 	assert(box_read_ffi_disable_count > 0);
 	if (--box_read_ffi_disable_count == 0)
 		box_read_ffi_is_disabled = false;
+}
+
+/**
+ * Drop the constraint or foreign key. If fieldno is equal to UINT32_MAX then
+ * the tuple constraint or tuple foreign key is dropped, otherwise the field
+ * constraint or field foreign key is dropped.
+ */
+static int
+constraint_drop(uint32_t space_id, const char *name, uint32_t name_len,
+		uint32_t fieldno, enum tuple_constraint_type type)
+{
+	const struct space *space = space_by_id(space_id);
+	uint32_t total_count;
+	struct tuple_constraint_def *cdefs;
+	if (fieldno != UINT32_MAX) {
+		assert(fieldno < space->def->field_count);
+		total_count = space->def->fields[fieldno].constraint_count;
+		cdefs = space->def->fields[fieldno].constraint_def;
+	} else {
+		total_count = space->def->opts.constraint_count;
+		cdefs = space->def->opts.constraint_def;
+	}
+	bool is_exists = false;
+	uint32_t count = 0;
+	for (uint32_t i = 0; i < total_count; ++i) {
+		if (cdefs[i].type != type)
+			continue;
+		++count;
+		uint32_t len = MIN(cdefs[i].name_len, name_len);
+		if (memcmp(cdefs[i].name, name, len) == 0)
+			is_exists = true;
+	}
+	if (!is_exists) {
+		int errcode = type == CONSTR_FKEY ? ER_NO_SUCH_FOREIGN_KEY :
+			      ER_NO_SUCH_CONSTRAINT;
+		diag_set(ClientError, errcode, tt_cstr(name, name_len),
+			 space_name(space));
+		return -1;
+	}
+	struct region *region = &fiber()->gc;
+	uint32_t used = region_used(region);
+	size_t size = 64 + name_len;
+	char *raw = (char *)region_alloc(region, size);
+	if (raw == NULL) {
+		diag_set(OutOfMemory, size, "region_alloc", "raw");
+		return -1;
+	}
+	char *pos = mp_encode_array(raw, 1);
+	pos = mp_encode_uint(pos, space_id);
+	char *ops = pos;
+	pos = mp_encode_array(pos, 1);
+	pos = mp_encode_array(pos, 3);
+	pos = mp_encode_str(pos, "#", 1);
+	const char *type_str = tuple_constraint_type_strs[type];
+	const char *path = fieldno != UINT32_MAX ?
+			   tt_sprintf("format[%d].%s", fieldno + 1, type_str) :
+			   tt_sprintf("flags.%s", type_str);
+	if (count != 1)
+		path = tt_sprintf("%s.%*s", path, name_len, name);
+	pos = mp_encode_str0(pos, path);
+	pos = mp_encode_uint(pos, 1);
+	int rc = box_update(BOX_SPACE_ID, 0, raw, ops, ops, pos, 0, NULL);
+	region_truncate(region, used);
+	return rc;
+}
+
+int
+box_tuple_constraint_drop(uint32_t space_id, const char *name,
+			  uint32_t name_len)
+{
+	return constraint_drop(space_id, name, name_len, UINT32_MAX,
+			       CONSTR_FUNC);
+}
+
+int
+box_field_constraint_drop(uint32_t space_id, const char *name,
+			  uint32_t name_len, uint32_t fieldno)
+{
+	return constraint_drop(space_id, name, name_len, fieldno, CONSTR_FUNC);
+}
+
+int
+box_tuple_foreign_key_drop(uint32_t space_id, const char *name,
+			   uint32_t name_len)
+{
+	return constraint_drop(space_id, name, name_len, UINT32_MAX,
+			       CONSTR_FKEY);
+}
+
+int
+box_field_foreign_key_drop(uint32_t space_id, const char *name,
+			   uint32_t name_len, uint32_t fieldno)
+{
+	return constraint_drop(space_id, name, name_len, fieldno, CONSTR_FKEY);
+}
+
+/* Value of new constraint or foreign key. */
+union constraint_value {
+	/* ID of a function for constraint. */
+	uint32_t func_id;
+	struct {
+		/* Mapping for complex foreign key. */
+		const char *mapping;
+		/* Size of mapping for complex foreign key. */
+		uint32_t mapping_size;
+		/* Foreign space ID. */
+		uint32_t space_id;
+		/* Fieldno of foreign field for simple foreign key. */
+		uint32_t fieldno;
+	};
+};
+
+/**
+ * Create constraint or foreign key. If fieldno is equal to UINT32_MAX then the
+ * tuple constraint or tuple foreign key is created, otherwise the field
+ * constraint or field foreign key is created.
+ */
+static int
+constraint_create(uint32_t space_id, const char *name, uint32_t name_len,
+		  uint32_t fieldno, const union constraint_value *value,
+		  enum tuple_constraint_type type)
+{
+	const struct space *space = space_by_id(space_id);
+	uint32_t total_count;
+	struct tuple_constraint_def *cdefs;
+	if (fieldno != UINT32_MAX) {
+		assert(fieldno < space->def->field_count);
+		total_count = space->def->fields[fieldno].constraint_count;
+		cdefs = space->def->fields[fieldno].constraint_def;
+	} else {
+		total_count = space->def->opts.constraint_count;
+		cdefs = space->def->opts.constraint_def;
+	}
+	bool is_first = true;
+	for (uint32_t i = 0; i < total_count && is_first; ++i)
+		is_first = cdefs[i].type != type;
+
+	struct region *region = &fiber()->gc;
+	uint32_t used = region_used(region);
+	size_t size = 128 + name_len;
+	if (type == CONSTR_FKEY && fieldno == UINT32_MAX)
+		size += value->mapping_size;
+	char *raw = (char *)region_alloc(region, size);
+	if (raw == NULL) {
+		diag_set(OutOfMemory, size, "region_alloc", "raw");
+		return -1;
+	}
+	char *pos = mp_encode_array(raw, 1);
+	pos = mp_encode_uint(pos, space_id);
+	char *ops = pos;
+	pos = mp_encode_array(pos, 1);
+	pos = mp_encode_array(pos, 3);
+	pos = mp_encode_str(pos, "!", 1);
+	const char *type_str = tuple_constraint_type_strs[type];
+	const char *path = fieldno != UINT32_MAX ?
+			   tt_sprintf("format[%d].%s", fieldno + 1, type_str) :
+			   tt_sprintf("flags.%s", type_str);
+	if (is_first) {
+		pos = mp_encode_str0(pos, path);
+		pos = mp_encode_map(pos, 1);
+		pos = mp_encode_str(pos, name, name_len);
+	} else {
+		path = tt_sprintf("%s.%*s", path, name_len, name);
+		pos = mp_encode_str0(pos, path);
+	}
+	if (type == CONSTR_FUNC) {
+		pos = mp_encode_uint(pos, value->func_id);
+	} else if (fieldno != UINT32_MAX) {
+		pos = mp_encode_map(pos, 2);
+		pos = mp_encode_str0(pos, "space");
+		pos = mp_encode_uint(pos, value->space_id);
+		pos = mp_encode_str0(pos, "field");
+		pos = mp_encode_uint(pos, value->fieldno);
+	} else {
+		pos = mp_encode_map(pos, 2);
+		pos = mp_encode_str0(pos, "space");
+		pos = mp_encode_uint(pos, value->space_id);
+		pos = mp_encode_str0(pos, "field");
+		memcpy(pos, value->mapping, value->mapping_size);
+		pos += value->mapping_size;
+	}
+	int rc = box_update(BOX_SPACE_ID, 0, raw, ops, ops, pos, 0, NULL);
+	region_truncate(region, used);
+	return rc;
+}
+
+int
+box_tuple_constraint_create(uint32_t space_id, const char *name,
+			    uint32_t name_len, uint32_t func_id)
+{
+	union constraint_value value = {.func_id = func_id};
+	return constraint_create(space_id, name, name_len, UINT32_MAX, &value,
+				 CONSTR_FUNC);
+}
+
+int
+box_field_constraint_create(uint32_t space_id, const char *name,
+			    uint32_t name_len, uint32_t fieldno,
+			    uint32_t func_id)
+{
+	union constraint_value value = {.func_id = func_id};
+	return constraint_create(space_id, name, name_len, fieldno, &value,
+				 CONSTR_FUNC);
+}
+
+int
+box_tuple_foreign_key_create(uint32_t space_id, const char *name,
+			     uint32_t name_len, uint32_t parent_id,
+			     const char *mapping, uint32_t mapping_size)
+{
+	union constraint_value value;
+	value.mapping = mapping;
+	value.mapping_size = mapping_size;
+	value.space_id = parent_id;
+	return constraint_create(space_id, name, name_len, UINT32_MAX, &value,
+				 CONSTR_FKEY);
+}
+
+int
+box_field_foreign_key_create(uint32_t space_id, const char *name,
+			     uint32_t name_len, uint32_t fieldno,
+			     uint32_t parent_id, uint32_t parent_fieldno)
+{
+	union constraint_value value;
+	value.fieldno = parent_fieldno;
+	value.space_id = parent_id;
+	return constraint_create(space_id, name, name_len, fieldno, &value,
+				 CONSTR_FKEY);
 }
