@@ -38,6 +38,8 @@
 #include "fiber.h"
 #include "memtx_tx.h"
 #include "txn.h"
+#include "box.h"
+#include "tuple_constraint_def.h"
 
 /**
  * @module Data Dictionary
@@ -487,3 +489,307 @@ schema_find_name(enum schema_object_type type, uint32_t object_id)
 	return NULL;
 }
 
+/**
+ * Drop the constraint or foreign key. If fieldno is equal to UINT32_MAX then
+ * the tuple constraint or tuple foreign key is dropped, otherwise the field
+ * constraint or field foreign key is dropped.
+ */
+int
+constraint_drop(uint32_t space_id, const char *name, uint32_t name_len,
+		uint32_t fieldno, enum tuple_constraint_type type)
+{
+	char key[16];
+	char *key_end = mp_encode_array(key, 1);
+	key_end = mp_encode_uint(key_end, space_id);
+	struct tuple *tuple;
+	if (box_index_get(BOX_SPACE_ID, 0, key, key_end, &tuple) != 0)
+		return -1;
+	assert(tuple != NULL);
+	const char *data = tuple_data(tuple);
+	const char *data_end = data;
+	mp_next(&data_end);
+
+	const char *str;
+	if (fieldno != UINT32_MAX) {
+		str = tuple_field(tuple, BOX_SPACE_FIELD_FORMAT);
+		assert(str != NULL);
+		mp_decode_array(&str);
+		for (uint32_t i = 0; i < fieldno; ++i)
+			mp_next(&str);
+	} else {
+		str = tuple_field(tuple, BOX_SPACE_FIELD_OPTS);
+		assert(str != NULL);
+	}
+
+	const char *prev = str;
+	uint32_t count = mp_decode_map(&str);
+	const char *mid = str;
+	uint32_t id = 0;
+	const char *constraints = str;
+	const char *constraint_type =
+		type == CONSTR_FKEY ? "foreign_key" : "constraint";
+	for (; id < count; ++id) {
+		uint32_t len;
+		const char *tmp = mp_decode_str(&str, &len);
+		if (len == strlen(constraint_type) &&
+		    memcmp(tmp, constraint_type, len) == 0)
+			break;
+		mp_next(&str);
+		constraints = str;
+	}
+	if (id == count) {
+		int errcode = type == CONSTR_FKEY ? ER_NO_SUCH_FOREIGN_KEY :
+			      ER_NO_SUCH_CONSTRAINT;
+		diag_set(ClientError, errcode, name,
+			 space_name(space_by_id(space_id)));
+		return -1;
+	}
+
+	uint32_t constraint_count = mp_decode_map(&str);
+	const char *constraint_begin = str;
+	const char *constraint = str;
+	uint32_t constraint_id = 0;
+	for (; constraint_id < constraint_count; ++constraint_id) {
+		uint32_t len;
+		const char *tmp = mp_decode_str(&str, &len);
+		if (name_len == len && memcmp(tmp, name, len) == 0)
+			break;
+		mp_next(&str);
+		constraint = str;
+	}
+	if (constraint_id == constraint_count) {
+		int errcode = type == CONSTR_FKEY ? ER_NO_SUCH_FOREIGN_KEY :
+			      ER_NO_SUCH_CONSTRAINT;
+		diag_set(ClientError, errcode, name,
+			 space_name(space_by_id(space_id)));
+		return -1;
+	}
+	const char *post = constraint;
+	mp_next(&post);
+	mp_next(&post);
+	--constraint_count;
+	if (constraint_count == 0)
+		--count;
+
+	uint32_t size = (data_end - data) - (post - constraint);
+	char *new_data = (char *)xmalloc(size);
+	char *new_data_end = new_data;
+	uint32_t prev_size = prev - data;
+	memcpy(new_data_end, data, prev_size);
+	new_data_end += prev_size;
+	new_data_end = mp_encode_map(new_data_end, count);
+	uint32_t mid_size = constraints - mid;
+	memcpy(new_data_end, mid, mid_size);
+	new_data_end += mid_size;
+	if (constraint_count > 0) {
+		new_data_end = mp_encode_str0(new_data_end, constraint_type);
+		new_data_end = mp_encode_map(new_data_end, constraint_count);
+		uint32_t constraint_size = constraint - constraint_begin;
+		memcpy(new_data_end, constraint_begin, constraint_size);
+		new_data_end += constraint_size;
+	}
+	uint32_t post_size = data_end - post;
+	memcpy(new_data_end, post, post_size);
+	new_data_end += post_size;
+	int rc = box_replace(BOX_SPACE_ID, new_data, new_data_end, NULL);
+	free(new_data);
+	return rc;
+}
+
+int
+box_tuple_constraint_drop(uint32_t space_id, const char *name,
+			  uint32_t name_len)
+{
+	return constraint_drop(space_id, name, name_len, UINT32_MAX,
+			       CONSTR_FUNC);
+}
+
+int
+box_field_constraint_drop(uint32_t space_id, const char *name,
+			  uint32_t name_len, uint32_t fieldno)
+{
+	return constraint_drop(space_id, name, name_len, fieldno, CONSTR_FUNC);
+}
+
+int
+box_tuple_foreign_key_drop(uint32_t space_id, const char *name,
+			   uint32_t name_len)
+{
+	return constraint_drop(space_id, name, name_len, UINT32_MAX,
+			       CONSTR_FKEY);
+}
+
+int
+box_field_foreign_key_drop(uint32_t space_id, const char *name,
+			   uint32_t name_len, uint32_t fieldno)
+{
+	return constraint_drop(space_id, name, name_len, fieldno, CONSTR_FKEY);
+}
+
+/* Value of new constraint or foreign key. */
+union constraint_value {
+	/* ID of a function for constraint. */
+	uint32_t func_id;
+	struct {
+		/* Mapping for complex foreign key. */
+		const char *mapping;
+		/* Size of mapping for complex foreign key. */
+		uint32_t mapping_size;
+		/* Foreign space ID. */
+		uint32_t space_id;
+		/* Fieldno of foreign field for simple foreign key. */
+		uint32_t fieldno;
+	};
+};
+
+/**
+ * Create constraint or foreign key. If fieldno is equal to UINT32_MAX then the
+ * tuple constraint or tuple foreign key is created, otherwise the field
+ * constraint or field foreign key is created.
+ */
+static int
+constraint_create(uint32_t space_id, const char *name, uint32_t name_len,
+		  uint32_t fieldno, const union constraint_value *value,
+		  enum tuple_constraint_type type)
+{
+	char key[16];
+	char *key_end = mp_encode_array(key, 1);
+	key_end = mp_encode_uint(key_end, space_id);
+	struct tuple *tuple;
+	if (box_index_get(BOX_SPACE_ID, 0, key, key_end, &tuple) != 0)
+		return -1;
+	assert(tuple != NULL);
+	const char *data = tuple_data(tuple);
+	const char *data_end = data;
+	mp_next(&data_end);
+
+	const char *str;
+	if (fieldno != UINT32_MAX) {
+		str = tuple_field(tuple, BOX_SPACE_FIELD_FORMAT);
+		assert(str != NULL);
+		mp_decode_array(&str);
+		for (uint32_t i = 0; i < fieldno; ++i)
+			mp_next(&str);
+	} else {
+		str = tuple_field(tuple, BOX_SPACE_FIELD_OPTS);
+		assert(str != NULL);
+	}
+
+	const char *prev = str;
+	uint32_t count = mp_decode_map(&str);
+	const char *post = str;
+	uint32_t id = 0;
+	const char *type_str = type == CONSTR_FUNC ? "constraint" :
+			       "foreign_key";
+	uint32_t type_len = strlen(type_str);
+	for (; id < count; ++id) {
+		uint32_t len;
+		const char *tmp = mp_decode_str(&str, &len);
+		if (len == type_len && memcmp(tmp, type_str, len) == 0)
+			break;
+		mp_next(&str);
+	}
+	uint32_t constraint_count;
+	uint32_t size = (data_end - data) + mp_sizeof_str(name_len);
+	if (id == count) {
+		++count;
+		constraint_count = 0;
+		size += mp_sizeof_map(count) + mp_sizeof_str(type_len);
+	} else {
+		prev = str;
+		constraint_count = mp_decode_map(&str);
+		assert(constraint_count > 0);
+		post = str;
+	}
+	++constraint_count;
+	if (type == CONSTR_FUNC) {
+		size += mp_sizeof_uint(value->func_id);
+	} else if (fieldno != UINT32_MAX) {
+		size += mp_sizeof_map(2) + mp_sizeof_str(strlen("space")) +
+			mp_sizeof_str(strlen("field")) +
+			mp_sizeof_uint(value->space_id) +
+			mp_sizeof_uint(value->fieldno);
+	} else {
+		size += mp_sizeof_map(2) + mp_sizeof_str(strlen("space")) +
+			mp_sizeof_str(strlen("field")) +
+			mp_sizeof_uint(value->space_id) + value->mapping_size;
+	}
+	size += mp_sizeof_map(constraint_count);
+	char *new_data = (char *)xmalloc(size);
+	char *new_data_end = new_data;
+	uint32_t prev_size = prev - data;
+	memcpy(new_data_end, data, prev_size);
+	new_data_end += prev_size;
+	if (constraint_count == 1) {
+		new_data_end = mp_encode_map(new_data_end, count);
+		new_data_end = mp_encode_str0(new_data_end, type_str);
+	}
+	new_data_end = mp_encode_map(new_data_end, constraint_count);
+	new_data_end = mp_encode_str(new_data_end, name, name_len);
+	if (type == CONSTR_FUNC) {
+		new_data_end = mp_encode_uint(new_data_end, value->func_id);
+	} else if (fieldno != UINT32_MAX) {
+		new_data_end = mp_encode_map(new_data_end, 2);
+		new_data_end = mp_encode_str0(new_data_end, "space");
+		new_data_end = mp_encode_uint(new_data_end, value->space_id);
+		new_data_end = mp_encode_str0(new_data_end, "field");
+		new_data_end = mp_encode_uint(new_data_end, value->fieldno);
+	} else {
+		new_data_end = mp_encode_map(new_data_end, 2);
+		new_data_end = mp_encode_str0(new_data_end, "space");
+		new_data_end = mp_encode_uint(new_data_end, value->space_id);
+		new_data_end = mp_encode_str0(new_data_end, "field");
+		memcpy(new_data_end, value->mapping, value->mapping_size);
+		new_data_end += value->mapping_size;
+	}
+	uint32_t post_size = data_end - post;
+	memcpy(new_data_end, post, post_size);
+	new_data_end += post_size;
+	int rc = box_replace(BOX_SPACE_ID, new_data, new_data_end, NULL);
+	free(new_data);
+	return rc;
+}
+
+int
+box_tuple_constraint_create(uint32_t space_id, const char *name,
+			    uint32_t name_len, uint32_t func_id)
+{
+	union constraint_value value = {.func_id = func_id};
+	return constraint_create(space_id, name, name_len, UINT32_MAX, &value,
+				 CONSTR_FUNC);
+}
+
+int
+box_field_constraint_create(uint32_t space_id, const char *name,
+			    uint32_t name_len, uint32_t fieldno,
+			    uint32_t func_id)
+{
+	union constraint_value value = {.func_id = func_id};
+	return constraint_create(space_id, name, name_len, fieldno, &value,
+				 CONSTR_FUNC);
+}
+
+int
+box_tuple_foreign_key_create(uint32_t space_id, const char *name,
+			     uint32_t name_len, uint32_t parent_id,
+			     const char *mapping, uint32_t mapping_size)
+{
+	union constraint_value value;
+	value.mapping = mapping;
+	value.mapping_size = mapping_size;
+	value.space_id = parent_id;
+	return constraint_create(space_id, name, name_len, UINT32_MAX, &value,
+				 CONSTR_FKEY);
+}
+
+int
+box_field_foreign_key_create(uint32_t space_id, const char *name,
+			     uint32_t name_len, uint32_t fieldno,
+			     uint32_t parent_id, uint32_t parent_fieldno)
+{
+	union constraint_value value;
+	value.fieldno = parent_fieldno;
+	value.space_id = parent_id;
+	return constraint_create(space_id, name, name_len, fieldno, &value,
+				 CONSTR_FKEY);
+}
