@@ -1161,28 +1161,30 @@ vdbe_emit_ck_constraint_create(struct Parse *parser,
  *
  * @param parse_context Parsing context.
  * @param fk Foreign key to be created.
- * @param space_name Name of the space owning the FOREIGN KEY. For
- *     error message.
  */
 static void
 vdbe_emit_fk_constraint_create(struct Parse *parse_context,
-			       const struct fk_constraint_def *fk,
-			       const char *space_name)
+			       const struct fk_constraint_def *fk)
 {
 	assert(parse_context != NULL);
 	assert(fk != NULL);
 	struct Vdbe *vdbe = sqlGetVdbe(parse_context);
 	assert(vdbe != NULL);
 	/*
-	 * Occupy registers for 9 fields: each member in
-	 * _fk_constraint space plus one for final msgpack tuple.
+	 * Take 3 registers for the table constraint and 4 registers for the
+	 * field constraint. The first register contains the child_id, the
+	 * second register contains the parent_id. If the created constraint is
+	 * a table constraint, the third register contains the encoded mapping.
+	 * Otherwise, the third register contains the field number of the child
+	 * column, and the fourth one contains the field number of the parent
+	 * column.
 	 */
-	int constr_tuple_reg = sqlGetTempRange(parse_context, 10);
-	char *name_copy = sqlDbStrDup(parse_context->db, fk->name);
-	if (name_copy == NULL)
+	int regs = sqlGetTempRange(parse_context, fk->is_field_fk ? 4 : 3);
+	char *name = sqlDbStrDup(parse_context->db, fk->name);
+	if (name == NULL) {
+		parse_context->is_aborted = true;
 		return;
-	sqlVdbeAddOp4(vdbe, OP_String8, 0, constr_tuple_reg, 0, name_copy,
-			  P4_DYNAMIC);
+	}
 	/*
 	 * In case we are adding FK constraints during execution
 	 * of <CREATE TABLE ...> or <ALTER TABLE ADD COLUMN>
@@ -1194,85 +1196,27 @@ vdbe_emit_fk_constraint_create(struct Parse *parse_context,
 	bool is_alter_add_constr =
 		parse_context->create_table_def.new_space == NULL &&
 		parse_context->create_column_def.space == NULL;
-	if (!is_alter_add_constr) {
-		sqlVdbeAddOp2(vdbe, OP_SCopy, fk->child_id,
-				  constr_tuple_reg + 1);
+	if (!is_alter_add_constr)
+		sqlVdbeAddOp2(vdbe, OP_SCopy, fk->child_id, regs);
+	else
+		sqlVdbeAddOp2(vdbe, OP_Integer, fk->child_id, regs);
+	if (!is_alter_add_constr && fk_constraint_is_self_referenced(fk))
+		sqlVdbeAddOp2(vdbe, OP_SCopy, fk->parent_id, regs + 1);
+	else
+		sqlVdbeAddOp2(vdbe, OP_Integer, fk->parent_id, regs + 1);
+	if (fk->is_field_fk) {
+		sqlVdbeAddOp2(vdbe, OP_Integer, fk->links->child_field,
+			      regs + 2);
+		sqlVdbeAddOp2(vdbe, OP_Integer, fk->links->parent_field,
+			      regs + 3);
 	} else {
-		sqlVdbeAddOp2(vdbe, OP_Integer, fk->child_id,
-				  constr_tuple_reg + 1);
+		uint32_t size;
+		char *raw = fk_constraint_encode_links(fk, &size);
+		sqlVdbeAddOp4(vdbe, OP_Blob, size, regs + 2,
+			      SQL_SUBTYPE_MSGPACK, raw, P4_DYNAMIC);
 	}
-	if (!is_alter_add_constr && fk_constraint_is_self_referenced(fk)) {
-		sqlVdbeAddOp2(vdbe, OP_SCopy, fk->parent_id,
-				  constr_tuple_reg + 2);
-	} else {
-		sqlVdbeAddOp2(vdbe, OP_Integer, fk->parent_id,
-				  constr_tuple_reg + 2);
-	}
-	/*
-	 * Lets check that constraint with this name hasn't
-	 * been created before.
-	 */
-	const char *error_msg =
-		tt_sprintf(tnt_errcode_desc(ER_CONSTRAINT_EXISTS),
-			   constraint_type_strs[CONSTRAINT_TYPE_FK], name_copy,
-			   space_name);
-	if (vdbe_emit_halt_with_presence_test(parse_context,
-					      BOX_FK_CONSTRAINT_ID, 0,
-					      constr_tuple_reg, 2,
-					      ER_CONSTRAINT_EXISTS, error_msg,
-					      false, OP_NoConflict) != 0)
-		return;
-	sqlVdbeAddOp2(vdbe, OP_Bool, false, constr_tuple_reg + 3);
-	sqlVdbeAddOp4(vdbe, OP_String8, 0, constr_tuple_reg + 4, 0, "simple",
-		      P4_STATIC);
-	sqlVdbeAddOp4(vdbe, OP_String8, 0, constr_tuple_reg + 5, 0, "no_action",
-		      P4_STATIC);
-	sqlVdbeAddOp4(vdbe, OP_String8, 0, constr_tuple_reg + 6, 0, "no_action",
-		      P4_STATIC);
-	struct region *region = &parse_context->region;
-	uint32_t parent_links_size = 0;
-	char *parent_links = fk_constraint_encode_links(region, fk, FIELD_LINK_PARENT,
-					       &parent_links_size);
-	if (parent_links == NULL)
-		goto error;
-	uint32_t child_links_size = 0;
-	char *child_links = fk_constraint_encode_links(region, fk, FIELD_LINK_CHILD,
-					      &child_links_size);
-	if (child_links == NULL)
-		goto error;
-	/*
-	 * We are allocating memory for both parent and child
-	 * arrays in the same chunk. Thus, first OP_Blob opcode
-	 * interprets it as static memory, and the second one -
-	 * as dynamic and releases memory.
-	 */
-	char *raw = sqlDbMallocRaw(parse_context->db,
-				       parent_links_size + child_links_size);
-	if (raw == NULL)
-		return;
-	memcpy(raw, parent_links, parent_links_size);
-	parent_links = raw;
-	raw += parent_links_size;
-	memcpy(raw, child_links, child_links_size);
-	child_links = raw;
-
-	sqlVdbeAddOp4(vdbe, OP_Blob, child_links_size, constr_tuple_reg + 7,
-			  SQL_SUBTYPE_MSGPACK, child_links, P4_STATIC);
-	sqlVdbeAddOp4(vdbe, OP_Blob, parent_links_size,
-			  constr_tuple_reg + 8, SQL_SUBTYPE_MSGPACK,
-			  parent_links, P4_DYNAMIC);
-	sqlVdbeAddOp3(vdbe, OP_MakeRecord, constr_tuple_reg, 9,
-			  constr_tuple_reg + 9);
-	sqlVdbeAddOp2(vdbe, OP_SInsert, BOX_FK_CONSTRAINT_ID,
-		      constr_tuple_reg + 9);
-	if (is_alter_add_constr) {
-		sqlVdbeCountChanges(vdbe);
-		sqlVdbeChangeP5(vdbe, OPFLAG_NCHANGE);
-	}
-	sqlReleaseTempRange(parse_context, constr_tuple_reg, 10);
-	return;
-error:
-	parse_context->is_aborted = true;
+	sqlVdbeAddOp4(vdbe, OP_CreateForeignKey, regs, 0, 0, name, P4_DYNAMIC);
+	sqlReleaseTempRange(parse_context, regs, fk->is_field_fk ? 4 : 3);
 }
 
 /**
@@ -1404,7 +1348,7 @@ vdbe_emit_create_constraints(struct Parse *parse, int reg_space_id)
 			fk_def->parent_id = reg_space_id;
 		}
 		fk_def->child_id = reg_space_id;
-		vdbe_emit_fk_constraint_create(parse, fk_def, space->def->name);
+		vdbe_emit_fk_constraint_create(parse, fk_def);
 	}
 
 	/* Code creation of CK constraints, if any. */
@@ -2218,6 +2162,7 @@ sql_create_foreign_key(struct Parse *parse_context)
 			 "fk_def");
 		goto tnt_error;
 	}
+	fk_def->is_field_fk = child_cols == NULL;
 	fk_def->field_count = child_cols_count;
 	fk_def->child_id = child_space != NULL ? child_space->def->id : 0;
 	fk_def->parent_id = parent_space != NULL ? parent_space->def->id : 0;
@@ -2279,8 +2224,7 @@ sql_create_foreign_key(struct Parse *parse_context)
 					  link);
 		fk_parse->fk_def = fk_def;
 	} else {
-		vdbe_emit_fk_constraint_create(parse_context, fk_def,
-					       child_space->def->name);
+		vdbe_emit_fk_constraint_create(parse_context, fk_def);
 	}
 
 exit_create_fk:

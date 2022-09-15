@@ -129,20 +129,16 @@ sql_encode_table_opts(struct region *region, struct space_def *def,
 		      uint32_t *size);
 
 /**
- * Encode links of given foreign key constraint into MsgPack on
- * @region.
- * @param region Wegion to use.
+ * Encode links of given foreign key constraint into MsgPack.
+ *
  * @param def FK def to encode links of.
- * @param type Links type to encode.
  * @param[out] Size size of result allocation.
  *
  * @retval NULL Error.
  * @retval not NULL Pointer to msgpack on success.
  */
 char *
-fk_constraint_encode_links(struct region *region,
-			   const struct fk_constraint_def *def, int type,
-			   uint32_t *size);
+fk_constraint_encode_links(const struct fk_constraint_def *fk, uint32_t *size);
 
 /**
  * Drop the check constraint or foreign key. This function drops tuple and field
