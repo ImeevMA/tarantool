@@ -2125,6 +2125,30 @@ case OP_Count: {         /* out2 */
 	break;
 }
 
+case OP_CreateForeignKey: {
+	assert(pOp->p1 >= 0 && pOp->p2 >= 0);
+	uint32_t space_id = pOp->p1;
+	uint32_t parent_id = pOp->p2;
+	struct Mem *fields = &aMem[pOp->p3];
+	const char *name = pOp->p4.z;
+	uint32_t name_len = strlen(name);
+	assert(mem_is_bin(fields));
+	if (pOp->p5 == 0) {
+		assert(fields->n == 2 * sizeof(uint32_t));
+		uint32_t fieldno = fields->z[0];
+		uint32_t parent_fieldno = fields->z[1];
+		if (box_field_foreign_key_create(space_id, name, name_len,
+						 fieldno, parent_id,
+						 parent_fieldno) != 0)
+			goto abort_due_to_error;
+		break;
+	}
+	if (box_tuple_foreign_key_create(space_id, name, name_len, parent_id,
+					 fields->z, fields->n) != 0)
+		goto abort_due_to_error;
+	break;
+}
+
 /* Opcode: Savepoint P1 * * P4 *
  *
  * Open, release or rollback the savepoint named by parameter P4, depending
