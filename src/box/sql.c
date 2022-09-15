@@ -1137,29 +1137,22 @@ sql_encode_table_opts(struct region *region, struct space_def *def,
 }
 
 char *
-fk_constraint_encode_links(struct region *region, const struct fk_constraint_def *def,
-			   int type, uint32_t *size)
+fk_constraint_encode_links(const struct fk_constraint_def *fk, uint32_t *size)
 {
-	size_t used = region_used(region);
-	struct mpstream stream;
-	bool is_error = false;
-	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
-		      set_encode_error, &is_error);
-	uint32_t field_count = def->field_count;
-	mpstream_encode_array(&stream, field_count);
-	for (uint32_t i = 0; i < field_count && !is_error; ++i)
-		mpstream_encode_uint(&stream, def->links[i].fields[type]);
-	mpstream_flush(&stream);
-	if (is_error) {
-		diag_set(OutOfMemory, stream.pos - stream.buf,
-			 "mpstream_flush", "stream");
-		return NULL;
+	*size = mp_sizeof_map(fk->field_count);
+	for (uint32_t i = 0; i < fk->field_count; ++i) {
+		*size += mp_sizeof_uint(fk->links[i].child_field);
+		*size += mp_sizeof_uint(fk->links[i].parent_field);
 	}
-	*size = region_used(region) - used;
-	char *raw = region_join(region, *size);
-	if (raw == NULL)
-		diag_set(OutOfMemory, *size, "region_join", "raw");
-	return raw;
+	char *buf = sqlDbMallocRawNN(sql_get(), *size);
+	if (buf == NULL)
+		return NULL;
+	char *buf_end = mp_encode_map(buf, fk->field_count);
+	for (uint32_t i = 0; i < fk->field_count; ++i) {
+		buf_end = mp_encode_uint(buf_end, fk->links[i].child_field);
+		buf_end = mp_encode_uint(buf_end, fk->links[i].parent_field);
+	}
+	return buf;
 }
 
 char *
