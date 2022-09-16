@@ -698,7 +698,7 @@ vdbe_emit_ck_constraint_create(struct Parse *parser,
 			       uint32_t reg_space_id, const char *space_name);
 
 void
-sql_create_check_contraint(struct Parse *parser)
+sql_create_check_contraint(struct Parse *parser, bool is_field_ck)
 {
 	struct create_ck_def *create_ck_def = &parser->create_ck_def;
 	struct ExprSpan *expr_span = create_ck_def->expr;
@@ -724,25 +724,46 @@ sql_create_check_contraint(struct Parse *parser)
 			parser->is_aborted = true;
 			return;
 		}
-	} else {
-		assert(!is_alter_add_constr);
-		uint32_t ck_idx =
-			++parser->create_ck_constraint_parse_def.count;
+	} else if (parser->create_table_def.new_space == NULL) {
 		/*
-		 * If it is <ALTER TABLE ADD COLUMN> we should
-		 * count the existing CHECK constraints in the
-		 * space and form a name based on this.
+		 * In case of "ALTER TABLE ADD COLUMN" all added CHECK
+		 * constraints belong to created field.
 		 */
-		if (parser->create_table_def.new_space == NULL) {
-			struct space *original_space =
-				space_by_name(space->def->name);
-			assert(original_space != NULL);
-			struct ck_constraint *ck;
-			rlist_foreach_entry(ck, &original_space->ck_constraint,
-					    link)
-				ck_idx++;
+		uint32_t id = 1;
+		uint32_t fieldno = space->def->field_count - 1;
+		struct ck_constraint_parse *ck;
+		struct create_ck_constraint_parse_def *def =
+			&parser->create_ck_constraint_parse_def;
+		rlist_foreach_entry(ck, &def->checks, link) {
+			++id;
 		}
-		name = tt_sprintf("ck_unnamed_%s_%u", space->def->name, ck_idx);
+		const char *field_name = space->def->fields[fieldno].name;
+		name = tt_sprintf("ck_unnamed_%s_%s_%u", space->def->name,
+				  field_name, id);
+	} else if (!is_field_ck) {
+		uint32_t id = 1;
+		struct ck_constraint_parse *ck;
+		struct create_ck_constraint_parse_def *def =
+			&parser->create_ck_constraint_parse_def;
+		rlist_foreach_entry(ck, &def->checks, link) {
+			if (!ck->ck_def->is_field_ck)
+				++id;
+		}
+		name = tt_sprintf("ck_unnamed_%s_%u", space->def->name, id);
+	} else {
+		uint32_t id = 1;
+		uint32_t fieldno = space->def->field_count - 1;
+		struct ck_constraint_parse *ck;
+		struct create_ck_constraint_parse_def *def =
+			&parser->create_ck_constraint_parse_def;
+		rlist_foreach_entry(ck, &def->checks, link) {
+			struct ck_constraint_def *cdef = ck->ck_def;
+			if (cdef->is_field_ck && cdef->fieldno == fieldno)
+				++id;
+		}
+		const char *field_name = space->def->fields[fieldno].name;
+		name = tt_sprintf("ck_unnamed_%s_%s_%u", space->def->name,
+				  field_name, id);
 	}
 	size_t name_len = strlen(name);
 
@@ -779,6 +800,14 @@ sql_create_check_contraint(struct Parse *parser)
 	ck_parse->ck_def = ck_def;
 	rlist_create(&ck_parse->link);
 
+	if (is_field_ck) {
+		assert(space != NULL);
+		ck_def->is_field_ck = true;
+		ck_def->fieldno = space->def->field_count - 1;
+	} else {
+		ck_def->is_field_ck = false;
+		ck_def->fieldno = 0;
+	}
 	ck_def->expr_str = (char *)ck_def + expr_str_offset;
 	ck_def->language = CK_CONSTRAINT_LANGUAGE_SQL;
 	ck_def->space_id = BOX_ID_NIL;
@@ -799,9 +828,10 @@ sql_create_check_contraint(struct Parse *parser)
 			      space_id_reg);
 		vdbe_emit_ck_constraint_create(parser, ck_def, space_id_reg,
 					       space->def->name);
-		assert(sqlVdbeGetOp(v, v->nOp - 1)->opcode == OP_SInsert);
+		struct VdbeOp *op = sqlVdbeGetOp(v, v->nOp - 2);
+		assert(op->opcode == OP_SInsert);
 		sqlVdbeCountChanges(v);
-		sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
+		op->p5 = OPFLAG_NCHANGE;
 	} else {
 		rlist_add_entry(&parser->create_ck_constraint_parse_def.checks,
 				ck_parse, link);
@@ -1125,34 +1155,49 @@ vdbe_emit_ck_constraint_create(struct Parse *parser,
 	struct Vdbe *v = sqlGetVdbe(parser);
 	assert(v != NULL);
 	/*
-	 * Occupy registers for 5 fields: each member in
-	 * _ck_constraint space plus one for final msgpack tuple.
+	 * Occupy registers for 20 fields: each member in _func space plus one
+	 * for final msgpack tuple.
 	 */
-	int ck_constraint_reg = sqlGetTempRange(parser, 7);
-	sqlVdbeAddOp2(v, OP_SCopy, reg_space_id, ck_constraint_reg);
-	sqlVdbeAddOp4(v, OP_String8, 0, ck_constraint_reg + 1, 0,
+	int regs = sqlGetTempRange(parser, 20);
+	sqlVdbeAddOp2(v, OP_NextSystemSpaceId, BOX_FUNC_ID, regs);
+	sqlVdbeAddOp2(v, OP_Integer, effective_user()->uid, regs + 1);
+	char *func_name = sqlMPrintf(db, "check_%s_%s", space_name,
+				     ck_def->name);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 2, 0, func_name, P4_DYNAMIC);
+	sqlVdbeAddOp2(v, OP_Integer, 0, regs + 3);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 4, 0, "SQL_EXPR", P4_STATIC);
+	char *body = sqlDbStrDup(db, ck_def->expr_str);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 5, 0, body, P4_DYNAMIC);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 6, 0, "function", P4_STATIC);
+	char *param_list = sqlDbMallocRawNN(db, 32);
+	char *buf = mp_encode_array(param_list, 0);
+	sqlVdbeAddOp4(v, OP_Blob, buf - param_list, regs + 7,
+		      SQL_SUBTYPE_MSGPACK, param_list, P4_DYNAMIC);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 8, 0, "any", P4_STATIC);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 9, 0, "none", P4_STATIC);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 10, 0, "none", P4_STATIC);
+	sqlVdbeAddOp2(v, OP_Bool, true, regs + 11);
+	sqlVdbeAddOp2(v, OP_Bool, false, regs + 12);
+	sqlVdbeAddOp2(v, OP_Bool, true, regs + 13);
+	char *exports = buf;
+	buf = mp_encode_array(exports, 1);
+	buf = mp_encode_str0(buf, "LUA");
+	sqlVdbeAddOp4(v, OP_Blob, buf - exports, regs + 14, SQL_SUBTYPE_MSGPACK,
+		      exports, P4_STATIC);
+	char *opts = buf;
+	buf = mp_encode_map(opts, 0);
+	sqlVdbeAddOp4(v, OP_Blob, buf - opts, regs + 15, SQL_SUBTYPE_MSGPACK,
+		      opts, P4_STATIC);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 16, 0, "", P4_STATIC);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 17, 0, "", P4_STATIC);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 18, 0, "", P4_STATIC);
+	sqlVdbeAddOp3(v, OP_MakeRecord, regs, 19, regs + 19);
+	sqlVdbeAddOp2(v, OP_SInsert, BOX_FUNC_ID, regs + 19);
+	VdbeComment((v, "Create func constraint %s", ck_def->name));
+	sqlVdbeAddOp4(v, OP_CreateCheck, reg_space_id, regs, ck_def->fieldno,
 		      sqlDbStrDup(db, ck_def->name), P4_DYNAMIC);
-	sqlVdbeAddOp2(v, OP_Bool, false, ck_constraint_reg + 2);
-	sqlVdbeAddOp4(v, OP_String8, 0, ck_constraint_reg + 3, 0,
-		      ck_constraint_language_strs[ck_def->language], P4_STATIC);
-	sqlVdbeAddOp4(v, OP_String8, 0, ck_constraint_reg + 4, 0,
-		      sqlDbStrDup(db, ck_def->expr_str), P4_DYNAMIC);
-	sqlVdbeAddOp2(v, OP_Bool, true, ck_constraint_reg + 5);
-	sqlVdbeAddOp3(v, OP_MakeRecord, ck_constraint_reg, 6,
-		      ck_constraint_reg + 6);
-	const char *error_msg =
-		tt_sprintf(tnt_errcode_desc(ER_CONSTRAINT_EXISTS),
-			   constraint_type_strs[CONSTRAINT_TYPE_CK],
-			   ck_def->name, space_name);
-	if (vdbe_emit_halt_with_presence_test(parser, BOX_CK_CONSTRAINT_ID, 0,
-					      ck_constraint_reg, 2,
-					      ER_CONSTRAINT_EXISTS, error_msg,
-					      false, OP_NoConflict) != 0)
-		return;
-	sqlVdbeAddOp2(v, OP_SInsert, BOX_CK_CONSTRAINT_ID,
-		      ck_constraint_reg + 6);
-	VdbeComment((v, "Create CK constraint %s", ck_def->name));
-	sqlReleaseTempRange(parser, ck_constraint_reg, 7);
+	sqlVdbeChangeP5(v, ck_def->is_field_ck);
+	sqlReleaseTempRange(parser, regs, 20);
 }
 
 /**
@@ -1287,7 +1332,8 @@ vdbe_emit_create_constraints(struct Parse *parse, int reg_space_id)
 		int reg_seq_id = ++parse->nMem;
 		struct Vdbe *v = sqlGetVdbe(parse);
 		assert(v != NULL);
-		sqlVdbeAddOp2(v, OP_NextSequenceId, 0, reg_seq_id);
+		sqlVdbeAddOp2(v, OP_NextSystemSpaceId, BOX_SEQUENCE_ID,
+			      reg_seq_id);
 		int reg_seq_rec = emitNewSysSequenceRecord(parse, reg_seq_id,
 							   space->def->name);
 		if (is_alter) {

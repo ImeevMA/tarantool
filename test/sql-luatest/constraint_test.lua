@@ -345,3 +345,51 @@ g.test_constraints_4 = function()
         box.execute([[DROP TABLE t0;]])
     end)
 end
+
+-- Make sure check constraint created properly.
+g.test_create_methods = function()
+    g.server:exec(function()
+        local t = require('luatest')
+
+        box.execute([[CREATE TABLE t(i INT PRIMARY KEY, a INT CHECK(a > 10));]])
+        local res = {ck_unnamed_T_A_1 = box.func.check_T_ck_unnamed_T_A_1.id}
+        t.assert_equals(box.space.T:format()[2].constraint, res)
+        box.execute([[DROP TABLE t;]])
+        box.func.check_T_ck_unnamed_T_A_1:drop()
+
+        box.execute([[CREATE TABLE t(i INT PRIMARY KEY);]])
+        box.execute([[ALTER TABLE t ADD COLUMN a INT CHECK(a > 10);]])
+        local res = {ck_unnamed_T_A_1 = box.func.check_T_ck_unnamed_T_A_1.id}
+        t.assert_equals(box.space.T:format()[2].constraint, res)
+        box.execute([[DROP TABLE t;]])
+        box.func.check_T_ck_unnamed_T_A_1:drop()
+
+        box.execute([[CREATE TABLE t(i INT PRIMARY KEY,
+                    a INT CONSTRAINT one CHECK(a > 10));]])
+        res = {ONE = box.func.check_T_ONE.id}
+        t.assert_equals(box.space.T:format()[2].constraint, res)
+        box.execute([[DROP TABLE t;]])
+        box.func.check_T_ONE:drop()
+
+        box.execute([[CREATE TABLE t(i INT PRIMARY KEY, a INT,
+                      CHECK(a > 10));]])
+        local res = {ck_unnamed_T_1 = box.func.check_T_ck_unnamed_T_1.id}
+        t.assert_equals(box.space.T.constraint, res)
+        box.execute([[DROP TABLE t;]])
+        box.func.check_T_ck_unnamed_T_1:drop()
+
+        box.execute([[CREATE TABLE t(i INT PRIMARY KEY);]])
+        box.execute([[ALTER TABLE t ADD CONSTRAINT two CHECK(a > 10);]])
+        local res = {TWO = box.func.check_T_TWO.id}
+        t.assert_equals(box.space.T.constraint, res)
+        box.execute([[DROP TABLE t;]])
+        box.func.check_T_TWO:drop()
+
+        box.execute([[CREATE TABLE t(i INT PRIMARY KEY,
+                    a INT, CONSTRAINT one CHECK(a > 10));]])
+        res = {ONE = box.func.check_T_ONE.id}
+        t.assert_equals(box.space.T.constraint, res)
+        box.execute([[DROP TABLE t;]])
+        box.func.check_T_ONE:drop()
+    end)
+end

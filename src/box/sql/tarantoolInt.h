@@ -174,13 +174,3 @@ sql_encode_index_parts(struct region *region, const struct field_def *fields,
 char *
 sql_encode_index_opts(struct region *region, const struct index_opts *opts,
 		      uint32_t *size);
-
-/**
- * Extract next id from _sequence space.
- * If index is empty - return 0 in max_id and success status
- *
- * @param[out] max_id Fetched value.
- * @retval 0 on success, -1 otherwise.
- */
-int
-tarantoolSqlNextSeqId(uint64_t *max_id);
