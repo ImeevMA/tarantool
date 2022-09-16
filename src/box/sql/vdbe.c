@@ -1976,7 +1976,17 @@ op_column_out:
  * register P3.
  */
 case OP_Fetch: {
-	struct vdbe_field_ref *ref = p->aMem[pOp->p1].u.p;
+	assert(pOp->p1 >= 0 && pOp->p3 >= 0);
+	struct Mem *mem = &aMem[pOp->p1];
+	struct Mem *res = vdbe_prepare_null_out(p, pOp->p3);
+	if (mem_is_bin(mem)) {
+		uint32_t unused;
+		if (mem_from_mp(res, mem->z, &unused) != 0)
+			goto abort_due_to_error;
+		break;
+	}
+	assert(mem->type == MEM_TYPE_PTR);
+	struct vdbe_field_ref *ref = mem->u.p;
 	uint32_t id = pOp->p2;
 	if (pOp->p4type == P4_DYNAMIC) {
 		const char *name = pOp->p4.z;
@@ -1988,7 +1998,6 @@ case OP_Fetch: {
 			goto abort_due_to_error;
 		}
 	}
-	struct Mem *res = vdbe_prepare_null_out(p, pOp->p3);
 	if (vdbe_field_ref_fetch(ref, id, res) != 0)
 		goto abort_due_to_error;
 	REGISTER_TRACE(p, pOp->p3, res);
