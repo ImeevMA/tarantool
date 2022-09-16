@@ -1969,15 +1969,28 @@ op_column_out:
 /* Opcode: Fetch P1 P2 P3 * *
  * Synopsis: r[P3]=PX
  *
- * Interpret data P1 points at as an initialized vdbe_field_ref
- * object.
+ * Register P1 contains an initialized vdbe_field_ref object or encoded value.
+ * In the case of a value, the register type is BIN, otherwise the type is PTR.
  *
- * If P4 is not a field name, extract the P2th field from the tuple. Otherwise,
- * get the field with the given name. The retrieved value is stored in
- * register P3.
+ * In case of P1 being encoded value, decode this value to register P3. The
+ * encoded value can only be obtained from the func_sql_expr_call() function.
+ *
+ * In case of P1 being vdbe_field_ref object, if P4 is not a field name, extract
+ * the P2 field from the tuple. Otherwise, get the field with the given name.
+ * The retrieved value is stored in register P3.
  */
 case OP_Fetch: {
-	struct vdbe_field_ref *ref = p->aMem[pOp->p1].u.p;
+	assert(pOp->p1 >= 0 && pOp->p3 >= 0);
+	struct Mem *mem = &aMem[pOp->p1];
+	struct Mem *res = vdbe_prepare_null_out(p, pOp->p3);
+	if (mem_is_bin(mem)) {
+		uint32_t unused;
+		if (mem_from_mp(res, mem->z, &unused) != 0)
+			goto abort_due_to_error;
+		break;
+	}
+	assert(mem->type == MEM_TYPE_PTR);
+	struct vdbe_field_ref *ref = mem->u.p;
 	uint32_t id = pOp->p2;
 	if (pOp->p4type == P4_DYNAMIC) {
 		const char *name = pOp->p4.z;
@@ -1989,7 +2002,6 @@ case OP_Fetch: {
 			goto abort_due_to_error;
 		}
 	}
-	struct Mem *res = vdbe_prepare_null_out(p, pOp->p3);
 	if (vdbe_field_ref_fetch(ref, id, res) != 0)
 		goto abort_due_to_error;
 	REGISTER_TRACE(p, pOp->p3, res);

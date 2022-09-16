@@ -2414,41 +2414,34 @@ func_sql_expr_call(struct func *func, struct port *args, struct port *ret)
 {
 	struct func_sql_expr *func_sql = (struct func_sql_expr *)func;
 	struct sql_stmt *stmt = (struct sql_stmt *)func_sql->stmt;
-	const char *data;
-	uint32_t mp_size;
-	struct tuple_format *format;
-	if (args->vtab == &port_c_vtab && ((struct port_c *)args)->size == 2 &&
-	    ((struct port_c *)args)->first_entry.mp_format != NULL) {
-		/*
-		 * The only case where mp_format is not NULL is when the
-		 * function is used as a CHECK constraint.
-		 */
-		struct port_c_entry *pe = ((struct port_c *)args)->first;
-		data = pe->mp;
-		mp_size = pe->mp_size;
-		format = pe->mp_format;
-	} else {
+	if (args->vtab != &port_c_vtab || ((struct port_c *)args)->size != 2) {
 		diag_set(ClientError, ER_UNSUPPORTED, "Tarantool",
 			 "SQL functions");
 		return -1;
 	}
-
 	struct region *region = &fiber()->gc;
 	size_t svp = region_used(region);
 	port_sql_create(ret, stmt, DQL_EXECUTE, false);
+	struct port_c_entry *pe = ((struct port_c *)args)->first;
 	/*
-	 * In SQL, we can only retrieve fields that have names. There is no
-	 * point to prepare slots for nameless fields.
+	 * Currently, SQL EXPR functions can only be called in a tuple or field
+	 * constraint. If the format is NULL then it is a field constraint,
+	 * otherwise it is a tuple constraint.
 	 */
-	uint32_t count = format->min_field_count;
-	struct vdbe_field_ref *ref;
-	size_t size = sizeof(ref->slots[0]) * count + sizeof(*ref);
-	ref = region_aligned_alloc(region, size, alignof(*ref));
-	vdbe_field_ref_create(ref, count);
-	vdbe_field_ref_prepare_data(ref, data, mp_size);
-	ref->format = format;
-	if (sql_bind_ptr(stmt, 1, ref) != 0)
-		goto error;
+	if (pe->mp_format != NULL) {
+		uint32_t count = pe->mp_format->total_field_count;
+		struct vdbe_field_ref *ref;
+		size_t size = sizeof(ref->slots[0]) * count + sizeof(*ref);
+		ref = region_aligned_alloc(region, size, alignof(*ref));
+		vdbe_field_ref_create(ref, count);
+		vdbe_field_ref_prepare_data(ref, pe->mp, pe->mp_size);
+		ref->format = pe->mp_format;
+		if (sql_bind_ptr(stmt, 1, ref) != 0)
+			goto error;
+	} else {
+		if (sql_bind_bin_static(stmt, 1, pe->mp, pe->mp_size) != 0)
+			goto error;
+	}
 
 	if (sql_step(stmt) != SQL_ROW)
 		goto error;
