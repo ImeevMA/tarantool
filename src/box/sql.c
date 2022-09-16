@@ -1476,3 +1476,40 @@ index_field_tuple_est(const struct index_def *idx_def, uint32_t field)
 	}
 	return tnt_idx->def->opts.stat->tuple_log_est[field];
 }
+
+int
+sql_drop_core_constraint(uint32_t space_id, const char *name)
+{
+	struct space *space = space_by_id(space_id);
+	if (space == NULL) {
+		diag_set(ClientError, ER_NO_SUCH_SPACE, space_name);
+		return -1;
+	}
+	struct tuple_constraint_def *cdefs = space->def->opts.constraint_def;
+	uint32_t count = space->def->opts.constraint_count;
+	uint32_t len = strlen(name);
+	for (uint32_t i = 0; i < count; ++i) {
+		if (strcmp(cdefs[i].name, name) != 0)
+			continue;
+		if (cdefs[i].type == CONSTR_FUNC)
+			return box_tuple_constraint_drop(space_id, name, len);
+		return box_tuple_foreign_key_drop(space_id, name, len);
+	}
+	uint32_t field_count = space->def->field_count;
+	for (uint32_t i = 0; i < field_count; ++i) {
+		cdefs = space->def->fields[i].constraint_def;
+		count = space->def->fields[i].constraint_count;
+		for (uint32_t j = 0; j < count; ++j) {
+			if (strcmp(cdefs[j].name, name) != 0)
+				continue;
+			if (cdefs[j].type == CONSTR_FUNC) {
+				return box_field_constraint_drop(space_id, name,
+								 len, i);
+			}
+			return box_field_foreign_key_drop(space_id, name, len,
+							  i);
+		}
+	}
+	diag_set(ClientError, ER_NO_SUCH_CONSTRAINT, name, space->def->name);
+	return -1;
+}
