@@ -299,7 +299,7 @@ vdbe_field_ref_closest_slotno(struct vdbe_field_ref *field_ref,
 static const char *
 vdbe_field_ref_fetch_data(struct vdbe_field_ref *field_ref, uint32_t fieldno)
 {
-	if (field_ref->slots[fieldno] != 0)
+	if (field_ref->slots[fieldno] != 0 || fieldno == 0)
 		return field_ref->data + field_ref->slots[fieldno];
 
 	const char *field_begin;
@@ -1979,7 +1979,8 @@ op_column_out:
 case OP_Fetch: {
 	struct vdbe_field_ref *ref = p->aMem[pOp->p1].u.p;
 	uint32_t id = pOp->p2;
-	if (pOp->p4type == P4_DYNAMIC) {
+	assert(pOp->p4type != P4_DYNAMIC || id == 0);
+	if (pOp->p4type == P4_DYNAMIC && ref->format != NULL) {
 		const char *name = pOp->p4.z;
 		uint32_t len = strlen(name);
 		uint32_t hash = field_name_hash(name, len);
@@ -1989,6 +1990,11 @@ case OP_Fetch: {
 			goto abort_due_to_error;
 		}
 	}
+	/*
+	 * If a name is specified but no format is specified, we assume that
+	 * vdbe_field_ref contains a single field for a field constraint.
+	 */
+	assert(pOp->p4type != P4_DYNAMIC || ref->format != NULL || id == 0);
 	struct Mem *res = vdbe_prepare_null_out(p, pOp->p3);
 	if (vdbe_field_ref_fetch(ref, id, res) != 0)
 		goto abort_due_to_error;

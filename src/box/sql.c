@@ -1407,6 +1407,21 @@ vdbe_field_ref_prepare_tuple(struct vdbe_field_ref *field_ref,
 }
 
 void
+vdbe_field_ref_prepare_array(struct vdbe_field_ref *ref, uint32_t field_count,
+			     const char *data, uint32_t data_sz)
+{
+	ref->tuple = NULL;
+	ref->data = data;
+	ref->data_sz = data_sz;
+	ref->format = NULL;
+	ref->field_count = field_count;
+	ref->slots[0] = 0;
+	memset(&ref->slots[1], 0, ref->field_count * sizeof(ref->slots[0]));
+	ref->slot_bitmask = 0;
+	bitmask64_set_bit(&ref->slot_bitmask, 0);
+}
+
+void
 vdbe_field_ref_create(struct vdbe_field_ref *ref, uint32_t capacity)
 {
 	memset(ref, 0, sizeof(*ref) + capacity * sizeof(ref->slots[0]));
