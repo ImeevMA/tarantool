@@ -1287,7 +1287,8 @@ vdbe_emit_create_constraints(struct Parse *parse, int reg_space_id)
 		int reg_seq_id = ++parse->nMem;
 		struct Vdbe *v = sqlGetVdbe(parse);
 		assert(v != NULL);
-		sqlVdbeAddOp2(v, OP_NextSequenceId, 0, reg_seq_id);
+		sqlVdbeAddOp2(v, OP_NextSystemSpaceId, BOX_SEQUENCE_ID,
+			      reg_seq_id);
 		int reg_seq_rec = emitNewSysSequenceRecord(parse, reg_seq_id,
 							   space->def->name);
 		if (is_alter) {

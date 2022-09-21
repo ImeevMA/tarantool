@@ -2853,19 +2853,32 @@ case OP_Sequence: {           /* out2 */
 	break;
 }
 
-/* Opcode: NextSequenceId * P2 * * *
- * Synopsis: r[P2]=get_max(_sequence)
+/* Opcode: NextSystemSpaceId P1 P2 * * *
+ * Synopsis: r[P2]=New ID of space P1.
  *
- * Get next Id of the _sequence space.
- * Return in P2 maximum id found in _sequence,
- * incremented by one.
+ * Place the next value of the primary key of the _sequence or _func space into
+ * register P2. P1 is the system space identifier.
  */
-case OP_NextSequenceId: {
-	pOut = vdbe_prepare_null_out(p, pOp->p2);
-	uint64_t id = 0;
-	tarantoolSqlNextSeqId(&id);
-	id++;
-	mem_set_uint(pOut, id);
+case OP_NextSystemSpaceId: {
+	uint32_t space_id = pOp->p1;
+	assert(space_id == BOX_SEQUENCE_ID || space_id == BOX_FUNC_ID);
+	struct Mem *res = &p->aMem[pOp->p2];
+	char key[1];
+	struct tuple *tuple;
+	char *key_end = mp_encode_array(key, 0);
+	assert(key_end - key == 1);
+	if (box_index_max(space_id, 0, key, key_end, &tuple) != 0)
+		goto abort_due_to_error;
+	if (tuple == NULL) {
+		mem_set_uint(res, 1);
+		break;
+	}
+	uint32_t fieldno = space_id == BOX_SEQUENCE_ID ? BOX_SEQUENCE_FIELD_ID :
+			   BOX_FUNC_FIELD_ID;
+	uint64_t id;
+	if (tuple_field_u64(tuple, fieldno, &id) != 0)
+		goto abort_due_to_error;
+	mem_set_uint(res, id + 1);
 	break;
 }
 
