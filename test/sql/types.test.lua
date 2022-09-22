@@ -218,6 +218,7 @@ box.execute("CREATE TABLE t1 (id INT PRIMARY KEY, a INT CHECK (a > 1844674407370
 box.execute("INSERT INTO t1 VALUES (1, 18446744073709551611);")
 box.execute("INSERT INTO t1 VALUES (1, -1);")
 box.space.T1:drop()
+box.func.check_T1_ck_unnamed_T1_1:drop()
 
 box.execute("CREATE TABLE t1 (id INT PRIMARY KEY, a INT DEFAULT 18446744073709551615);")
 box.execute("INSERT INTO t1 (id) VALUES (1);")

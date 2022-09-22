@@ -695,7 +695,7 @@ trim_space_snprintf(char *wptr, const char *str, uint32_t str_len)
 static void
 vdbe_emit_ck_constraint_create(struct Parse *parser,
 			       const struct ck_constraint_def *ck_def,
-			       int reg_space_id);
+			       uint32_t reg_space_id, const char *space_name);
 
 void
 sql_create_check_contraint(struct Parse *parser)
@@ -792,8 +792,10 @@ sql_create_check_contraint(struct Parse *parser)
 		}
 		int space_id_reg = ++parser->nMem;
 		struct Vdbe *v = sqlGetVdbe(parser);
-		sqlVdbeAddOp2(v, OP_Integer, space->def->id, space_id_reg);
-		vdbe_emit_ck_constraint_create(parser, ck_def, space_id_reg);
+		sqlVdbeAddOp2(v, OP_Integer, space->def->id,
+			      space_id_reg);
+		vdbe_emit_ck_constraint_create(parser, ck_def, space_id_reg,
+					       space->def->name);
 		assert(sqlVdbeGetOp(v, v->nOp - 2)->opcode == OP_SInsert);
 		sqlVdbeCountChanges(v);
 		sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
@@ -1108,11 +1110,13 @@ emitNewSysSpaceSequenceRecord(Parse *pParse, int reg_space_id, int reg_seq_id)
  * @param parser Parsing context.
  * @param ck_def Check constraint definition to be serialized.
  * @param reg_space_id The VDBE register containing space id.
+ * @param space_name Name of the space owning the CHECK. For error
+ *     message.
  */
 static void
 vdbe_emit_ck_constraint_create(struct Parse *parser,
 			       const struct ck_constraint_def *ck_def,
-			       int reg_space_id)
+			       uint32_t reg_space_id, const char *space_name)
 {
 	struct sql *db = parser->db;
 	struct Vdbe *v = sqlGetVdbe(parser);
@@ -1124,8 +1128,9 @@ vdbe_emit_ck_constraint_create(struct Parse *parser,
 	int regs = sqlGetTempRange(parser, 20);
 	sqlVdbeAddOp2(v, OP_NextSystemSpaceId, BOX_FUNC_ID, regs);
 	sqlVdbeAddOp2(v, OP_Integer, effective_user()->uid, regs + 1);
-	char *name = sqlDbStrDup(db, ck_def->name);
-	sqlVdbeAddOp4(v, OP_String8, 0, regs + 2, 0, name, P4_DYNAMIC);
+	char *func_name = sqlMPrintf(db, "check_%s_%s", space_name,
+				     ck_def->name);
+	sqlVdbeAddOp4(v, OP_String8, 0, regs + 2, 0, func_name, P4_DYNAMIC);
 	sqlVdbeAddOp2(v, OP_Integer, 0, regs + 3);
 	sqlVdbeAddOp4(v, OP_String8, 0, regs + 4, 0, "SQL_EXPR", P4_STATIC);
 	char *body = sqlDbStrDup(db, ck_def->expr_str);
@@ -1156,7 +1161,8 @@ vdbe_emit_ck_constraint_create(struct Parse *parser,
 	sqlVdbeAddOp3(v, OP_MakeRecord, regs, 19, regs + 19);
 	sqlVdbeAddOp2(v, OP_SInsert, BOX_FUNC_ID, regs + 19);
 	VdbeComment((v, "Create func constraint %s", ck_def->name));
-	sqlVdbeAddOp3(v, OP_CreateCheck, reg_space_id, regs, regs + 2);
+	sqlVdbeAddOp4(v, OP_CreateCheck, reg_space_id, regs, 0,
+		      sqlDbStrDup(db, ck_def->name), P4_DYNAMIC);
 	sqlReleaseTempRange(parser, regs, 20);
 }
 
@@ -1363,7 +1369,7 @@ vdbe_emit_create_constraints(struct Parse *parse, int reg_space_id)
 			    &parse->create_ck_constraint_parse_def.checks,
 			    link) {
 		vdbe_emit_ck_constraint_create(parse, ck_parse->ck_def,
-					       reg_space_id);
+					       reg_space_id, space->def->name);
 	}
 }
 

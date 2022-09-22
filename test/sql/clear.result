@@ -175,10 +175,10 @@ box.execute("CREATE TABLE t1(id INT PRIMARY KEY, CONSTRAINT ck1 CHECK(id > 0), C
 ---
 - null
 - Duplicate key exists in unique index "name" in space "_func" with old tuple - [66,
-  1, "CK1", 0, "SQL_EXPR", "id < 0", "function", [], "any", "none", "none", true,
-  false, true, ["LUA"], {}, "", "", ""] and new tuple - [67, 1, "CK1", 0, "SQL_EXPR",
-  "id > 0", "function", [], "any", "none", "none", true, false, true, ["LUA"], {},
-  "", "", ""]
+  1, "check_T1_CK1", 0, "SQL_EXPR", "id < 0", "function", [], "any", "none", "none",
+  true, false, true, ["LUA"], {}, "", "", ""] and new tuple - [67, 1, "check_T1_CK1",
+  0, "SQL_EXPR", "id > 0", "function", [], "any", "none", "none", true, false, true,
+  ["LUA"], {}, "", "", ""]
 ...
 box.space.t1
 ---

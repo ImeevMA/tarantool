@@ -370,7 +370,7 @@ box.execute('CREATE TABLE t1(id INTEGER PRIMARY KEY);')
 ...
 box.execute('ALTER TABLE t1 ADD CONSTRAINT ck1 CHECK(id > 0);')
 ---
-- row_count: 1
+- row_count: 0
 ...
 box.execute('DROP TABLE t1;')
 ---
