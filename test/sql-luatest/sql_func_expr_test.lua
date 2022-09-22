@@ -95,3 +95,22 @@ g.test_sql_func_expr_3 = function()
         box.schema.func.drop('abc')
     end)
 end
+
+-- Make sure SQL EXPR do not expire.
+g.test_sql_func_expr_4 = function()
+    g.server:exec(function()
+        local t = require('luatest')
+        local def = {language = 'SQL_EXPR', is_deterministic = true,
+                     body = 'a * b > 10'}
+        box.schema.func.create('abc', def)
+        local format = {{'A', 'integer'}, {'B', 'integer'}}
+        local s = box.schema.space.create('test', {format = format})
+        s:create_index('i')
+        s:alter{constraint='abc'}
+        t.assert_equals(s:insert{3, 4}, {3, 4})
+        box.execute([[CREATE INDEX i1 ON "test"(a);]])
+        t.assert_equals(s:insert{4, 5}, {4, 5})
+        box.space.test:drop()
+        box.schema.func.drop('abc')
+    end)
+end
