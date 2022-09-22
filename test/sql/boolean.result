@@ -431,7 +431,7 @@ INSERT INTO t1 VALUES (1, false);
 INSERT INTO t1 VALUES (2, true);
  | ---
  | - null
- | - 'Check constraint failed ''CK'': a != true'
+ | - Check constraint 'CK' failed for tuple
  | ...
 
 -- Check interactions with FOREIGN KEY constraint.

@@ -143,7 +143,7 @@ ALTER TABLE ck_check ADD b INT CHECK (b > 0);
 INSERT INTO ck_check VALUES (1, 0);
  | ---
  | - null
- | - 'Check constraint failed ''ck_unnamed_CK_CHECK_1'': b > 0'
+ | - Check constraint 'ck_unnamed_CK_CHECK_1' failed for tuple
  | ...
 INSERT INTO ck_check VALUES (1, 1);
  | ---

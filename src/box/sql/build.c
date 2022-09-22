@@ -737,10 +737,7 @@ sql_create_check_contraint(struct Parse *parser)
 			struct space *original_space =
 				space_by_name(space->def->name);
 			assert(original_space != NULL);
-			struct ck_constraint *ck;
-			rlist_foreach_entry(ck, &original_space->ck_constraint,
-					    link)
-				ck_idx++;
+			ck_idx = original_space->def->opts.constraint_count + 1;
 		}
 		name = tt_sprintf("ck_unnamed_%s_%u", space->def->name, ck_idx);
 	}
@@ -797,7 +794,7 @@ sql_create_check_contraint(struct Parse *parser)
 		struct Vdbe *v = sqlGetVdbe(parser);
 		sqlVdbeAddOp2(v, OP_Integer, space->def->id, space_id_reg);
 		vdbe_emit_ck_constraint_create(parser, ck_def, space_id_reg);
-		assert(sqlVdbeGetOp(v, v->nOp - 1)->opcode == OP_SInsert);
+		assert(sqlVdbeGetOp(v, v->nOp - 2)->opcode == OP_SInsert);
 		sqlVdbeCountChanges(v);
 		sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
 	} else {
