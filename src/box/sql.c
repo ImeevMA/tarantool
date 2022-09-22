@@ -1464,9 +1464,15 @@ sql_drop_core_constraint(uint32_t space_id, const char *name)
 	for (uint32_t i = 0; i < count; ++i) {
 		if (strcmp(cdefs[i].name, name) != 0)
 			continue;
-		if (cdefs[i].type == CONSTR_FUNC)
-			return box_tuple_constraint_drop(space_id, name, len);
-		return box_tuple_foreign_key_drop(space_id, name, len);
+		if (cdefs[i].type == CONSTR_FKEY)
+			return box_tuple_foreign_key_drop(space_id, name, len);
+		uint32_t func_id = cdefs[i].func.id;
+		if (box_tuple_constraint_drop(space_id, name, len) != 0)
+			return -1;
+		char key[32];
+		char *key_end = mp_encode_array(key, 1);
+		key_end = mp_encode_uint(key_end, func_id);
+		return box_delete(BOX_FUNC_ID, 0, key, key_end, NULL);
 	}
 	uint32_t field_count = space->def->field_count;
 	for (uint32_t i = 0; i < field_count; ++i) {
@@ -1475,12 +1481,18 @@ sql_drop_core_constraint(uint32_t space_id, const char *name)
 		for (uint32_t j = 0; j < count; ++j) {
 			if (strcmp(cdefs[j].name, name) != 0)
 				continue;
-			if (cdefs[j].type == CONSTR_FUNC) {
-				return box_field_constraint_drop(space_id, name,
-								 len, i);
+			if (cdefs[j].type == CONSTR_FKEY) {
+				return box_field_foreign_key_drop(space_id,
+								  name, len, i);
 			}
-			return box_field_foreign_key_drop(space_id, name, len,
-							  i);
+			uint32_t func_id = cdefs[i].func.id;
+			if (box_field_constraint_drop(space_id, name, len,
+						      i) != 0)
+				return -1;
+			char key[32];
+			char *key_end = mp_encode_array(key, 1);
+			key_end = mp_encode_uint(key, func_id);
+			return box_delete(BOX_FUNC_ID, 0, key, key_end, NULL);
 		}
 	}
 	diag_set(ClientError, ER_NO_SUCH_CONSTRAINT, name, space->def->name);
