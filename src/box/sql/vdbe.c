@@ -2166,6 +2166,17 @@ case OP_CreateForeignKey: {
 	break;
 }
 
+case OP_CreateCheck: {
+	assert(pOp->p1 >= 0 && pOp->p2 >= 0 && pOp->p3 >= 0);
+	uint32_t space_id = aMem[pOp->p1].u.u;
+	uint32_t func_id = aMem[pOp->p2].u.u;
+	const char *name = aMem[pOp->p3].z;
+	uint32_t len = aMem[pOp->p3].n;
+	if (box_tuple_constraint_create(space_id, name, len, func_id) != 0)
+		goto abort_due_to_error;
+	break;
+}
+
 /**
  * Opcode: DropConstraint P1 * * P4 *
  * Synopsis: Drop constraint from box.space[P1]
