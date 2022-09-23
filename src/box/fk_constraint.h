@@ -119,10 +119,6 @@ fk_constraint_is_self_referenced(const struct fk_constraint_def *fk_c)
 	return fk_c->child_id == fk_c->parent_id;
 }
 
-/** Release memory for foreign key and its triggers, if any. */
-void
-fk_constraint_delete(struct fk_constraint *fkey);
-
 #if defined(__cplusplus)
 } /* extern "C" */
 #endif /* __cplusplus */
