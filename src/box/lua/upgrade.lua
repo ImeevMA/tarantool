@@ -1278,8 +1278,39 @@ local function revoke_write_access_on__collation_from_role_public()
     _priv:delete{PUBLIC, 'space', box.schema.COLLATION_ID}
 end
 
+local function convert_sql_constraints_to_tuple_constraints()
+    local _fk = box.space[box.schema.FK_CONSTRAINT_ID]
+    local _ck = box.space[box.schema.CK_CONSTRAINT_ID]
+    log.info("convert constraints from _ck_constraint and _fk_constraint")
+    for _, v in _fk:pairs() do
+        local space = box.space[v.child_id]
+        local mapping = setmap({})
+        for i, id in pairs(v.child_cols) do
+            mapping[id + 1] = v.parent_cols[i] + 1
+        end
+        local fk = space.foreign_key or {}
+        fk[v.name] = {space = v.parent_id, field = mapping}
+        space:alter({foreign_key = fk})
+        _fk:delete({v.name, v.child_id})
+    end
+    for _, v in _ck:pairs() do
+        local space = box.space[v.space_id]
+        local name = 'check_'..space.name.."_"..v.name
+        box.schema.func.create(name, {is_deterministic = true, body = v.code,
+                                      language = 'SQL_EXPR'})
+        local ck = space.constraint or {}
+        for k1, v1 in pairs(ck) do
+            ck[k1] = box.func[v1].name
+        end
+        ck[v.name] = name
+        space:alter({constraint = ck})
+        _ck:delete({v.space_id, v.name})
+    end
+end
+
 local function upgrade_to_2_11_0()
     revoke_write_access_on__collation_from_role_public()
+    convert_sql_constraints_to_tuple_constraints()
 end
 --------------------------------------------------------------------------------
 
