@@ -1279,31 +1279,39 @@ local function revoke_write_access_on__collation_from_role_public()
 end
 
 local function convert_sql_constraints_to_tuple_constraints()
+    local _space = box.space._space
     local _fk = box.space[box.schema.FK_CONSTRAINT_ID]
     local _ck = box.space[box.schema.CK_CONSTRAINT_ID]
     log.info("convert constraints from _ck_constraint and _fk_constraint")
     for _, v in _fk:pairs() do
-        local space = box.space[v.child_id]
+        local def = _space:get{v.child_id}
         local mapping = setmap({})
         for i, id in pairs(v.child_cols) do
-            mapping[id + 1] = v.parent_cols[i] + 1
+            mapping[id] = v.parent_cols[i]
         end
-        local fk = space.foreign_key or {}
+        local fk = def.flags.foreign_key or {}
         fk[v.name] = {space = v.parent_id, field = mapping}
-        space:alter({foreign_key = fk})
+        local new_def = def:totable()
+        new_def[6].foreign_key = fk
+        _space:replace(new_def)
         _fk:delete({v.name, v.child_id})
     end
     for _, v in _ck:pairs() do
-        local space = box.space[v.space_id]
-        local name = 'check_'..space.name.."_"..v.name
-        box.schema.func.create(name, {is_deterministic = true, body = v.code,
-                                      language = 'SQL_EXPR'})
-        local ck = space.constraint or {}
-        for k1, v1 in pairs(ck) do
-            ck[k1] = box.func[v1].name
-        end
-        ck[v.name] = name
-        space:alter({constraint = ck})
+        local _func = box.space._func
+        local _priv = box.space._priv
+        local def = _space:get{v.space_id}
+        local datetime = os.date("%Y-%m-%d %H:%M:%S")
+        local name = 'check_'..def.name.."_"..v.name
+        local t = _func:auto_increment({ADMIN, name, 1, 'SQL_EXPR', v.code,
+                                       'function', {}, 'any', 'none', 'none',
+                                        true, true, true, {}, setmap({}), '',
+                                        datetime, datetime})
+        _priv:replace{ADMIN, PUBLIC, 'function', t.id, box.priv.X}
+        local ck = def.flags.constraint or {}
+        ck[v.name] = t.id
+        local new_def = def:totable()
+        new_def[6].constraint = ck
+        _space:replace(new_def)
         _ck:delete({v.space_id, v.name})
     end
 end
