@@ -248,23 +248,13 @@ sqlExprAddCollateString(Parse * pParse, Expr * pExpr, const char *zC)
 	return sqlExprAddCollateToken(pParse, pExpr, &s, 0);
 }
 
-/*
- * Skip over any TK_COLLATE operators and any unlikely()
- * or likelihood() function at the root of an expression.
- */
+/** Skip over any TK_COLLATE operators at the root of an expression. */
 Expr *
 sqlExprSkipCollate(Expr * pExpr)
 {
 	while (pExpr && ExprHasProperty(pExpr, EP_Skip)) {
-		if (ExprHasProperty(pExpr, EP_Unlikely)) {
-			assert(!ExprHasProperty(pExpr, EP_xIsSelect));
-			assert(pExpr->x.pList->nExpr > 0);
-			assert(pExpr->op == TK_FUNCTION);
-			pExpr = pExpr->x.pList->a[0].pExpr;
-		} else {
-			assert(pExpr->op == TK_COLLATE);
-			pExpr = pExpr->pLeft;
-		}
+		assert(pExpr->op == TK_COLLATE);
+		pExpr = pExpr->pLeft;
 	}
 	return pExpr;
 }

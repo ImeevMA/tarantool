@@ -1418,7 +1418,6 @@ struct Expr {
 	int iTable;		/* TK_COLUMN_REF: cursor number of table holding column
 				 * TK_REGISTER: register number
 				 * TK_TRIGGER: 1 -> new, 0 -> old
-				 * EP_Unlikely:  134217728 times likelihood
 				 * TK_SELECT: 1st register of result vector
 				 */
 	ynVar iColumn;		/* TK_COLUMN_REF: column index.
