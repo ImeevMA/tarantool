@@ -1,6 +1,6 @@
 #!/usr/bin/env tarantool
 local test = require("sqltester")
-test:plan(117)
+test:plan(114)
 
 box.schema.func.create('A1', {
     language = 'Lua',
@@ -779,24 +779,6 @@ test:do_catchsql_test(
         "Failed to execute SQL statement: wrong arguments for function LIKE()"
     })
 
-test:do_execsql_test(
-    "array-12.15",
-    [[
-        SELECT LIKELIHOOD(a, 0.5e0) FROM t;
-    ]], {
-        {123},
-        {4, 5, 6}
-    })
-
-test:do_execsql_test(
-    "array-12.16",
-    [[
-        SELECT LIKELY(a) FROM t;
-    ]], {
-        {123},
-        {4, 5, 6}
-    })
-
 test:do_catchsql_test(
     "array-12.17",
     [[
@@ -943,15 +925,6 @@ test:do_catchsql_test(
     ]], {
         1, "Failed to execute SQL statement: wrong arguments for function "..
            "UNICODE()"
-    })
-
-test:do_execsql_test(
-    "array-12.34",
-    [[
-        SELECT UNLIKELY(a) FROM t;
-    ]], {
-        {123},
-        {4, 5, 6}
     })
 
 test:do_catchsql_test(

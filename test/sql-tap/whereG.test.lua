@@ -1,6 +1,6 @@
 #!/usr/bin/env tarantool
 local test = require("sqltester")
-test:plan(23)
+test:plan(19)
 
 --!./tcltestrunner.lua
 -- 2013-09-05
@@ -14,8 +14,7 @@ test:plan(23)
 --
 -------------------------------------------------------------------------
 --
--- Test cases for query planning decisions and the likely(), unlikely(), and
--- likelihood() functions.
+-- Test cases for query planning decisions.
 -- ["set","testdir",[["file","dirname",["argv0"]]]]
 -- ["source",[["testdir"],"\/tester.tcl"]]
 test:do_execsql_test(
@@ -74,7 +73,7 @@ test:do_eqp_test(
     [[
         SELECT DISTINCT aname
           FROM album, composer, track
-         WHERE unlikely(cname LIKE '%bach%')
+         WHERE cname LIKE '%bach%'
            AND composer.cid=track.cid
            AND album.aid=track.aid;
     ]], {
@@ -88,7 +87,7 @@ test:do_execsql_test(
     [[
         SELECT DISTINCT aname
           FROM album, composer, track
-         WHERE unlikely(cname LIKE '%bach%' COLLATE "unicode_ci")
+         WHERE cname LIKE '%bach%' COLLATE "unicode_ci"
            AND composer.cid=track.cid
            AND album.aid=track.aid;
     ]], {
@@ -103,7 +102,7 @@ test:do_eqp_test(
     [[
         SELECT DISTINCT aname
           FROM album, composer, track
-         WHERE likelihood(cname LIKE '%bach%', 0.5e0)
+         WHERE cname LIKE '%bach%'
            AND composer.cid=track.cid
            AND album.aid=track.aid;
     ]], {
@@ -117,7 +116,7 @@ test:do_execsql_test(
     [[
         SELECT DISTINCT aname
           FROM album, composer, track
-         WHERE likelihood(cname LIKE '%bach%' COLLATE "unicode_ci", 0.5e0)
+         WHERE cname LIKE '%bach%' COLLATE "unicode_ci"
            AND composer.cid=track.cid
            AND album.aid=track.aid;
     ]], {
@@ -160,8 +159,8 @@ test:do_eqp_test(
         SELECT DISTINCT aname
           FROM album, composer, track
          WHERE cname LIKE '%bach%'
-           AND unlikely(composer.cid=track.cid)
-           AND unlikely(album.aid=track.aid);
+           AND composer.cid=track.cid
+           AND album.aid=track.aid;
     ]], {
         -- <whereG-1.7>
         "/.*track.*(composer.*album|album.*composer).*/"
@@ -174,54 +173,12 @@ test:do_execsql_test(
         SELECT DISTINCT aname
           FROM album, composer, track
          WHERE cname LIKE '%bach%' COLLATE "unicode_ci"
-           AND unlikely(composer.cid=track.cid)
-           AND unlikely(album.aid=track.aid);
+           AND composer.cid=track.cid
+           AND album.aid=track.aid;
     ]], {
         -- <whereG-1.8>
         "Mass in B Minor, BWV 232"
         -- </whereG-1.8>
-    })
-
-test:do_catchsql_test(
-    "whereG-2.1",
-    [[
-        SELECT DISTINCT aname
-          FROM album, composer, track
-         WHERE likelihood(cname LIKE '%bach%', -0.1e0)
-           AND composer.cid=track.cid
-           AND album.aid=track.aid;
-    ]], {
-        -- <whereG-2.1>
-        1, "Illegal parameters, second argument to likelihood() must be a constant between 0.0 and 1.0"
-        -- </whereG-2.1>
-    })
-
-test:do_catchsql_test(
-    "whereG-2.2",
-    [[
-        SELECT DISTINCT aname
-          FROM album, composer, track
-         WHERE likelihood(cname LIKE '%bach%', 1.01e0)
-           AND composer.cid=track.cid
-           AND album.aid=track.aid;
-    ]], {
-        -- <whereG-2.2>
-        1, "Illegal parameters, second argument to likelihood() must be a constant between 0.0 and 1.0"
-        -- </whereG-2.2>
-    })
-
-test:do_catchsql_test(
-    "whereG-2.3",
-    [[
-        SELECT DISTINCT aname
-          FROM album, composer, track
-         WHERE likelihood(cname LIKE '%bach%', track.cid)
-           AND composer.cid=track.cid
-           AND album.aid=track.aid;
-    ]], {
-        -- <whereG-2.3>
-        1, "Illegal parameters, second argument to likelihood() must be a constant between 0.0 and 1.0"
-        -- </whereG-2.3>
     })
 
 -- Commuting a term of the WHERE clause should not change the query plan
@@ -268,59 +225,6 @@ test:do_execsql_test(
         -- </whereG-4.0>
     })
 
----------------------------------------------------------------------------
--- Test that likelihood() specifications on indexed terms are taken into
--- account by various forms of loops.
---
---   5.1.*: open ended range scans
---   5.2.*: skip-scans
---
--- reset_db
-test:do_execsql_test(
-    "5.1",
-    [[
-        DROP TABLE IF EXISTS t1;
-        CREATE TABLE t1(a INT , b INT , c INT , PRIMARY KEY (a,b));
-    ]])
-
--- do_eqp_test 5.1.2 {
---   SELECT * FROM t1 WHERE a>?
--- } {0 0 0 {SEARCH TABLE t1 USING INDEX i1 (a>?)}}
--- do_eqp_test 5.1.3 {
---   SELECT * FROM t1 WHERE likelihood(a>?, 0.9)
--- } {0 0 0 {SCAN TABLE t1}}
--- do_eqp_test 5.1.4 {
---   SELECT * FROM t1 WHERE likely(a>?)
--- } {0 0 0 {SCAN TABLE t1}}
--- do_test 5.2 {
---   for {set i 0} {$i < 100} {incr i} {
---     execsql { INSERT INTO t1 VALUES('abc', $i, $i); }
---   }
---   execsql { INSERT INTO t1 SELECT 'def', b, c FROM t1; }
---   execsql { ANALYZE }
--- } {}
--- do_eqp_test 5.2.2 {
---   SELECT * FROM t1 WHERE likelihood(b>?, 0.01)
--- } {0 0 0 {SEARCH TABLE t1 USING INDEX i1 (ANY(a) AND b>?)}}
--- do_eqp_test 5.2.3 {
---   SELECT * FROM t1 WHERE likelihood(b>?, 0.9)
--- } {0 0 0 {SCAN TABLE t1}}
--- do_eqp_test 5.2.4 {
---   SELECT * FROM t1 WHERE likely(b>?)
--- } {0 0 0 {SCAN TABLE t1}}
--- do_eqp_test 5.3.1 {
---   SELECT * FROM t1 WHERE a=?
--- } {0 0 0 {SEARCH TABLE t1 USING INDEX i1 (a=?)}}
--- do_eqp_test 5.3.2 {
---   SELECT * FROM t1 WHERE likelihood(a=?, 0.9)
--- } {0 0 0 {SCAN TABLE t1}}
--- do_eqp_test 5.3.3 {
---   SELECT * FROM t1 WHERE likely(a=?)
--- } {0 0 0 {SCAN TABLE t1}}
--- 2015-06-18
--- Ticket [https://www.sql.org/see/tktview/472f0742a1868fb58862bc588ed70]
---
-
 test:do_execsql_test(
     "6.0",
     [[
@@ -331,7 +235,7 @@ test:do_execsql_test(
         CREATE TABLE t2(i int PRIMARY KEY, b TEXT);
         INSERT INTO t2 VALUES(1,'T'), (2,'F');
         SELECT count(*) FROM t1 LEFT JOIN t2 ON t1.i=t2.i AND b='T' union all
-        SELECT count(*) FROM t1 LEFT JOIN t2 ON likely(t1.i=t2.i) AND b='T';
+        SELECT count(*) FROM t1 LEFT JOIN t2 ON t1.i = t2.i AND b = 'T';
     ]], {
         -- <6.0>
         4, 4
@@ -350,7 +254,7 @@ test:do_execsql_test(
         DROP TABLE IF EXISTS t2;
         CREATE TABLE t2(x INT , y INT , PRIMARY KEY(x,y));
         INSERT INTO t2 VALUES(3,3),(4,4);
-        SELECT likely(a), x FROM t1, t2 ORDER BY 1, 2;
+        SELECT a, x FROM t1, t2 ORDER BY 1, 2;
     ]], {
         -- <7.0>
         1, 3, 1, 4, 9, 3, 9, 4
@@ -360,7 +264,7 @@ test:do_execsql_test(
 test:do_execsql_test(
     "7.1",
     [[
-        SELECT unlikely(a), x FROM t1, t2 ORDER BY 1, 2;
+        SELECT a, x FROM t1, t2 ORDER BY 1, 2;
     ]], {
         -- <7.1>
         1, 3, 1, 4, 9, 3, 9, 4
@@ -370,7 +274,7 @@ test:do_execsql_test(
 test:do_execsql_test(
     "7.2",
     [[
-        SELECT likelihood(a, 0.5e0), x FROM t1, t2 ORDER BY 1, 2;
+        SELECT a, x FROM t1, t2 ORDER BY 1, 2;
     ]], {
         -- <7.2>
         1, 3, 1, 4, 9, 3, 9, 4

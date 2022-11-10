@@ -412,32 +412,6 @@ g.test_interval_14_14 = function()
     end)
 end
 
-g.test_interval_14_15 = function()
-    g.server:exec(function()
-        local t = require('luatest')
-        local itv = require('datetime').interval
-        local itv1 = itv.new({year = 1, month = 2, day = 3, hour = 4})
-        local itv2 = itv.new({min = 5, sec = 6, nsec = 7})
-
-        local sql = [[SELECT LIKELIHOOD(itv, 0.5e0) FROM t0;]]
-        local res = {{itv1}, {itv2}}
-        t.assert_equals(box.execute(sql).rows, res)
-    end)
-end
-
-g.test_interval_14_16 = function()
-    g.server:exec(function()
-        local t = require('luatest')
-        local itv = require('datetime').interval
-        local itv1 = itv.new({year = 1, month = 2, day = 3, hour = 4})
-        local itv2 = itv.new({min = 5, sec = 6, nsec = 7})
-
-        local sql = [[SELECT LIKELY(itv) FROM t0;]]
-        local res = {{itv1}, {itv2}}
-        t.assert_equals(box.execute(sql).rows, res)
-    end)
-end
-
 g.test_interval_14_17 = function()
     g.server:exec(function()
         local t = require('luatest')
@@ -598,19 +572,6 @@ g.test_interval_14_31 = function()
                     [[wrong arguments for function UNICODE()]]
         local _, err = box.execute(sql)
         t.assert_equals(err.message, res)
-    end)
-end
-
-g.test_interval_14_32 = function()
-    g.server:exec(function()
-        local t = require('luatest')
-        local itv = require('datetime').interval
-        local itv1 = itv.new({year = 1, month = 2, day = 3, hour = 4})
-        local itv2 = itv.new({min = 5, sec = 6, nsec = 7})
-
-        local sql = [[SELECT UNLIKELY(itv) FROM t0;]]
-        local res = {{itv1}, {itv2}}
-        t.assert_equals(box.execute(sql).rows, res)
     end)
 end
 

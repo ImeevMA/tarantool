@@ -3,7 +3,7 @@ local build_path = os.getenv("BUILDDIR")
 package.cpath = build_path..'/test/sql-tap/?.so;'..build_path..'/test/sql-tap/?.dylib;'..package.cpath
 
 local test = require("sqltester")
-test:plan(147)
+test:plan(144)
 
 local uuid = require("uuid")
 local uuid1 = uuid.fromstr("11111111-1111-1111-1111-111111111111")
@@ -338,22 +338,6 @@ test:do_catchsql_test(
         1, "Failed to execute SQL statement: wrong arguments for function LIKE()"
     })
 
-test:do_execsql_test(
-    "uuid-6.1.15",
-    [[
-        SELECT LIKELIHOOD(u, 0.5e0) from t2;
-    ]], {
-        uuid1, uuid3, uuid2
-    })
-
-test:do_execsql_test(
-    "uuid-6.1.16",
-    [[
-        SELECT LIKELY(u) from t2;
-    ]], {
-        uuid1, uuid3, uuid2
-    })
-
 test:do_catchsql_test(
     "uuid-6.1.17",
     [[
@@ -472,14 +456,6 @@ test:do_catchsql_test(
         SELECT UNICODE(u) from t2;
     ]], {
         1, "Failed to execute SQL statement: wrong arguments for function UNICODE()"
-    })
-
-test:do_execsql_test(
-    "uuid-6.1.32",
-    [[
-        SELECT UNLIKELY(u) from t2;
-    ]], {
-        uuid1, uuid3, uuid2
     })
 
 test:do_catchsql_test(

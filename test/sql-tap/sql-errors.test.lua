@@ -1,6 +1,6 @@
 #!/usr/bin/env tarantool
 local test = require("sqltester")
-test:plan(81)
+test:plan(80)
 
 test:execsql([[
 	CREATE TABLE t0 (i INT PRIMARY KEY, a INT);
@@ -406,16 +406,6 @@ test:do_catchsql_test(
 		-- <sql-errors-1.35>
 		1,"Invalid identifier '' (expected printable symbols only or it is too long)"
 		-- </sql-errors-1.35>
-	})
-
-test:do_catchsql_test(
-	"sql-errors-1.36",
-	[[
-		SELECT likelihood(1, 2);
-	]], {
-		-- <sql-errors-1.36>
-		1,"Illegal parameters, second argument to likelihood() must be a constant between 0.0 and 1.0"
-		-- </sql-errors-1.36>
 	})
 
 test:do_catchsql_test(

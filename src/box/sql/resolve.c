@@ -497,24 +497,6 @@ sql_expr_new_column(struct sql *db, struct SrcList *src_list, int src_idx,
 }
 
 /*
- * Expression p should encode a floating point value between 1.0 and 0.0.
- * Return 1024 times this value.  Or return -1 if p is not a floating point
- * value between 1.0 and 0.0.
- */
-static int
-exprProbability(Expr * p)
-{
-	double r = -1.0;
-	if (p->op != TK_FLOAT)
-		return -1;
-	sqlAtoF(p->u.zToken, &r, sqlStrlen30(p->u.zToken));
-	assert(r >= 0.0);
-	if (r > 1.0)
-		return -1;
-	return (int)(r * 134217728.0);
-}
-
-/*
  * This routine is callback for sqlWalkExpr().
  *
  * Resolve symbolic names into TK_COLUMN_REF operators for the current
@@ -590,7 +572,6 @@ resolveExprStep(Walker * pWalker, Expr * pExpr)
 		 */
 	case TK_FUNCTION:{
 			ExprList *pList = pExpr->x.pList;	/* The argument list */
-			int n = pList ? pList->nExpr : 0;	/* Number of arguments */
 			int nId;	/* Number of characters in function name */
 			const char *zId;	/* The function name. */
 
@@ -599,28 +580,6 @@ resolveExprStep(Walker * pWalker, Expr * pExpr)
 			nId = sqlStrlen30(zId);
 			uint32_t flags = sql_func_flags(zId);
 			bool is_agg = (flags & SQL_FUNC_AGG) != 0;
-			if ((flags & SQL_FUNC_UNLIKELY) != 0 && n == 2) {
-				ExprSetProperty(pExpr, EP_Unlikely | EP_Skip);
-				pExpr->iTable =
-					exprProbability(pList->a[1].pExpr);
-				if (pExpr->iTable < 0) {
-					diag_set(ClientError, ER_ILLEGAL_PARAMS,
-						"second argument to "
-						"likelihood() must be a "
-						"constant between 0.0 and 1.0");
-					pParse->is_aborted = true;
-					pNC->nErr++;
-					return WRC_Abort;
-				}
-			} else if ((flags & SQL_FUNC_UNLIKELY) != 0) {
-				ExprSetProperty(pExpr, EP_Unlikely | EP_Skip);
-				/*
-				 * unlikely() probability is
-				 * 0.0625, likely() is 0.9375
-				 */
-				pExpr->iTable = zId[0] == 'u' ?
-						8388608 : 125829120;
-			}
 			if (is_agg && (pNC->ncFlags & NC_AllowAgg) == 0) {
 				const char *err =
 					tt_sprintf("misuse of aggregate "\

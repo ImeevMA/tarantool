@@ -1,6 +1,6 @@
 #!/usr/bin/env tarantool
 local test = require("sqltester")
-test:plan(80)
+test:plan(77)
 
 -- Check that SCALAR and NUMBER meta-types works as intended.
 box.execute([[CREATE TABLE t (i INT PRIMARY KEY, s SCALAR, n NUMBER, a ANY);]])
@@ -515,22 +515,6 @@ test:do_catchsql_test(
            [[LIKE()]]
     })
 
-test:do_execsql_test(
-    "metatypes-8.15",
-    [[
-        SELECT LIKELIHOOD(a, 0.5e0) FROM t;
-    ]], {
-        1, 2, "", "", "", "", "3", true, "5", uuid, 3, dec
-    })
-
-test:do_execsql_test(
-    "metatypes-8.16",
-    [[
-        SELECT LIKELY(a) FROM t;
-    ]], {
-        1, 2, "", "", "", "", "3", true, "5", uuid, 3, dec
-    })
-
 test:do_catchsql_test(
     "metatypes-8.17",
     [[
@@ -670,14 +654,6 @@ test:do_catchsql_test(
         SELECT UNICODE(a) FROM t;
     ]], {
         1, "Type mismatch: can not convert any(1) to string"
-    })
-
-test:do_execsql_test(
-    "metatypes-8.34",
-    [[
-        SELECT UNLIKELY(a) FROM t;
-    ]], {
-        1, 2, "", "", "", "", "3", true, "5", uuid, 3, dec
     })
 
 test:do_catchsql_test(

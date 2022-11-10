@@ -510,34 +510,6 @@ g.test_datetime_15_14 = function()
     end)
 end
 
-g.test_datetime_15_15 = function()
-    g.server:exec(function()
-        local t = require('luatest')
-        local dt = require('datetime')
-        local dt1 = dt.new({year = 2001, month = 1, day = 1, hour = 1})
-        local dt2 = dt.new({year = 2002, month = 2, day = 2, hour = 2})
-        local dt3 = dt.new({year = 2003, month = 3, day = 3, hour = 3})
-
-        local sql = [[SELECT LIKELIHOOD(dt, 0.5e0) from t2;]]
-        local res = {{dt1}, {dt2}, {dt3}}
-        t.assert_equals(box.execute(sql).rows, res)
-    end)
-end
-
-g.test_datetime_15_16 = function()
-    g.server:exec(function()
-        local t = require('luatest')
-        local dt = require('datetime')
-        local dt1 = dt.new({year = 2001, month = 1, day = 1, hour = 1})
-        local dt2 = dt.new({year = 2002, month = 2, day = 2, hour = 2})
-        local dt3 = dt.new({year = 2003, month = 3, day = 3, hour = 3})
-
-        local sql = [[SELECT LIKELY(dt) from t2;]]
-        local res = {{dt1}, {dt2}, {dt3}}
-        t.assert_equals(box.execute(sql).rows, res)
-    end)
-end
-
 g.test_datetime_15_17 = function()
     g.server:exec(function()
         local t = require('luatest')
@@ -703,20 +675,6 @@ g.test_datetime_15_31 = function()
                     [[wrong arguments for function UNICODE()]]
         local _, err = box.execute(sql)
         t.assert_equals(err.message, res)
-    end)
-end
-
-g.test_datetime_15_16 = function()
-    g.server:exec(function()
-        local t = require('luatest')
-        local dt = require('datetime')
-        local dt1 = dt.new({year = 2001, month = 1, day = 1, hour = 1})
-        local dt2 = dt.new({year = 2002, month = 2, day = 2, hour = 2})
-        local dt3 = dt.new({year = 2003, month = 3, day = 3, hour = 3})
-
-        local sql = [[SELECT UNLIKELY(dt) from t2;]]
-        local res = {{dt1}, {dt2}, {dt3}}
-        t.assert_equals(box.execute(sql).rows, res)
     end)
 end
 
