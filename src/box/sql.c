@@ -1703,6 +1703,22 @@ sql_foreign_key_create(const char *name, uint32_t child_id, uint32_t parent_id,
 	return rc;
 }
 
+static bool
+check_field_name(const char *name, uint32_t func_id)
+{
+	struct func *func = func_by_id(func_id);
+	assert(func != NULL);
+	struct Vdbe *v = ((struct func_sql_expr *)func)->stmt;
+	for (int i = 0; i < v->nOp; ++i) {
+		if (v->aOp[i].opcode != OP_Fetch ||
+		    v->aOp[i].p4type != P4_DYNAMIC)
+			continue;
+		if (strcmp(name, v->aOp[i].z) != 0) {
+
+		}
+	}
+}
+
 int
 sql_check_create(const char *name, uint32_t space_id, uint32_t func_id,
 		 uint32_t fieldno, bool is_field_ck)
@@ -1723,6 +1739,11 @@ sql_check_create(const char *name, uint32_t space_id, uint32_t func_id,
 	mp_encode_uint(value, func_id);
 
 	if (is_field_ck) {
+		const char *field_name = space->def->fields[fieldno].name;
+		if (!check_field_name(field_name, func_id)) {
+			diag_set(ClientError, ...);
+			return -1;
+		}
 		count = space->def->fields[fieldno].constraint_count;
 		cdefs = space->def->fields[fieldno].constraint_def;
 		int len = snprintf(buf, buf_size, "format[%u].constraint",
