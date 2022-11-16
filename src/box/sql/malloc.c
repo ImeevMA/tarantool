@@ -126,12 +126,6 @@ sqlMalloc(u64 n)
 	return p;
 }
 
-void *
-sql_malloc64(sql_uint64 n)
-{
-	return sqlMalloc(n);
-}
-
 /** Return TRUE if buf is a lookaside memory allocation. */
 static inline bool
 is_lookaside(void *buf)

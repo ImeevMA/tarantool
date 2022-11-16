@@ -407,7 +407,7 @@ findInodeInfo(unixFile * pFile,	/* Unix file with file desc used in the key */
 		pInode = pInode->pNext;
 	}
 	if (pInode == 0) {
-		pInode = sql_malloc64(sizeof(*pInode));
+		pInode = sqlMalloc(sizeof(*pInode));
 		if (pInode == 0) {
 			return -1;
 		}
@@ -1014,8 +1014,7 @@ unixFileControl(sql_file * id, int op, void *pArg)
 			return 0;
 		}
 	case SQL_FCNTL_TEMPFILENAME:{
-			char *zTFile =
-			    sql_malloc64(pFile->pVfs->mxPathname);
+			char *zTFile = sqlMalloc(pFile->pVfs->mxPathname);
 			if (zTFile) {
 				unixGetTempname(pFile->pVfs->mxPathname,
 						zTFile);
@@ -1696,7 +1695,7 @@ unixOpen(sql_vfs * pVfs,	/* The VFS for which this is the xOpen method */
 		if (pUnused) {
 			fd = pUnused->fd;
 		} else {
-			pUnused = sql_malloc64(sizeof(*pUnused));
+			pUnused = sqlMalloc(sizeof(*pUnused));
 			if (!pUnused) {
 				return -1;
 			}
