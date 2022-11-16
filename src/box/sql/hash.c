@@ -130,12 +130,7 @@ insertElement(Hash * pH,	/* The complete hash table */
 	}
 }
 
-/* Resize the hash table so that it cantains "new_size" buckets.
- *
- * The hash table might fail to resize if sql_malloc() fails or
- * if the new size is the same as the prior size.
- * Return TRUE if the resize occurs and false if not.
- */
+/** Resize the hash table so that it cantains "new_size" buckets. */
 static int
 rehash(Hash * pH, unsigned int new_size)
 {

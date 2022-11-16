@@ -103,9 +103,9 @@ sql_sized_realloc(void *pPrior, int nByte)
 	return (void *)p;
 }
 
-/*
- * Allocate memory.  This routine is like sql_malloc() except that it
- * assumes the memory subsystem has already been initialized.
+/**
+ * Allocate memory. This routine assumes the memory subsystem has already been
+ * initialized.
  */
 void *
 sqlMalloc(u64 n)
@@ -116,7 +116,7 @@ sqlMalloc(u64 n)
 		 * signed integer value might cause an integer overflow inside of the
 		 * sql_sized_malloc().  Hence we limit the maximum size to 0x7fffff00, giving
 		 * 255 bytes of overhead.  sql itself will never use anything near
-		 * this amount.  The only way to reach the limit is with sql_malloc()
+		 * this amount.
 		 */
 		p = 0;
 	} else {
@@ -124,17 +124,6 @@ sqlMalloc(u64 n)
 	}
 	assert(EIGHT_BYTE_ALIGNMENT(p));	/* IMP: R-11148-40995 */
 	return p;
-}
-
-/*
- * This version of the memory allocation is for use by the application.
- * First make sure the memory subsystem is initialized, then do the
- * allocation.
- */
-void *
-sql_malloc(int n)
-{
-	return n <= 0 ? 0 : sqlMalloc(n);
 }
 
 void *
@@ -152,9 +141,9 @@ isLookaside(sql * db, void *p)
 	return SQL_WITHIN(p, db->lookaside.pStart, db->lookaside.pEnd);
 }
 
-/*
+/**
  * Return the size of a memory allocation previously obtained from
- * sqlMalloc() or sql_malloc().
+ * sqlMalloc().
  */
 int
 sqlMallocSize(void *p)

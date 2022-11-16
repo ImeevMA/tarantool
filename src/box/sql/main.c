@@ -161,7 +161,7 @@ sql_initialize(void)
  *
  * The sz parameter is the number of bytes in each lookaside slot.
  * The cnt parameter is the number of slots.  If pStart is NULL the
- * space for the lookaside memory is obtained from sql_malloc().
+ * space for the lookaside memory is obtained from malloc().
  * If pStart is not NULL then it is sz*cnt bytes of memory to use for
  * the lookaside memory.
  */

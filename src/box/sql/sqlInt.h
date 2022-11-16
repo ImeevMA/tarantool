@@ -312,9 +312,6 @@ enum sql_ret_code {
 };
 
 void *
-sql_malloc(int);
-
-void *
 sql_malloc64(sql_uint64);
 
 void *
@@ -969,7 +966,7 @@ typedef int VList;
 struct Lookaside {
 	u32 bDisable;		/* Only operate the lookaside when zero */
 	u16 sz;			/* Size of each buffer in bytes */
-	u8 bMalloced;		/* True if pStart obtained from sql_malloc() */
+	u8 bMalloced;		/* True if pStart obtained from malloc() */
 	int nOut;		/* Number of buffers currently checked out */
 	int mxOut;		/* Highwater mark for nOut */
 	int anStat[3];		/* 0: hits.  1: size misses.  2: full misses */

@@ -721,7 +721,7 @@ sql_sql(sql_stmt * pStmt)
 /*
  * Return the SQL associated with a prepared statement with
  * bound parameters expanded.  Space to hold the returned string is
- * obtained from sql_malloc().  The caller is responsible for
+ * obtained from malloc(). The caller is responsible for
  * freeing the returned string by passing it to sql_free().
  */
 char *

@@ -1046,7 +1046,7 @@ sqlMPrintf(sql * db, const char *zFormat, ...)
 }
 
 /*
- * Print into memory obtained from sql_malloc().  Omit the internal
+ * Print into memory obtained from malloc().  Omit the internal
  * %-conversion extensions.
  */
 char *
@@ -1062,7 +1062,7 @@ sql_vmprintf(const char *zFormat, va_list ap)
 }
 
 /*
- * Print into memory obtained from sql_malloc()().  Omit the internal
+ * Print into memory obtained from malloc().  Omit the internal
  * %-conversion extensions.
  */
 char *

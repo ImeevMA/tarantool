@@ -674,7 +674,7 @@ sqlVdbeDeletePriorOpcode(Vdbe * p, u8 op)
  * Change the value of the P4 operand for a specific instruction.
  *
  * If n>=0 then the P4 operand is dynamic, meaning that a copy of
- * the string is made into memory obtained from sql_malloc().
+ * the string is made into memory obtained from malloc().
  * A value of n==0 means copy bytes of zP4 up to and including the
  * first null byte.  If n>0 then copy n+1 bytes of zP4.
  *
