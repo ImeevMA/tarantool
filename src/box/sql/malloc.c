@@ -259,8 +259,7 @@ sqlMallocZero(u64 n)
 void *
 sqlDbMallocZero(sql * db, u64 n)
 {
-	void *p;
-	p = sqlDbMallocRaw(db, n);
+	void *p = sqlDbMallocRawNN(db, n);
 	if (p)
 		memset(p, 0, (size_t) n);
 	return p;
@@ -284,34 +283,7 @@ dbMallocRawFinish(sql * db, u64 n)
  * Allocate memory, either lookaside (if possible) or heap.
  * If the allocation fails, set the mallocFailed flag in
  * the connection pointer.
- *
- * If db!=0 and db->mallocFailed is true (indicating a prior malloc
- * failure on the same database connection) then always return 0.
- * Hence for a particular database connection, once malloc starts
- * failing, it fails consistently until mallocFailed is reset.
- * This is an important assumption.  There are many places in the
- * code that do things like this:
- *
- *         int *a = (int*)sqlDbMallocRaw(db, 100);
- *         int *b = (int*)sqlDbMallocRaw(db, 200);
- *         if( b ) a[10] = 9;
- *
- * In other words, if a subsequent malloc (ex: "b") worked, it is assumed
- * that all prior mallocs (ex: "a") worked too.
- *
- * The sqlMallocRawNN() variant guarantees that the "db" parameter is
- * not a NULL pointer.
  */
-void *
-sqlDbMallocRaw(sql * db, u64 n)
-{
-	void *p;
-	if (db)
-		return sqlDbMallocRawNN(db, n);
-	p = sqlMalloc(n);
-	return p;
-}
-
 void *
 sqlDbMallocRawNN(sql * db, u64 n)
 {
@@ -409,7 +381,7 @@ sqlDbStrDup(sql * db, const char *z)
 		return 0;
 	}
 	n = strlen(z) + 1;
-	zNew = sqlDbMallocRaw(db, n);
+	zNew = sqlDbMallocRawNN(db, n);
 	if (zNew) {
 		memcpy(zNew, z, n);
 	}

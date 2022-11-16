@@ -1285,7 +1285,7 @@ sqlVdbeList(Vdbe * p)
 		mem_set_int(pMem, pOp->p3, pOp->p3 < 0);
 		pMem++;
 
-		char *buf = sqlDbMallocRaw(sql_get(), 256);
+		char *buf = sqlDbMallocRawNN(sql_get(), 256);
 		if (buf == NULL)
 			return -1;
 		zP4 = displayP4(pOp, buf, sqlDbMallocSize(sql_get(), buf));
@@ -1298,7 +1298,7 @@ sqlVdbeList(Vdbe * p)
 		pMem++;
 
 		if (p->explain == 1) {
-			buf = sqlDbMallocRaw(sql_get(), 4);
+			buf = sqlDbMallocRawNN(sql_get(), 4);
 			if (buf == NULL)
 				return -1;
 			sql_snprintf(3, buf, "%.2x", pOp->p5);
@@ -1306,7 +1306,7 @@ sqlVdbeList(Vdbe * p)
 			pMem++;
 
 #ifdef SQL_ENABLE_EXPLAIN_COMMENTS
-			buf = sqlDbMallocRaw(sql_get(), 500);
+			buf = sqlDbMallocRawNN(sql_get(), 500);
 			if (buf == NULL)
 				return -1;
 			displayComment(pOp, zP4, buf, 500);
@@ -2139,7 +2139,7 @@ sqlVdbeDelete(Vdbe * p)
  * structure large enough to be used with sqlVdbeRecordUnpack() if
  * the first argument is a pointer to key_def structure.
  *
- * The space is either allocated using sqlDbMallocRaw() or from within
+ * The space is either allocated using sqlDbMallocRawNN() or from within
  * the unaligned buffer passed via the second and third arguments (presumably
  * stack space). If the former, then *ppFree is set to a pointer that should
  * be eventually freed by the caller using sqlDbFree(). Or, if the
@@ -2156,7 +2156,7 @@ sqlVdbeAllocUnpackedRecord(struct sql *db, struct key_def *key_def)
 	nByte =
 	    ROUND8(sizeof(UnpackedRecord)) + sizeof(Mem) * (key_def->part_count +
 							    1);
-	p = (UnpackedRecord *) sqlDbMallocRaw(db, nByte);
+	p = (UnpackedRecord *) sqlDbMallocRawNN(db, nByte);
 	if (!p)
 		return 0;
 	p->aMem = (Mem *) & ((char *)p)[ROUND8(sizeof(UnpackedRecord))];

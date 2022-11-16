@@ -2396,7 +2396,6 @@ unsigned sqlStrlen30(const char *);
 void *sqlMalloc(u64);
 void *sqlMallocZero(u64);
 void *sqlDbMallocZero(sql *, u64);
-void *sqlDbMallocRaw(sql *, u64);
 void *sqlDbMallocRawNN(sql *, u64);
 char *sqlDbStrDup(sql *, const char *);
 char *sqlDbStrNDup(sql *, const char *, u64);
@@ -2420,7 +2419,7 @@ int sqlDbMallocSize(sql *, void *);
 #define sqlStackAllocZero(D,N)  memset(alloca(N), 0, N)
 #define sqlStackFree(D,P)
 #else
-#define sqlStackAllocRaw(D,N)   sqlDbMallocRaw(D,N)
+#define sqlStackAllocRaw(D,N)   sqlDbMallocRawNN(D,N)
 #define sqlStackAllocZero(D,N)  sqlDbMallocZero(D,N)
 #define sqlStackFree(D,P)       sqlDbFree(D,P)
 #endif

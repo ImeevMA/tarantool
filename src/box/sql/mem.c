@@ -2931,7 +2931,7 @@ sqlVdbeMemGrow(struct Mem *pMem, int n, int bPreserve)
 		} else {
 			if (pMem->szMalloc > 0)
 				sqlDbFree(pMem->db, pMem->zMalloc);
-			pMem->zMalloc = sqlDbMallocRaw(pMem->db, n);
+			pMem->zMalloc = sqlDbMallocRawNN(pMem->db, n);
 		}
 		if (pMem->zMalloc == 0) {
 			mem_clear(pMem);

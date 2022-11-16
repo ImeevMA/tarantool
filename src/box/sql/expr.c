@@ -199,7 +199,7 @@ field_type_sequence_dup(struct Parse *parse, enum field_type *types,
 			uint32_t len)
 {
 	uint32_t sz = (len + 1) * sizeof(enum field_type);
-	enum field_type *ret_types = sqlDbMallocRaw(parse->db, sz);
+	enum field_type *ret_types = sqlDbMallocRawNN(parse->db, sz);
 	if (ret_types == NULL)
 		return NULL;
 	memcpy(ret_types, types, sz);
