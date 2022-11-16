@@ -532,9 +532,8 @@ vdbePmaReadBlob(PmaReader * p,	/* PmaReader from which to take the blob */
 			int nNew = MAX(128, p->nAlloc * 2);
 			while (nByte > nNew)
 				nNew = nNew * 2;
+			assert(nNew > 0);
 			aNew = sqlRealloc(p->aAlloc, nNew);
-			if (!aNew)
-				return -1;
 			p->nAlloc = nNew;
 			p->aAlloc = aNew;
 		}
@@ -1501,9 +1500,8 @@ sqlVdbeSorterWrite(const VdbeCursor * pCsr,	/* Sorter cursor */
 			if (nNew < nMin)
 				nNew = nMin;
 
+			assert(nNew > 0);
 			aNew = sqlRealloc(pSorter->list.aMemory, nNew);
-			if (!aNew)
-				return -1;
 			pSorter->list.pList = (SorterRecord *) & aNew[iListOff];
 			pSorter->list.aMemory = aNew;
 			pSorter->nMemory = nNew;

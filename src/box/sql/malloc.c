@@ -36,6 +36,12 @@
 #include "sqlInt.h"
 #include <stdarg.h>
 
+enum {
+	MALLOC_MAX = 0x7fffff00,
+};
+static_assert(MALLOC_MAX < SIZE_MAX);
+
+
 /*
  * Report the allocated size of a prior return from sql_sized_malloc()
  * or sql_sized_realloc().
@@ -50,40 +56,10 @@ sql_sized_sizeof(void *pPrior)
 	return (int)p[0];
 }
 
-/*
- * Like realloc().  Resize an allocation previously obtained from
- * sqlMemMalloc().
- *
- * For this low-level interface, we know that pPrior!=0.  Cases where
- * pPrior==0 while have been intercepted by higher-level routine and
- * redirected to sql_sized_malloc.  Similarly, we know that nByte>0 because
- * cases where nByte<=0 will have been intercepted by higher-level
- * routines and redirected to sql_sized_free.
- */
-static void *
-sql_sized_realloc(void *pPrior, int nByte)
-{
-	sql_int64 *p = (sql_int64 *) pPrior;
-	assert(pPrior != 0 && nByte > 0);
-	assert(nByte == ROUND8(nByte));	/* EV: R-46199-30249 */
-	p--;
-	p = realloc(p, nByte + 8);
-	if (p == NULL) {
-		sql_get()->mallocFailed = 1;
-		diag_set(OutOfMemory, nByte, "realloc", "p");
-		return NULL;
-	}
-	p[0] = nByte;
-	p++;
-	return (void *)p;
-}
-
-static_assert(0x7fffff00 < SIZE_MAX);
-
 void *
 sqlMalloc(size_t n)
 {
-	if (n >= 0x7fffff00) {
+	if (n >= MALLOC_MAX) {
 		fprintf(stderr, "Can't allocate %zu bytes at %s:%d", n,
 			__FILE__, __LINE__);
 		exit(EXIT_FAILURE);
@@ -156,33 +132,29 @@ sqlDbFree(sql * db, void *p)
 	sql_free(p);
 }
 
-/*
- * Change the size of an existing memory allocation
- */
 void *
-sqlRealloc(void *pOld, u64 nBytes)
+sqlRealloc(void *buf, size_t n)
 {
-	int nOld, nNew;
-	void *pNew;
-	if (pOld == 0) {
-		return sqlMalloc(nBytes);	/* IMP: R-04300-56712 */
+	if (buf == NULL)
+		return sqlMalloc(n);
+	if (n == 0) {
+		sql_free(buf);
+		return NULL;
 	}
-	if (nBytes == 0) {
-		sql_free(pOld);	/* IMP: R-26507-47431 */
-		return 0;
+	if (n >= MALLOC_MAX) {
+		fprintf(stderr, "Can't allocate %zu bytes at %s:%d", n,
+			__FILE__, __LINE__);
+		exit(EXIT_FAILURE);
 	}
-	if (nBytes >= 0x7fffff00) {
-		/* The 0x7ffff00 limit term is explained in comments on sqlMalloc() */
-		return 0;
-	}
-	nOld = sqlMallocSize(pOld);
-	nNew = ROUND8((int)nBytes);
-	if (nOld == nNew)
-		pNew = pOld;
-	else
-		pNew = sql_sized_realloc(pOld, nNew);
-	assert(EIGHT_BYTE_ALIGNMENT(pNew));	/* IMP: R-11148-40995 */
-	return pNew;
+	size_t size = ROUND8(n);
+	if (size == (size_t)sqlMallocSize(buf))
+		return buf;
+	int64_t *new_buf = buf;
+	--new_buf;
+	new_buf = xrealloc(new_buf, size + 8);
+	new_buf[0] = size;
+	new_buf++;
+	return new_buf;
 }
 
 /*
@@ -273,8 +245,6 @@ dbReallocFinish(sql * db, void *p, u64 n)
 			}
 		} else {
 			pNew = sqlRealloc(p, n);
-			if (!pNew)
-				sqlOomFault(db);
 		}
 	}
 	return pNew;

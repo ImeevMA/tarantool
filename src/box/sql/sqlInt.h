@@ -2383,7 +2383,14 @@ void *sqlDbMallocZero(sql *, u64);
 void *sqlDbMallocRawNN(sql *, u64);
 char *sqlDbStrDup(sql *, const char *);
 char *sqlDbStrNDup(sql *, const char *, u64);
-void *sqlRealloc(void *, u64);
+
+/**
+ * Change the size of an existing memory allocation and remember the size of the
+ * allocation.
+ */
+void *
+sqlRealloc(void *old, size_t n);
+
 void *sqlDbReallocOrFree(sql *, void *, u64);
 void *sqlDbRealloc(sql *, void *, u64);
 void sqlDbFree(sql *, void *);
