@@ -234,17 +234,6 @@ sqlDbRealloc(void *buf, size_t n)
 }
 
 /*
- * Attempt to reallocate p.  If the reallocation fails, then free p
- * and set the mallocFailed flag in the database connection.
- */
-void *
-sqlDbReallocOrFree(sql * db, void *p, u64 n)
-{
-	(void)db;
-	return sqlDbRealloc(p, n);
-}
-
-/*
  * Make a copy of a string in memory obtained from sqlMalloc(). These
  * functions call sqlMallocRaw() directly instead of sqlMalloc(). This
  * is because when memory debugging is turned on, these two functions are

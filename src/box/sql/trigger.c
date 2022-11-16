@@ -282,11 +282,8 @@ sql_trigger_step_new(struct sql *db, u8 op, struct Token *target_name)
 				    target_name->n);
 	if (rc > name_size) {
 		name_size = rc;
-		trigger_step = sqlDbReallocOrFree(db, trigger_step,
-						  sizeof(*trigger_step) +
-						  name_size);
-		if (trigger_step == NULL)
-			return NULL;
+		trigger_step = sqlDbRealloc(trigger_step,
+					    sizeof(*trigger_step) + name_size);
 		z = (char *) &trigger_step[1];
 		if (sql_normalize_name(z, name_size, target_name->z,
 				       target_name->n) > name_size)

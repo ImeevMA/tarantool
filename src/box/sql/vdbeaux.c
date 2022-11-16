@@ -390,9 +390,8 @@ sqlVdbeMakeLabel(Vdbe * v)
 	int i = p->nLabel++;
 	assert(v->magic == VDBE_MAGIC_INIT);
 	if ((i & (i - 1)) == 0) {
-		p->aLabel = sqlDbReallocOrFree(p->db, p->aLabel,
-						   (i * 2 +
-						    1) * sizeof(p->aLabel[0]));
+		p->aLabel = sqlDbRealloc(p->aLabel,
+					 (i * 2 + 1) * sizeof(p->aLabel[0]));
 	}
 	if (p->aLabel) {
 		p->aLabel[i] = -1;

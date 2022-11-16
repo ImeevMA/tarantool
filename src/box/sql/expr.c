@@ -1076,9 +1076,7 @@ sql_expr_new_dequoted(struct sql *db, int op, const struct Token *token)
 	} else if ((rc = sql_normalize_name(e->u.zToken, extra_size, token->z,
 					    token->n)) > extra_size) {
 		extra_size = rc;
-		e = sqlDbReallocOrFree(db, e, sizeof(*e) + extra_size);
-		if (e == NULL)
-			return NULL;
+		e = sqlDbRealloc(e, sizeof(*e) + extra_size);
 		e->u.zToken = (char *) &e[1];
 		if (sql_normalize_name(e->u.zToken, extra_size, token->z,
 				       token->n) > extra_size)

@@ -494,36 +494,30 @@ codeEqualityTerm(Parse * pParse,	/* The parsing context */
 		i = pLevel->u.in.nIn;
 		pLevel->u.in.nIn += nEq;
 		pLevel->u.in.aInLoop =
-		    sqlDbReallocOrFree(pParse->db, pLevel->u.in.aInLoop,
-					   sizeof(pLevel->u.in.aInLoop[0]) *
-					   pLevel->u.in.nIn);
+			sqlDbRealloc(pLevel->u.in.aInLoop,
+				     sizeof(pLevel->u.in.aInLoop[0]) *
+				     pLevel->u.in.nIn);
 		pIn = pLevel->u.in.aInLoop;
-		if (pIn) {
-			int iMap = 0;	/* Index in aiMap[] */
-			pIn += i;
-			for (i = iEq; i < pLoop->nLTerm; i++) {
-				if (pLoop->aLTerm[i]->pExpr == pX) {
-					int iOut = iReg + i - iEq;
-					int iCol =
-						aiMap ? aiMap[iMap++] :
-						iSingleIdxCol;
-					pIn->addrInTop =
-						sqlVdbeAddOp3(v, OP_Column,
-								  iTab, iCol,
-								  iOut);
-					sqlVdbeAddOp1(v, OP_IsNull, iOut);
-					if (i == iEq) {
-						pIn->iCur = iTab;
-						pIn->eEndLoopOp =
-						    bRev ? OP_PrevIfOpen : OP_NextIfOpen;
-					} else {
-						pIn->eEndLoopOp = OP_Noop;
-					}
-					pIn++;
+		int iMap = 0;	/* Index in aiMap[] */
+		pIn += i;
+		for (i = iEq; i < pLoop->nLTerm; i++) {
+			if (pLoop->aLTerm[i]->pExpr == pX) {
+				int iOut = iReg + i - iEq;
+				int iCol = aiMap ? aiMap[iMap++] :
+					   iSingleIdxCol;
+				pIn->addrInTop =
+					sqlVdbeAddOp3(v, OP_Column, iTab, iCol,
+						      iOut);
+				sqlVdbeAddOp1(v, OP_IsNull, iOut);
+				if (i == iEq) {
+					pIn->iCur = iTab;
+					pIn->eEndLoopOp = bRev ? OP_PrevIfOpen :
+							  OP_NextIfOpen;
+				} else {
+					pIn->eEndLoopOp = OP_Noop;
 				}
+				pIn++;
 			}
-		} else {
-			pLevel->u.in.nIn = 0;
 		}
 		sqlDbFree(pParse->db, aiMap);
 	}

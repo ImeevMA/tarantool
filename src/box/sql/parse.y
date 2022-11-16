@@ -967,6 +967,7 @@ idlist(A) ::= nm(Y). {
   ** that created the expression.
   */
   static void spanExpr(ExprSpan *pOut, Parse *pParse, int op, Token t){
+    (void)pParse;
     struct Expr *p = NULL;
     int name_sz = t.n + 1;
     p = sqlDbMallocRawNN(sizeof(Expr) + name_sz);
@@ -1003,11 +1004,7 @@ idlist(A) ::= nm(Y). {
     int rc = sql_normalize_name(p->u.zToken, name_sz, t.z, t.n);
     if (rc > name_sz) {
       name_sz = rc;
-      p = sqlDbReallocOrFree(pParse->db, p, sizeof(*p) + name_sz);
-      if (p == NULL) {
-        pParse->is_aborted = true;
-        return;
-      }
+      p = sqlDbRealloc(p, sizeof(*p) + name_sz);
       p->u.zToken = (char *)&p[1];
       sql_normalize_name(p->u.zToken, name_sz, t.z, t.n);
     }

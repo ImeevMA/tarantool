@@ -2920,23 +2920,15 @@ sqlVdbeMemGrow(struct Mem *pMem, int n, int bPreserve)
 		if (n < 32)
 			n = 32;
 		if (bPreserve && pMem->szMalloc > 0 && pMem->z == pMem->zMalloc) {
-			pMem->z = pMem->zMalloc =
-			    sqlDbReallocOrFree(pMem->db, pMem->z, n);
+			pMem->zMalloc = sqlDbRealloc(pMem->z, n);
+			pMem->z = pMem->zMalloc;
 			bPreserve = 0;
 		} else {
 			if (pMem->szMalloc > 0)
 				sqlDbFree(pMem->db, pMem->zMalloc);
 			pMem->zMalloc = sqlDbMallocRawNN(n);
 		}
-		if (pMem->zMalloc == 0) {
-			mem_clear(pMem);
-			pMem->z = 0;
-			pMem->szMalloc = 0;
-			return -1;
-		} else {
-			pMem->szMalloc = sqlDbMallocSize(pMem->db,
-							 pMem->zMalloc);
-		}
+		pMem->szMalloc = sqlDbMallocSize(pMem->db, pMem->zMalloc);
 	}
 
 	if (bPreserve && pMem->z && pMem->z != pMem->zMalloc) {
