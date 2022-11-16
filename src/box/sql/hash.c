@@ -145,9 +145,6 @@ rehash(Hash * pH, unsigned int new_size)
 		return 0;
 #endif
 	new_ht = (struct _ht *)sqlMalloc(new_size * sizeof(struct _ht));
-
-	if (new_ht == 0)
-		return 0;
 	sql_free(pH->ht);
 	pH->ht = new_ht;
 	pH->htsize = new_size = sqlMallocSize(new_ht) / sizeof(struct _ht);
@@ -286,8 +283,6 @@ sqlHashInsert(Hash * pH, const char *pKey, void *data)
 	if (data == 0)
 		return 0;
 	new_elem = (HashElem *) sqlMalloc(sizeof(HashElem));
-	if (new_elem == 0)
-		return data;
 	new_elem->pKey = strdup(pKey);
 	if (new_elem->pKey == NULL) {
 		sql_free(new_elem);

@@ -656,8 +656,6 @@ vdbePmaReaderSeek(SortSubtask * pTask,	/* Task context */
 		int iBuf = pReadr->iReadOff % pgsz;
 		if (pReadr->aBuffer == 0) {
 			pReadr->aBuffer = (u8 *) sqlMalloc(pgsz);
-			if (pReadr->aBuffer == 0)
-				rc = -1;
 			pReadr->nBuffer = pgsz;
 		}
 		if (rc == 0 && iBuf != 0) {
@@ -836,8 +834,6 @@ sqlVdbeSorterInit(sql * db,	/* Database connection (for malloc()) */
 	assert(pSorter->iMemory == 0);
 	pSorter->nMemory = pgsz;
 	pSorter->list.aMemory = (u8 *) sqlMalloc(pgsz);
-	if (!pSorter->list.aMemory)
-		rc = -1;
 
 	if (pCsr->key_def->part_count < 13 &&
 	    pCsr->key_def->parts[0].coll == NULL)
@@ -1182,14 +1178,10 @@ vdbePmaWriterInit(sql_file * pFd,	/* File handle to write to */
 {
 	memset(p, 0, sizeof(PmaWriter));
 	p->aBuffer = (u8 *) sqlMalloc(nBuf);
-	if (!p->aBuffer) {
-		p->eFWErr = -1;
-	} else {
-		p->iBufEnd = p->iBufStart = (iStart % nBuf);
-		p->iWriteOff = iStart - p->iBufStart;
-		p->nBuffer = nBuf;
-		p->pFd = pFd;
-	}
+	p->iBufEnd = p->iBufStart = (iStart % nBuf);
+	p->iWriteOff = iStart - p->iBufStart;
+	p->nBuffer = nBuf;
+	p->pFd = pFd;
 }
 
 /*
@@ -1527,9 +1519,6 @@ sqlVdbeSorterWrite(const VdbeCursor * pCsr,	/* Sorter cursor */
 		}
 	} else {
 		pNew = (SorterRecord *) sqlMalloc(nReq);
-		if (pNew == 0) {
-			return -1;
-		}
 		pNew->u.pNext = pSorter->list.pList;
 	}
 

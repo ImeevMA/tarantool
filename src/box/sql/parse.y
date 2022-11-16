@@ -70,12 +70,6 @@
 #define YYPARSEFREENEVERNULL 1
 
 /*
-** Alternative datatype for the argument to the malloc() routine passed
-** into sqlParserAlloc().  The default is size_t.
-*/
-#define YYMALLOCARGTYPE  u64
-
-/*
  * Stop the parser if an error occurs. This macro adds an
  * additional check that allows the parser to be stopped if any
  * error was noticed.

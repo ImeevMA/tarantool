@@ -37,31 +37,6 @@
 #include <stdarg.h>
 
 /*
- * Like malloc(), but remember the size of the allocation
- * so that we can find it later using sqlMemSize().
- *
- * For this low-level routine, we are guaranteed that nByte>0 because
- * cases of nByte<=0 will be intercepted and dealt with by higher level
- * routines.
- */
-static void *
-sql_sized_malloc(int nByte)
-{
-	sql_int64 *p;
-	assert(nByte > 0);
-	nByte = ROUND8(nByte);
-	p = malloc(nByte + 8);
-	if (p == NULL) {
-		sql_get()->mallocFailed = 1;
-		diag_set(OutOfMemory, nByte, "malloc", "p");
-		return NULL;
-	}
-	p[0] = nByte;
-	p++;
-	return (void *)p;
-}
-
-/*
  * Report the allocated size of a prior return from sql_sized_malloc()
  * or sql_sized_realloc().
  */
@@ -103,27 +78,21 @@ sql_sized_realloc(void *pPrior, int nByte)
 	return (void *)p;
 }
 
-/**
- * Allocate memory. This routine assumes the memory subsystem has already been
- * initialized.
- */
+static_assert(0x7fffff00 < SIZE_MAX);
+
 void *
-sqlMalloc(u64 n)
+sqlMalloc(size_t n)
 {
-	void *p;
-	if (n == 0 || n >= 0x7fffff00) {
-		/* A memory allocation of a number of bytes which is near the maximum
-		 * signed integer value might cause an integer overflow inside of the
-		 * sql_sized_malloc().  Hence we limit the maximum size to 0x7fffff00, giving
-		 * 255 bytes of overhead.  sql itself will never use anything near
-		 * this amount.
-		 */
-		p = 0;
-	} else {
-		p = sql_sized_malloc((int)n);
+	if (n >= 0x7fffff00) {
+		fprintf(stderr, "Can't allocate %zu bytes at %s:%d", n,
+			__FILE__, __LINE__);
+		exit(EXIT_FAILURE);
 	}
-	assert(EIGHT_BYTE_ALIGNMENT(p));	/* IMP: R-11148-40995 */
-	return p;
+	size_t size = ROUND8(n);
+	int64_t *buf = xmalloc(size + 8);
+	buf[0] = size;
+	buf++;
+	return buf;
 }
 
 /** Return TRUE if buf is a lookaside memory allocation. */
@@ -229,9 +198,7 @@ void *
 sqlMallocZero(u64 n)
 {
 	void *p = sqlMalloc(n);
-	if (p) {
-		memset(p, 0, (size_t) n);
-	}
+	memset(p, 0, (size_t) n);
 	return p;
 }
 
@@ -245,20 +212,6 @@ sqlDbMallocZero(sql * db, u64 n)
 	void *p = sqlDbMallocRawNN(db, n);
 	if (p)
 		memset(p, 0, (size_t) n);
-	return p;
-}
-
-/* Finish the work of sqlDbMallocRawNN for the unusual and
- * slower case when the allocation cannot be fulfilled using lookaside.
- */
-static SQL_NOINLINE void *
-dbMallocRawFinish(sql * db, u64 n)
-{
-	void *p;
-	assert(db != 0);
-	p = sqlMalloc(n);
-	if (!p)
-		sqlOomFault(db);
 	return p;
 }
 
@@ -290,7 +243,7 @@ sqlDbMallocRawNN(sql * db, u64 n)
 	} else if (db->mallocFailed) {
 		return 0;
 	}
-	return dbMallocRawFinish(db, n);
+	return sqlMalloc(n);
 }
 
 /* Forward declaration */

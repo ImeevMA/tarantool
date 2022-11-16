@@ -2377,7 +2377,10 @@ int sqlStrICmp(const char *, const char *);
 unsigned sqlStrlen30(const char *);
 #define sqlStrNICmp sql_strnicmp
 
-void *sqlMalloc(u64);
+/** Allocate memory. Like malloc(), but remember the size of the allocation. */
+void *
+sqlMalloc(size_t n);
+
 void *sqlMallocZero(u64);
 void *sqlDbMallocZero(sql *, u64);
 void *sqlDbMallocRawNN(sql *, u64);
@@ -4051,7 +4054,7 @@ sql_stat4_column(struct sql *db, ...)
 /*
  * The interface to the LEMON-generated parser
  */
-void *sqlParserAlloc(void *(*)(u64));
+void *sqlParserAlloc(void *(*)(size_t));
 void sqlParserFree(void *, void (*)(void *));
 void sqlParser(void *, int, Token, Parse *);
 #ifdef YYTRACKMAXSTACKDEPTH

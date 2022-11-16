@@ -431,11 +431,6 @@ sqlVXPrintf(StrAccum * pAccum,	/* Accumulate results here */
 			} else {
 				nOut = precision + 10;
 				zOut = zExtra = sqlMalloc(nOut);
-				if (zOut == 0) {
-					setStrAccumError(pAccum,
-							 STRACCUM_NOMEM);
-					return;
-				}
 			}
 			bufpt = &zOut[nOut - 1];
 			if (xtype == etORDINAL) {
@@ -569,11 +564,6 @@ sqlVXPrintf(StrAccum * pAccum,	/* Accumulate results here */
 				bufpt = zExtra =
 				    sqlMalloc(MAX(e2, 0) + (i64) precision +
 						  (i64) width + 15);
-				if (bufpt == 0) {
-					setStrAccumError(pAccum,
-							 STRACCUM_NOMEM);
-					return;
-				}
 			}
 			zOut = bufpt;
 			nsd = 16 + flag_altform2 * 10;
@@ -743,11 +733,6 @@ sqlVXPrintf(StrAccum * pAccum,	/* Accumulate results here */
 				n += i + 3;
 				if (n > etBUFSIZE) {
 					bufpt = zExtra = sqlMalloc(n);
-					if (bufpt == 0) {
-						setStrAccumError(pAccum,
-								 STRACCUM_NOMEM);
-						return;
-					}
 				} else {
 					bufpt = buf;
 				}
