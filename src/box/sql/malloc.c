@@ -175,24 +175,24 @@ sqlMallocZero(u64 n)
 void *
 sqlDbMallocZero(sql * db, u64 n)
 {
-	void *p = sqlDbMallocRawNN(db, n);
-	if (p)
-		memset(p, 0, (size_t) n);
+	(void)db;
+	void *p = sqlDbMallocRawNN(n);
+	memset(p, 0, (size_t) n);
 	return p;
 }
 
-/*
- * Allocate memory, either lookaside (if possible) or heap.
- * If the allocation fails, set the mallocFailed flag in
- * the connection pointer.
- */
 void *
-sqlDbMallocRawNN(sql * db, u64 n)
+sqlDbMallocRawNN(size_t n)
 {
+	struct sql *db = sql_get();
 	assert(db != NULL);
+	if (db->mallocFailed != 0) {
+		fprintf(stderr, "Can't allocate %zu bytes at %s:%d", n,
+			__FILE__, __LINE__);
+		exit(EXIT_FAILURE);
+	}
 	LookasideSlot *pBuf;
 	if (db->lookaside.bDisable == 0) {
-		assert(db->mallocFailed == 0);
 		if (n > db->lookaside.sz) {
 			db->lookaside.anStat[1]++;
 		} else if ((pBuf = db->lookaside.pFree) == 0) {
@@ -206,8 +206,6 @@ sqlDbMallocRawNN(sql * db, u64 n)
 			}
 			return (void *)pBuf;
 		}
-	} else if (db->mallocFailed) {
-		return 0;
 	}
 	return sqlMalloc(n);
 }
@@ -224,7 +222,7 @@ sqlDbRealloc(sql * db, void *p, u64 n)
 {
 	assert(db != 0);
 	if (p == 0)
-		return sqlDbMallocRawNN(db, n);
+		return sqlDbMallocRawNN(n);
 	if (is_lookaside(p) && n <= db->lookaside.sz)
 		return p;
 	return dbReallocFinish(db, p, n);
@@ -238,11 +236,9 @@ dbReallocFinish(sql * db, void *p, u64 n)
 	assert(p != 0);
 	if (db->mallocFailed == 0) {
 		if (is_lookaside(p)) {
-			pNew = sqlDbMallocRawNN(db, n);
-			if (pNew) {
-				memcpy(pNew, p, db->lookaside.sz);
-				sqlDbFree(db, p);
-			}
+			pNew = sqlDbMallocRawNN(n);
+			memcpy(pNew, p, db->lookaside.sz);
+			sqlDbFree(db, p);
 		} else {
 			pNew = sqlRealloc(p, n);
 		}
@@ -275,16 +271,15 @@ sqlDbReallocOrFree(sql * db, void *p, u64 n)
 char *
 sqlDbStrDup(sql * db, const char *z)
 {
+	(void)db;
 	char *zNew;
 	size_t n;
 	if (z == 0) {
 		return 0;
 	}
 	n = strlen(z) + 1;
-	zNew = sqlDbMallocRawNN(db, n);
-	if (zNew) {
-		memcpy(zNew, z, n);
-	}
+	zNew = sqlDbMallocRawNN(n);
+	memcpy(zNew, z, n);
 	return zNew;
 }
 
@@ -297,11 +292,9 @@ sqlDbStrNDup(sql * db, const char *z, u64 n)
 		return 0;
 	}
 	assert((n & 0x7fffffff) == n);
-	zNew = sqlDbMallocRawNN(db, n + 1);
-	if (zNew) {
-		memcpy(zNew, z, (size_t) n);
-		zNew[n] = 0;
-	}
+	zNew = sqlDbMallocRawNN(n + 1);
+	memcpy(zNew, z, (size_t) n);
+	zNew[n] = 0;
 	return zNew;
 }
 

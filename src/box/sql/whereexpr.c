@@ -93,16 +93,7 @@ whereClauseInsert(WhereClause * pWC, Expr * p, u16 wtFlags)
 	if (pWC->nTerm >= pWC->nSlot) {
 		WhereTerm *pOld = pWC->a;
 		sql *db = pWC->pWInfo->pParse->db;
-		pWC->a =
-		    sqlDbMallocRawNN(db,
-					 sizeof(pWC->a[0]) * pWC->nSlot * 2);
-		if (pWC->a == 0) {
-			if (wtFlags & TERM_DYNAMIC) {
-				sql_expr_delete(db, p);
-			}
-			pWC->a = pOld;
-			return 0;
-		}
+		pWC->a = sqlDbMallocRawNN(sizeof(pWC->a[0]) * pWC->nSlot * 2);
 		memcpy(pWC->a, pOld, sizeof(pWC->a[0]) * pWC->nTerm);
 		if (pOld != pWC->aStatic) {
 			sqlDbFree(db, pOld);
@@ -609,41 +600,35 @@ exprAnalyzeOrTerm(SrcList * pSrc,	/* the FROM clause */
 			assert((pOrTerm->
 				wtFlags & (TERM_ANDINFO | TERM_ORINFO)) == 0);
 			chngToIN = 0;
-			pAndInfo = sqlDbMallocRawNN(db, sizeof(*pAndInfo));
-			if (pAndInfo) {
-				WhereClause *pAndWC;
-				WhereTerm *pAndTerm;
-				int j;
-				Bitmask b = 0;
-				pOrTerm->u.pAndInfo = pAndInfo;
-				pOrTerm->wtFlags |= TERM_ANDINFO;
-				pOrTerm->eOperator = WO_AND;
-				pAndWC = &pAndInfo->wc;
-				memset(pAndWC->aStatic, 0,
-				       sizeof(pAndWC->aStatic));
-				sqlWhereClauseInit(pAndWC, pWC->pWInfo);
-				sqlWhereSplit(pAndWC, pOrTerm->pExpr,
-						  TK_AND);
-				sqlWhereExprAnalyze(pSrc, pAndWC);
-				pAndWC->pOuter = pWC;
-				if (!db->mallocFailed) {
-					for (j = 0, pAndTerm = pAndWC->a;
-					     j < pAndWC->nTerm;
-					     j++, pAndTerm++) {
-						assert(pAndTerm->pExpr);
-						if (allowedOp
-						    (pAndTerm->pExpr->op)
-						    || pAndTerm->eOperator ==
-						    WO_MATCH) {
-							b |= sqlWhereGetMask
-							    (&pWInfo->sMaskSet,
-							     pAndTerm->
-							     leftCursor);
-						}
+			pAndInfo = sqlDbMallocRawNN(sizeof(*pAndInfo));
+			WhereClause *pAndWC;
+			WhereTerm *pAndTerm;
+			int j;
+			Bitmask b = 0;
+			pOrTerm->u.pAndInfo = pAndInfo;
+			pOrTerm->wtFlags |= TERM_ANDINFO;
+			pOrTerm->eOperator = WO_AND;
+			pAndWC = &pAndInfo->wc;
+			memset(pAndWC->aStatic, 0,
+			       sizeof(pAndWC->aStatic));
+			sqlWhereClauseInit(pAndWC, pWC->pWInfo);
+			sqlWhereSplit(pAndWC, pOrTerm->pExpr,
+					  TK_AND);
+			sqlWhereExprAnalyze(pSrc, pAndWC);
+			pAndWC->pOuter = pWC;
+			if (!db->mallocFailed) {
+				for (j = 0, pAndTerm = pAndWC->a;
+				     j < pAndWC->nTerm; j++, pAndTerm++) {
+					assert(pAndTerm->pExpr);
+					if (allowedOp(pAndTerm->pExpr->op) ||
+					    pAndTerm->eOperator == WO_MATCH) {
+						b |= sqlWhereGetMask(
+							&pWInfo->sMaskSet,
+							pAndTerm->leftCursor);
 					}
 				}
-				indexable &= b;
 			}
+			indexable &= b;
 		} else if (pOrTerm->wtFlags & TERM_COPIED) {
 			/* Skip this term for now.  We revisit it when we process the
 			 * corresponding TERM_VIRTUAL term

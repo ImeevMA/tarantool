@@ -202,10 +202,7 @@ sql_trigger_finish(struct Parse *parse, struct TriggerStep *step_list,
 		uint32_t opts_buff_sz = mp_sizeof_map(1) +
 					mp_sizeof_str(sql_len) +
 					mp_sizeof_str(sql_str_len);
-		char *opts_buff = sqlDbMallocRawNN(db, opts_buff_sz);
-		if (opts_buff == NULL)
-			goto cleanup;
-
+		char *opts_buff = sqlDbMallocRawNN(opts_buff_sz);
 		char *data = mp_encode_map(opts_buff, 1);
 		data = mp_encode_str(data, "sql", sql_len);
 		data = mp_encode_str(data, sql_str, sql_str_len);

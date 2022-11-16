@@ -272,11 +272,7 @@ sql_space_info_new(uint32_t field_count, uint32_t part_count)
 	uint32_t size = info_size + field_size + colls_size + parts_size +
 			sort_orders_size;
 
-	struct sql_space_info *info = sqlDbMallocRawNN(sql_get(), size);
-	if (info == NULL) {
-		diag_set(OutOfMemory, size, "sqlDbMallocRawNN", "info");
-		return NULL;
-	}
+	struct sql_space_info *info = sqlDbMallocRawNN(size);
 	info->types = (enum field_type *)((char *)info + info_size);
 	info->coll_ids = (uint32_t *)((char *)info->types + field_size);
 	info->parts = part_count == 0 ? NULL :

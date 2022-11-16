@@ -428,11 +428,11 @@ sql_create_column_end(struct Parse *parse)
 	uint32_t table_stmt_sz = 0;
 	struct region *region = &parse->region;
 	char *table_stmt = sql_encode_table(region, def, &table_stmt_sz);
-	char *raw = sqlDbMallocRawNN(parse->db, table_stmt_sz);
-	if (table_stmt == NULL || raw == NULL) {
+	if (table_stmt == NULL) {
 		parse->is_aborted = true;
 		return;
 	}
+	char *raw = sqlDbMallocRawNN(table_stmt_sz);
 	memcpy(raw, table_stmt, table_stmt_sz);
 
 	struct Vdbe *v = sqlGetVdbe(parse);
@@ -936,9 +936,7 @@ vdbe_emit_create_index(struct Parse *parse, struct space_def *def,
 						   &index_parts_sz);
 	if (index_parts == NULL)
 		goto error;
-	char *raw = sqlDbMallocRawNN(parse->db, index_opts_sz +index_parts_sz);
-	if (raw == NULL)
-		return;
+	char *raw = sqlDbMallocRawNN(index_opts_sz + index_parts_sz);
 	memcpy(raw, index_opts, index_opts_sz);
 	index_opts = raw;
 	raw += index_opts_sz;
@@ -1000,11 +998,7 @@ vdbe_emit_space_create(struct Parse *pParse, int space_id_reg,
 	char *table_stmt = sql_encode_table(region, space->def, &table_stmt_sz);
 	if (table_stmt == NULL)
 		goto error;
-	char *raw = sqlDbMallocRawNN(pParse->db,
-				     table_stmt_sz + table_opts_stmt_sz);
-	if (raw == NULL)
-		return;
-
+	char *raw = sqlDbMallocRawNN(table_stmt_sz + table_opts_stmt_sz);
 	memcpy(raw, table_opts_stmt, table_opts_stmt_sz);
 	table_opts_stmt = raw;
 	raw += table_opts_stmt_sz;
@@ -1245,10 +1239,7 @@ vdbe_emit_fk_constraint_create(struct Parse *parse_context,
 	 * interprets it as static memory, and the second one -
 	 * as dynamic and releases memory.
 	 */
-	char *raw = sqlDbMallocRawNN(parse_context->db,
-				     parent_links_size + child_links_size);
-	if (raw == NULL)
-		return;
+	char *raw = sqlDbMallocRawNN(parent_links_size + child_links_size);
 	memcpy(raw, parent_links, parent_links_size);
 	parent_links = raw;
 	raw += parent_links_size;
@@ -3164,12 +3155,8 @@ sql_src_list_enlarge(struct sql *db, struct SrcList *src_list, int new_slots,
 struct SrcList *
 sql_src_list_new(struct sql *db)
 {
-	struct SrcList *src_list = sqlDbMallocRawNN(db, sizeof(struct SrcList));
-	if (src_list == NULL) {
-		diag_set(OutOfMemory, sizeof(struct SrcList),
-			 "sqlDbMallocRawNN", "src_list");
-		return NULL;
-	}
+	(void)db;
+	struct SrcList *src_list = sqlDbMallocRawNN(sizeof(struct SrcList));
 	src_list->nAlloc = 1;
 	src_list->nSrc = 1;
 	memset(&src_list->a[0], 0, sizeof(src_list->a[0]));

@@ -111,11 +111,7 @@ step_avg(struct sql_context *ctx, int argc, const struct Mem *argv)
 	uint32_t *count;
 	if (mem_is_null(ctx->pOut)) {
 		uint32_t size = sizeof(struct Mem) + sizeof(uint32_t);
-		mem = sqlDbMallocRawNN(sql_get(), size);
-		if (mem == NULL) {
-			ctx->is_aborted = true;
-			return;
-		}
+		mem = sqlDbMallocRawNN(size);
 		count = (uint32_t *)(mem + 1);
 		mem_create(mem);
 		*count = 1;
@@ -311,11 +307,7 @@ func_lower_upper(struct sql_context *ctx, int argc, const struct Mem *argv)
 	const char *str = arg->z;
 	int32_t len = arg->n;
 	struct sql *db = sql_get();
-	char *res = sqlDbMallocRawNN(db, len);
-	if (res == NULL) {
-		ctx->is_aborted = true;
-		return;
-	}
+	char *res = sqlDbMallocRawNN(len);
 	int32_t size = sqlDbMallocSize(db, res);
 	assert(size >= len);
 	UErrorCode status = U_ZERO_ERROR;
@@ -789,12 +781,7 @@ func_char(struct sql_context *ctx, int argc, const struct Mem *argv)
 		len += U8_LENGTH(buf[i]);
 	}
 
-	char *str = sqlDbMallocRawNN(sql_get(), len);
-	if (str == NULL) {
-		region_truncate(region, svp);
-		ctx->is_aborted = true;
-		return;
-	}
+	char *str = sqlDbMallocRawNN(len);
 	int pos = 0;
 	for (int i = 0; i < argc; ++i) {
 		UBool is_error = false;
@@ -860,11 +847,7 @@ func_hex(struct sql_context *ctx, int argc, const struct Mem *argv)
 		return mem_set_str0_static(ctx->pOut, "");
 
 	uint32_t size = 2 * arg->n;
-	char *str = sqlDbMallocRawNN(sql_get(), size);
-	if (str == NULL) {
-		ctx->is_aborted = true;
-		return;
-	}
+	char *str = sqlDbMallocRawNN(size);
 	for (int i = 0; i < arg->n; ++i) {
 		char c = arg->z[i];
 		str[2 * i] = hexdigits[(c >> 4) & 0xf];
@@ -946,11 +929,7 @@ func_randomblob(struct sql_context *ctx, int argc, const struct Mem *argv)
 	if (arg->u.u == 0)
 		return mem_set_bin_static(ctx->pOut, "", 0);
 	uint64_t len = arg->u.u;
-	char *res = sqlDbMallocRawNN(sql_get(), len);
-	if (res == NULL) {
-		ctx->is_aborted = true;
-		return;
-	}
+	char *res = sqlDbMallocRawNN(len);
 	sql_randomness(len, res);
 	mem_set_bin_allocated(ctx->pOut, res, len);
 }
@@ -1523,11 +1502,7 @@ quoteFunc(struct sql_context *context, int argc, const struct Mem *argv)
 		char *buf = NULL;
 		int size = mp_snprint(buf, 0, argv[0].z) + 1;
 		assert(size > 0);
-		buf = sqlDbMallocRawNN(sql_get(), size);
-		if (buf == NULL) {
-			context->is_aborted = true;
-			return;
-		}
+		buf = sqlDbMallocRawNN(size);
 		mp_snprint(buf, size, argv[0].z);
 		mem_set_str0_allocated(context->pOut, buf);
 		break;
@@ -1536,11 +1511,7 @@ quoteFunc(struct sql_context *context, int argc, const struct Mem *argv)
 		const char *zBlob = argv[0].z;
 		int nBlob = argv[0].n;
 		uint32_t size = 2 * nBlob + 3;
-		char *zText = sqlDbMallocRawNN(sql_get(), size);
-		if (zText == NULL) {
-			context->is_aborted = true;
-			return;
-		}
+		char *zText = sqlDbMallocRawNN(size);
 		for (int i = 0; i < nBlob; i++) {
 			zText[(i * 2) + 2] = hexdigits[(zBlob[i] >> 4) & 0x0F];
 			zText[(i * 2) + 3] = hexdigits[(zBlob[i]) & 0x0F];
@@ -1561,11 +1532,7 @@ quoteFunc(struct sql_context *context, int argc, const struct Mem *argv)
 		}
 		uint32_t size = len + count + 2;
 
-		char *res = sqlDbMallocRawNN(sql_get(), size);
-		if (res == NULL) {
-			context->is_aborted = true;
-			return;
-		}
+		char *res = sqlDbMallocRawNN(size);
 		res[0] = '\'';
 		for (uint32_t i = 0, j = 1; i < len; ++i) {
 			res[j++] = str[i];
@@ -1627,11 +1594,7 @@ replaceFunc(struct sql_context *context, int argc, const struct Mem *argv)
 	nRep = argv[2].n;
 	nOut = nStr + 1;
 	struct sql *db = sql_get();
-	zOut = sqlDbMallocRawNN(db, nOut);
-	if (zOut == NULL) {
-		context->is_aborted = true;
-		return;
-	}
+	zOut = sqlDbMallocRawNN(nOut);
 	loopLimit = nStr - nPattern;
 	for (i = j = 0; i <= loopLimit; i++) {
 		if (zStr[i] != zPattern[0]

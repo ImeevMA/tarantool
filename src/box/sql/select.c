@@ -248,9 +248,7 @@ sql_key_info_new_from_space_info(const struct sql_space_info *info)
 	assert(part_count > 0);
 	uint32_t size = sizeof(struct sql_key_info) +
 			part_count * sizeof(struct key_part_def);
-	struct sql_key_info *key_info = sqlDbMallocRawNN(sql_get(), size);
-	if (key_info == NULL)
-		return NULL;
+	struct sql_key_info *key_info = sqlDbMallocRawNN(size);
 	key_info->db = sql_get();
 	key_info->key_def = NULL;
 	key_info->refs = 1;
@@ -393,13 +391,7 @@ sqlSelectNew(Parse * pParse,	/* Parsing context */
 	standin.pWith = 0;
 	assert(pOffset == 0 || pLimit != 0 || pParse->is_aborted
 	       || db->mallocFailed != 0);
-	Select *pNew = sqlDbMallocRawNN(db, sizeof(*pNew));
-	if (db->mallocFailed) {
-		clearSelect(db, &standin, 0);
-		if (pNew != NULL)
-			sqlDbFree(db, pNew);
-		return NULL;
-	}
+	Select *pNew = sqlDbMallocRawNN(sizeof(*pNew));
 	assert(standin.pSrc != 0 || pParse->is_aborted);
 	memcpy(pNew, &standin, sizeof(standin));
 	return pNew;
@@ -1623,12 +1615,8 @@ sql_key_info_sizeof(uint32_t part_count)
 struct sql_key_info *
 sql_key_info_new(sql *db, uint32_t part_count)
 {
-	struct sql_key_info *key_info = sqlDbMallocRawNN(db,
-				sql_key_info_sizeof(part_count));
-	if (key_info == NULL) {
-		sqlOomFault(db);
-		return NULL;
-	}
+	struct sql_key_info *key_info =
+		sqlDbMallocRawNN(sql_key_info_sizeof(part_count));
 	key_info->db = db;
 	key_info->key_def = NULL;
 	key_info->refs = 1;
@@ -3570,20 +3558,15 @@ multiSelectOrderBy(Parse * pParse,	/* Parsing context */
 	 * to the right and the left are evaluated, they use the correct
 	 * collation.
 	 */
-	aPermute = sqlDbMallocRawNN(db, sizeof(int) * (nOrderBy + 1));
-	if (aPermute) {
-		struct ExprList_item *pItem;
-		aPermute[0] = nOrderBy;
-		for (i = 1, pItem = pOrderBy->a; i <= nOrderBy; i++, pItem++) {
-			assert(pItem->u.x.iOrderByCol > 0);
-			assert(pItem->u.x.iOrderByCol <= p->pEList->nExpr);
-			aPermute[i] = pItem->u.x.iOrderByCol - 1;
-		}
-		key_info_merge = sql_multiselect_orderby_to_key_info(pParse,
-								     p, 1);
-	} else {
-		key_info_merge = NULL;
+	aPermute = sqlDbMallocRawNN(sizeof(int) * (nOrderBy + 1));
+	struct ExprList_item *pItem;
+	aPermute[0] = nOrderBy;
+	for (i = 1, pItem = pOrderBy->a; i <= nOrderBy; i++, pItem++) {
+		assert(pItem->u.x.iOrderByCol > 0);
+		assert(pItem->u.x.iOrderByCol <= p->pEList->nExpr);
+		aPermute[i] = pItem->u.x.iOrderByCol - 1;
 	}
+	key_info_merge = sql_multiselect_orderby_to_key_info(pParse, p, 1);
 
 	/* Reattach the ORDER BY clause to the query.
 	 */
@@ -6717,9 +6700,7 @@ sqlSelect(Parse * pParse,		/* The parser context */
 struct sql_context *
 sql_context_new(struct func *func, struct coll *coll)
 {
-	struct sql_context *ctx = sqlDbMallocRawNN(sql_get(), sizeof(*ctx));
-	if (ctx == NULL)
-		return NULL;
+	struct sql_context *ctx = sqlDbMallocRawNN(sizeof(*ctx));
 	ctx->pOut = NULL;
 	ctx->func = func;
 	ctx->is_aborted = false;

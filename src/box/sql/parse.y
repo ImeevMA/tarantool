@@ -969,53 +969,51 @@ idlist(A) ::= nm(Y). {
   static void spanExpr(ExprSpan *pOut, Parse *pParse, int op, Token t){
     struct Expr *p = NULL;
     int name_sz = t.n + 1;
-    p = sqlDbMallocRawNN(pParse->db, sizeof(Expr) + name_sz);
-    if( p ){
-      memset(p, 0, sizeof(Expr));
-      switch (op) {
-      case TK_STRING:
-        p->type = FIELD_TYPE_STRING;
-        break;
-      case TK_BLOB:
-        p->type = FIELD_TYPE_VARBINARY;
-        break;
-      case TK_INTEGER:
-        p->type = FIELD_TYPE_INTEGER;
-        break;
-      case TK_FLOAT:
-        p->type = FIELD_TYPE_DOUBLE;
-        break;
-      case TK_DECIMAL:
-        p->type = FIELD_TYPE_DECIMAL;
-        break;
-      case TK_TRUE:
-      case TK_FALSE:
-      case TK_UNKNOWN:
-        p->type = FIELD_TYPE_BOOLEAN;
-        break;
-      default:
-        p->type = FIELD_TYPE_SCALAR;
-        break;
-      }
-      p->op = (u8)op;
-      p->flags = EP_Leaf;
-      p->iAgg = -1;
-      p->u.zToken = (char*)&p[1];
-      int rc = sql_normalize_name(p->u.zToken, name_sz, t.z, t.n);
-      if (rc > name_sz) {
-        name_sz = rc;
-        p = sqlDbReallocOrFree(pParse->db, p, sizeof(*p) + name_sz);
-        if (p == NULL) {
-          pParse->is_aborted = true;
-          return;
-        }
-        p->u.zToken = (char *)&p[1];
-        sql_normalize_name(p->u.zToken, name_sz, t.z, t.n);
-      }
-#if SQL_MAX_EXPR_DEPTH>0
-      p->nHeight = 1;
-#endif  
+    p = sqlDbMallocRawNN(sizeof(Expr) + name_sz);
+    memset(p, 0, sizeof(Expr));
+    switch (op) {
+    case TK_STRING:
+      p->type = FIELD_TYPE_STRING;
+      break;
+    case TK_BLOB:
+      p->type = FIELD_TYPE_VARBINARY;
+      break;
+    case TK_INTEGER:
+      p->type = FIELD_TYPE_INTEGER;
+      break;
+    case TK_FLOAT:
+      p->type = FIELD_TYPE_DOUBLE;
+      break;
+    case TK_DECIMAL:
+      p->type = FIELD_TYPE_DECIMAL;
+      break;
+    case TK_TRUE:
+    case TK_FALSE:
+    case TK_UNKNOWN:
+      p->type = FIELD_TYPE_BOOLEAN;
+      break;
+    default:
+      p->type = FIELD_TYPE_SCALAR;
+      break;
     }
+    p->op = (u8)op;
+    p->flags = EP_Leaf;
+    p->iAgg = -1;
+    p->u.zToken = (char*)&p[1];
+    int rc = sql_normalize_name(p->u.zToken, name_sz, t.z, t.n);
+    if (rc > name_sz) {
+      name_sz = rc;
+      p = sqlDbReallocOrFree(pParse->db, p, sizeof(*p) + name_sz);
+      if (p == NULL) {
+        pParse->is_aborted = true;
+        return;
+      }
+      p->u.zToken = (char *)&p[1];
+      sql_normalize_name(p->u.zToken, name_sz, t.z, t.n);
+    }
+#if SQL_MAX_EXPR_DEPTH>0
+    p->nHeight = 1;
+#endif  
     pOut->pExpr = p;
     pOut->zStart = t.z;
     pOut->zEnd = &t.z[t.n];

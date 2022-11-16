@@ -2380,7 +2380,11 @@ sqlMalloc(size_t n);
 
 void *sqlMallocZero(u64);
 void *sqlDbMallocZero(sql *, u64);
-void *sqlDbMallocRawNN(sql *, u64);
+
+/** Allocate memory, either lookaside (if possible) or heap. */
+void *
+sqlDbMallocRawNN(size_t n);
+
 char *sqlDbStrDup(sql *, const char *);
 char *sqlDbStrNDup(sql *, const char *, u64);
 
@@ -2406,11 +2410,11 @@ int sqlDbMallocSize(sql *, void *);
  * that deal with sqlStackAlloc() failures to be unreachable.
  */
 #ifdef SQL_USE_ALLOCA
-#define sqlStackAllocRaw(D,N)   alloca(N)
+#define sqlStackAllocRaw(N)   alloca(N)
 #define sqlStackAllocZero(D,N)  memset(alloca(N), 0, N)
 #define sqlStackFree(D,P)
 #else
-#define sqlStackAllocRaw(D,N)   sqlDbMallocRawNN(D,N)
+#define sqlStackAllocRaw(N)   sqlDbMallocRawNN(N)
 #define sqlStackAllocZero(D,N)  sqlDbMallocZero(D,N)
 #define sqlStackFree(D,P)       sqlDbFree(D,P)
 #endif

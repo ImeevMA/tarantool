@@ -55,9 +55,7 @@ sqlVdbeCreate(Parse * pParse)
 	assert(!pParse->parse_only);
 	sql *db = pParse->db;
 	Vdbe *p;
-	p = sqlDbMallocRawNN(db, sizeof(Vdbe));
-	if (p == 0)
-		return 0;
+	p = sqlDbMallocRawNN(sizeof(Vdbe));
 	memset(p, 0, sizeof(Vdbe));
 	p->db = db;
 	stailq_create(&p->autoinc_id_list);
@@ -332,9 +330,8 @@ sqlVdbeAddOp4Dup8(Vdbe * p,	/* Add the opcode to this VM */
 		      int p4type	/* P4 operand type */
     )
 {
-	char *p4copy = sqlDbMallocRawNN(sqlVdbeDb(p), 8);
-	if (p4copy)
-		memcpy(p4copy, zP4, 8);
+	char *p4copy = sqlDbMallocRawNN(8);
+	memcpy(p4copy, zP4, 8);
 	return sqlVdbeAddOp4(p, op, p1, p2, p3, p4copy, p4type);
 }
 
@@ -1285,9 +1282,7 @@ sqlVdbeList(Vdbe * p)
 		mem_set_int(pMem, pOp->p3, pOp->p3 < 0);
 		pMem++;
 
-		char *buf = sqlDbMallocRawNN(sql_get(), 256);
-		if (buf == NULL)
-			return -1;
+		char *buf = sqlDbMallocRawNN(256);
 		zP4 = displayP4(pOp, buf, sqlDbMallocSize(sql_get(), buf));
 		if (zP4 != buf) {
 			sqlDbFree(sql_get(), buf);
@@ -1298,17 +1293,13 @@ sqlVdbeList(Vdbe * p)
 		pMem++;
 
 		if (p->explain == 1) {
-			buf = sqlDbMallocRawNN(sql_get(), 4);
-			if (buf == NULL)
-				return -1;
+			buf = sqlDbMallocRawNN(4);
 			sql_snprintf(3, buf, "%.2x", pOp->p5);
 			mem_set_str0_allocated(pMem, buf);
 			pMem++;
 
 #ifdef SQL_ENABLE_EXPLAIN_COMMENTS
-			buf = sqlDbMallocRawNN(sql_get(), 500);
-			if (buf == NULL)
-				return -1;
+			buf = sqlDbMallocRawNN(500);
 			displayComment(pOp, zP4, buf, 500);
 			mem_set_str0_allocated(pMem, buf);
 #else
@@ -1511,7 +1502,7 @@ sqlVdbeMakeReady(Vdbe * p,	/* The VDBE */
 		    allocSpace(&x, p->apCsr, nCursor * sizeof(VdbeCursor *));
 		if (x.nNeeded == 0)
 			break;
-		x.pSpace = p->pFree = sqlDbMallocRawNN(db, x.nNeeded);
+		x.pSpace = p->pFree = sqlDbMallocRawNN(x.nNeeded);
 		x.nFree = x.nNeeded;
 	} while (!db->mallocFailed);
 
@@ -2151,14 +2142,13 @@ sqlVdbeDelete(Vdbe * p)
 UnpackedRecord *
 sqlVdbeAllocUnpackedRecord(struct sql *db, struct key_def *key_def)
 {
+	(void)db;
 	UnpackedRecord *p;	/* Unpacked record to return */
 	int nByte;		/* Number of bytes required for *p */
 	nByte =
 	    ROUND8(sizeof(UnpackedRecord)) + sizeof(Mem) * (key_def->part_count +
 							    1);
-	p = (UnpackedRecord *) sqlDbMallocRawNN(db, nByte);
-	if (!p)
-		return 0;
+	p = sqlDbMallocRawNN(nByte);
 	p->aMem = (Mem *) & ((char *)p)[ROUND8(sizeof(UnpackedRecord))];
 	for (uint32_t i = 0; i < key_def->part_count + 1; ++i)
 		mem_create(&p->aMem[i]);

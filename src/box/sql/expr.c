@@ -184,9 +184,7 @@ sql_emit_args_types(struct Vdbe *v, int reg, struct func *base, uint32_t argc)
 	}
 	assert(func->base.def->param_count == -1);
 	uint32_t size = argc * sizeof(enum field_type);
-	enum field_type *types = sqlDbMallocRawNN(sql_get(), size);
-	if (types == NULL)
-		return -1;
+	enum field_type *types = sqlDbMallocRawNN(size);
 	enum field_type type = func->param_list[0];
 	for (uint32_t i = 0; i < argc; ++i)
 		types[i] = type;
@@ -198,10 +196,9 @@ enum field_type *
 field_type_sequence_dup(struct Parse *parse, enum field_type *types,
 			uint32_t len)
 {
+	(void)parse;
 	uint32_t sz = (len + 1) * sizeof(enum field_type);
-	enum field_type *ret_types = sqlDbMallocRawNN(parse->db, sz);
-	if (ret_types == NULL)
-		return NULL;
+	enum field_type *ret_types = sqlDbMallocRawNN(sz);
 	memcpy(ret_types, types, sz);
 	ret_types[len] = field_type_MAX;
 	return ret_types;
@@ -994,11 +991,8 @@ sqlExprSetHeightAndFlags(Parse * pParse, Expr * p)
 static struct Expr *
 sql_expr_new_empty(struct sql *db, int op, int extra_size)
 {
-	struct Expr *e = sqlDbMallocRawNN(db, sizeof(*e) + extra_size);
-	if (e == NULL) {
-		diag_set(OutOfMemory, sizeof(*e), "sqlDbMallocRawNN", "e");
-		return NULL;
-	}
+	(void)db;
+	struct Expr *e = sqlDbMallocRawNN(sizeof(*e) + extra_size);
 	memset(e, 0, sizeof(*e));
 	e->op = (u8)op;
 	e->iAgg = -1;
@@ -1144,12 +1138,10 @@ sqlPExpr(Parse * pParse,	/* Parsing context */
 		if (p == NULL)
 			pParse->is_aborted = true;
 	} else {
-		p = sqlDbMallocRawNN(pParse->db, sizeof(Expr));
-		if (p) {
-			memset(p, 0, sizeof(Expr));
-			p->op = op & TKFLG_MASK;
-			p->iAgg = -1;
-		}
+		p = sqlDbMallocRawNN(sizeof(Expr));
+		memset(p, 0, sizeof(Expr));
+		p->op = op & TKFLG_MASK;
+		p->iAgg = -1;
 		sqlExprAttachSubtrees(pParse->db, p, pLeft, pRight);
 	}
 	if (p) {
@@ -1537,8 +1529,7 @@ sql_expr_dup(struct sql *db, struct Expr *p, int flags, char **buffer)
 		zAlloc = *buffer;
 		staticFlag = EP_Static;
 	} else {
-		zAlloc = sqlDbMallocRawNN(db,
-					      sql_expr_sizeof(p, flags));
+		zAlloc = sqlDbMallocRawNN(sql_expr_sizeof(p, flags));
 		staticFlag = 0;
 	}
 	pNew = (Expr *) zAlloc;
@@ -1687,19 +1678,13 @@ sql_expr_list_dup(struct sql *db, struct ExprList *p, int flags)
 	assert(db != NULL);
 	if (p == NULL)
 		return NULL;
-	ExprList *pNew = sqlDbMallocRawNN(db, sizeof(*pNew));
-	if (pNew == NULL)
-		return NULL;
+	ExprList *pNew = sqlDbMallocRawNN(sizeof(*pNew));
 	pNew->nExpr = i = p->nExpr;
 	if ((flags & EXPRDUP_REDUCE) == 0) {
 		for (i = 1; i < p->nExpr; i += i) {
 		}
 	}
-	pNew->a = pItem = sqlDbMallocRawNN(db, i * sizeof(p->a[0]));
-	if (pItem == NULL) {
-		sqlDbFree(db, pNew);
-		return NULL;
-	}
+	pNew->a = pItem = sqlDbMallocRawNN(i * sizeof(p->a[0]));
 	pOldItem = p->a;
 	for (i = 0; i < p->nExpr; i++, pItem++, pOldItem++) {
 		Expr *pOldExpr = pOldItem->pExpr;
@@ -1749,9 +1734,7 @@ sqlSrcListDup(sql * db, SrcList * p, int flags)
 		return 0;
 	nByte =
 	    sizeof(*p) + (p->nSrc > 0 ? sizeof(p->a[0]) * (p->nSrc - 1) : 0);
-	pNew = sqlDbMallocRawNN(db, nByte);
-	if (pNew == 0)
-		return 0;
+	pNew = sqlDbMallocRawNN(nByte);
 	pNew->nSrc = pNew->nAlloc = p->nSrc;
 	for (i = 0; i < p->nSrc; i++) {
 		struct SrcList_item *pNewItem = &pNew->a[i];
@@ -1789,15 +1772,9 @@ sqlIdListDup(sql * db, IdList * p)
 	assert(db != 0);
 	if (p == 0)
 		return 0;
-	pNew = sqlDbMallocRawNN(db, sizeof(*pNew));
-	if (pNew == 0)
-		return 0;
+	pNew = sqlDbMallocRawNN(sizeof(*pNew));
 	pNew->nId = p->nId;
-	pNew->a = sqlDbMallocRawNN(db, p->nId * sizeof(p->a[0]));
-	if (pNew->a == 0) {
-		sqlDbFree(db, pNew);
-		return 0;
-	}
+	pNew->a = sqlDbMallocRawNN(p->nId * sizeof(p->a[0]));
 	/*
 	 * Note that because the size of the allocation for p->a[]
 	 * is not necessarily a power of two, sql_id_list_append()
@@ -1820,9 +1797,7 @@ sqlSelectDup(sql * db, Select * p, int flags)
 	assert(db != 0);
 	if (p == 0)
 		return 0;
-	pNew = sqlDbMallocRawNN(db, sizeof(*p));
-	if (pNew == 0)
-		return 0;
+	pNew = sqlDbMallocRawNN(sizeof(*p));
 	pNew->pEList = sql_expr_list_dup(db, p->pEList, flags);
 	pNew->pSrc = sqlSrcListDup(db, p->pSrc, flags);
 	pNew->pWhere = sqlExprDup(db, p->pWhere, flags);
@@ -1853,14 +1828,9 @@ sql_expr_list_append(struct sql *db, struct ExprList *expr_list,
 {
 	assert(db != NULL);
 	if (expr_list == NULL) {
-		expr_list = sqlDbMallocRawNN(db, sizeof(ExprList));
-		if (expr_list == NULL)
-			goto no_mem;
+		expr_list = sqlDbMallocRawNN(sizeof(ExprList));
 		expr_list->nExpr = 0;
-		expr_list->a =
-			sqlDbMallocRawNN(db, sizeof(expr_list->a[0]));
-		if (expr_list->a == NULL)
-			goto no_mem;
+		expr_list->a = sqlDbMallocRawNN(sizeof(expr_list->a[0]));
 	} else if ((expr_list->nExpr & (expr_list->nExpr - 1)) == 0) {
 		struct ExprList_item *a;
 		assert(expr_list->nExpr > 0);
@@ -3301,9 +3271,7 @@ expr_code_dec(struct Parse *parser, struct Expr *expr, bool is_neg, int reg)
 {
 	const char *str = expr->u.zToken;
 	assert(str != NULL);
-	decimal_t *value = sqlDbMallocRawNN(sql_get(), sizeof(*value));
-	if (value == NULL)
-		goto error;
+	decimal_t *value = sqlDbMallocRawNN(sizeof(*value));
 	if (is_neg) {
 		decimal_t dec;
 		if (decimal_from_string(&dec, str) == NULL)

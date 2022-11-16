@@ -183,9 +183,7 @@ mem_strdup(const struct Mem *mem)
 {
 	int size = mem_snprintf(NULL, 0, mem);
 	assert(size >= 0);
-	char *str = sqlDbMallocRawNN(sql_get(), size + 1);
-	if (str == NULL)
-		return NULL;
+	char *str = sqlDbMallocRawNN(size + 1);
 	mem_snprintf(str, size + 1, mem);
 	return str;
 }
@@ -2931,7 +2929,7 @@ sqlVdbeMemGrow(struct Mem *pMem, int n, int bPreserve)
 		} else {
 			if (pMem->szMalloc > 0)
 				sqlDbFree(pMem->db, pMem->zMalloc);
-			pMem->zMalloc = sqlDbMallocRawNN(pMem->db, n);
+			pMem->zMalloc = sqlDbMallocRawNN(n);
 		}
 		if (pMem->zMalloc == 0) {
 			mem_clear(pMem);

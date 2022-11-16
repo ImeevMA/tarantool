@@ -438,9 +438,7 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 
 			/* Prepare array of changed fields. */
 			uint32_t upd_cols_sz = upd_cols_cnt * sizeof(uint32_t);
-			uint32_t *upd_cols = sqlDbMallocRawNN(db, upd_cols_sz);
-			if (upd_cols == NULL)
-				goto update_cleanup;
+			uint32_t *upd_cols = sqlDbMallocRawNN(upd_cols_sz);
 			upd_cols_cnt = 0;
 			for (uint32_t i = 0; i < def->field_count; i++) {
 				if (aXRef[i] == -1)

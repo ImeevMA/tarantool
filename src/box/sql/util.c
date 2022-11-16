@@ -144,9 +144,7 @@ sql_normalized_name_db_new(struct sql *db, const char *name, int len)
 		diag_set(OutOfMemory, size, "sqlDbMallocRawNN", "res");
 		return NULL;
 	});
-	char *res = sqlDbMallocRawNN(db, size);
-	if (res == NULL)
-		return NULL;
+	char *res = sqlDbMallocRawNN(size);
 	int rc = sql_normalize_name(res, size, name, len);
 	if (rc <= size)
 		return res;
@@ -915,19 +913,15 @@ sqlHexToInt(int h)
 void *
 sqlHexToBlob(sql * db, const char *z, int n)
 {
+	(void)db;
 	char *zBlob;
 	int i;
 
-	zBlob = (char *)sqlDbMallocRawNN(db, n / 2 + 1);
+	zBlob = sqlDbMallocRawNN(n / 2 + 1);
 	n--;
-	if (zBlob) {
-		for (i = 0; i < n; i += 2) {
-			zBlob[i / 2] =
-			    (sqlHexToInt(z[i]) << 4) |
-			    sqlHexToInt(z[i + 1]);
-		}
-		zBlob[i / 2] = 0;
-	}
+	for (i = 0; i < n; i += 2)
+		zBlob[i / 2] = (sqlHexToInt(z[i]) << 4) | sqlHexToInt(z[i + 1]);
+	zBlob[i / 2] = 0;
 	return zBlob;
 }
 
