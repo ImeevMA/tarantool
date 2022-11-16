@@ -840,7 +840,7 @@ sqlStrAccumEnlarge(StrAccum * p, int N)
 		if (p->db) {
 			zNew = sqlDbRealloc(p->db, zOld, p->nAlloc);
 		} else {
-			zNew = sql_realloc64(zOld, p->nAlloc);
+			zNew = sqlRealloc(zOld, p->nAlloc);
 		}
 		if (zNew) {
 			assert(p->zText != 0 || p->nChar == 0);

@@ -185,12 +185,6 @@ sqlRealloc(void *pOld, u64 nBytes)
 	return pNew;
 }
 
-void *
-sql_realloc64(void *pOld, sql_uint64 n)
-{
-	return sqlRealloc(pOld, n);
-}
-
 /*
  * Allocate and zero memory.
  */
@@ -278,7 +272,7 @@ dbReallocFinish(sql * db, void *p, u64 n)
 				sqlDbFree(db, p);
 			}
 		} else {
-			pNew = sql_realloc64(p, n);
+			pNew = sqlRealloc(p, n);
 			if (!pNew)
 				sqlOomFault(db);
 		}
