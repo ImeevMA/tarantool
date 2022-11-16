@@ -1920,10 +1920,7 @@ mem_copy(struct Mem *to, const struct Mem *from)
 		return 0;
 	if ((to->flags & MEM_Static) != 0)
 		return 0;
-	to->zMalloc = sqlDbRealloc(to->db, to->zMalloc, MAX(32, to->n));
-	assert(to->zMalloc != NULL || sql_get()->mallocFailed != 0);
-	if (to->zMalloc == NULL)
-		return -1;
+	to->zMalloc = sqlDbRealloc(to->zMalloc, MAX(32, to->n));
 	to->szMalloc = sqlDbMallocSize(to->db, to->zMalloc);
 	memcpy(to->zMalloc, to->z, to->n);
 	to->z = to->zMalloc;

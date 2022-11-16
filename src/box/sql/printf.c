@@ -838,22 +838,16 @@ sqlStrAccumEnlarge(StrAccum * p, int N)
 			p->nAlloc = (int)szNew;
 		}
 		if (p->db) {
-			zNew = sqlDbRealloc(p->db, zOld, p->nAlloc);
+			zNew = sqlDbRealloc(zOld, p->nAlloc);
 		} else {
 			zNew = sqlRealloc(zOld, p->nAlloc);
 		}
-		if (zNew) {
-			assert(p->zText != 0 || p->nChar == 0);
-			if (!isMalloced(p) && p->nChar > 0)
-				memcpy(zNew, p->zText, p->nChar);
-			p->zText = zNew;
-			p->nAlloc = sqlDbMallocSize(p->db, zNew);
-			p->printfFlags |= SQL_PRINTF_MALLOCED;
-		} else {
-			sqlStrAccumReset(p);
-			setStrAccumError(p, STRACCUM_NOMEM);
-			return 0;
-		}
+		assert(p->zText != 0 || p->nChar == 0);
+		if (!isMalloced(p) && p->nChar > 0)
+			memcpy(zNew, p->zText, p->nChar);
+		p->zText = zNew;
+		p->nAlloc = sqlDbMallocSize(p->db, zNew);
+		p->printfFlags |= SQL_PRINTF_MALLOCED;
 	}
 	return N;
 }

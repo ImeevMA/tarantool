@@ -1231,6 +1231,7 @@ sqlVListAdd(sql * db,	/* The database connection used for malloc() */
 		int iVal	/* Value to associate with zName */
     )
 {
+	(void)db;
 	int nInt;		/* number of sizeof(int) objects needed for zName */
 	char *z;		/* Pointer to where zName will be stored */
 	int i;			/* Index in pIn[] where zName is stored */
@@ -1240,9 +1241,7 @@ sqlVListAdd(sql * db,	/* The database connection used for malloc() */
 	if (pIn == 0 || pIn[1] + nInt > pIn[0]) {
 		/* Enlarge the allocation */
 		int nAlloc = (pIn ? pIn[0] * 2 : 10) + nInt;
-		VList *pOut = sqlDbRealloc(db, pIn, nAlloc * sizeof(int));
-		if (pOut == 0)
-			return pIn;
+		VList *pOut = sqlDbRealloc(pIn, nAlloc * sizeof(int));
 		if (pIn == 0)
 			pOut[1] = 2;
 		pIn = pOut;

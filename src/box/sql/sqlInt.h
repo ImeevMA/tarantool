@@ -2395,8 +2395,11 @@ char *sqlDbStrNDup(sql *, const char *, u64);
 void *
 sqlRealloc(void *old, size_t n);
 
+/** Resize the block of memory pointed to by buf to n bytes. */
+void *
+sqlDbRealloc(void *buf, size_t n);
+
 void *sqlDbReallocOrFree(sql *, void *, u64);
-void *sqlDbRealloc(sql *, void *, u64);
 void sqlDbFree(sql *, void *);
 int sqlMallocSize(void *);
 int sqlDbMallocSize(sql *, void *);

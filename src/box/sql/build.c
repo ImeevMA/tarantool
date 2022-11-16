@@ -3041,15 +3041,12 @@ sqlArrayAllocate(sql * db,	/* Connection to notify of malloc failures */
 		     int *pIdx	/* Write the index of a new slot here */
     )
 {
+	(void)db;
 	char *z;
 	int n = *pnEntry;
 	if ((n & (n - 1)) == 0) {
 		int sz = (n == 0) ? 1 : 2 * n;
-		void *pNew = sqlDbRealloc(db, pArray, sz * szEntry);
-		if (pNew == 0) {
-			*pIdx = -1;
-			return pArray;
-		}
+		void *pNew = sqlDbRealloc(pArray, sz * szEntry);
 		pArray = pNew;
 	}
 	z = (char *)pArray;
@@ -3117,6 +3114,7 @@ struct SrcList *
 sql_src_list_enlarge(struct sql *db, struct SrcList *src_list, int new_slots,
 		     int start_idx)
 {
+	(void)db;
 	assert(start_idx >= 0);
 	assert(new_slots >= 1);
 	assert(src_list != NULL);
@@ -3127,11 +3125,7 @@ sql_src_list_enlarge(struct sql *db, struct SrcList *src_list, int new_slots,
 		int to_alloc = src_list->nSrc * 2 + new_slots;
 		int size = sizeof(*src_list) +
 			   (to_alloc - 1) * sizeof(src_list->a[0]);
-		src_list = sqlDbRealloc(db, src_list, size);
-		if (src_list == NULL) {
-			diag_set(OutOfMemory, size, "sqlDbRealloc", "src_list");
-			return NULL;
-		}
+		src_list = sqlDbRealloc(src_list, size);
 		src_list->nAlloc = to_alloc;
 	}
 
@@ -3486,11 +3480,10 @@ sqlWithAdd(Parse * pParse,	/* Parsing context */
 	if (pWith) {
 		int nByte =
 		    sizeof(*pWith) + (sizeof(pWith->a[1]) * pWith->nCte);
-		pNew = sqlDbRealloc(db, pWith, nByte);
+		pNew = sqlDbRealloc(pWith, nByte);
 	} else {
 		pNew = sqlDbMallocZero(db, sizeof(*pWith));
 	}
-	assert((pNew != NULL && name != NULL) || db->mallocFailed);
 
 	if (db->mallocFailed) {
 error:

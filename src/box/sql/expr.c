@@ -1834,10 +1834,8 @@ sql_expr_list_append(struct sql *db, struct ExprList *expr_list,
 	} else if ((expr_list->nExpr & (expr_list->nExpr - 1)) == 0) {
 		struct ExprList_item *a;
 		assert(expr_list->nExpr > 0);
-		a = sqlDbRealloc(db, expr_list->a, expr_list->nExpr * 2 *
-				     sizeof(expr_list->a[0]));
-		if (a == NULL)
-			goto no_mem;
+		a = sqlDbRealloc(expr_list->a, expr_list->nExpr * 2 *
+				 sizeof(expr_list->a[0]));
 		expr_list->a = a;
 	}
 	assert(expr_list->a != NULL);
@@ -1845,12 +1843,6 @@ sql_expr_list_append(struct sql *db, struct ExprList *expr_list,
 	memset(pItem, 0, sizeof(*pItem));
 	pItem->pExpr = expr;
 	return expr_list;
-
- no_mem:
-	/* Avoid leaking memory if malloc has failed. */
-	sql_expr_delete(db, expr);
-	sql_expr_list_delete(db, expr_list);
-	return NULL;
 }
 
 /*

@@ -326,11 +326,7 @@ func_lower_upper(struct sql_context *ctx, int argc, const struct Mem *argv)
 		ucasemap_utf8ToUpper(cm, res, size, str, len, &status) :
 		ucasemap_utf8ToLower(cm, res, size, str, len, &status);
 	if (new_len > size) {
-		res = sqlDbRealloc(db, res, new_len);
-		if (db->mallocFailed != 0) {
-			ctx->is_aborted = true;
-			return;
-		}
+		res = sqlDbRealloc(res, new_len);
 		status = U_ZERO_ERROR;
 		if (is_upper)
 			ucasemap_utf8ToUpper(cm, res, size, str, len, &status);
@@ -1593,7 +1589,6 @@ replaceFunc(struct sql_context *context, int argc, const struct Mem *argv)
 	zRep = (const unsigned char *)argv[2].z;
 	nRep = argv[2].n;
 	nOut = nStr + 1;
-	struct sql *db = sql_get();
 	zOut = sqlDbMallocRawNN(nOut);
 	loopLimit = nStr - nPattern;
 	for (i = j = 0; i <= loopLimit; i++) {
@@ -1601,15 +1596,8 @@ replaceFunc(struct sql_context *context, int argc, const struct Mem *argv)
 		    || memcmp(&zStr[i], zPattern, nPattern)) {
 			zOut[j++] = zStr[i];
 		} else {
-			u8 *zOld;
 			nOut += nRep - nPattern;
-			zOld = zOut;
-			zOut = sqlDbRealloc(db, zOut, nOut);
-			if (zOut == NULL) {
-				context->is_aborted = true;
-				sqlDbFree(db, zOld);
-				return;
-			}
+			zOut = sqlDbRealloc(zOut, nOut);
 			memcpy(&zOut[j], zRep, nRep);
 			j += nRep;
 			i += nPattern - 1;

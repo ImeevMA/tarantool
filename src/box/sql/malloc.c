@@ -210,40 +210,27 @@ sqlDbMallocRawNN(size_t n)
 	return sqlMalloc(n);
 }
 
-/* Forward declaration */
-static SQL_NOINLINE void *dbReallocFinish(sql * db, void *p, u64 n);
-
-/*
- * Resize the block of memory pointed to by p to n bytes. If the
- * resize fails, set the mallocFailed flag in the connection object.
- */
 void *
-sqlDbRealloc(sql * db, void *p, u64 n)
+sqlDbRealloc(void *buf, size_t n)
 {
-	assert(db != 0);
-	if (p == 0)
-		return sqlDbMallocRawNN(n);
-	if (is_lookaside(p) && n <= db->lookaside.sz)
-		return p;
-	return dbReallocFinish(db, p, n);
-}
-
-static SQL_NOINLINE void *
-dbReallocFinish(sql * db, void *p, u64 n)
-{
-	void *pNew = 0;
-	assert(db != 0);
-	assert(p != 0);
-	if (db->mallocFailed == 0) {
-		if (is_lookaside(p)) {
-			pNew = sqlDbMallocRawNN(n);
-			memcpy(pNew, p, db->lookaside.sz);
-			sqlDbFree(db, p);
-		} else {
-			pNew = sqlRealloc(p, n);
-		}
+	struct sql *db = sql_get();
+	assert(db != NULL);
+	if (db->mallocFailed != 0) {
+		fprintf(stderr, "Can't allocate %zu bytes at %s:%d", n,
+			__FILE__, __LINE__);
+		exit(EXIT_FAILURE);
 	}
-	return pNew;
+	if (buf == NULL)
+		return sqlDbMallocRawNN(n);
+	if (is_lookaside(buf)) {
+		if (n <= (size_t)db->lookaside.sz)
+			return buf;
+		void *new_buf = sqlDbMallocRawNN(n);
+		memcpy(new_buf, buf, db->lookaside.sz);
+		sqlDbFree(db, buf);
+		return new_buf;
+	}
+	return sqlRealloc(buf, n);
 }
 
 /*
@@ -253,12 +240,8 @@ dbReallocFinish(sql * db, void *p, u64 n)
 void *
 sqlDbReallocOrFree(sql * db, void *p, u64 n)
 {
-	void *pNew;
-	pNew = sqlDbRealloc(db, p, n);
-	if (!pNew) {
-		sqlDbFree(db, p);
-	}
-	return pNew;
+	(void)db;
+	return sqlDbRealloc(p, n);
 }
 
 /*
