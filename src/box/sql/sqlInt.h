@@ -785,16 +785,6 @@ typedef u64 uptr;
 #endif
 
 /*
- * The sql_WITHIN(P,S,E) macro checks to see if pointer P points to
- * something between S (inclusive) and E (exclusive).
- *
- * In other words, S is a buffer and E is a pointer to the first byte after
- * the end of buffer S.  This macro returns true if P points to something
- * contained within the buffer S.
- */
-#define SQL_WITHIN(P,S,E) (((uptr)(P)>=(uptr)(S))&&((uptr)(P)<(uptr)(E)))
-
-/*
  * Constants for the largest and smallest possible 64-bit signed integers.
  * These macros are designed to work correctly on both 32-bit and 64-bit
  * compilers.

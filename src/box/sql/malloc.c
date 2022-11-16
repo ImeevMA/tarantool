@@ -132,13 +132,13 @@ sql_malloc64(sql_uint64 n)
 	return sqlMalloc(n);
 }
 
-/*
- * TRUE if p is a lookaside memory allocation from db
- */
-static int
-isLookaside(sql * db, void *p)
+/** Return TRUE if buf is a lookaside memory allocation. */
+static inline bool
+is_lookaside(void *buf)
 {
-	return SQL_WITHIN(p, db->lookaside.pStart, db->lookaside.pEnd);
+	struct sql *db = sql_get();
+	assert(db != NULL);
+	return buf >= db->lookaside.pStart && buf < db->lookaside.pEnd;
 }
 
 /**
@@ -155,7 +155,7 @@ int
 sqlDbMallocSize(sql * db, void *p)
 {
 	assert(p != 0);
-	if (db == 0 || !isLookaside(db, p))
+	if (db == NULL || !is_lookaside(p))
 		return sql_sized_sizeof(p);
 	else
 		return db->lookaside.sz;
@@ -182,7 +182,7 @@ void
 sqlDbFree(sql * db, void *p)
 {
 	if (db != NULL) {
-		if (isLookaside(db, p)) {
+		if (is_lookaside(p)) {
 			LookasideSlot *pBuf = (LookasideSlot *) p;
 			pBuf->pNext = db->lookaside.pFree;
 			db->lookaside.pFree = pBuf;
@@ -312,7 +312,7 @@ sqlDbRealloc(sql * db, void *p, u64 n)
 	assert(db != 0);
 	if (p == 0)
 		return sqlDbMallocRawNN(db, n);
-	if (isLookaside(db, p) && n <= db->lookaside.sz)
+	if (is_lookaside(p) && n <= db->lookaside.sz)
 		return p;
 	return dbReallocFinish(db, p, n);
 }
@@ -324,7 +324,7 @@ dbReallocFinish(sql * db, void *p, u64 n)
 	assert(db != 0);
 	assert(p != 0);
 	if (db->mallocFailed == 0) {
-		if (isLookaside(db, p)) {
+		if (is_lookaside(p)) {
 			pNew = sqlDbMallocRawNN(db, n);
 			if (pNew) {
 				memcpy(pNew, p, db->lookaside.sz);
