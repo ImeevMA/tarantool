@@ -193,10 +193,8 @@ sql_emit_args_types(struct Vdbe *v, int reg, struct func *base, uint32_t argc)
 }
 
 enum field_type *
-field_type_sequence_dup(struct Parse *parse, enum field_type *types,
-			uint32_t len)
+field_type_sequence_dup(enum field_type *types, uint32_t len)
 {
-	(void)parse;
 	uint32_t sz = (len + 1) * sizeof(enum field_type);
 	enum field_type *ret_types = sqlDbMallocRawNN(sz);
 	memcpy(ret_types, types, sz);

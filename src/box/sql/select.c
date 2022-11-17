@@ -1474,8 +1474,7 @@ selectInnerLoop(Parse * pParse,		/* The parser context */
 			} else {
 				int r1 = sqlGetTempReg(pParse);
 				enum field_type *types =
-					field_type_sequence_dup(pParse,
-								pDest->dest_type,
+					field_type_sequence_dup(pDest->dest_type,
 								nResultCol);
 				sqlVdbeAddOp4(v, OP_MakeRecord, regResult,
 						  nResultCol, r1, (char *)types,
@@ -1867,7 +1866,7 @@ generateSortTail(Parse * pParse,	/* Parsing context */
 		}
 	case SRT_Set:{
 			enum field_type *types =
-				field_type_sequence_dup(pParse, pDest->dest_type,
+				field_type_sequence_dup(pDest->dest_type,
 							nColumn);
 			sqlVdbeAddOp4(v, OP_MakeRecord, regRow, nColumn,
 					  regTupleid, (char *)types,
@@ -3281,7 +3280,7 @@ generateOutputSubroutine(struct Parse *parse, struct Select *p,
 			int r1;
 			r1 = sqlGetTempReg(parse);
 			enum field_type *types =
-				field_type_sequence_dup(parse, dest->dest_type,
+				field_type_sequence_dup(dest->dest_type,
 							in->nSdst);
 			sqlVdbeAddOp4(v, OP_MakeRecord, in->iSdst,
 					  in->nSdst, r1, (char *)types,

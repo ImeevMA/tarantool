@@ -3735,8 +3735,7 @@ sql_expr_type(struct Expr *pExpr);
  * and terminates new array with field_type_MAX member.
  */
 enum field_type *
-field_type_sequence_dup(struct Parse *parse, enum field_type *types,
-			uint32_t len);
+field_type_sequence_dup(enum field_type *types, uint32_t len);
 
 /**
  * Convert z to a 64-bit signed or unsigned integer.
