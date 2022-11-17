@@ -1578,19 +1578,8 @@ static struct Expr *
 sql_id_eq_str_expr(struct Parse *parse, const char *col_name,
 		   const char *col_value)
 {
-	struct sql *db = parse->db;
-	struct Expr *col_name_expr = sql_expr_new_named(db, TK_ID, col_name);
-	if (col_name_expr == NULL) {
-		parse->is_aborted = true;
-		return NULL;
-	}
-	struct Expr *col_value_expr =
-		sql_expr_new_named(db, TK_STRING, col_value);
-	if (col_value_expr == NULL) {
-		sql_expr_delete(db, col_name_expr);
-		parse->is_aborted = true;
-		return NULL;
-	}
+	struct Expr *col_name_expr = sql_expr_new_named(TK_ID, col_name);
+	struct Expr *col_value_expr = sql_expr_new_named(TK_STRING, col_value);
 	return sqlPExpr(parse, TK_EQ, col_name_expr, col_value_expr);
 }
 

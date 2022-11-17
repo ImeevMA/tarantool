@@ -258,8 +258,6 @@ like_optimization_is_valid(Parse *pParse, Expr *pExpr, Expr **ppPrefix,
 	int c;
 	/* Number of non-wildcard prefix characters. */
 	int cnt;
-	/* Database connection. */
-	sql *db = pParse->db;
 	/* Opcode of pRight. */
 	int op;
 	/* Result code to return. */
@@ -327,11 +325,8 @@ like_optimization_is_valid(Parse *pParse, Expr *pExpr, Expr **ppPrefix,
 			Expr *pPrefix;
 			*pisComplete = c == MATCH_ALL_WILDCARD &&
 				       z[cnt + 1] == 0;
-			pPrefix = sql_expr_new_named(db, TK_STRING, z);
-			if (pPrefix == NULL)
-				pParse->is_aborted = true;
-			else
-				pPrefix->u.zToken[cnt] = 0;
+			pPrefix = sql_expr_new_named(TK_STRING, z);
+			pPrefix->u.zToken[cnt] = 0;
 			*ppPrefix = pPrefix;
 			if (op == TK_VARIABLE) {
 				Vdbe *v = pParse->pVdbe;

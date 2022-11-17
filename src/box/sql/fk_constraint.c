@@ -422,10 +422,10 @@ fk_constraint_scan_children(struct Parse *parser, struct SrcList *src,
 			sql_expr_new_register(db, def, reg_data, fieldno);
 		fieldno = fk_def->links[i].child_field;
 		const char *field_name = child_space->def->fields[fieldno].name;
-		struct Expr *chexpr = sql_expr_new_named(db, TK_ID, field_name);
+		struct Expr *chexpr = sql_expr_new_named(TK_ID, field_name);
 		struct Expr *eq = sqlPExpr(parser, TK_EQ, pexpr, chexpr);
 		where = sql_and_expr_new(db, where, eq);
-		if (where == NULL || chexpr == NULL || pexpr == NULL)
+		if (where == NULL || pexpr == NULL)
 			parser->is_aborted = true;
 	}
 
@@ -832,12 +832,9 @@ fk_constraint_action_trigger(struct Parse *pParse, struct space_def *def,
 		struct Token err;
 		err.z = space_name;
 		err.n = name_len;
-		struct Expr *r = sql_expr_new_named(db, TK_RAISE, "FOREIGN "\
+		struct Expr *r = sql_expr_new_named(TK_RAISE, "FOREIGN "
 						    "KEY constraint failed");
-		if (r == NULL)
-			pParse->is_aborted = true;
-		else
-			r->on_conflict_action = ON_CONFLICT_ACTION_ABORT;
+		r->on_conflict_action = ON_CONFLICT_ACTION_ABORT;
 		struct SrcList *src_list = sql_src_list_append(db, NULL, &err);
 		if (src_list == NULL)
 			pParse->is_aborted = true;

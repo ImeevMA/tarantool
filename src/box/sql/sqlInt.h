@@ -2551,9 +2551,8 @@ sql_expr_new_dequoted(int op, const struct Token *token);
  * Token. Just sugar to do not touch tokens in many places.
  */
 static inline struct Expr *
-sql_expr_new_named(struct sql *db, int op, const char *name)
+sql_expr_new_named(int op, const char *name)
 {
-	(void)db;
 	struct Token name_token;
 	sqlTokenInit(&name_token, (char *)name);
 	return sql_expr_new(op, &name_token);
@@ -2566,7 +2565,8 @@ sql_expr_new_named(struct sql *db, int op, const char *name)
 static inline struct Expr *
 sql_expr_new_anon(struct sql *db, int op)
 {
-	return sql_expr_new_named(db, op, NULL);
+	(void)db;
+	return sql_expr_new_named(op, NULL);
 }
 
 /** Attach subtrees pLeft and pRight to the Expr node pRoot. */

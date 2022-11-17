@@ -5173,23 +5173,16 @@ selectExpander(Walker * pWalker, Select * p)
 								continue;
 							}
 						}
-						pRight = sql_expr_new_named(db,
+						pRight = sql_expr_new_named(
 								TK_ID, zName);
-						if (pRight == NULL)
-							pParse->is_aborted = true;
 						zColname = zName;
 						zToFree = 0;
 						if (longNames
 						    || pTabList->nSrc > 1) {
 							Expr *pLeft;
 							pLeft = sql_expr_new_named(
-									db,
 									TK_ID,
 									zTabName);
-							if (pLeft == NULL) {
-								pParse->
-								is_aborted = true;
-							}
 							pExpr =
 							    sqlPExpr(pParse,
 									 TK_DOT,
