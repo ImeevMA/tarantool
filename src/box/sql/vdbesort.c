@@ -847,11 +847,12 @@ sqlVdbeSorterInit(sql * db,	/* Database connection (for malloc()) */
 static void
 vdbeSorterRecordFree(sql * db, SorterRecord * pRecord)
 {
+	(void)db;
 	SorterRecord *p;
 	SorterRecord *pNext;
 	for (p = pRecord; p; p = pNext) {
 		pNext = p->u.pNext;
-		sqlDbFree(db, p);
+		sqlDbFree(p);
 	}
 }
 
@@ -862,7 +863,8 @@ vdbeSorterRecordFree(sql * db, SorterRecord * pRecord)
 static void
 vdbeSortSubtaskCleanup(sql * db, SortSubtask * pTask)
 {
-	sqlDbFree(db, pTask->pUnpacked);
+	(void)db;
+	sqlDbFree(pTask->pUnpacked);
 
 	assert(pTask->list.aMemory == 0);
 	vdbeSorterRecordFree(0, pTask->list.pList);
@@ -956,7 +958,7 @@ sqlVdbeSorterReset(sql * db, VdbeSorter * pSorter)
 	pSorter->bUsePMA = 0;
 	pSorter->iMemory = 0;
 	pSorter->mxKeysize = 0;
-	sqlDbFree(db, pSorter->pUnpacked);
+	sqlDbFree(pSorter->pUnpacked);
 	pSorter->pUnpacked = 0;
 }
 
@@ -972,7 +974,7 @@ sqlVdbeSorterClose(sql * db, VdbeCursor * pCsr)
 	if (pSorter) {
 		sqlVdbeSorterReset(db, pSorter);
 		sql_free(pSorter->list.aMemory);
-		sqlDbFree(db, pSorter);
+		sqlDbFree(pSorter);
 		pCsr->uc.pSorter = 0;
 	}
 }

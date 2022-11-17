@@ -2785,7 +2785,7 @@ case OP_Found: {        /* jump, in3 */
 	rc = sql_cursor_seek(pC->uc.pCursor, pIdxKey->aMem, pIdxKey->nField,
 			     &res);
 	if (pFree != NULL)
-		sqlDbFree(db, pFree);
+		sqlDbFree(pFree);
 	if (rc != 0)
 		goto abort_due_to_error;
 	pC->seekResult = res;
@@ -3809,7 +3809,7 @@ case OP_ResetSorter: {
 case OP_RenameTable: {
 	uint32_t space_id;
 	struct space *space;
-	const char *zOldTableName;
+	char *zOldTableName;
 	const char *zNewTableName;
 
 	space_id = pOp->p1;
@@ -3817,11 +3817,9 @@ case OP_RenameTable: {
 	assert(space);
 	/* Rename space op doesn't change triggers. */
 	struct sql_trigger *triggers = space->sql_triggers;
-	zOldTableName = space_name(space);
-	assert(zOldTableName);
+	assert(space_name(space) != NULL);
 	zNewTableName = pOp->p4.z;
-	zOldTableName = sqlDbStrNDup(db, zOldTableName,
-					 sqlStrlen30(zOldTableName));
+	zOldTableName = sqlDbStrDup(space_name(space));
 	if (sql_rename_table(space_id, zNewTableName) != 0)
 		goto abort_due_to_error;
 	/*
@@ -3844,7 +3842,7 @@ case OP_RenameTable: {
 			goto abort_due_to_error;
 		trigger = next_trigger;
 	}
-	sqlDbFree(db, (void*)zOldTableName);
+	sqlDbFree(zOldTableName);
 	break;
 }
 
@@ -4264,7 +4262,7 @@ case OP_Init: {          /* jump */
 	 * received from the parent.
 	 */
 	if (p->pFrame == NULL && sql_vdbe_prepare(p) != 0) {
-		sqlDbFree(db, p);
+		sqlDbFree(p);
 		rc = -1;
 		break;
 	}

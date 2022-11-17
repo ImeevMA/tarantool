@@ -113,23 +113,19 @@ sql_free(void *p)
 	free(raw_p);
 }
 
-/*
- * Free memory that might be associated with a particular database
- * connection.
- */
 void
-sqlDbFree(sql * db, void *p)
+sqlDbFree(void *buf)
 {
-	if (db != NULL) {
-		if (is_lookaside(p)) {
-			LookasideSlot *pBuf = (LookasideSlot *) p;
-			pBuf->pNext = db->lookaside.pFree;
-			db->lookaside.pFree = pBuf;
-			db->lookaside.nOut--;
-			return;
-		}
+	struct sql *db = sql_get();
+	assert(db != NULL);
+	if (is_lookaside(buf)) {
+		LookasideSlot *pBuf = (LookasideSlot *)buf;
+		pBuf->pNext = db->lookaside.pFree;
+		db->lookaside.pFree = pBuf;
+		db->lookaside.nOut--;
+		return;
 	}
-	sql_free(p);
+	sql_free(buf);
 }
 
 void *
@@ -214,7 +210,7 @@ sqlDbRealloc(void *buf, size_t n)
 			return buf;
 		void *new_buf = sqlDbMallocRawNN(n);
 		memcpy(new_buf, buf, db->lookaside.sz);
-		sqlDbFree(db, buf);
+		sqlDbFree(buf);
 		return new_buf;
 	}
 	return sqlRealloc(buf, n);

@@ -794,7 +794,7 @@ sqlVXPrintf(StrAccum * pAccum,	/* Accumulate results here */
 			sqlAppendChar(pAccum, width, ' ');
 
 		if (zExtra) {
-			sqlDbFree(pAccum->db, zExtra);
+			sqlDbFree(zExtra);
 			zExtra = 0;
 		}
 	}			/* End for loop over the format string */
@@ -951,7 +951,7 @@ sqlStrAccumReset(StrAccum * p)
 {
 	assert((p->zText == 0 || p->zText == p->zBase) == !isMalloced(p));
 	if (isMalloced(p)) {
-		sqlDbFree(p->db, p->zText);
+		sqlDbFree(p->zText);
 		p->printfFlags &= ~SQL_PRINTF_MALLOCED;
 	}
 	p->zText = 0;

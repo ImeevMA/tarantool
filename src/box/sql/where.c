@@ -1770,8 +1770,9 @@ whereLoopClearUnion(WhereLoop * p)
 static void
 whereLoopClear(sql * db, WhereLoop * p)
 {
+	(void)db;
 	if (p->aLTerm != p->aLTermSpace)
-		sqlDbFree(db, p->aLTerm);
+		sqlDbFree(p->aLTerm);
 	whereLoopClearUnion(p);
 	whereLoopInit(p);
 }
@@ -1782,6 +1783,7 @@ whereLoopClear(sql * db, WhereLoop * p)
 static int
 whereLoopResize(sql * db, WhereLoop * p, int n)
 {
+	(void)db;
 	WhereTerm **paNew;
 	if (p->nLSlot >= n)
 		return 0;
@@ -1789,7 +1791,7 @@ whereLoopResize(sql * db, WhereLoop * p, int n)
 	paNew = sqlDbMallocRawNN(sizeof(p->aLTerm[0]) * n);
 	memcpy(paNew, p->aLTerm, sizeof(p->aLTerm[0]) * p->nLSlot);
 	if (p->aLTerm != p->aLTermSpace)
-		sqlDbFree(db, p->aLTerm);
+		sqlDbFree(p->aLTerm);
 	p->aLTerm = paNew;
 	p->nLSlot = n;
 	return 0;
@@ -1824,7 +1826,7 @@ static void
 whereLoopDelete(sql * db, WhereLoop * p)
 {
 	whereLoopClear(db, p);
-	sqlDbFree(db, p);
+	sqlDbFree(p);
 }
 
 /*
@@ -1839,7 +1841,7 @@ whereInfoFree(sql * db, WhereInfo * pWInfo)
 			WhereLevel *pLevel = &pWInfo->a[i];
 			if (pLevel->pWLoop
 			    && (pLevel->pWLoop->wsFlags & WHERE_IN_ABLE)) {
-				sqlDbFree(db, pLevel->u.in.aInLoop);
+				sqlDbFree(pLevel->u.in.aInLoop);
 			}
 		}
 		sqlWhereClauseClear(&pWInfo->sWC);
@@ -1848,7 +1850,7 @@ whereInfoFree(sql * db, WhereInfo * pWInfo)
 			pWInfo->pLoops = p->pNextLoop;
 			whereLoopDelete(db, p);
 		}
-		sqlDbFree(db, pWInfo);
+		sqlDbFree(pWInfo);
 	}
 }
 
@@ -3583,7 +3585,6 @@ wherePathSolver(WhereInfo * pWInfo, LogEst nRowEst)
 	int mxChoice;		/* Maximum number of simultaneous paths tracked */
 	int nLoop;		/* Number of terms in the join */
 	Parse *pParse;		/* Parsing context */
-	sql *db;		/* The database connection */
 	int iLoop;		/* Loop counter over the terms of the join */
 	int ii, jj;		/* Loop counters */
 	int mxI = 0;		/* Index of next entry to replace */
@@ -3602,7 +3603,6 @@ wherePathSolver(WhereInfo * pWInfo, LogEst nRowEst)
 	int nSpace;		/* Bytes of space allocated at pSpace */
 
 	pParse = pWInfo->pParse;
-	db = pParse->db;
 	nLoop = pWInfo->nLevel;
 	/* TUNING: For simple queries, only the best path is tracked.
 	 * For 2-way joins, the 5 best paths are followed.
@@ -4000,7 +4000,7 @@ wherePathSolver(WhereInfo * pWInfo, LogEst nRowEst)
 	pWInfo->nRowOut = pFrom->nRow;
 
 	/* Free temporary memory and return success */
-	sqlDbFree(db, pSpace);
+	sqlDbFree(pSpace);
 	return 0;
 }
 

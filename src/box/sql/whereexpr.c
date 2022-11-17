@@ -52,8 +52,9 @@ static void exprAnalyze(SrcList *, WhereClause *, int);
 static void
 whereOrInfoDelete(sql * db, WhereOrInfo * p)
 {
+	(void)db;
 	sqlWhereClauseClear(&p->wc);
-	sqlDbFree(db, p);
+	sqlDbFree(p);
 }
 
 /*
@@ -62,8 +63,9 @@ whereOrInfoDelete(sql * db, WhereOrInfo * p)
 static void
 whereAndInfoDelete(sql * db, WhereAndInfo * p)
 {
+	(void)db;
 	sqlWhereClauseClear(&p->wc);
-	sqlDbFree(db, p);
+	sqlDbFree(p);
 }
 
 /*
@@ -95,7 +97,7 @@ whereClauseInsert(WhereClause * pWC, Expr * p, u16 wtFlags)
 		pWC->a = sqlDbMallocRawNN(sizeof(pWC->a[0]) * pWC->nSlot * 2);
 		memcpy(pWC->a, pOld, sizeof(pWC->a[0]) * pWC->nTerm);
 		if (pOld != pWC->aStatic) {
-			sqlDbFree(db, pOld);
+			sqlDbFree(pOld);
 		}
 		pWC->nSlot = sqlDbMallocSize(db, pWC->a) / sizeof(pWC->a[0]);
 	}
@@ -1347,7 +1349,7 @@ sqlWhereClauseClear(WhereClause * pWC)
 		}
 	}
 	if (pWC->a != pWC->aStatic) {
-		sqlDbFree(db, pWC->a);
+		sqlDbFree(pWC->a);
 	}
 }
 

@@ -120,7 +120,7 @@ resolveAlias(Parse * pParse,	/* Parsing context */
 	 * prevents ExprDelete() from deleting the Expr structure itself,
 	 * allowing it to be repopulated by the memcpy() on the following line.
 	 * The pExpr->u.zToken might point into memory that will be freed by the
-	 * sqlDbFree(db, pDup) on the last line of this block, so be sure to
+	 * sqlDbFree(pDup) on the last line of this block, so be sure to
 	 * make a copy of the token before doing the sqlDbFree().
 	 */
 	ExprSetProperty(pExpr, EP_Static);
@@ -131,7 +131,7 @@ resolveAlias(Parse * pParse,	/* Parsing context */
 		pExpr->u.zToken = sqlDbStrDup(pExpr->u.zToken);
 		pExpr->flags |= EP_MemToken;
 	}
-	sqlDbFree(db, pDup);
+	sqlDbFree(pDup);
 }
 
 /*

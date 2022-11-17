@@ -79,7 +79,7 @@ sql_stmt_compile(const char *zSql, int nBytes, struct Vdbe *pReprepare,
 		if (zSqlCopy) {
 			sqlRunParser(&sParse, zSqlCopy);
 			sParse.zTail = &zSql[sParse.zTail - zSqlCopy];
-			sqlDbFree(db, zSqlCopy);
+			sqlDbFree(zSqlCopy);
 		} else {
 			sParse.zTail = &zSql[nBytes];
 		}
@@ -155,7 +155,7 @@ sql_stmt_compile(const char *zSql, int nBytes, struct Vdbe *pReprepare,
 	while (sParse.pTriggerPrg) {
 		TriggerPrg *pT = sParse.pTriggerPrg;
 		sParse.pTriggerPrg = pT->pNext;
-		sqlDbFree(db, pT);
+		sqlDbFree(pT);
 	}
 
  end_prepare:
@@ -205,7 +205,7 @@ sql_parser_destroy(Parse *parser)
 	assert(parser != NULL);
 	assert(!parser->parse_only || parser->pVdbe == NULL);
 	sql *db = parser->db;
-	sqlDbFree(db, parser->aLabel);
+	sqlDbFree(parser->aLabel);
 	sql_expr_list_delete(db, parser->pConstExpr);
 	struct create_fk_constraint_parse_def *create_fk_constraint_parse_def =
 		&parser->create_fk_constraint_parse_def;

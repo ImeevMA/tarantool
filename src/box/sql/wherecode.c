@@ -518,7 +518,7 @@ codeEqualityTerm(Parse * pParse,	/* The parsing context */
 				pIn++;
 			}
 		}
-		sqlDbFree(pParse->db, aiMap);
+		sqlDbFree(aiMap);
 	}
 	disableTerm(pLevel, pTerm);
 	return iReg;
@@ -1291,7 +1291,7 @@ sqlWhereCodeOneLoopStart(WhereInfo * pWInfo,	/* Complete information about the W
 		sqlVdbeResolveLabel(v, iLoopBody);
 
 		if (pWInfo->nLevel > 1)
-			sqlStackFree(db, pOrTab);
+			sqlStackFree(pOrTab);
 		if (!untestedTerms)
 			disableTerm(pLevel, pTerm);
 	} else

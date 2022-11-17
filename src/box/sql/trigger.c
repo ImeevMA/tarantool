@@ -58,7 +58,7 @@ sqlDeleteTriggerStep(sql * db, TriggerStep * pTriggerStep)
 		sql_select_delete(db, pTmp->pSelect);
 		sqlIdListDelete(db, pTmp->pIdList);
 
-		sqlDbFree(db, pTmp);
+		sqlDbFree(pTmp);
 	}
 }
 
@@ -137,7 +137,7 @@ sql_trigger_begin(struct Parse *parse)
 	parse->parsed_ast_type = AST_TYPE_TRIGGER;
 
  trigger_cleanup:
-	sqlDbFree(db, trigger_name);
+	sqlDbFree(trigger_name);
 	sqlSrcListDelete(db, alter_def->entity_name);
 	sqlIdListDelete(db, trigger_def->cols);
 	sql_expr_delete(db, trigger_def->when);
@@ -201,7 +201,7 @@ sql_trigger_finish(struct Parse *parse, struct TriggerStep *step_list,
 		char *data = mp_encode_map(opts_buff, 1);
 		data = mp_encode_str(data, "sql", sql_len);
 		data = mp_encode_str(data, sql_str, sql_str_len);
-		sqlDbFree(db, sql_str);
+		sqlDbFree(sql_str);
 
 		sqlVdbeAddOp4(v, OP_String8, 0, first_col, 0,
 			      sqlDbStrDup(trigger_name), P4_DYNAMIC);
@@ -341,10 +341,10 @@ sql_trigger_delete(struct sql *db, struct sql_trigger *trigger)
 	if (trigger == NULL)
 		return;
 	sqlDeleteTriggerStep(db, trigger->step_list);
-	sqlDbFree(db, trigger->zName);
+	sqlDbFree(trigger->zName);
 	sql_expr_delete(db, trigger->pWhen);
 	sqlIdListDelete(db, trigger->pColumns);
-	sqlDbFree(db, trigger);
+	sqlDbFree(trigger);
 }
 
 void
@@ -790,7 +790,7 @@ sql_row_trigger_program(struct Parse *parser, struct sql_trigger *trigger,
 
 	assert(!pSubParse->pTriggerPrg && !pSubParse->nMaxArg);
 	sql_parser_destroy(pSubParse);
-	sqlStackFree(db, pSubParse);
+	sqlStackFree(pSubParse);
 
 	return pPrg;
 }

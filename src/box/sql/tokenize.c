@@ -557,7 +557,7 @@ sqlRunParser(Parse * pParse, const char *zSql)
 
 	if (pParse->pWithToFree)
 		sqlWithDelete(db, pParse->pWithToFree);
-	sqlDbFree(db, pParse->pVList);
+	sqlDbFree(pParse->pVList);
 	return pParse->is_aborted ? -1 : 0;
 }
 

@@ -234,7 +234,7 @@ sqlStartTable(Parse *pParse, Token *pName)
 		sql_set_multi_write(pParse, true);
 
  cleanup:
-	sqlDbFree(db, zName);
+	sqlDbFree(zName);
 	return new_space;
 }
 
@@ -834,7 +834,7 @@ sqlAddCollateType(Parse * pParse, Token * pToken)
 			}
 		}
 	}
-	sqlDbFree(db, coll_name);
+	sqlDbFree(coll_name);
 }
 
 struct coll *
@@ -2256,8 +2256,8 @@ exit_create_fk:
 	sql_expr_list_delete(db, child_cols);
 	if (!is_self_referenced)
 		sql_expr_list_delete(db, parent_cols);
-	sqlDbFree(db, parent_name);
-	sqlDbFree(db, constraint_name);
+	sqlDbFree(parent_name);
+	sqlDbFree(constraint_name);
 	return;
 tnt_error:
 	parse_context->is_aborted = true;
@@ -2722,7 +2722,7 @@ sql_create_index(struct Parse *parse) {
 		} else {
 			name = sqlDbStrDup(constraint_name);
 		}
-		sqlDbFree(db, constraint_name);
+		sqlDbFree(constraint_name);
 	}
 
 	if (name == NULL || sqlCheckIdentifierName(parse, name) != 0)
@@ -2940,7 +2940,7 @@ sql_create_index(struct Parse *parse) {
 		index_def_delete(index->def);
 	sql_expr_list_delete(db, col_list);
 	sqlSrcListDelete(db, tbl_name);
-	sqlDbFree(db, name);
+	sqlDbFree(name);
 }
 
 void
@@ -2957,7 +2957,7 @@ sql_drop_index(struct Parse *parse_context)
 	struct SrcList *table_list = drop_def->base.entity_name;
 	assert(table_list->nSrc == 1);
 	char *table_name = table_list->a[0].zName;
-	const char *index_name = NULL;
+	char *index_name = NULL;
 	sqlVdbeCountChanges(v);
 	struct space *space = space_by_name(table_name);
 	bool if_exists = drop_def->if_exist;
@@ -2979,7 +2979,7 @@ sql_drop_index(struct Parse *parse_context)
 	sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
  exit_drop_index:
 	sqlSrcListDelete(db, table_list);
-	sqlDbFree(db, (void *) index_name);
+	sqlDbFree(index_name);
 }
 
 /*
@@ -3049,14 +3049,15 @@ sql_id_list_append(struct sql *db, struct IdList *list,
 void
 sqlIdListDelete(sql * db, IdList * pList)
 {
+	(void)db;
 	int i;
 	if (pList == 0)
 		return;
 	for (i = 0; i < pList->nId; i++) {
-		sqlDbFree(db, pList->a[i].zName);
+		sqlDbFree(pList->a[i].zName);
 	}
-	sqlDbFree(db, pList->a);
-	sqlDbFree(db, pList);
+	sqlDbFree(pList->a);
+	sqlDbFree(pList);
 }
 
 /*
@@ -3178,10 +3179,10 @@ sqlSrcListDelete(sql * db, SrcList * pList)
 	if (pList == 0)
 		return;
 	for (pItem = pList->a, i = 0; i < pList->nSrc; i++, pItem++) {
-		sqlDbFree(db, pItem->zName);
-		sqlDbFree(db, pItem->zAlias);
+		sqlDbFree(pItem->zName);
+		sqlDbFree(pItem->zAlias);
 		if (pItem->fg.isIndexedBy)
-			sqlDbFree(db, pItem->u1.zIndexedBy);
+			sqlDbFree(pItem->u1.zIndexedBy);
 		if (pItem->fg.isTabFunc)
 			sql_expr_list_delete(db, pItem->u1.pFuncArg);
 		/*
@@ -3198,7 +3199,7 @@ sqlSrcListDelete(sql * db, SrcList * pList)
 		sql_expr_delete(db, pItem->pOn);
 		sqlIdListDelete(db, pItem->pUsing);
 	}
-	sqlDbFree(db, pList);
+	sqlDbFree(pList);
 }
 
 /*
@@ -3379,7 +3380,7 @@ sqlSavepoint(Parse * pParse, int op, Token * pName)
 	if (zName) {
 		Vdbe *v = sqlGetVdbe(pParse);
 		if (!v) {
-			sqlDbFree(db, zName);
+			sqlDbFree(zName);
 			return;
 		}
 		if (op == SAVEPOINT_BEGIN &&
@@ -3426,7 +3427,7 @@ sqlWithAdd(Parse * pParse,	/* Parsing context */
 		pParse->is_aborted = true;
 		sql_expr_list_delete(db, pArglist);
 		sql_select_delete(db, pQuery);
-		sqlDbFree(db, name);
+		sqlDbFree(name);
 		return pWith;
 	}
 	if (pWith != NULL) {
@@ -3469,9 +3470,9 @@ sqlWithDelete(sql * db, With * pWith)
 			struct Cte *pCte = &pWith->a[i];
 			sql_expr_list_delete(db, pCte->pCols);
 			sql_select_delete(db, pCte->pSelect);
-			sqlDbFree(db, pCte->zName);
+			sqlDbFree(pCte->zName);
 		}
-		sqlDbFree(db, pWith);
+		sqlDbFree(pWith);
 	}
 }
 

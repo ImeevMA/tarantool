@@ -321,7 +321,7 @@ clearSelect(sql * db, Select * p, int bFree)
 		if (p->pWith)
 			sqlWithDelete(db, p->pWith);
 		if (bFree)
-			sqlDbFree(db, p);
+			sqlDbFree(p);
 		p = pPrior;
 		bFree = 1;
 	}
@@ -1668,7 +1668,7 @@ sql_key_info_unref(struct sql_key_info *key_info)
 	if (--key_info->refs == 0) {
 		if (key_info->key_def != NULL)
 			key_def_delete(key_info->key_def);
-		sqlDbFree(sql_get(), key_info);
+		sqlDbFree(key_info);
 	}
 }
 
@@ -1695,7 +1695,7 @@ sql_expr_list_to_key_info(struct Parse *parse, struct ExprList *list, int start)
 		struct coll *unused_coll;
 		if (sql_expr_coll(parse, item->pExpr, &unused, &id,
 				  &unused_coll) != 0) {
-			sqlDbFree(parse->db, key_info);
+			sqlDbFree(key_info);
 			return NULL;
 		}
 		part->coll_id = id;
@@ -3196,7 +3196,7 @@ multiSelect(Parse * pParse,	/* Parsing context */
 			}
 		}
 		if (!is_info_used)
-			sqlDbFree(pParse->db, info);
+			sqlDbFree(info);
 	}
 
  multi_select_end:
@@ -4255,8 +4255,8 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 	/* Delete the transient table structure associated with the
 	 * subquery
 	 */
-	sqlDbFree(db, pSubitem->zName);
-	sqlDbFree(db, pSubitem->zAlias);
+	sqlDbFree(pSubitem->zName);
+	sqlDbFree(pSubitem->zAlias);
 	pSubitem->zName = 0;
 	pSubitem->zAlias = 0;
 	pSubitem->pSelect = 0;
@@ -5253,7 +5253,7 @@ selectExpander(Walker * pWalker, Select * p)
 							}
 							pX->bSpanIsTab = 1;
 						}
-						sqlDbFree(db, zToFree);
+						sqlDbFree(zToFree);
 					}
 				}
 				if (!tableSeen) {
@@ -6654,8 +6654,8 @@ sqlSelect(Parse * pParse,		/* The parser context */
 		generate_column_metadata(pParse, pTabList, pEList);
 	}
 
-	sqlDbFree(db, sAggInfo.aCol);
-	sqlDbFree(db, sAggInfo.aFunc);
+	sqlDbFree(sAggInfo.aCol);
+	sqlDbFree(sAggInfo.aFunc);
 #ifdef SQL_DEBUG
 	SELECTTRACE(1, pParse, p, ("end processing\n"));
 	pParse->nSelectIndent--;
@@ -6678,5 +6678,5 @@ sql_context_new(struct func *func, struct coll *coll)
 void
 sql_context_delete(struct sql_context *ctx)
 {
-	sqlDbFree(sql_get(), ctx);
+	sqlDbFree(ctx);
 }

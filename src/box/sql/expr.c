@@ -1386,9 +1386,9 @@ sqlExprDeleteNN(sql *db, Expr *p)
 		}
 	}
 	if (ExprHasProperty(p, EP_MemToken))
-		sqlDbFree(db, p->u.zToken);
+		sqlDbFree(p->u.zToken);
 	if (!ExprHasProperty(p, EP_Static)) {
-		sqlDbFree(db, p);
+		sqlDbFree(p);
 	}
 }
 
@@ -1973,7 +1973,7 @@ sqlExprListSetSpan(Parse * pParse,	/* Parsing context */
 	struct ExprList_item *pItem = &pList->a[pList->nExpr - 1];
 	assert(pList->nExpr > 0);
 	assert(pItem->pExpr == pSpan->pExpr);
-	sqlDbFree(db, pItem->zSpan);
+	sqlDbFree(pItem->zSpan);
 	pItem->zSpan = sqlDbStrNDup(db, pSpan->zStart,
 				    pSpan->zEnd - pSpan->zStart);
 }
@@ -1989,11 +1989,11 @@ exprListDeleteNN(sql * db, ExprList * pList)
 	assert(pList->a != 0 || pList->nExpr == 0);
 	for (pItem = pList->a, i = 0; i < pList->nExpr; i++, pItem++) {
 		sql_expr_delete(db, pItem->pExpr);
-		sqlDbFree(db, pItem->zName);
-		sqlDbFree(db, pItem->zSpan);
+		sqlDbFree(pItem->zName);
+		sqlDbFree(pItem->zSpan);
 	}
-	sqlDbFree(db, pList->a);
-	sqlDbFree(db, pList);
+	sqlDbFree(pList->a);
+	sqlDbFree(pList);
 }
 
 void
@@ -2789,12 +2789,10 @@ sqlCodeSubselect(Parse * pParse,	/* Parsing context */
 					pSelect->iLimit = 0;
 					if (sqlSelect
 					    (pParse, pSelect, &dest)) {
-						sqlDbFree(pParse->db,
-							      dest.dest_type);
+						sqlDbFree(dest.dest_type);
 						return 0;
 					}
-					sqlDbFree(pParse->db,
-						      dest.dest_type);
+					sqlDbFree(dest.dest_type);
 					assert(pEList != 0);
 					assert(pEList->nExpr > 0);
 					for (i = 0; i < nVal; i++) {
@@ -3211,8 +3209,8 @@ sqlExprCodeIN(Parse * pParse,	/* Parsing and code generating context */
 		sqlReleaseTempReg(pParse, rLhs);
 	sqlExprCachePop(pParse);
 	VdbeComment((v, "end IN expr"));
-	sqlDbFree(pParse->db, aiMap);
-	sqlDbFree(pParse->db, zAff);
+	sqlDbFree(aiMap);
+	sqlDbFree(zAff);
 }
 
 /*
@@ -3255,7 +3253,7 @@ expr_code_dec(struct Parse *parser, struct Expr *expr, bool is_neg, int reg)
 		      P4_DEC);
 	return;
 error:
-	sqlDbFree(sql_get(), value);
+	sqlDbFree(value);
 	parser->is_aborted = true;
 }
 

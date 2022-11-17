@@ -483,7 +483,7 @@ resolveP2Values(Vdbe * p)
 			break;
 		pOp--;
 	}
-	sqlDbFree(p->db, pParse->aLabel);
+	sqlDbFree(pParse->aLabel);
 	pParse->aLabel = 0;
 	pParse->nLabel = 0;
 }
@@ -582,7 +582,7 @@ freeP4(sql * db, int p4type, void *p4)
 	case P4_UINT64:
 	case P4_DYNAMIC:
 	case P4_INTARRAY:{
-			sqlDbFree(db, p4);
+			sqlDbFree(p4);
 			break;
 		}
 	case P4_KEYINFO:
@@ -610,11 +610,11 @@ vdbeFreeOpArray(sql * db, Op * aOp, int nOp)
 			if (pOp->p4type)
 				freeP4(db, pOp->p4type, pOp->p4.p);
 #ifdef SQL_ENABLE_EXPLAIN_COMMENTS
-			sqlDbFree(db, pOp->zComment);
+			sqlDbFree(pOp->zComment);
 #endif
 		}
 	}
-	sqlDbFree(db, aOp);
+	sqlDbFree(aOp);
 }
 
 /*
@@ -760,7 +760,7 @@ vdbeVComment(Vdbe * p, const char *zFormat, va_list ap)
 	assert(p->nOp > 0 || p->aOp == 0);
 	if (p->nOp) {
 		assert(p->aOp);
-		sqlDbFree(p->db, p->aOp[p->nOp - 1].zComment);
+		sqlDbFree(p->aOp[p->nOp - 1].zComment);
 		p->aOp[p->nOp - 1].zComment =
 		    sqlVMPrintf(p->db, zFormat, ap);
 	}
@@ -1112,7 +1112,7 @@ sqlVdbeFrameDelete(VdbeFrame * p)
 		sqlVdbeFreeCursor(p->v, apCsr[i]);
 	}
 	releaseMemArray(aMem, p->nChildMem);
-	sqlDbFree(p->v->db, p);
+	sqlDbFree(p);
 }
 
 /*
@@ -1250,7 +1250,7 @@ sqlVdbeList(Vdbe * p)
 		char *buf = sqlDbMallocRawNN(256);
 		zP4 = displayP4(pOp, buf, sqlDbMallocSize(sql_get(), buf));
 		if (zP4 != buf) {
-			sqlDbFree(sql_get(), buf);
+			sqlDbFree(buf);
 			mem_set_str0_ephemeral(pMem, zP4);
 		} else {
 			mem_set_str0_allocated(pMem, zP4);
@@ -2032,15 +2032,15 @@ sqlVdbeClearObject(sql * db, Vdbe * p)
 	for (pSub = p->pProgram; pSub; pSub = pNext) {
 		pNext = pSub->pNext;
 		vdbeFreeOpArray(db, pSub->aOp, pSub->nOp);
-		sqlDbFree(db, pSub);
+		sqlDbFree(pSub);
 	}
 	if (p->magic != VDBE_MAGIC_INIT) {
 		releaseMemArray(p->aVar, p->nVar);
-		sqlDbFree(db, p->pVList);
-		sqlDbFree(db, p->pFree);
+		sqlDbFree(p->pVList);
+		sqlDbFree(p->pFree);
 	}
 	vdbeFreeOpArray(db, p->aOp, p->nOp);
-	sqlDbFree(db, p->zSql);
+	sqlDbFree(p->zSql);
 }
 
 /*
@@ -2073,7 +2073,7 @@ sqlVdbeDelete(Vdbe * p)
 	 */
 	if (in_txn() == NULL)
 		fiber_gc();
-	sqlDbFree(db, p);
+	sqlDbFree(p);
 }
 
 /*

@@ -394,7 +394,7 @@ sqlPragma(struct Parse *pParse, struct Token *pragma, struct Token *table,
 	}
 
  pragma_out:
-	sqlDbFree(db, pragma_name);
-	sqlDbFree(db, table_name);
-	sqlDbFree(db, index_name);
+	sqlDbFree(pragma_name);
+	sqlDbFree(table_name);
+	sqlDbFree(index_name);
 }

@@ -202,7 +202,7 @@ engine_opts ::= ENGINE EQ STRING(A). {
     return;
   memcpy(pParse->create_table_def.new_space->def->engine_name, normalized_name,
          strlen(normalized_name) + 1);
-  sqlDbFree(pParse->db, normalized_name);
+  sqlDbFree(normalized_name);
 }
 
 create_table_end ::= . { sqlEndTable(pParse); }

@@ -286,7 +286,7 @@ mem_destroy(struct Mem *mem)
 {
 	mem_clear(mem);
 	if (mem->szMalloc > 0) {
-		sqlDbFree(mem->db, mem->zMalloc);
+		sqlDbFree(mem->zMalloc);
 		mem->szMalloc = 0;
 		mem->zMalloc = NULL;
 	}
@@ -2925,7 +2925,7 @@ sqlVdbeMemGrow(struct Mem *pMem, int n, int bPreserve)
 			bPreserve = 0;
 		} else {
 			if (pMem->szMalloc > 0)
-				sqlDbFree(pMem->db, pMem->zMalloc);
+				sqlDbFree(pMem->zMalloc);
 			pMem->zMalloc = sqlDbMallocRawNN(n);
 		}
 		pMem->szMalloc = sqlDbMallocSize(pMem->db, pMem->zMalloc);
@@ -2971,7 +2971,7 @@ sqlValueFree(sql_value * v)
 	if (!v)
 		return;
 	mem_destroy(v);
-	sqlDbFree(((Mem *) v)->db, v);
+	sqlDbFree(v);
 }
 
 /*

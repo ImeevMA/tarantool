@@ -2403,7 +2403,10 @@ sqlRealloc(void *old, size_t n);
 void *
 sqlDbRealloc(void *buf, size_t n);
 
-void sqlDbFree(sql *, void *);
+/** Free memory. */
+void
+sqlDbFree(void *buf);
+
 int sqlMallocSize(void *);
 int sqlDbMallocSize(sql *, void *);
 
@@ -2418,11 +2421,11 @@ int sqlDbMallocSize(sql *, void *);
 #ifdef SQL_USE_ALLOCA
 #define sqlStackAllocRaw(N)   alloca(N)
 #define sqlStackAllocZero(D,N)  memset(alloca(N), 0, N)
-#define sqlStackFree(D,P)
+#define sqlStackFree(P)
 #else
 #define sqlStackAllocRaw(N)   sqlDbMallocRawNN(N)
 #define sqlStackAllocZero(D,N)  sqlDbMallocZero(D,N)
-#define sqlStackFree(D,P)       sqlDbFree(D,P)
+#define sqlStackFree(P)       sqlDbFree(P)
 #endif
 
 int sqlIsNaN(double);

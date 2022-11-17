@@ -69,7 +69,7 @@ exit_rename_table:
 	sqlSrcListDelete(db, src_tab);
 	return;
 tnt_error:
-	sqlDbFree(db, new_name);
+	sqlDbFree(new_name);
 	parse->is_aborted = true;
 	goto exit_rename_table;
 }
@@ -134,7 +134,7 @@ sql_alter_ck_constraint_enable(struct Parse *parse)
 	sqlVdbeAddOp2(v, OP_OpenSpace, reg, BOX_CK_CONSTRAINT_ID);
 	sqlVdbeAddOp2(v, OP_IdxReplace, tuple_reg + field_count, reg);
 exit_alter_ck_constraint:
-	sqlDbFree(db, constraint_name);
+	sqlDbFree(constraint_name);
 	sqlSrcListDelete(db, src_tab);
 }
 
