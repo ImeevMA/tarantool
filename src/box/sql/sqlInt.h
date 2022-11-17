@@ -2812,15 +2812,12 @@ sqlArrayAllocate(void *pArray, int szEntry, int *pnEntry, int *pIdx);
  * Append a new element to the given IdList. Create a new IdList
  * if need be.
  *
- * @param db The database connection.
  * @param list The pointer to existent Id list if exists.
  * @param name_token The token containing name.
  * @retval Not NULL A new list or updated @a list.
- * @retval NULL Error. Diag message is set.
  */
 struct IdList *
-sql_id_list_append(struct sql *db, struct IdList *list,
-		   struct Token *name_token);
+sql_id_list_append(struct IdList *list, struct Token *name_token);
 
 int sqlIdListIndex(IdList *, const char *);
 

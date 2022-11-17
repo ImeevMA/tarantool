@@ -2949,20 +2949,16 @@ sqlArrayAllocate(void *pArray, int szEntry, int *pnEntry, int *pIdx)
 }
 
 struct IdList *
-sql_id_list_append(struct sql *db, struct IdList *list,
-		   struct Token *name_token)
+sql_id_list_append(struct IdList *list, struct Token *name_token)
 {
-	(void)db;
 	if (list == NULL)
 		list = sqlDbMallocZero(sizeof(*list));
 	int i;
+	assert(list->nId >= 0);
 	list->a = sqlArrayAllocate(list->a, sizeof(list->a[0]), &list->nId, &i);
-	if (i >= 0) {
-		list->a[i].zName = sql_name_from_token(name_token);
-		return list;
-	}
-	sqlIdListDelete(list);
-	return NULL;
+	assert(i >= 0);
+	list->a[i].zName = sql_name_from_token(name_token);
+	return list;
 }
 
 void
