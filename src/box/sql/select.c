@@ -374,9 +374,7 @@ sqlSelectNew(Parse * pParse,	/* Parsing context */
 	Select standin;
 	sql *db = pParse->db;
 	if (pEList == 0) {
-		struct Expr *expr = sql_expr_new_anon(db, TK_ASTERISK);
-		if (expr == NULL)
-			pParse->is_aborted = true;
+		struct Expr *expr = sql_expr_new_anon(TK_ASTERISK);
 		pEList = sql_expr_list_append(db, NULL, expr);
 	}
 	standin.pEList = pEList;
@@ -3513,11 +3511,7 @@ multiSelectOrderBy(Parse * pParse,	/* Parsing context */
 			}
 			if (j == nOrderBy) {
 				struct Expr *pNew =
-					sql_expr_new_anon(db, TK_INTEGER);
-				if (pNew == NULL) {
-					pParse->is_aborted = true;
-					return 1;
-				}
+					sql_expr_new_anon(TK_INTEGER);
 				pNew->flags |= EP_IntValue;
 				pNew->u.iValue = i;
 				pNew->type = FIELD_TYPE_INTEGER;
@@ -4636,7 +4630,6 @@ convertCompoundSelectToSubquery(Walker * pWalker, Select * p)
 	int i;
 	Select *pNew;
 	Select *pX;
-	sql *db;
 	struct ExprList_item *a;
 	SrcList *pNewSrc;
 	Parse *pParse;
@@ -4662,7 +4655,6 @@ convertCompoundSelectToSubquery(Walker * pWalker, Select * p)
 	/* If we reach this point, that means the transformation is required. */
 
 	pParse = pWalker->pParse;
-	db = pParse->db;
 	pNew = sqlDbMallocZero(sizeof(*pNew));
 	memset(&dummy, 0, sizeof(dummy));
 	pNewSrc =
@@ -4671,9 +4663,7 @@ convertCompoundSelectToSubquery(Walker * pWalker, Select * p)
 		return WRC_Abort;
 	*pNew = *p;
 	p->pSrc = pNewSrc;
-	struct Expr *expr = sql_expr_new_anon(db, TK_ASTERISK);
-	if (expr == NULL)
-		pParse->is_aborted = true;
+	struct Expr *expr = sql_expr_new_anon(TK_ASTERISK);
 	p->pEList = sql_expr_list_append(pParse->db, NULL, expr);
 	p->op = TK_SELECT;
 	p->pWhere = 0;

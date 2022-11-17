@@ -1241,9 +1241,7 @@ exprAnalyze(SrcList * pSrc,	/* the FROM clause */
 		Expr *pLeft = pExpr->pLeft;
 		int idxNew;
 		WhereTerm *pNewTerm;
-		struct Expr *expr = sql_expr_new_anon(db, TK_NULL);
-		if (expr == NULL)
-			pParse->is_aborted = true;
+		struct Expr *expr = sql_expr_new_anon(TK_NULL);
 		pNewExpr = sqlPExpr(pParse, TK_GT, sqlExprDup(db, pLeft, 0),
 				    expr);
 
@@ -1437,11 +1435,7 @@ sqlWhereTabFuncArgs(Parse * pParse,	/* Parsing context */
 		 * unused.
 		 */
 		assert(k < (int)space_def->field_count);
-		pColRef = sql_expr_new_anon(pParse->db, TK_COLUMN_REF);
-		if (pColRef == NULL) {
-			pParse->is_aborted = true;
-			return;
-		}
+		pColRef = sql_expr_new_anon(TK_COLUMN_REF);
 		pColRef->iTable = pItem->iCursor;
 		pColRef->iColumn = k++;
 		pColRef->space_def = space_def;

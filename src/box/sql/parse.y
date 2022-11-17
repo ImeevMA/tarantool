@@ -612,12 +612,7 @@ selcollist(A) ::= sclp(A) expr(X) as(Y).     {
    sqlExprListSetSpan(pParse,A,&X);
 }
 selcollist(A) ::= sclp(A) STAR. {
-  struct Expr *p = sql_expr_new_anon(pParse->db, TK_ASTERISK);
-  if (p == NULL) {
-    pParse->is_aborted = true;
-    return;
-  }
-  A = sql_expr_list_append(pParse->db, A, p);
+  A = sql_expr_list_append(pParse->db, A, sql_expr_new_anon(TK_ASTERISK));
 }
 selcollist(A) ::= sclp(A) nm(X) DOT STAR. {
   struct Expr *pLeft = sql_expr_new_dequoted(TK_ID, &X);
@@ -1065,12 +1060,7 @@ expr(A) ::= CAST(X) LP expr(E) AS typedef(T) RP(Y). {
 }
 
 expr(A) ::= expr(X) LB getlist(Y) RB(E). {
-  struct Expr *expr = sql_expr_new_anon(pParse->db, TK_GETITEM);
-  if (expr == NULL) {
-    sql_expr_list_delete(pParse->db, Y);
-    pParse->is_aborted = true;
-    return;
-  }
+  struct Expr *expr = sql_expr_new_anon(TK_GETITEM);
   Y = sql_expr_list_append(pParse->db, Y, X.pExpr);
   expr->x.pList = Y;
   expr->type = FIELD_TYPE_ANY;
@@ -1091,12 +1081,7 @@ getlist(A) ::= expr(X). {
 %destructor getlist {sql_expr_list_delete(pParse->db, $$);}
 
 expr(A) ::= LB(X) exprlist(Y) RB(E). {
-  struct Expr *expr = sql_expr_new_anon(pParse->db, TK_ARRAY);
-  if (expr == NULL) {
-    sql_expr_list_delete(pParse->db, Y);
-    pParse->is_aborted = true;
-    return;
-  }
+  struct Expr *expr = sql_expr_new_anon(TK_ARRAY);
   expr->x.pList = Y;
   expr->type = FIELD_TYPE_ARRAY;
   sqlExprSetHeightAndFlags(pParse, expr);
@@ -1105,13 +1090,7 @@ expr(A) ::= LB(X) exprlist(Y) RB(E). {
 }
 
 expr(A) ::= LCB(X) maplist(Y) RCB(E). {
-  struct sql *db = pParse->db;
-  struct Expr *expr = sql_expr_new_anon(db, TK_MAP);
-  if (expr == NULL) {
-    sql_expr_list_delete(db, Y);
-    pParse->is_aborted = true;
-    return;
-  }
+  struct Expr *expr = sql_expr_new_anon(TK_MAP);
   expr->x.pList = Y;
   expr->type = FIELD_TYPE_MAP;
   sqlExprSetHeightAndFlags(pParse, expr);
@@ -1381,11 +1360,7 @@ expr(A) ::= expr(A) in_op(N) LP exprlist(Y) RP(E). [IN] {
     */
     sql_expr_delete(pParse->db, A.pExpr);
     int tk = N == 0 ? TK_FALSE : TK_TRUE;
-    A.pExpr = sql_expr_new_anon(pParse->db, tk);
-    if (A.pExpr == NULL) {
-      pParse->is_aborted = true;
-      return;
-    }
+    A.pExpr = sql_expr_new_anon(tk);
     A.pExpr->type = FIELD_TYPE_BOOLEAN;
   }else if( Y->nExpr==1 ){
     /* Expressions of the form:

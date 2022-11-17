@@ -484,9 +484,8 @@ struct Expr *
 sql_expr_new_column(struct sql *db, struct SrcList *src_list, int src_idx,
 		    int column)
 {
-	struct Expr *expr = sql_expr_new_anon(db, TK_COLUMN_REF);
-	if (expr == NULL)
-		return NULL;
+	(void)db;
+	struct Expr *expr = sql_expr_new_anon(TK_COLUMN_REF);
 	struct SrcList_item *item = &src_list->a[src_idx];
 	expr->space_def = item->space->def;
 	expr->iTable = item->iCursor;
@@ -924,11 +923,7 @@ resolveCompoundOrderBy(Parse * pParse,	/* Parsing context.  Leave error messages
 				 * taking care to preserve the COLLATE clause if it exists
 				 */
 				struct Expr *pNew =
-					sql_expr_new_anon(db, TK_INTEGER);
-				if (pNew == NULL) {
-					pParse->is_aborted = true;
-					return 1;
-				}
+					sql_expr_new_anon(TK_INTEGER);
 				pNew->flags |= EP_IntValue;
 				pNew->u.iValue = iCol;
 				pNew->type = FIELD_TYPE_INTEGER;

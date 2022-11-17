@@ -1171,12 +1171,11 @@ sql_and_expr_new(struct sql *db, struct Expr *left_expr,
 	} else if (exprAlwaysFalse(left_expr) || exprAlwaysFalse(right_expr)) {
 		sql_expr_delete(db, left_expr);
 		sql_expr_delete(db, right_expr);
-		struct Expr *f = sql_expr_new_anon(db, TK_FALSE);
-		if (f != NULL)
-			f->type = FIELD_TYPE_BOOLEAN;
+		struct Expr *f = sql_expr_new_anon(TK_FALSE);
+		f->type = FIELD_TYPE_BOOLEAN;
 		return f;
 	} else {
-		struct Expr *new_expr = sql_expr_new_anon(db, TK_AND);
+		struct Expr *new_expr = sql_expr_new_anon(TK_AND);
 		sqlExprAttachSubtrees(new_expr, left_expr, right_expr);
 		return new_expr;
 	}

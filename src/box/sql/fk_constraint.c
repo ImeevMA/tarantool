@@ -312,9 +312,8 @@ static struct Expr *
 sql_expr_new_register(struct sql *db, struct space_def *def, int reg_base,
 		      uint32_t column)
 {
-	struct Expr *expr = sql_expr_new_anon(db, TK_REGISTER);
-	if (expr == NULL)
-		return NULL;
+	(void)db;
+	struct Expr *expr = sql_expr_new_anon(TK_REGISTER);
 	expr->iTable = reg_base + column + 1;
 	expr->type = def->fields[column].type;
 	return expr;
@@ -334,9 +333,8 @@ static struct Expr *
 sql_expr_new_column_by_cursor(struct sql *db, struct space_def *def,
 			      int cursor, int column)
 {
-	struct Expr *expr = sql_expr_new_anon(db, TK_COLUMN_REF);
-	if (expr == NULL)
-		return NULL;
+	(void)db;
+	struct Expr *expr = sql_expr_new_anon(TK_COLUMN_REF);
 	expr->space_def = def;
 	expr->iTable = cursor;
 	expr->iColumn = column;
@@ -816,9 +814,7 @@ fk_constraint_action_trigger(struct Parse *pParse, struct space_def *def,
 				   d != NULL) {
 				new = sqlExprDup(db, d, 0);
 			} else {
-				new = sql_expr_new_anon(db, TK_NULL);
-				if (new == NULL)
-					pParse->is_aborted = true;
+				new = sql_expr_new_anon(TK_NULL);
 			}
 			list = sql_expr_list_append(db, list, new);
 			sqlExprListSetName(pParse, list, &t_from_col, 0);

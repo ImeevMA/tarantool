@@ -2563,9 +2563,8 @@ sql_expr_new_named(int op, const char *name)
  * name.
  */
 static inline struct Expr *
-sql_expr_new_anon(struct sql *db, int op)
+sql_expr_new_anon(int op)
 {
-	(void)db;
 	return sql_expr_new_named(op, NULL);
 }
 
