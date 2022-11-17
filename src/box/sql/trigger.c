@@ -240,16 +240,13 @@ sql_trigger_select_step(struct Select *select)
  * holds both the TriggerStep object and the TriggerStep.target.z
  * string.
  *
- * @param db The database connection.
  * @param op Trigger opcode.
  * @param target_name The target name token.
  * @retval Not NULL TriggerStep object on success.
- * @retval NULL Otherwise. The diag message is set.
  */
 static struct TriggerStep *
-sql_trigger_step_new(struct sql *db, u8 op, struct Token *target_name)
+sql_trigger_step_new(u8 op, struct Token *target_name)
 {
-	(void)db;
 	int name_size = target_name->n + 1;
 	int size = sizeof(struct TriggerStep) + name_size;
 	struct TriggerStep *trigger_step = sqlDbMallocZero(size);
@@ -277,15 +274,11 @@ sql_trigger_insert_step(struct sql *db, struct Token *table_name,
 {
 	assert(select != NULL);
 	struct TriggerStep *trigger_step =
-		sql_trigger_step_new(db, TK_INSERT, table_name);
-	if (trigger_step != NULL) {
-		trigger_step->pSelect =
-			sqlSelectDup(db, select, EXPRDUP_REDUCE);
-		trigger_step->pIdList = column_list;
-		trigger_step->orconf = orconf;
-	} else {
-		sqlIdListDelete(column_list);
-	}
+		sql_trigger_step_new(TK_INSERT, table_name);
+	trigger_step->pSelect =
+		sqlSelectDup(db, select, EXPRDUP_REDUCE);
+	trigger_step->pIdList = column_list;
+	trigger_step->orconf = orconf;
 	sql_select_delete(db, select);
 	return trigger_step;
 }
@@ -296,13 +289,11 @@ sql_trigger_update_step(struct sql *db, struct Token *table_name,
 			enum on_conflict_action orconf)
 {
 	struct TriggerStep *trigger_step =
-		sql_trigger_step_new(db, TK_UPDATE, table_name);
-	if (trigger_step != NULL) {
-		trigger_step->pExprList =
-		    sql_expr_list_dup(db, new_list, EXPRDUP_REDUCE);
-		trigger_step->pWhere = sqlExprDup(db, where, EXPRDUP_REDUCE);
-		trigger_step->orconf = orconf;
-	}
+		sql_trigger_step_new(TK_UPDATE, table_name);
+	trigger_step->pExprList =
+	    sql_expr_list_dup(db, new_list, EXPRDUP_REDUCE);
+	trigger_step->pWhere = sqlExprDup(db, where, EXPRDUP_REDUCE);
+	trigger_step->orconf = orconf;
 	sql_expr_list_delete(db, new_list);
 	sql_expr_delete(db, where);
 	return trigger_step;
@@ -313,11 +304,9 @@ sql_trigger_delete_step(struct sql *db, struct Token *table_name,
 			struct Expr *where)
 {
 	struct TriggerStep *trigger_step =
-		sql_trigger_step_new(db, TK_DELETE, table_name);
-	if (trigger_step != NULL) {
-		trigger_step->pWhere = sqlExprDup(db, where, EXPRDUP_REDUCE);
-		trigger_step->orconf = ON_CONFLICT_ACTION_DEFAULT;
-	}
+		sql_trigger_step_new(TK_DELETE, table_name);
+	trigger_step->pWhere = sqlExprDup(db, where, EXPRDUP_REDUCE);
+	trigger_step->orconf = ON_CONFLICT_ACTION_DEFAULT;
 	sql_expr_delete(db, where);
 	return trigger_step;
 }
