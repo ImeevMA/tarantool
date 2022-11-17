@@ -952,13 +952,9 @@ sqlVdbeSorterReset(struct VdbeSorter * pSorter)
 	pSorter->pUnpacked = 0;
 }
 
-/*
- * Free any cursor components allocated by sqlVdbeSorterXXX routines.
- */
 void
-sqlVdbeSorterClose(sql * db, VdbeCursor * pCsr)
+sqlVdbeSorterClose(struct VdbeCursor *pCsr)
 {
-	(void)db;
 	VdbeSorter *pSorter;
 	assert(pCsr->eCurType == CURTYPE_SORTER);
 	pSorter = pCsr->uc.pSorter;

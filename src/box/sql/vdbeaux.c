@@ -1492,12 +1492,13 @@ sqlVdbeMakeReady(Vdbe * p,	/* The VDBE */
 void
 sqlVdbeFreeCursor(Vdbe * p, VdbeCursor * pCx)
 {
+	(void)p;
 	if (pCx == 0) {
 		return;
 	}
 	switch (pCx->eCurType) {
 	case CURTYPE_SORTER:{
-			sqlVdbeSorterClose(p->db, pCx);
+			sqlVdbeSorterClose(pCx);
 			break;
 		}
 	case CURTYPE_TARANTOOL:{

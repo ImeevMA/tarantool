@@ -336,9 +336,12 @@ int sqlVdbeSorterInit(struct sql *db, struct VdbeCursor *cursor);
 
 /** Reset a sorting cursor back to its original empty state. */
 void
-sqlVdbeSorterReset(struct VdbeSorter * pSorter);
+sqlVdbeSorterReset(struct VdbeSorter *pSorter);
 
-void sqlVdbeSorterClose(sql *, VdbeCursor *);
+/** Free any cursor components allocated by sqlVdbeSorterXXX routines. */
+void
+sqlVdbeSorterClose(struct VdbeCursor *pCsr);
+
 int sqlVdbeSorterRowkey(const VdbeCursor *, Mem *);
 int sqlVdbeSorterNext(sql *, const VdbeCursor *, int *);
 int sqlVdbeSorterRewind(const VdbeCursor *, int *);
