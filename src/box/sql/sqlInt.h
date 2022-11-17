@@ -2781,7 +2781,31 @@ void
 sql_drop_table(struct Parse *);
 void sqlInsert(Parse *, SrcList *, Select *, IdList *,
 	       enum on_conflict_action);
-void *sqlArrayAllocate(sql *, void *, int, int *, int *);
+
+/**
+ * pArray is a pointer to an array of objects. Each object in the
+ * array is szEntry bytes in size. This routine uses sqlDbRealloc()
+ * to extend the array so that there is space for a new object at the end.
+ *
+ * When this function is called, *pnEntry contains the current size of
+ * the array (in entries - so the allocation is ((*pnEntry) * szEntry) bytes
+ * in total).
+ *
+ * If the realloc() is successful (i.e. if no OOM condition occurs), the
+ * space allocated for the new object is zeroed, *pnEntry updated to
+ * reflect the new size of the array and a pointer to the new allocation
+ * returned. *pIdx is set to the index of the new array entry in this case.
+ *
+ * Otherwise, if the realloc() fails, *pIdx is set to -1, *pnEntry remains
+ * unchanged and a copy of pArray returned.
+ *
+ * @param pArray Array of objects. Might be reallocated.
+ * @param szEntry Size of each object in the array.
+ * @param pnEntry Number of objects currently in use.
+ * @param pIdx Write the index of a new slot here.
+ */
+void *
+sqlArrayAllocate(void *pArray, int szEntry, int *pnEntry, int *pIdx);
 
 /**
  * Append a new element to the given IdList. Create a new IdList

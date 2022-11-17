@@ -5198,13 +5198,11 @@ sqlFunctionUsesThisSrc(Expr * pExpr, SrcList * pSrcList)
  * the new element.  Return a negative number if malloc fails.
  */
 static int
-addAggInfoColumn(sql * db, AggInfo * pInfo)
+addAggInfoColumn(AggInfo * pInfo)
 {
 	int i;
-	pInfo->aCol = sqlArrayAllocate(db,
-					   pInfo->aCol,
-					   sizeof(pInfo->aCol[0]),
-					   &pInfo->nColumn, &i);
+	pInfo->aCol = sqlArrayAllocate(pInfo->aCol, sizeof(pInfo->aCol[0]),
+				       &pInfo->nColumn, &i);
 	return i;
 }
 
@@ -5213,13 +5211,11 @@ addAggInfoColumn(sql * db, AggInfo * pInfo)
  * the new element.  Return a negative number if malloc fails.
  */
 static int
-addAggInfoFunc(sql * db, AggInfo * pInfo)
+addAggInfoFunc(AggInfo * pInfo)
 {
 	int i;
-	pInfo->aFunc = sqlArrayAllocate(db,
-					    pInfo->aFunc,
-					    sizeof(pInfo->aFunc[0]),
-					    &pInfo->nFunc, &i);
+	pInfo->aFunc = sqlArrayAllocate(pInfo->aFunc, sizeof(pInfo->aFunc[0]),
+					&pInfo->nFunc, &i);
 	return i;
 }
 
@@ -5272,8 +5268,7 @@ analyzeAggregate(Walker * pWalker, Expr * pExpr)
 						if ((k >= pAggInfo->nColumn)
 						    && (k =
 							addAggInfoColumn
-							(pParse->db,
-							 pAggInfo)) >= 0) {
+							(pAggInfo)) >= 0) {
 							pCol =
 							    &pAggInfo->aCol[k];
 							pCol->space_def =
@@ -5371,8 +5366,7 @@ analyzeAggregate(Walker * pWalker, Expr * pExpr)
 				if (i >= pAggInfo->nFunc) {
 					/* pExpr is original.  Make a new entry in pAggInfo->aFunc[]
 					 */
-					i = addAggInfoFunc(pParse->db,
-							   pAggInfo);
+					i = addAggInfoFunc(pAggInfo);
 					if (i >= 0) {
 						assert(!ExprHasProperty
 						       (pExpr, EP_xIsSelect));

@@ -2982,32 +2982,9 @@ sql_drop_index(struct Parse *parse_context)
 	sqlDbFree(index_name);
 }
 
-/*
- * pArray is a pointer to an array of objects. Each object in the
- * array is szEntry bytes in size. This routine uses sqlDbRealloc()
- * to extend the array so that there is space for a new object at the end.
- *
- * When this function is called, *pnEntry contains the current size of
- * the array (in entries - so the allocation is ((*pnEntry) * szEntry) bytes
- * in total).
- *
- * If the realloc() is successful (i.e. if no OOM condition occurs), the
- * space allocated for the new object is zeroed, *pnEntry updated to
- * reflect the new size of the array and a pointer to the new allocation
- * returned. *pIdx is set to the index of the new array entry in this case.
- *
- * Otherwise, if the realloc() fails, *pIdx is set to -1, *pnEntry remains
- * unchanged and a copy of pArray returned.
- */
 void *
-sqlArrayAllocate(sql * db,	/* Connection to notify of malloc failures */
-		     void *pArray,	/* Array of objects.  Might be reallocated */
-		     int szEntry,	/* Size of each object in the array */
-		     int *pnEntry,	/* Number of objects currently in use */
-		     int *pIdx	/* Write the index of a new slot here */
-    )
+sqlArrayAllocate(void *pArray, int szEntry, int *pnEntry, int *pIdx)
 {
-	(void)db;
 	char *z;
 	int n = *pnEntry;
 	if ((n & (n - 1)) == 0) {
@@ -3029,8 +3006,7 @@ sql_id_list_append(struct sql *db, struct IdList *list,
 	if (list == NULL)
 		list = sqlDbMallocZero(sizeof(*list));
 	int i;
-	list->a = sqlArrayAllocate(db, list->a, sizeof(list->a[0]),
-				   &list->nId, &i);
+	list->a = sqlArrayAllocate(list->a, sizeof(list->a[0]), &list->nId, &i);
 	if (i >= 0) {
 		list->a[i].zName = sql_name_from_token(db, name_token);
 		if (list->a[i].zName != NULL)
