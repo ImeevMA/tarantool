@@ -3876,31 +3876,7 @@ sql_index_tuple_size(struct space *space, struct index *idx);
 int
 sql_analysis_load(struct sql *db);
 
-/**
- * An instance of the following structure controls how keys
- * are compared by VDBE, see P4_KEYINFO.
- */
-struct sql_key_info {
-	sql *db;
-	/**
-	 * Key definition created from this object,
-	 * see sql_key_info_to_key_def().
-	 */
-	struct key_def *key_def;
-	/** Reference counter. */
-	uint32_t refs;
-	/** Number of parts in the key. */
-	uint32_t part_count;
-	/** Definition of the key parts. */
-	struct key_part_def parts[];
-};
-
-/**
- * Allocate a key_info object sufficient for an index with
- * the given number of key columns.
- */
-struct sql_key_info *
-sql_key_info_new(sql *db, uint32_t part_count);
+struct sql_key_info;
 
 /**
  * Increment the reference counter of a key_info object.

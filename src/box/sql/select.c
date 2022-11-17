@@ -78,6 +78,24 @@ struct DistinctCtx {
 	int addrTnct;		/* Address of OP_OpenEphemeral opcode for cur_eph */
 };
 
+/**
+ * An instance of the following structure controls how keys  are compared by
+ * VDBE, see P4_KEYINFO.
+ */
+struct sql_key_info {
+	/**
+	 * Key definition created from this object,
+	 * see sql_key_info_to_key_def().
+	 */
+	struct key_def *key_def;
+	/** Reference counter. */
+	uint32_t refs;
+	/** Number of parts in the key. */
+	uint32_t part_count;
+	/** Definition of the key parts. */
+	struct key_part_def parts[];
+};
+
 /*
  * An instance of the following object is used to record information about
  * the ORDER BY (or GROUP BY) clause of query is being coded.
@@ -249,7 +267,6 @@ sql_key_info_new_from_space_info(const struct sql_space_info *info)
 	uint32_t size = sizeof(struct sql_key_info) +
 			part_count * sizeof(struct key_part_def);
 	struct sql_key_info *key_info = sqlDbMallocRawNN(size);
-	key_info->db = sql_get();
 	key_info->key_def = NULL;
 	key_info->refs = 1;
 	key_info->part_count = part_count;
@@ -1612,12 +1629,15 @@ sql_key_info_sizeof(uint32_t part_count)
 		part_count * sizeof(struct key_part_def);
 }
 
-struct sql_key_info *
-sql_key_info_new(sql *db, uint32_t part_count)
+/**
+ * Allocate a key_info object sufficient for an index with
+ * the given number of key columns.
+ */
+static struct sql_key_info *
+sql_key_info_new(uint32_t part_count)
 {
 	struct sql_key_info *key_info =
 		sqlDbMallocRawNN(sql_key_info_sizeof(part_count));
-	key_info->db = db;
 	key_info->key_def = NULL;
 	key_info->refs = 1;
 	key_info->part_count = part_count;
@@ -1652,7 +1672,7 @@ sql_key_info_unref(struct sql_key_info *key_info)
 	if (--key_info->refs == 0) {
 		if (key_info->key_def != NULL)
 			key_def_delete(key_info->key_def);
-		sqlDbFree(key_info->db, key_info);
+		sqlDbFree(sql_get(), key_info);
 	}
 }
 
@@ -1670,9 +1690,7 @@ static struct sql_key_info *
 sql_expr_list_to_key_info(struct Parse *parse, struct ExprList *list, int start)
 {
 	int expr_count = list->nExpr;
-	struct sql_key_info *key_info = sql_key_info_new(parse->db, expr_count);
-	if (key_info == NULL)
-		return NULL;
+	struct sql_key_info *key_info = sql_key_info_new(expr_count);
 	struct ExprList_item *item = list->a + start;
 	for (int i = start; i < expr_count; ++i, ++item) {
 		struct key_part_def *part = &key_info->parts[i - start];
@@ -2496,13 +2514,7 @@ sql_multiselect_orderby_to_key_info(struct Parse *parse, struct Select *s,
 				   int extra)
 {
 	int ob_count = s->pOrderBy->nExpr;
-	struct sql_key_info *key_info = sql_key_info_new(parse->db,
-							 ob_count + extra);
-	if (key_info == NULL) {
-		sqlOomFault(parse->db);
-		return NULL;
-	}
-
+	struct sql_key_info *key_info = sql_key_info_new(ob_count + extra);
 	ExprList *order_by = s->pOrderBy;
 	for (int i = 0; i < ob_count; i++) {
 		struct key_part_def *part = &key_info->parts[i];
@@ -3585,12 +3597,10 @@ multiSelectOrderBy(Parse * pParse,	/* Parsing context */
 		regPrev = pParse->nMem + 1;
 		pParse->nMem += expr_count + 1;
 		sqlVdbeAddOp2(v, OP_Bool, 0, regPrev);
-		key_info_dup = sql_key_info_new(db, expr_count);
-		if (key_info_dup != NULL) {
-			for (int i = 0; i < expr_count; i++) {
-				key_info_dup->parts[i].coll_id =
-					multi_select_coll_seq(pParse, p, i);
-			}
+		key_info_dup = sql_key_info_new(expr_count);
+		for (int i = 0; i < expr_count; i++) {
+			key_info_dup->parts[i].coll_id =
+				multi_select_coll_seq(pParse, p, i);
 		}
 	}
 
