@@ -318,18 +318,15 @@ sql_expr_new_register(struct space_def *def, int reg_base, uint32_t column)
 /**
  * Return an Expr object that refers to column of space_def which
  * has cursor cursor.
- * @param db The database connection.
+ *
  * @param def space definition.
  * @param cursor The open cursor on the table.
  * @param column The column that is wanted.
  * @retval not NULL on success.
- * @retval NULL on error.
  */
 static struct Expr *
-sql_expr_new_column_by_cursor(struct sql *db, struct space_def *def,
-			      int cursor, int column)
+sql_expr_new_column_by_cursor(struct space_def *def, int cursor, int column)
 {
-	(void)db;
 	struct Expr *expr = sql_expr_new_anon(TK_COLUMN_REF);
 	expr->space_def = def;
 	expr->iTable = cursor;
@@ -438,11 +435,11 @@ fk_constraint_scan_children(struct Parse *parser, struct SrcList *src,
 			uint32_t fieldno = fk_def->links[i].parent_field;
 			pexpr = sql_expr_new_register(def, reg_data, fieldno);
 			int cursor = src->a[0].iCursor;
-			chexpr = sql_expr_new_column_by_cursor(db, def, cursor,
+			chexpr = sql_expr_new_column_by_cursor(def, cursor,
 							       fieldno);
 			eq = sqlPExpr(parser, TK_EQ, pexpr, chexpr);
 			expr = sql_and_expr_new(db, expr, eq);
-			if (expr == NULL || chexpr == NULL)
+			if (expr == NULL)
 				parser->is_aborted = true;
 		}
 		struct Expr *pNe = sqlPExpr(parser, TK_NOT, expr, 0);
