@@ -2111,8 +2111,8 @@ sqlColumnsFromExprList(Parse * parse, ExprList * expr_list,
 		region_alloc_array(region, typeof(space_def->fields[0]),
 				   column_count, &size);
 	if (space_def->fields == NULL) {
-		sqlOomFault(db);
-		goto cleanup;
+		diag_set(OutOfMemory, size, "region_alloc_array", "fields");
+		goto error;
 	}
 	for (uint32_t i = 0; i < column_count; i++) {
 		memcpy(&space_def->fields[i], &field_def_default,
@@ -2171,31 +2171,25 @@ sqlColumnsFromExprList(Parse * parse, ExprList * expr_list,
 		}
 		size_t name_len = strlen(zName);
 		void *field = &space_def->fields[i];
-		if (zName != NULL &&
-		    sqlHashInsert(&ht, zName, field) == field)
-			sqlOomFault(db);
+		assert(field != NULL);
+		if (zName != NULL)
+			sqlHashInsert(&ht, zName, field);
 		space_def->fields[i].name = region_alloc(region, name_len + 1);
 		if (space_def->fields[i].name == NULL) {
-			sqlOomFault(db);
-			goto cleanup;
-		} else {
-			memcpy(space_def->fields[i].name, zName, name_len);
-			space_def->fields[i].name[name_len] = '\0';
+			diag_set(OutOfMemory, size, "region_alloc", "name");
+			goto error;
 		}
+		memcpy(space_def->fields[i].name, zName, name_len);
+		space_def->fields[i].name[name_len] = '\0';
 	}
-cleanup:
 	sqlHashClear(&ht);
-	if (db->mallocFailed) {
-		/*
-		 * pTable->def could be not temporal in
-		 * sqlViewGetColumnNames so we need clean-up.
-		 */
-		space_def->fields = NULL;
-		space_def->field_count = 0;
-		return -1;
-	}
 	return 0;
-
+error:
+	sqlHashClear(&ht);
+	parse->is_aborted = true;
+	space_def->fields = NULL;
+	space_def->field_count = 0;
+	return -1;
 }
 
 /*

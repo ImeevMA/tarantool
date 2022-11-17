@@ -258,20 +258,3 @@ sqlDbStrNDup(sql * db, const char *z, u64 n)
 	zNew[n] = 0;
 	return zNew;
 }
-
-/*
- * This routine reactivates the memory allocator and clears the
- * db->mallocFailed flag as necessary.
- *
- * The memory allocator is not restarted if there are running
- * VDBEs.
- */
-void
-sqlOomClear(sql * db)
-{
-	if (db->mallocFailed && db->nVdbeExec == 0) {
-		db->mallocFailed = 0;
-		assert(db->lookaside.bDisable > 0);
-		db->lookaside.bDisable--;
-	}
-}

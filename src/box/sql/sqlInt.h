@@ -2261,10 +2261,9 @@ struct StrAccum {
 	u32 nChar;		/* Length of the string so far */
 	u32 nAlloc;		/* Amount of space allocated in zText */
 	u32 mxAlloc;		/* Maximum allowed allocation.  0 for no malloc usage */
-	u8 accError;		/* STRACCUM_NOMEM or STRACCUM_TOOBIG */
+	u8 accError;		/* STRACCUM_TOOBIG */
 	u8 printfFlags;		/* sql_PRINTF flags below */
 };
-#define STRACCUM_NOMEM   1
 #define STRACCUM_TOOBIG  2
 #define SQL_PRINTF_INTERNAL 0x01	/* Internal-use-only converters allowed */
 #define SQL_PRINTF_SQLFUNC  0x02	/* SQL function arguments to VXPrintf */
@@ -3968,16 +3967,6 @@ sql_ephemeral_space_new(const struct sql_space_info *info);
  */
 int
 sql_is_like_func(struct Expr *expr);
-
-/** Set OOM error flag. */
-static inline void
-sqlOomFault(struct sql *db)
-{
-	db->mallocFailed = 1;
-	db->lookaside.bDisable++;
-}
-
-void sqlOomClear(sql *);
 
 void sqlStrAccumInit(StrAccum *, sql *, char *, int, int);
 void sqlStrAccumAppend(StrAccum *, const char *, int);

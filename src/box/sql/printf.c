@@ -131,7 +131,7 @@ et_getdigit(LONGDOUBLE_TYPE * val, int *cnt)
 static void
 setStrAccumError(StrAccum * p, u8 eError)
 {
-	assert(eError == STRACCUM_NOMEM || eError == STRACCUM_TOOBIG);
+	assert(eError == STRACCUM_TOOBIG);
 	p->accError = eError;
 	p->nAlloc = 0;
 }
@@ -999,9 +999,6 @@ sqlVMPrintf(sql * db, const char *zFormat, va_list ap)
 	acc.printfFlags = SQL_PRINTF_INTERNAL;
 	sqlVXPrintf(&acc, zFormat, ap);
 	z = sqlStrAccumFinish(&acc);
-	if (acc.accError == STRACCUM_NOMEM) {
-		sqlOomFault(db);
-	}
 	return z;
 }
 

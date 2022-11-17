@@ -1642,7 +1642,7 @@ case OP_Compare: {
 
 	struct key_def *def = sql_key_info_to_key_def(pOp->p4.key_info);
 	if (def == NULL)
-		goto no_mem;
+		goto abort_due_to_error;
 #if SQL_DEBUG
 	if (aPermute) {
 		int mx = 0;
@@ -2326,7 +2326,7 @@ case OP_IteratorOpen: {
 			     space->def->exact_field_count,
 			     CURTYPE_TARANTOOL);
 	if (cur == NULL)
-		goto no_mem;
+		goto abort_due_to_error;
 	struct BtCursor *bt_cur = cur->uc.pCursor;
 	bt_cur->curFlags |= space->def->id == 0 ? BTCF_TEphemCursor :
 				BTCF_TaCursor;
@@ -2394,9 +2394,11 @@ case OP_SorterOpen: {
 	assert(pOp->p1>=0);
 	assert(pOp->p2>=0);
 	struct key_def *def = sql_key_info_to_key_def(pOp->p4.key_info);
-	if (def == NULL) goto no_mem;
+	if (def == NULL)
+		goto abort_due_to_error;
 	pCx = allocateCursor(p, pOp->p1, pOp->p2, CURTYPE_SORTER);
-	if (pCx==0) goto no_mem;
+	if (pCx == NULL)
+		goto abort_due_to_error;
 	pCx->key_def = def;
 	if (sqlVdbeSorterInit(db, pCx) != 0)
 		goto abort_due_to_error;
@@ -2443,7 +2445,8 @@ case OP_OpenPseudo: {
 	assert(pOp->p1>=0);
 	assert(pOp->p3>=0);
 	pCx = allocateCursor(p, pOp->p1, pOp->p3, CURTYPE_PSEUDO);
-	if (pCx==0) goto no_mem;
+	if (pCx == NULL)
+		goto abort_due_to_error;
 	pCx->nullRow = 1;
 	pCx->uc.pseudoTableReg = pOp->p2;
 	assert(pOp->p5==0);
@@ -2757,7 +2760,8 @@ case OP_Found: {        /* jump, in3 */
 		pFree = 0;
 	} else {
 		pFree = pIdxKey = sqlVdbeAllocUnpackedRecord(db, pC->key_def);
-		if (pIdxKey==0) goto no_mem;
+		if (pIdxKey == NULL)
+			goto abort_due_to_error;
 		assert(mem_is_bin(pIn3));
 		sqlVdbeRecordUnpackMsgpack(pC->key_def,
 					       pIn3->z, pIdxKey);
@@ -3935,9 +3939,8 @@ case OP_Program: {        /* jump */
 			+ nMem * sizeof(Mem)
 			+ pProgram->nCsr * sizeof(VdbeCursor *);
 		pFrame = sqlDbMallocZero(db, nByte);
-		if (!pFrame) {
-			goto no_mem;
-		}
+		if (pFrame == NULL)
+			goto abort_due_to_error;
 		mem_set_frame(pRt, pFrame);
 
 		pFrame->v = p;
@@ -4426,11 +4429,5 @@ vdbe_return:
 	 */
 too_big:
 	diag_set(ClientError, ER_SQL_EXECUTE, "string or blob too big");
-	goto abort_due_to_error;
-
-	/* Jump to here if a malloc() fails.
-	 */
-no_mem:
-	sqlOomFault(db);
 	goto abort_due_to_error;
 }

@@ -253,8 +253,7 @@ sqlHashFind(const Hash * pH, const char *pKey)
  *
  * If another element already exists with the same key, then the
  * new data replaces the old data and the old data is returned.
- * The key is not copied in this instance.  If a malloc fails, then
- * the new data is returned and the hash table is unchanged.
+ * The key is not copied in this instance.
  *
  * If the "data" parameter to this function is NULL, then the
  * element corresponding to "key" is removed from the hash table.
@@ -283,11 +282,8 @@ sqlHashInsert(Hash * pH, const char *pKey, void *data)
 	if (data == 0)
 		return 0;
 	new_elem = (HashElem *) sqlMalloc(sizeof(HashElem));
-	new_elem->pKey = strdup(pKey);
-	if (new_elem->pKey == NULL) {
-		sql_free(new_elem);
-		return data;
-	}
+	new_elem->pKey = xmalloc(strlen(pKey) + 1);
+	strcpy(new_elem->pKey, pKey);
 	new_elem->data = data;
 	pH->count++;
 	if (pH->count >= 10 && pH->count > 2 * pH->htsize) {
