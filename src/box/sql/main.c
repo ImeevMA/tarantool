@@ -365,10 +365,6 @@ sql_init_db(sql **out_db)
 
 	/* Allocate the sql data structure */
 	db = sqlMallocZero(sizeof(sql));
-	if (db == NULL) {
-		*out_db = NULL;
-		return -1;
-	}
 	db->magic = SQL_MAGIC_BUSY;
 
 	db->pVfs = sql_vfs_find(0);

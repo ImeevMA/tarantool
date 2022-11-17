@@ -153,11 +153,8 @@ sqlRealloc(void *buf, size_t n)
 	return new_buf;
 }
 
-/*
- * Allocate and zero memory.
- */
 void *
-sqlMallocZero(u64 n)
+sqlMallocZero(size_t n)
 {
 	void *p = sqlMalloc(n);
 	memset(p, 0, (size_t) n);

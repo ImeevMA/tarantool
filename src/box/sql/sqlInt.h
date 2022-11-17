@@ -2376,7 +2376,10 @@ unsigned sqlStrlen30(const char *);
 void *
 sqlMalloc(size_t n);
 
-void *sqlMallocZero(u64);
+/** Allocate and nullify memory. */
+void *
+sqlMallocZero(size_t n);
+
 void *sqlDbMallocZero(sql *, u64);
 
 /** Allocate memory, either lookaside (if possible) or heap. */

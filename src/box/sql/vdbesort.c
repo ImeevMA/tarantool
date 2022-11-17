@@ -900,13 +900,11 @@ vdbeMergeEngineNew(int nReader)
 		N += N;
 	nByte = sizeof(MergeEngine) + N * (sizeof(int) + sizeof(PmaReader));
 
-	pNew = (MergeEngine *) sqlMallocZero(nByte);
-	if (pNew) {
-		pNew->nTree = N;
-		pNew->pTask = 0;
-		pNew->aReadr = (PmaReader *) & pNew[1];
-		pNew->aTree = (int *)&pNew->aReadr[N];
-	}
+	pNew = sqlMallocZero(nByte);
+	pNew->nTree = N;
+	pNew->pTask = 0;
+	pNew->aReadr = (PmaReader *)&pNew[1];
+	pNew->aTree = (int *)&pNew->aReadr[N];
 	return pNew;
 }
 
@@ -1124,11 +1122,7 @@ vdbeSorterSort(SortSubtask * pTask, SorterList * pList)
 	p = pList->pList;
 	pTask->xCompare = vdbeSorterGetCompare(pTask->pSorter);
 
-	aSlot =
-	    (SorterRecord **) sqlMallocZero(64 * sizeof(SorterRecord *));
-	if (!aSlot) {
-		return -1;
-	}
+	aSlot = sqlMallocZero(64 * sizeof(SorterRecord *));
 
 	while (p) {
 		SorterRecord *pNext;
@@ -1617,19 +1611,13 @@ vdbeIncrMergerNew(SortSubtask * pTask,	/* The thread that will be using the new 
     )
 {
 	int rc = 0;
-	IncrMerger *pIncr = *ppOut =
-		(IncrMerger *) sqlMallocZero(sizeof(*pIncr));
-	if (pIncr) {
-		pIncr->pMerger = pMerger;
-		pIncr->pTask = pTask;
-		pIncr->mxSz =
-		    MAX(pTask->pSorter->mxKeysize + 9,
-			pTask->pSorter->mxPmaSize / 2);
-		pTask->file2.iEof += pIncr->mxSz;
-	} else {
-		vdbeMergeEngineFree(pMerger);
-		rc = -1;
-	}
+	IncrMerger *pIncr = sqlMallocZero(sizeof(*pIncr));
+	*ppOut = pIncr;
+	pIncr->pMerger = pMerger;
+	pIncr->pTask = pTask;
+	pIncr->mxSz = MAX(pTask->pSorter->mxKeysize + 9,
+			  pTask->pSorter->mxPmaSize / 2);
+	pTask->file2.iEof += pIncr->mxSz;
 	return rc;
 }
 
