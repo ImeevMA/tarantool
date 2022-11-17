@@ -728,10 +728,8 @@ addWhereTerm(Parse * pParse,	/* Parsing context */
 	assert(pSrc->a[iLeft].space != NULL);
 	assert(pSrc->a[iRight].space != NULL);
 
-	struct Expr *pE1 = sql_expr_new_column(db, pSrc, iLeft, iColLeft);
-	struct Expr *pE2 = sql_expr_new_column(db, pSrc, iRight, iColRight);
-	if (pE1 == NULL || pE2 == NULL)
-		pParse->is_aborted = true;
+	struct Expr *pE1 = sql_expr_new_column(pSrc, iLeft, iColLeft);
+	struct Expr *pE2 = sql_expr_new_column(pSrc, iRight, iColRight);
 	pEq = sqlPExpr(pParse, TK_EQ, pE1, pE2);
 	if (pEq && isOuterJoin) {
 		ExprSetProperty(pEq, EP_FromJoin);

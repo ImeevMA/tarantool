@@ -3997,16 +3997,13 @@ sql_context_delete(struct sql_context *ctx);
  * Create an expression to load @a column from datasource
  * @a src_idx in @a src_list.
  *
- * @param db The database connection.
  * @param src_list The source list described with FROM clause.
  * @param src_idx The resource index to use in src_list.
  * @param column The column index.
  * @retval Not NULL Success. An expression to load @a column.
- * @retval NULL Error. A diag message is set.
  */
 struct Expr *
-sql_expr_new_column(struct sql *db, struct SrcList *src_list, int src_idx,
-		    int column);
+sql_expr_new_column(struct SrcList *src_list, int src_idx, int column);
 
 int sqlExprCheckIN(Parse *, Expr *);
 

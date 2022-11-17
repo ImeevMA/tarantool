@@ -481,10 +481,8 @@ lookupName(Parse * pParse,	/* The parsing context */
 }
 
 struct Expr *
-sql_expr_new_column(struct sql *db, struct SrcList *src_list, int src_idx,
-		    int column)
+sql_expr_new_column(struct SrcList *src_list, int src_idx, int column)
 {
-	(void)db;
 	struct Expr *expr = sql_expr_new_anon(TK_COLUMN_REF);
 	struct SrcList_item *item = &src_list->a[src_idx];
 	expr->space_def = item->space->def;
