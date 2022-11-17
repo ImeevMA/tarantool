@@ -3424,14 +3424,12 @@ void sqlDeleteTriggerStep(sql *, TriggerStep *);
  * The parser calls this routine when it finds a SELECT statement
  * in body of a TRIGGER.
  *
- * @param db The database connection.
  * @param select The SELECT statement to process. Deleted on
  *        error.
  * @retval Not NULL TriggerStep object on success.
- * @retval NULL Error. The diag message is set.
  */
 struct TriggerStep *
-sql_trigger_select_step(struct sql *db, struct Select *select);
+sql_trigger_select_step(struct Select *select);
 
 /**
  * Build a trigger step out of an INSERT statement.

@@ -1687,11 +1687,7 @@ trigger_cmd(A) ::= DELETE FROM trnm(X) tridxby where_opt(Y). {
 // SELECT
 trigger_cmd(A) ::= select(X). {
   /* A-overwrites-X. */
-  A = sql_trigger_select_step(pParse->db, X);
-  if (A == NULL) {
-    pParse->is_aborted = true;
-    return;
-  }
+  A = sql_trigger_select_step(X);
 }
 
 // The special RAISE expression that may occur in trigger programs

@@ -225,9 +225,8 @@ cleanup:
 }
 
 struct TriggerStep *
-sql_trigger_select_step(struct sql *db, struct Select *select)
+sql_trigger_select_step(struct Select *select)
 {
-	(void)db;
 	struct TriggerStep *trigger_step =
 		sqlDbMallocZero(sizeof(struct TriggerStep));
 	trigger_step->op = TK_SELECT;
