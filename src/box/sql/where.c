@@ -1792,9 +1792,8 @@ whereLoopResize(struct WhereLoop *p, int n)
  * Transfer content from the second pLoop into the first.
  */
 static int
-whereLoopXfer(sql * db, WhereLoop * pTo, WhereLoop * pFrom)
+whereLoopXfer(struct WhereLoop *pTo, struct WhereLoop *pFrom)
 {
-	(void)db;
 	whereLoopClearUnion(pTo);
 	whereLoopResize(pTo, pFrom->nLTerm);
 	memcpy(pTo, pFrom, WHERE_LOOP_XFER_SZ);
@@ -2138,7 +2137,7 @@ whereLoopInsert(WhereLoopBuilder * pBuilder, WhereLoop * pTemplate)
 			whereLoopDelete(db, pToDel);
 		}
 	}
-	rc = whereLoopXfer(db, p, pTemplate);
+	rc = whereLoopXfer(p, pTemplate);
 	struct index_def *idx = p->index_def;
 	if (idx != NULL && idx->space_id == 0)
 		p->index_def = NULL;
