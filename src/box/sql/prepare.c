@@ -206,7 +206,7 @@ sql_parser_destroy(Parse *parser)
 	assert(!parser->parse_only || parser->pVdbe == NULL);
 	sql *db = parser->db;
 	sqlDbFree(parser->aLabel);
-	sql_expr_list_delete(db, parser->pConstExpr);
+	sql_expr_list_delete(parser->pConstExpr);
 	struct create_fk_constraint_parse_def *create_fk_constraint_parse_def =
 		&parser->create_fk_constraint_parse_def;
 	create_fk_constraint_parse_def_destroy(create_fk_constraint_parse_def);

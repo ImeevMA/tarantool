@@ -239,11 +239,11 @@ sql_expr_list_dup(struct sql *db, struct ExprList *p, int flags);
 
 /**
  * Free AST pointed by expr list.
- * @param db SQL handle.
+ *
  * @param expr_list Root pointer of ExprList.
  */
 void
-sql_expr_list_delete(struct sql *db, struct ExprList *expr_list);
+sql_expr_list_delete(struct ExprList *expr_list);
 
 /**
  * Add a new element to the end of an expression list.

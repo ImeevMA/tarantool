@@ -473,8 +473,8 @@ codeEqualityTerm(Parse * pParse,	/* The parsing context */
 			pSelect->pEList = pOrigRhs;
 			pLeft->x.pList = pOrigLhs;
 			pX->pLeft = pLeft;
-			sql_expr_list_delete(pParse->db, pLhs);
-			sql_expr_list_delete(pParse->db, pRhs);
+			sql_expr_list_delete(pLhs);
+			sql_expr_list_delete(pRhs);
 		}
 
 		if (eType == IN_INDEX_INDEX_DESC) {

@@ -54,7 +54,7 @@ sqlDeleteTriggerStep(sql * db, TriggerStep * pTriggerStep)
 		pTriggerStep = pTriggerStep->pNext;
 
 		sql_expr_delete(pTmp->pWhere);
-		sql_expr_list_delete(db, pTmp->pExprList);
+		sql_expr_list_delete(pTmp->pExprList);
 		sql_select_delete(db, pTmp->pSelect);
 		sqlIdListDelete(pTmp->pIdList);
 
@@ -291,7 +291,7 @@ sql_trigger_update_step(struct sql *db, struct Token *table_name,
 	    sql_expr_list_dup(db, new_list, EXPRDUP_REDUCE);
 	trigger_step->pWhere = sqlExprDup(db, where, EXPRDUP_REDUCE);
 	trigger_step->orconf = orconf;
-	sql_expr_list_delete(db, new_list);
+	sql_expr_list_delete(new_list);
 	sql_expr_delete(where);
 	return trigger_step;
 }

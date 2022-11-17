@@ -599,9 +599,9 @@ distinct(A) ::= .           {A = 0;}
 // opcode of TK_ASTERISK.
 //
 %type selcollist {ExprList*}
-%destructor selcollist {sql_expr_list_delete(pParse->db, $$);}
+%destructor selcollist {sql_expr_list_delete($$);}
 %type sclp {ExprList*}
-%destructor sclp {sql_expr_list_delete(pParse->db, $$);}
+%destructor sclp {sql_expr_list_delete($$);}
 sclp(A) ::= selcollist(A) COMMA.
 sclp(A) ::= .                                {A = 0;}
 selcollist(A) ::= sclp(A) expr(X) as(Y).     {
@@ -733,14 +733,14 @@ using_opt(U) ::= .                        {U = 0;}
 
 
 %type orderby_opt {ExprList*}
-%destructor orderby_opt {sql_expr_list_delete(pParse->db, $$);}
+%destructor orderby_opt {sql_expr_list_delete($$);}
 
 // the sortlist non-terminal stores a list of expression where each
 // expression is optionally followed by ASC or DESC to indicate the
 // sort order.
 //
 %type sortlist {ExprList*}
-%destructor sortlist {sql_expr_list_delete(pParse->db, $$);}
+%destructor sortlist {sql_expr_list_delete($$);}
 
 orderby_opt(A) ::= .                          {A = 0;}
 orderby_opt(A) ::= ORDER BY sortlist(X).      {A = X;}
@@ -759,7 +759,7 @@ sortlist(A) ::= expr(Y) sortorder(Z). {
  * declaration.
  */
 %type col_list_with_autoinc {ExprList*}
-%destructor col_list_with_autoinc {sql_expr_list_delete(pParse->db, $$);}
+%destructor col_list_with_autoinc {sql_expr_list_delete($$);}
 
 col_list_with_autoinc(A) ::= col_list_with_autoinc(A) COMMA expr(Y)
                              autoinc(I). {
@@ -796,7 +796,7 @@ sortorder(A) ::= DESC.          {A = SORT_ORDER_DESC;}
 sortorder(A) ::= .              {A = SORT_ORDER_UNDEF;}
 
 %type groupby_opt {ExprList*}
-%destructor groupby_opt {sql_expr_list_delete(pParse->db, $$);}
+%destructor groupby_opt {sql_expr_list_delete($$);}
 groupby_opt(A) ::= .                      {A = 0;}
 groupby_opt(A) ::= GROUP BY nexprlist(X). {A = X;}
 
@@ -867,7 +867,7 @@ cmd ::= with(C) UPDATE orconf(R) fullname(X) indexed_opt(I) SET setlist(Y)
 }
 
 %type setlist {ExprList*}
-%destructor setlist {sql_expr_list_delete(pParse->db, $$);}
+%destructor setlist {sql_expr_list_delete($$);}
 
 setlist(A) ::= setlist(A) COMMA nm(X) EQ expr(Y). {
   A = sql_expr_list_append(pParse->db, A, Y.pExpr);
@@ -1064,7 +1064,7 @@ getlist(A) ::= expr(X). {
 }
 
 %type getlist {ExprList *}
-%destructor getlist {sql_expr_list_delete(pParse->db, $$);}
+%destructor getlist {sql_expr_list_delete($$);}
 
 expr(A) ::= LB(X) exprlist(Y) RB(E). {
   struct Expr *expr = sql_expr_new_anon(TK_ARRAY);
@@ -1098,9 +1098,9 @@ nmaplist(A) ::= expr(X) COLON expr(Y). {
 }
 
 %type maplist {ExprList *}
-%destructor maplist {sql_expr_list_delete(pParse->db, $$);}
+%destructor maplist {sql_expr_list_delete($$);}
 %type nmaplist {ExprList *}
-%destructor nmaplist {sql_expr_list_delete(pParse->db, $$);}
+%destructor nmaplist {sql_expr_list_delete($$);}
 
 expr(A) ::= TRIM(X) LP trim_operands(Y) RP(E). {
   A.pExpr = sqlExprFunction(pParse, Y, &X);
@@ -1108,7 +1108,7 @@ expr(A) ::= TRIM(X) LP trim_operands(Y) RP(E). {
 }
 
 %type trim_operands {struct ExprList *}
-%destructor trim_operands {sql_expr_list_delete(pParse->db, $$);}
+%destructor trim_operands {sql_expr_list_delete($$);}
 
 trim_operands(A) ::= trim_specification(N) expr(Z) FROM expr(Y). {
   A = sql_expr_list_append(pParse->db, NULL, Y.pExpr);
@@ -1225,7 +1225,7 @@ expr(A) ::= LP(L) nexprlist(X) COMMA expr(Y) RP(R). {
     A.pExpr->x.pList = pList;
     spanSet(&A, &L, &R);
   }else{
-    sql_expr_list_delete(pParse->db, pList);
+    sql_expr_list_delete(pList);
   }
 }
 
@@ -1326,7 +1326,7 @@ expr(A) ::= expr(A) between_op(N) expr(X) AND expr(Y). [BETWEEN] {
   if( A.pExpr ){
     A.pExpr->x.pList = pList;
   }else{
-    sql_expr_list_delete(pParse->db, pList);
+    sql_expr_list_delete(pList);
   } 
   exprNot(pParse, N, &A);
   A.zEnd = Y.zEnd;
@@ -1362,7 +1362,7 @@ expr(A) ::= expr(A) in_op(N) LP exprlist(Y) RP(E). [IN] {
     */
     Expr *pRHS = Y->a[0].pExpr;
     Y->a[0].pExpr = 0;
-    sql_expr_list_delete(pParse->db, Y);
+    sql_expr_list_delete(Y);
     A.pExpr = sqlPExpr(pParse, N ? TK_NE : TK_EQ, A.pExpr, pRHS);
   }else{
     A.pExpr = sqlPExpr(pParse, TK_IN, A.pExpr, 0);
@@ -1370,7 +1370,7 @@ expr(A) ::= expr(A) in_op(N) LP exprlist(Y) RP(E). [IN] {
       A.pExpr->x.pList = Y;
       sqlExprSetHeightAndFlags(pParse, A.pExpr);
     }else{
-      sql_expr_list_delete(pParse->db, Y);
+      sql_expr_list_delete(Y);
     }
     exprNot(pParse, N, &A);
   }
@@ -1411,12 +1411,12 @@ expr(A) ::= CASE(C) expr_optional(X) case_exprlist(Y) case_else(Z) END(E). {
     A.pExpr->x.pList = Z ? sql_expr_list_append(pParse->db,Y,Z) : Y;
     sqlExprSetHeightAndFlags(pParse, A.pExpr);
   }else{
-    sql_expr_list_delete(pParse->db, Y);
+    sql_expr_list_delete(Y);
     sql_expr_delete(Z);
   }
 }
 %type case_exprlist {ExprList*}
-%destructor case_exprlist {sql_expr_list_delete(pParse->db, $$);}
+%destructor case_exprlist {sql_expr_list_delete($$);}
 case_exprlist(A) ::= case_exprlist(A) WHEN expr(Y) THEN expr(Z). {
   A = sql_expr_list_append(pParse->db,A, Y.pExpr);
   A = sql_expr_list_append(pParse->db,A, Z.pExpr);
@@ -1431,9 +1431,9 @@ case_else(A) ::=  ELSE expr(X).         {A = X.pExpr;}
 case_else(A) ::=  .                     {A = 0;} 
 
 %type exprlist {ExprList*}
-%destructor exprlist {sql_expr_list_delete(pParse->db, $$);}
+%destructor exprlist {sql_expr_list_delete($$);}
 %type nexprlist {ExprList*}
-%destructor nexprlist {sql_expr_list_delete(pParse->db, $$);}
+%destructor nexprlist {sql_expr_list_delete($$);}
 
 exprlist(A) ::= nexprlist(A).
 exprlist(A) ::= .                            {A = 0;}
@@ -1445,7 +1445,7 @@ nexprlist(A) ::= expr(Y).
 /* A paren_exprlist is an optional expression list contained inside
 ** of parenthesis */
 %type paren_exprlist {ExprList*}
-%destructor paren_exprlist {sql_expr_list_delete(pParse->db, $$);}
+%destructor paren_exprlist {sql_expr_list_delete($$);}
 paren_exprlist(A) ::= .   {A = 0;}
 paren_exprlist(A) ::= LP exprlist(X) RP.  {A = X;}
 
@@ -1475,9 +1475,9 @@ uniqueflag(A) ::= .        {A = SQL_INDEX_TYPE_NON_UNIQUE;}
 // used for the arguments to an index.  That is just an historical accident.
 //
 %type eidlist {ExprList*}
-%destructor eidlist {sql_expr_list_delete(pParse->db, $$);}
+%destructor eidlist {sql_expr_list_delete($$);}
 %type eidlist_opt {ExprList*}
-%destructor eidlist_opt {sql_expr_list_delete(pParse->db, $$);}
+%destructor eidlist_opt {sql_expr_list_delete($$);}
 
 %include {
   /* Add a single new term to an ExprList that is used to store a

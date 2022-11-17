@@ -634,7 +634,7 @@ sqlAddPrimaryKey(struct Parse *pParse)
 					space->def->name);
 	}
 primary_key_exit:
-	sql_expr_list_delete(pParse->db, pList);
+	sql_expr_list_delete(pList);
 	return;
 }
 
@@ -1529,7 +1529,7 @@ sql_create_view(struct Parse *parse_context)
 			       name_reg, space);
 
  create_view_fail:
-	sql_expr_list_delete(db, view_def->aliases);
+	sql_expr_list_delete(view_def->aliases);
 	sql_select_delete(db, view_def->select);
 	return;
 }
@@ -2218,9 +2218,9 @@ sql_create_foreign_key(struct Parse *parse_context)
 	}
 
 exit_create_fk:
-	sql_expr_list_delete(db, child_cols);
+	sql_expr_list_delete(child_cols);
 	if (!is_self_referenced)
-		sql_expr_list_delete(db, parent_cols);
+		sql_expr_list_delete(parent_cols);
 	sqlDbFree(parent_name);
 	sqlDbFree(constraint_name);
 	return;
@@ -2891,7 +2891,7 @@ sql_create_index(struct Parse *parse) {
  exit_create_index:
 	if (index != NULL && index->def != NULL)
 		index_def_delete(index->def);
-	sql_expr_list_delete(db, col_list);
+	sql_expr_list_delete(col_list);
 	sqlSrcListDelete(db, tbl_name);
 	sqlDbFree(name);
 }
@@ -3083,7 +3083,7 @@ sqlSrcListDelete(sql * db, SrcList * pList)
 		if (pItem->fg.isIndexedBy)
 			sqlDbFree(pItem->u1.zIndexedBy);
 		if (pItem->fg.isTabFunc)
-			sql_expr_list_delete(db, pItem->u1.pFuncArg);
+			sql_expr_list_delete(pItem->u1.pFuncArg);
 		/*
 		* Space is either not ephemeral which means that
 		* it came from space cache; or space is ephemeral
@@ -3189,6 +3189,7 @@ sqlSrcListIndexedBy(Parse * pParse, SrcList * p, Token * pIndexedBy)
 void
 sqlSrcListFuncArgs(Parse * pParse, SrcList * p, ExprList * pList)
 {
+	(void)pParse;
 	if (p) {
 		struct SrcList_item *pItem = &p->a[p->nSrc - 1];
 		assert(pItem->fg.notIndexed == 0);
@@ -3197,7 +3198,7 @@ sqlSrcListFuncArgs(Parse * pParse, SrcList * p, ExprList * pList)
 		pItem->u1.pFuncArg = pList;
 		pItem->fg.isTabFunc = 1;
 	} else {
-		sql_expr_list_delete(pParse->db, pList);
+		sql_expr_list_delete(pList);
 	}
 }
 
@@ -3341,7 +3342,7 @@ sqlWithDelete(sql * db, With * pWith)
 		int i;
 		for (i = 0; i < pWith->nCte; i++) {
 			struct Cte *pCte = &pWith->a[i];
-			sql_expr_list_delete(db, pCte->pCols);
+			sql_expr_list_delete(pCte->pCols);
 			sql_select_delete(db, pCte->pSelect);
 			sqlDbFree(pCte->zName);
 		}

@@ -310,12 +310,12 @@ clearSelect(sql * db, Select * p, int bFree)
 {
 	while (p) {
 		Select *pPrior = p->pPrior;
-		sql_expr_list_delete(db, p->pEList);
+		sql_expr_list_delete(p->pEList);
 		sqlSrcListDelete(db, p->pSrc);
 		sql_expr_delete(p->pWhere);
-		sql_expr_list_delete(db, p->pGroupBy);
+		sql_expr_list_delete(p->pGroupBy);
 		sql_expr_delete(p->pHaving);
-		sql_expr_list_delete(db, p->pOrderBy);
+		sql_expr_list_delete(p->pOrderBy);
 		sql_expr_delete(p->pLimit);
 		sql_expr_delete(p->pOffset);
 		if (p->pWith)
@@ -2682,7 +2682,7 @@ generateWithRecursiveQuery(Parse * pParse,	/* Parsing context */
 	sqlVdbeResolveLabel(v, addrBreak);
 
  end_of_recursive_query:
-	sql_expr_list_delete(pParse->db, p->pOrderBy);
+	sql_expr_list_delete(p->pOrderBy);
 	p->pOrderBy = pOrderBy;
 	p->pLimit = pLimit;
 	p->pOffset = pOffset;
@@ -2989,7 +2989,7 @@ multiSelect(Parse * pParse,	/* Parsing context */
 				/* Query flattening in sqlSelect() might refill p->pOrderBy.
 				 * Be sure to delete p->pOrderBy, therefore, to avoid a memory leak.
 				 */
-				sql_expr_list_delete(db, p->pOrderBy);
+				sql_expr_list_delete(p->pOrderBy);
 				pDelete = p->pPrior;
 				p->pPrior = pPrior;
 				p->pOrderBy = 0;
@@ -5222,7 +5222,7 @@ selectExpander(Walker * pWalker, Select * p)
 				}
 			}
 		}
-		sql_expr_list_delete(db, pEList);
+		sql_expr_list_delete(pEList);
 		p->pEList = pNew;
 	}
 #if SQL_MAX_COLUMN
@@ -5679,7 +5679,7 @@ sqlSelect(Parse * pParse,		/* The parser context */
 		/* If ORDER BY makes no difference in the output then neither does
 		 * DISTINCT so it can be removed too.
 		 */
-		sql_expr_list_delete(db, p->pOrderBy);
+		sql_expr_list_delete(p->pOrderBy);
 		p->pOrderBy = 0;
 		p->selFlags &= ~SF_Distinct;
 	}
@@ -6539,7 +6539,7 @@ sqlSelect(Parse * pParse,		/* The parser context */
 				    sqlWhereBegin(pParse, pTabList, pWhere,
 						      pMinMax, 0, flag, 0);
 				if (pWInfo == 0) {
-					sql_expr_list_delete(db, pDel);
+					sql_expr_list_delete(pDel);
 					goto select_end;
 				}
 				updateAccumulator(pParse, &sAggInfo);
@@ -6557,7 +6557,7 @@ sqlSelect(Parse * pParse,		/* The parser context */
 				}
 				sqlWhereEnd(pWInfo);
 				finalizeAggFunctions(pParse, &sAggInfo);
-				sql_expr_list_delete(db, pDel);
+				sql_expr_list_delete(pDel);
 			}
 
 			sSort.pOrderBy = 0;

@@ -810,7 +810,7 @@ exprAnalyzeOrTerm(SrcList * pSrc,	/* the FROM clause */
 				pTerm = &pWC->a[idxTerm];
 				markTermAsChild(pWC, idxNew, idxTerm);
 			} else {
-				sql_expr_list_delete(db, pList);
+				sql_expr_list_delete(pList);
 			}
 			pTerm->eOperator = WO_NOOP;	/* case 1 trumps case 3 */
 		}

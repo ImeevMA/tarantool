@@ -1353,7 +1353,7 @@ sqlExprDeleteNN(sql *db, Expr *p)
 		if (ExprHasProperty(p, EP_xIsSelect)) {
 			sql_select_delete(db, p->x.pSelect);
 		} else {
-			sql_expr_list_delete(db, p->x.pList);
+			sql_expr_list_delete(p->x.pList);
 		}
 	}
 	if (ExprHasProperty(p, EP_MemToken))
@@ -1944,9 +1944,8 @@ sqlExprListSetSpan(Parse * pParse,	/* Parsing context */
  * Delete an entire expression list.
  */
 static SQL_NOINLINE void
-exprListDeleteNN(sql * db, ExprList * pList)
+exprListDeleteNN(struct ExprList * pList)
 {
-	(void)db;
 	int i;
 	struct ExprList_item *pItem;
 	assert(pList->a != 0 || pList->nExpr == 0);
@@ -1960,10 +1959,10 @@ exprListDeleteNN(sql * db, ExprList * pList)
 }
 
 void
-sql_expr_list_delete(sql *db, ExprList *expr_list)
+sql_expr_list_delete(struct ExprList *expr_list)
 {
 	if (expr_list != NULL)
-		exprListDeleteNN(db, expr_list);
+		exprListDeleteNN(expr_list);
 }
 
 /*

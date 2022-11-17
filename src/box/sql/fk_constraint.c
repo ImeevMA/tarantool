@@ -844,7 +844,7 @@ fk_constraint_action_trigger(struct Parse *pParse, struct space_def *def,
 
 	sql_expr_delete(where);
 	sql_expr_delete(when);
-	sql_expr_list_delete(db, list);
+	sql_expr_list_delete(list);
 	sql_select_delete(db, select);
 	assert(step != NULL);
 
