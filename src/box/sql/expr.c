@@ -1903,7 +1903,7 @@ sqlExprListAppendVector(Parse * pParse,	/* Parsing context */
 
  vector_append_error:
 	sql_expr_delete(db, pExpr);
-	sqlIdListDelete(db, pColumns);
+	sqlIdListDelete(pColumns);
 	return pList;
 }
 

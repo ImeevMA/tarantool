@@ -4323,7 +4323,7 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 		 * outer query.
 		 */
 		for (i = 0; i < nSubSrc; i++) {
-			sqlIdListDelete(db, pSrc->a[i + iFrom].pUsing);
+			sqlIdListDelete(pSrc->a[i + iFrom].pUsing);
 			assert(pSrc->a[i + iFrom].fg.isTabFunc == 0);
 			pSrc->a[i + iFrom] = pSubSrc->a[i];
 			memset(&pSubSrc->a[i], 0, sizeof(pSubSrc->a[i]));

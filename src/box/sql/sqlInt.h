@@ -2882,7 +2882,10 @@ void sqlSrcListFuncArgs(Parse *, SrcList *, ExprList *);
 int sqlIndexedByLookup(Parse *, struct SrcList_item *);
 void sqlSrcListShiftJoinType(SrcList *);
 void sqlSrcListAssignCursors(Parse *, SrcList *);
-void sqlIdListDelete(sql *, IdList *);
+
+/** Delete an IdList. */
+void
+sqlIdListDelete(struct IdList * pList);
 
 /**
  * Create a new index for an SQL table.  name is the name of the

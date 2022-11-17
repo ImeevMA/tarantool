@@ -742,7 +742,7 @@ indexed_opt(A) ::= INDEXED BY nm(X). {A = X;}
 indexed_opt(A) ::= NOT INDEXED.      {A.z=0; A.n=1;}
 
 %type using_opt {IdList*}
-%destructor using_opt {sqlIdListDelete(pParse->db, $$);}
+%destructor using_opt {sqlIdListDelete($$);}
 using_opt(U) ::= USING LP idlist(L) RP.  {U = L;}
 using_opt(U) ::= .                        {U = 0;}
 
@@ -922,9 +922,9 @@ insert_cmd(A) ::= INSERT orconf(R).   {A = R;}
 insert_cmd(A) ::= REPLACE.            {A = ON_CONFLICT_ACTION_REPLACE;}
 
 %type idlist_opt {IdList*}
-%destructor idlist_opt {sqlIdListDelete(pParse->db, $$);}
+%destructor idlist_opt {sqlIdListDelete($$);}
 %type idlist {IdList*}
-%destructor idlist {sqlIdListDelete(pParse->db, $$);}
+%destructor idlist {sqlIdListDelete($$);}
 
 idlist_opt(A) ::= .                       {A = 0;}
 idlist_opt(A) ::= LP idlist(X) RP.    {A = X;}
@@ -1639,7 +1639,7 @@ trigger_time(A) ::= INSTEAD OF.  { A = TK_INSTEAD;}
 trigger_time(A) ::= .            { A = TK_BEFORE; }
 
 %type trigger_event {struct TrigEvent}
-%destructor trigger_event {sqlIdListDelete(pParse->db, $$.b);}
+%destructor trigger_event {sqlIdListDelete($$.b);}
 trigger_event(A) ::= DELETE|INSERT(X).   {A.a = @X; /*A-overwrites-X*/ A.b = 0;}
 trigger_event(A) ::= UPDATE(X).          {A.a = @X; /*A-overwrites-X*/ A.b = 0;}
 trigger_event(A) ::= UPDATE OF idlist(X).{A.a = TK_UPDATE; A.b = X;}

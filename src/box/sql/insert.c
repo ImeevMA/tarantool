@@ -783,7 +783,7 @@ sqlInsert(Parse * pParse,	/* Parser context */
 	sqlSrcListDelete(db, pTabList);
 	sql_expr_list_delete(db, pList);
 	sql_select_delete(db, pSelect);
-	sqlIdListDelete(db, pColumn);
+	sqlIdListDelete(pColumn);
 	sqlDbFree(aRegIdx);
 }
 

@@ -3012,17 +3012,13 @@ sql_id_list_append(struct sql *db, struct IdList *list,
 		if (list->a[i].zName != NULL)
 			return list;
 	}
-	sqlIdListDelete(db, list);
+	sqlIdListDelete(list);
 	return NULL;
 }
 
-/*
- * Delete an IdList.
- */
 void
-sqlIdListDelete(sql * db, IdList * pList)
+sqlIdListDelete(struct IdList * pList)
 {
-	(void)db;
 	int i;
 	if (pList == 0)
 		return;
@@ -3170,7 +3166,7 @@ sqlSrcListDelete(sql * db, SrcList * pList)
 			pItem->space->index == NULL);
 		sql_select_delete(db, pItem->pSelect);
 		sql_expr_delete(db, pItem->pOn);
-		sqlIdListDelete(db, pItem->pUsing);
+		sqlIdListDelete(pItem->pUsing);
 	}
 	sqlDbFree(pList);
 }
@@ -3233,7 +3229,7 @@ sqlSrcListAppendFromTerm(Parse * pParse,	/* Parsing context */
  append_from_error:
 	assert(p == 0);
 	sql_expr_delete(db, pOn);
-	sqlIdListDelete(db, pUsing);
+	sqlIdListDelete(pUsing);
 	sql_select_delete(db, pSubquery);
 	return 0;
 }
