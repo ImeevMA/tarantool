@@ -506,14 +506,8 @@ targetSrcList(Parse * pParse,	/* The parsing context */
 	      TriggerStep * pStep	/* The trigger containing the target token */
     )
 {
-	sql *db = pParse->db;
-	SrcList *pSrc;		/* SrcList to be returned */
-
-	pSrc = sql_src_list_append(db, 0, 0);
-	if (pSrc == NULL) {
-		pParse->is_aborted = true;
-		return NULL;
-	}
+	(void)pParse;
+	SrcList *pSrc = sql_src_list_append(NULL, NULL);
 	assert(pSrc->nSrc > 0);
 	pSrc->a[pSrc->nSrc - 1].zName = sqlDbStrDup(pStep->zTarget);
 	return pSrc;

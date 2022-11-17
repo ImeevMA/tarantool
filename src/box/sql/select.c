@@ -4269,12 +4269,8 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 			jointype = pSubitem->fg.jointype;
 		} else {
 			assert(pParent != p);	/* 2nd and subsequent times through the loop */
-			pSrc = pParent->pSrc =
-			    sql_src_list_append(db, 0, 0);
-			if (pSrc == NULL) {
-				pParse->is_aborted = true;
-				break;
-			}
+			pSrc = sql_src_list_append(NULL, NULL);
+			pParent->pSrc = pSrc;
 		}
 
 		/* The subquery uses a single slot of the FROM clause of the outer

@@ -3037,10 +3037,8 @@ sql_src_list_new(void)
 }
 
 struct SrcList *
-sql_src_list_append(struct sql *db, struct SrcList *list,
-		    struct Token *name_token)
+sql_src_list_append(struct SrcList *list, struct Token *name_token)
 {
-	(void)db;
 	if (list == NULL) {
 		list = sql_src_list_new();
 	} else {
@@ -3138,11 +3136,7 @@ sqlSrcListAppendFromTerm(Parse * pParse,	/* Parsing context */
 		pParse->is_aborted = true;
 		goto append_from_error;
 	}
-	p = sql_src_list_append(db, p, pTable);
-	if (p == NULL) {
-		pParse->is_aborted = true;
-		goto append_from_error;
-	}
+	p = sql_src_list_append(p, pTable);
 	assert(p->nSrc != 0);
 	pItem = &p->a[p->nSrc - 1];
 	assert(pAlias != 0);

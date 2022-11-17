@@ -2854,15 +2854,12 @@ sql_src_list_new();
  * SrcList if need be. A new entry is created in the list even
  * if name_token is NULL.
  *
- * @param db The database connection.
  * @param list Append to this SrcList. NULL creates a new SrcList.
  * @param name_token Token representing table name.
  * @retval Not NULL A new SrcList or updated @a list.
- * @retval NULL Error. A diag message is set. @A list is deleted.
  */
 struct SrcList *
-sql_src_list_append(struct sql *db, struct SrcList *list,
-		    struct Token *name_token);
+sql_src_list_append(struct SrcList *list, struct Token *name_token);
 
 SrcList *sqlSrcListAppendFromTerm(Parse *, SrcList *, Token *,
 				      Token *, Select *, Expr *, IdList *);

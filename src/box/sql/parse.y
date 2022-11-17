@@ -691,11 +691,7 @@ seltablist(A) ::= stl_prefix(A) LP seltablist(F) RP
 %destructor fullname {sqlSrcListDelete(pParse->db, $$);}
 fullname(A) ::= nm(X). {
   /* A-overwrites-X. */
-  A = sql_src_list_append(pParse->db,0,&X);
-  if (A == NULL) {
-    pParse->is_aborted = true;
-    return;
-  }
+  A = sql_src_list_append(NULL ,&X);
 }
 
 %type joinop {int}
@@ -1392,11 +1388,7 @@ expr(A) ::= expr(A) in_op(N) LP select(Y) RP(E).  [IN] {
   A.zEnd = &E.z[E.n];
 }
 expr(A) ::= expr(A) in_op(N) nm(Y) paren_exprlist(E). [IN] {
-  struct SrcList *pSrc = sql_src_list_append(pParse->db, 0,&Y);
-  if (pSrc == NULL) {
-    pParse->is_aborted = true;
-    return;
-  }
+  struct SrcList *pSrc = sql_src_list_append(NULL, &Y);
   Select *pSelect = sqlSelectNew(pParse, 0,pSrc,0,0,0,0,0,0,0);
   if( E )  sqlSrcListFuncArgs(pParse, pSelect ? pSrc : 0, E);
   A.pExpr = sqlPExpr(pParse, TK_IN, A.pExpr, 0);
@@ -1462,11 +1454,7 @@ paren_exprlist(A) ::= LP exprlist(X) RP.  {A = X;}
 //
 cmd ::= createkw uniqueflag(U) INDEX ifnotexists(NE) nm(X)
         ON nm(Y) LP sortlist(Z) RP. {
-  struct SrcList *src_list = sql_src_list_append(pParse->db,0,&Y);
-  if (src_list == NULL) {
-    pParse->is_aborted = true;
-    return;
-  }
+  struct SrcList *src_list = sql_src_list_append(NULL ,&Y);
   create_index_def_init(&pParse->create_index_def, src_list, &X, Z, U,
                         SORT_ORDER_ASC, NE);
   pParse->initiateTTrans = true;
