@@ -2847,15 +2847,9 @@ int sqlIdListIndex(IdList *, const char *);
 struct SrcList *
 sql_src_list_enlarge(struct SrcList *src_list, int new_slots, int start_idx);
 
-/**
- * Allocate a new empty SrcList object.
- *
- * @param db The database connection.
- * @retval Not NULL List pointer on success.
- * @retval NULL Otherwise. The diag message is set.
- */
+/** Allocate a new empty SrcList object. */
 struct SrcList *
-sql_src_list_new(struct sql *db);
+sql_src_list_new();
 
 /**
  * Append a new table name to the given list. Create a new

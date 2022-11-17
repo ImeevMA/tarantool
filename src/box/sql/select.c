@@ -515,9 +515,7 @@ sql_select_expand_from_tables(struct Select *select)
 {
 	assert(select != NULL);
 	struct Walker walker;
-	struct SrcList *table_names = sql_src_list_new(sql_get());
-	if (table_names == NULL)
-		return NULL;
+	struct SrcList *table_names = sql_src_list_new();
 	memset(&walker, 0, sizeof(walker));
 	walker.xExprCallback = sqlExprWalkNoop;
 	walker.xSelectCallback = select_collect_table_names;

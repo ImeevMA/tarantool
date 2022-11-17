@@ -1604,11 +1604,7 @@ vdbe_emit_stat_space_clear(struct Parse *parse, const char *stat_table_name,
 {
 	assert(idx_name != NULL || table_name != NULL);
 	struct sql *db = parse->db;
-	struct SrcList *src_list = sql_src_list_new(db);
-	if (src_list == NULL) {
-		parse->is_aborted = true;
-		return;
-	}
+	struct SrcList *src_list = sql_src_list_new();
 	src_list->a[0].zName = sqlDbStrDup(stat_table_name);
 	struct Expr *expr, *where = NULL;
 	if (idx_name != NULL) {
@@ -3081,9 +3077,8 @@ sql_src_list_enlarge(struct SrcList *src_list, int new_slots, int start_idx)
 }
 
 struct SrcList *
-sql_src_list_new(struct sql *db)
+sql_src_list_new(void)
 {
-	(void)db;
 	struct SrcList *src_list = sqlDbMallocRawNN(sizeof(struct SrcList));
 	src_list->nAlloc = 1;
 	src_list->nSrc = 1;
@@ -3097,9 +3092,7 @@ sql_src_list_append(struct sql *db, struct SrcList *list,
 		    struct Token *name_token)
 {
 	if (list == NULL) {
-		list = sql_src_list_new(db);
-		if (list == NULL)
-			return NULL;
+		list = sql_src_list_new();
 	} else {
 		struct SrcList *new_list =
 			sql_src_list_enlarge(list, 1, list->nSrc);
