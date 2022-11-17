@@ -137,9 +137,8 @@ sql_normalize_name(char *dst, int dst_size, const char *src, int src_len)
 }
 
 char *
-sql_normalized_name_db_new(struct sql *db, const char *name, int len)
+sql_normalized_name_db_new(const char *name, int len)
 {
-	(void)db;
 	int size = len + 1;
 	ERROR_INJECT(ERRINJ_SQL_NAME_NORMALIZATION, {
 		diag_set(OutOfMemory, size, "sqlDbMallocRawNN", "res");

@@ -2474,14 +2474,13 @@ sql_normalize_name(char *dst, int dst_size, const char *src, int src_len);
 /**
  * Duplicate a normalized version of @a name onto an sqlDbMallocRawNN().
  * For normalization rules @sa sql_normalize_name().
- * @param db SQL context.
+ *
  * @param name Source string.
  * @param len Length of @a name.
  * @retval Not NULL Success. A normalized string is returned.
- * @retval NULL Error. A diag message is set.
  */
 char *
-sql_normalized_name_db_new(struct sql *db, const char *name, int len);
+sql_normalized_name_db_new(const char *name, int len);
 
 /**
  * Duplicate a normalized version of @a name onto a region @a r.
@@ -3042,8 +3041,9 @@ void sqlExprIfFalse(Parse *, Expr *, int, int);
 static inline char *
 sql_name_from_token(struct sql *db, struct Token *t)
 {
+	(void)db;
 	assert(t != NULL && t->z != NULL);
-	return sql_normalized_name_db_new(db, t->z, t->n);
+	return sql_normalized_name_db_new(t->z, t->n);
 }
 
 int sqlExprCompare(Expr *, Expr *, int);

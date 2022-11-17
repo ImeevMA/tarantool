@@ -1908,7 +1908,6 @@ sqlExprListSetName(Parse * pParse,	/* Parsing context */
 		       int dequote	/* True to cause the name to be dequoted */
     )
 {
-	struct sql *db = pParse->db;
 	assert(pList != NULL);
 	if (pList == NULL || pName->n == 0)
 		return;
@@ -1916,14 +1915,11 @@ sqlExprListSetName(Parse * pParse,	/* Parsing context */
 	struct ExprList_item *item = &pList->a[pList->nExpr - 1];
 	assert(item->zName == NULL);
 	if (dequote) {
-		item->zName = sql_normalized_name_db_new(db, pName->z, pName->n);
-		if (item->zName == NULL)
-			pParse->is_aborted = true;
+		item->zName = sql_normalized_name_db_new(pName->z, pName->n);
 	} else {
 		item->zName = sqlDbStrNDup(pName->z, pName->n);
 	}
-	if (item->zName != NULL)
-		sqlCheckIdentifierName(pParse, item->zName);
+	sqlCheckIdentifierName(pParse, item->zName);
 }
 
 /*
