@@ -343,7 +343,11 @@ void
 sqlVdbeSorterClose(struct VdbeCursor *pCsr);
 
 int sqlVdbeSorterRowkey(const VdbeCursor *, Mem *);
-int sqlVdbeSorterNext(sql *, const VdbeCursor *, int *);
+
+/** Advance to the next element in the sorter. */
+int
+sqlVdbeSorterNext(const struct VdbeCursor *pCsr, int *pbEof);
+
 int sqlVdbeSorterRewind(const VdbeCursor *, int *);
 int sqlVdbeSorterWrite(const VdbeCursor *, Mem *);
 int sqlVdbeSorterCompare(const VdbeCursor *, Mem *, int, int *);

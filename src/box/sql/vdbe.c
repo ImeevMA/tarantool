@@ -3319,7 +3319,7 @@ case OP_SorterNext: {  /* jump */
 	pC = p->apCsr[pOp->p1];
 	assert(isSorter(pC));
 	res = 0;
-	if (sqlVdbeSorterNext(db, pC, &res) != 0)
+	if (sqlVdbeSorterNext(pC, &res) != 0)
 		goto abort_due_to_error;
 	goto next_tail;
 case OP_PrevIfOpen:    /* jump */

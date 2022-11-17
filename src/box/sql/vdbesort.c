@@ -2046,13 +2046,10 @@ sqlVdbeSorterRewind(const VdbeCursor * pCsr, int *pbEof)
 	return rc;
 }
 
-/*
- * Advance to the next element in the sorter.
- */
+/** Advance to the next element in the sorter. */
 int
-sqlVdbeSorterNext(sql * db, const VdbeCursor * pCsr, int *pbEof)
+sqlVdbeSorterNext(const struct VdbeCursor *pCsr, int *pbEof)
 {
-	(void)db;
 	VdbeSorter *pSorter;
 	int rc;			/* Return code */
 
