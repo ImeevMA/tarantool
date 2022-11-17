@@ -1808,9 +1808,8 @@ whereLoopXfer(struct WhereLoop *pTo, struct WhereLoop *pFrom)
  * Delete a WhereLoop object
  */
 static void
-whereLoopDelete(sql * db, WhereLoop * p)
+whereLoopDelete(struct WhereLoop * p)
 {
-	(void)db;
 	whereLoopClear(p);
 	sqlDbFree(p);
 }
@@ -1821,6 +1820,7 @@ whereLoopDelete(sql * db, WhereLoop * p)
 static void
 whereInfoFree(sql * db, WhereInfo * pWInfo)
 {
+	(void)db;
 	if (ALWAYS(pWInfo)) {
 		int i;
 		for (i = 0; i < pWInfo->nLevel; i++) {
@@ -1834,7 +1834,7 @@ whereInfoFree(sql * db, WhereInfo * pWInfo)
 		while (pWInfo->pLoops) {
 			WhereLoop *p = pWInfo->pLoops;
 			pWInfo->pLoops = p->pNextLoop;
-			whereLoopDelete(db, p);
+			whereLoopDelete(p);
 		}
 		sqlDbFree(pWInfo);
 	}
@@ -2048,7 +2048,6 @@ whereLoopInsert(WhereLoopBuilder * pBuilder, WhereLoop * pTemplate)
 {
 	WhereLoop **ppPrev, *p;
 	WhereInfo *pWInfo = pBuilder->pWInfo;
-	sql *db = pWInfo->pParse->db;
 	int rc;
 
 	/* If pBuilder->pOrSet is defined, then only keep track of the costs
@@ -2134,7 +2133,7 @@ whereLoopInsert(WhereLoopBuilder * pBuilder, WhereLoop * pTemplate)
 				whereLoopPrint(pToDel, pBuilder->pWC);
 			}
 #endif
-			whereLoopDelete(db, pToDel);
+			whereLoopDelete(pToDel);
 		}
 	}
 	rc = whereLoopXfer(p, pTemplate);
