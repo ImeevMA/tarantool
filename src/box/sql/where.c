@@ -1818,9 +1818,8 @@ whereLoopDelete(struct WhereLoop * p)
  * Free a WhereInfo structure
  */
 static void
-whereInfoFree(sql * db, WhereInfo * pWInfo)
+whereInfoFree(struct WhereInfo *pWInfo)
 {
-	(void)db;
 	if (ALWAYS(pWInfo)) {
 		int i;
 		for (i = 0; i < pWInfo->nLevel; i++) {
@@ -4630,7 +4629,7 @@ sqlWhereBegin(Parse * pParse,	/* The parser context */
  whereBeginError:
 	if (pWInfo) {
 		pParse->nQueryLoop = pWInfo->savedNQueryLoop;
-		whereInfoFree(db, pWInfo);
+		whereInfoFree(pWInfo);
 	}
 	return 0;
 }
@@ -4648,7 +4647,6 @@ sqlWhereEnd(WhereInfo * pWInfo)
 	WhereLevel *pLevel;
 	WhereLoop *pLoop;
 	SrcList *pTabList = pWInfo->pTabList;
-	sql *db = pParse->db;
 
 	/* Generate loop termination code.
 	 */
@@ -4796,6 +4794,6 @@ sqlWhereEnd(WhereInfo * pWInfo)
 	/* Final cleanup
 	 */
 	pParse->nQueryLoop = pWInfo->savedNQueryLoop;
-	whereInfoFree(db, pWInfo);
+	whereInfoFree(pWInfo);
 	return;
 }
