@@ -2831,7 +2831,7 @@ int sqlIdListIndex(IdList *, const char *);
  * For example, suppose a SrcList initially contains two entries:
  * A,B.
  * To append 3 new entries onto the end, do this:
- *    sql_src_list_enlarge(db, src_list, 3, 2);
+ *    sql_src_list_enlarge(src_list, 3, 2);
  *
  * After the call above it would contain:  A, B, nil, nil, nil.
  * If the start_idx argument had been 1 instead of 2, then the
@@ -2839,16 +2839,13 @@ int sqlIdListIndex(IdList *, const char *);
  * new slots, the start_idx value would be 0. The result then
  * would be: nil, nil, nil, A, B.
  *
- * @param db The database connection.
  * @param src_list The SrcList to be enlarged.
  * @param new_slots Number of new slots to add to src_list->a[].
  * @param start_idx Index in src_list->a[] of first new slot.
- * @retval Not NULL SrcList pointer on success.
- * @retval NULL Otherwise. The diag message is set.
+ * @retval Not NULL List pointer on success.
  */
 struct SrcList *
-sql_src_list_enlarge(struct sql *db, struct SrcList *src_list, int new_slots,
-		     int start_idx);
+sql_src_list_enlarge(struct SrcList *src_list, int new_slots, int start_idx);
 
 /**
  * Allocate a new empty SrcList object.

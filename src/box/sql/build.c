@@ -3047,10 +3047,8 @@ sqlIdListIndex(IdList * pList, const char *zName)
 }
 
 struct SrcList *
-sql_src_list_enlarge(struct sql *db, struct SrcList *src_list, int new_slots,
-		     int start_idx)
+sql_src_list_enlarge(struct SrcList *src_list, int new_slots, int start_idx)
 {
-	(void)db;
 	assert(start_idx >= 0);
 	assert(new_slots >= 1);
 	assert(src_list != NULL);
@@ -3104,11 +3102,7 @@ sql_src_list_append(struct sql *db, struct SrcList *list,
 			return NULL;
 	} else {
 		struct SrcList *new_list =
-			sql_src_list_enlarge(db, list, 1, list->nSrc);
-		if (new_list == NULL) {
-			sqlSrcListDelete(db, list);
-			return NULL;
-		}
+			sql_src_list_enlarge(list, 1, list->nSrc);
 		list = new_list;
 	}
 	struct SrcList_item *item = &list->a[list->nSrc - 1];
