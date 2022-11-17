@@ -607,7 +607,7 @@ sclp(A) ::= .                                {A = 0;}
 selcollist(A) ::= sclp(A) expr(X) as(Y).     {
    A = sql_expr_list_append(pParse->db, A, X.pExpr);
    if( Y.n>0 ) sqlExprListSetName(pParse, A, &Y, 1);
-   sqlExprListSetSpan(pParse,A,&X);
+   sqlExprListSetSpan(A, &X);
 }
 selcollist(A) ::= sclp(A) STAR. {
   A = sql_expr_list_append(pParse->db, A, sql_expr_new_anon(TK_ASTERISK));

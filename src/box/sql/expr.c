@@ -1913,20 +1913,9 @@ sqlExprListSetName(Parse * pParse,	/* Parsing context */
 	sqlCheckIdentifierName(pParse, item->zName);
 }
 
-/*
- * Set the ExprList.a[].zSpan element of the most recently added item
- * on the expression list.
- *
- * pList might be NULL following an OOM error.  But pSpan should never be
- * NULL.
- */
 void
-sqlExprListSetSpan(Parse * pParse,	/* Parsing context */
-		       ExprList * pList,	/* List to which to add the span. */
-		       ExprSpan * pSpan	/* The span to be added */
-    )
+sqlExprListSetSpan(struct ExprList *pList, struct ExprSpan *pSpan)
 {
-	(void)pParse;
 	assert(pList != NULL);
 	struct ExprList_item *pItem = &pList->a[pList->nExpr - 1];
 	assert(pList->nExpr > 0);

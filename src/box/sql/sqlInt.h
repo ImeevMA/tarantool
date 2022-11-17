@@ -2615,7 +2615,17 @@ expr_new_variable(struct Parse *parse, const struct Token *spec,
 void sqlExprListSetSortOrder(ExprList *, enum sort_order sort_order);
 
 void sqlExprListSetName(Parse *, ExprList *, Token *, int);
-void sqlExprListSetSpan(Parse *, ExprList *, ExprSpan *);
+
+/**
+ * Set the ExprList.a[].zSpan element of the most recently added item on the
+ * expression list.
+ *
+ * @param pList List to which to add the span.
+ * @param The span to be added.
+ */
+void
+sqlExprListSetSpan(struct ExprList *pList, struct ExprSpan *pSpan);
+
 u32 sqlExprListFlags(const ExprList *);
 int sqlInit(sql *);
 
