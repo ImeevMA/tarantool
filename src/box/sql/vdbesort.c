@@ -1128,8 +1128,6 @@ vdbeSorterSort(SortSubtask * pTask, SorterList * pList)
 			if ((u8 *) p == pList->aMemory) {
 				pNext = 0;
 			} else {
-				assert(p->u.iNext <
-				       sqlMallocSize(pList->aMemory));
 				pNext =
 				    (SorterRecord *) & pList->aMemory[p->u.
 								      iNext];

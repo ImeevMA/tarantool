@@ -190,7 +190,6 @@ setupLookaside(sql * db, void *pBuf, int sz, int cnt)
 		pStart = 0;
 	} else if (pBuf == 0) {
 		pStart = sqlMalloc(sz * cnt);	/* IMP: R-61949-35727 */
-		cnt = sqlMallocSize(pStart) / sz;
 	} else {
 		pStart = pBuf;
 	}

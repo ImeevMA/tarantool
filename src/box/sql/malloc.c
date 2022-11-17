@@ -80,16 +80,6 @@ is_lookaside(void *buf)
 	return buf >= db->lookaside.pStart && buf < db->lookaside.pEnd;
 }
 
-/**
- * Return the size of a memory allocation previously obtained from
- * sqlMalloc().
- */
-int
-sqlMallocSize(void *p)
-{
-	return sql_sized_sizeof(p);
-}
-
 int
 sqlDbMallocSize(sql * db, void *p)
 {
@@ -143,10 +133,10 @@ sqlRealloc(void *buf, size_t n)
 		exit(EXIT_FAILURE);
 	}
 	size_t size = ROUND8(n);
-	if (size == (size_t)sqlMallocSize(buf))
-		return buf;
 	int64_t *new_buf = buf;
 	--new_buf;
+	if ((size_t)new_buf[0] == size)
+		return buf;
 	new_buf = xrealloc(new_buf, size + 8);
 	new_buf[0] = size;
 	new_buf++;

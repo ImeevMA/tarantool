@@ -2417,7 +2417,6 @@ sqlDbRealloc(void *buf, size_t n);
 void
 sqlDbFree(void *buf);
 
-int sqlMallocSize(void *);
 int sqlDbMallocSize(sql *, void *);
 
 /*
