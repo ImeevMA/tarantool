@@ -849,23 +849,20 @@ fk_constraint_action_trigger(struct Parse *pParse, struct space_def *def,
 		where = NULL;
 	}
 
-	trigger = (struct sql_trigger *) sqlDbMallocZero(db,
-							     sizeof(*trigger));
-	if (trigger != NULL) {
-		size_t step_size = sizeof(TriggerStep) + name_len + 1;
-		trigger->step_list = sqlDbMallocZero(db, step_size);
-		step = trigger->step_list;
-		step->zTarget = (char *) &step[1];
-		memcpy((char *) step->zTarget, space_name, name_len);
+	trigger = sqlDbMallocZero(sizeof(*trigger));
+	size_t step_size = sizeof(TriggerStep) + name_len + 1;
+	trigger->step_list = sqlDbMallocZero(step_size);
+	step = trigger->step_list;
+	step->zTarget = (char *)&step[1];
+	memcpy((char *)step->zTarget, space_name, name_len);
 
-		step->pWhere = sqlExprDup(db, where, EXPRDUP_REDUCE);
-		step->pExprList = sql_expr_list_dup(db, list, EXPRDUP_REDUCE);
-		step->pSelect = sqlSelectDup(db, select, EXPRDUP_REDUCE);
-		if (when != NULL) {
-			when = sqlPExpr(pParse, TK_NOT, when, 0);
-			trigger->pWhen =
-				sqlExprDup(db, when, EXPRDUP_REDUCE);
-		}
+	step->pWhere = sqlExprDup(db, where, EXPRDUP_REDUCE);
+	step->pExprList = sql_expr_list_dup(db, list, EXPRDUP_REDUCE);
+	step->pSelect = sqlSelectDup(db, select, EXPRDUP_REDUCE);
+	if (when != NULL) {
+		when = sqlPExpr(pParse, TK_NOT, when, 0);
+		trigger->pWhen =
+			sqlExprDup(db, when, EXPRDUP_REDUCE);
 	}
 
 	sql_expr_delete(db, where);

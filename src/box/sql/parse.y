@@ -648,7 +648,7 @@ as(X) ::= .            {X.n = 0; X.z = 0;}
 
 // A complete FROM clause.
 //
-from(A) ::= .                {A = sqlDbMallocZero(pParse->db, sizeof(*A));}
+from(A) ::= .                {A = sqlDbMallocZero(sizeof(*A));}
 from(A) ::= FROM seltablist(X). {
   A = X;
   sqlSrcListShiftJoinType(A);

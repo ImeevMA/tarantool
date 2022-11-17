@@ -3936,9 +3936,7 @@ case OP_Program: {        /* jump */
 		nByte = ROUND8(sizeof(VdbeFrame))
 			+ nMem * sizeof(Mem)
 			+ pProgram->nCsr * sizeof(VdbeCursor *);
-		pFrame = sqlDbMallocZero(db, nByte);
-		if (pFrame == NULL)
-			goto abort_due_to_error;
+		pFrame = sqlDbMallocZero(nByte);
 		mem_set_frame(pRt, pFrame);
 
 		pFrame->v = p;

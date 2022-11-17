@@ -161,11 +161,9 @@ sqlMallocZero(size_t n)
 	return p;
 }
 
-/** Allocate and zero memory. */
 void *
-sqlDbMallocZero(sql * db, u64 n)
+sqlDbMallocZero(size_t n)
 {
-	(void)db;
 	void *p = sqlDbMallocRawNN(n);
 	memset(p, 0, (size_t) n);
 	return p;

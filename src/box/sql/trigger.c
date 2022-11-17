@@ -115,11 +115,7 @@ sql_trigger_begin(struct Parse *parse)
 	}
 
 	/* Build the Trigger object. */
-	trigger = (struct sql_trigger *)sqlDbMallocZero(db,
-							    sizeof(struct
-								   sql_trigger));
-	if (trigger == NULL)
-		goto trigger_cleanup;
+	trigger = sqlDbMallocZero(sizeof(struct sql_trigger));
 	trigger->space_id = space_id;
 	trigger->zName = trigger_name;
 	trigger_name = NULL;
@@ -231,14 +227,9 @@ cleanup:
 struct TriggerStep *
 sql_trigger_select_step(struct sql *db, struct Select *select)
 {
+	(void)db;
 	struct TriggerStep *trigger_step =
-		sqlDbMallocZero(db, sizeof(struct TriggerStep));
-	if (trigger_step == NULL) {
-		sql_select_delete(db, select);
-		diag_set(OutOfMemory, sizeof(struct TriggerStep),
-			 "sqlDbMallocZero", "trigger_step");
-		return NULL;
-	}
+		sqlDbMallocZero(sizeof(struct TriggerStep));
 	trigger_step->op = TK_SELECT;
 	trigger_step->pSelect = select;
 	trigger_step->orconf = ON_CONFLICT_ACTION_DEFAULT;
@@ -259,13 +250,10 @@ sql_trigger_select_step(struct sql *db, struct Select *select)
 static struct TriggerStep *
 sql_trigger_step_new(struct sql *db, u8 op, struct Token *target_name)
 {
+	(void)db;
 	int name_size = target_name->n + 1;
 	int size = sizeof(struct TriggerStep) + name_size;
-	struct TriggerStep *trigger_step = sqlDbMallocZero(db, size);
-	if (trigger_step == NULL) {
-		diag_set(OutOfMemory, size, "sqlDbMallocZero", "trigger_step");
-		return NULL;
-	}
+	struct TriggerStep *trigger_step = sqlDbMallocZero(size);
 	char *z = (char *)&trigger_step[1];
 	int rc = sql_normalize_name(z, name_size, target_name->z,
 				    target_name->n);
@@ -705,14 +693,11 @@ sql_row_trigger_program(struct Parse *parser, struct sql_trigger *trigger,
 	 * are freed if an error occurs, link them into the Parse.pTriggerPrg
 	 * list of the top-level Parse object sooner rather than later.
 	 */
-	pPrg = sqlDbMallocZero(db, sizeof(TriggerPrg));
-	if (!pPrg)
-		return 0;
+	pPrg = sqlDbMallocZero(sizeof(TriggerPrg));
 	pPrg->pNext = pTop->pTriggerPrg;
 	pTop->pTriggerPrg = pPrg;
-	pPrg->pProgram = pProgram = sqlDbMallocZero(db, sizeof(SubProgram));
-	if (!pProgram)
-		return 0;
+	pProgram = sqlDbMallocZero(sizeof(SubProgram));
+	pPrg->pProgram = pProgram;
 	sqlVdbeLinkSubProgram(pTop->pVdbe, pProgram);
 	pPrg->trigger = trigger;
 	pPrg->orconf = orconf;
@@ -723,9 +708,7 @@ sql_row_trigger_program(struct Parse *parser, struct sql_trigger *trigger,
 	 * Allocate and populate a new Parse context to use for
 	 * coding the trigger sub-program.
 	 */
-	pSubParse = sqlStackAllocZero(db, sizeof(Parse));
-	if (!pSubParse)
-		return 0;
+	pSubParse = sqlStackAllocZero(sizeof(Parse));
 	sql_parser_create(pSubParse, db, parser->sql_flags);
 	memset(&sNC, 0, sizeof(sNC));
 	sNC.pParse = pSubParse;

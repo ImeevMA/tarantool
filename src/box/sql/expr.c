@@ -1616,17 +1616,14 @@ withDup(sql * db, With * p)
 	With *pRet = 0;
 	if (p) {
 		int nByte = sizeof(*p) + sizeof(p->a[0]) * (p->nCte - 1);
-		pRet = sqlDbMallocZero(db, nByte);
-		if (pRet) {
-			int i;
-			pRet->nCte = p->nCte;
-			for (i = 0; i < p->nCte; i++) {
-				pRet->a[i].pSelect =
-				    sqlSelectDup(db, p->a[i].pSelect, 0);
-				pRet->a[i].pCols =
-				    sql_expr_list_dup(db, p->a[i].pCols, 0);
-				pRet->a[i].zName = sqlDbStrDup(p->a[i].zName);
-			}
+		pRet = sqlDbMallocZero(nByte);
+		pRet->nCte = p->nCte;
+		for (int i = 0; i < p->nCte; i++) {
+			pRet->a[i].pSelect =
+				sqlSelectDup(db, p->a[i].pSelect, 0);
+			pRet->a[i].pCols =
+				sql_expr_list_dup(db, p->a[i].pCols, 0);
+			pRet->a[i].zName = sqlDbStrDup(p->a[i].zName);
 		}
 	}
 	return pRet;
@@ -2650,28 +2647,26 @@ sqlFindInIndex(Parse * pParse,	/* Parsing context */
 static enum field_type *
 expr_in_type(Parse *pParse, Expr *pExpr)
 {
+	(void)pParse;
 	Expr *pLeft = pExpr->pLeft;
 	int nVal = sqlExprVectorSize(pLeft);
 	Select *pSelect = (pExpr->flags & EP_xIsSelect) ? pExpr->x.pSelect : 0;
 
 	assert(pExpr->op == TK_IN);
 	uint32_t sz = (nVal + 1) * sizeof(enum field_type);
-	enum field_type *zRet = sqlDbMallocZero(pParse->db, sz);
-	if (zRet) {
-		int i;
-		for (i = 0; i < nVal; i++) {
-			Expr *pA = sqlVectorFieldSubexpr(pLeft, i);
-			enum field_type lhs = sql_expr_type(pA);
-			if (pSelect) {
-				struct Expr *e = pSelect->pEList->a[i].pExpr;
-				enum field_type rhs = sql_expr_type(e);
-				zRet[i] = sql_type_result(rhs, lhs);
-			} else {
-				zRet[i] = lhs;
-			}
+	enum field_type *zRet = sqlDbMallocZero(sz);
+	for (int i = 0; i < nVal; i++) {
+		Expr *pA = sqlVectorFieldSubexpr(pLeft, i);
+		enum field_type lhs = sql_expr_type(pA);
+		if (pSelect != NULL) {
+			struct Expr *e = pSelect->pEList->a[i].pExpr;
+			enum field_type rhs = sql_expr_type(e);
+			zRet[i] = sql_type_result(rhs, lhs);
+		} else {
+			zRet[i] = lhs;
 		}
-		zRet[nVal] = field_type_MAX;
 	}
+	zRet[nVal] = field_type_MAX;
 	return zRet;
 }
 
@@ -3009,10 +3004,7 @@ sqlExprCodeIN(Parse * pParse,	/* Parsing and code generating context */
 	/* Type sequence for comparisons. */
 	enum field_type *zAff = expr_in_type(pParse, pExpr);
 	nVector = sqlExprVectorSize(pExpr->pLeft);
-	aiMap =
-	    (int *)sqlDbMallocZero(pParse->db,
-				       nVector * (sizeof(int) + sizeof(char)) +
-				       1);
+	aiMap = sqlDbMallocZero(nVector * (sizeof(int) + sizeof(char)) + 1);
 
 	/* Attempt to compute the RHS. After this step, if anything other than
 	 * IN_INDEX_NOOP is returned, the table opened ith cursor pExpr->iTable
@@ -4396,12 +4388,7 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			assert(pParse->is_aborted
 			       || pParse->iCacheLevel == iCacheLevel);
 			sqlVdbeResolveLabel(v, endLabel);
-			enum field_type *type =
-				sqlDbMallocZero(pParse->db, sizeof(*type));
-			if (type == NULL) {
-				pParse->is_aborted = true;
-				break;
-			}
+			enum field_type *type = sqlDbMallocZero(sizeof(*type));
 			type[0] = sql_expr_type(pExpr);
 			sqlVdbeAddOp4(v, OP_ApplyType, target, 1, 0,
 				      (char *)type, P4_DYNAMIC);

@@ -47,13 +47,9 @@ void
 sql_emit_table_types(struct Vdbe *v, struct space_def *def, int reg)
 {
 	assert(reg > 0);
-	struct sql *db = sqlVdbeDb(v);
 	uint32_t field_count = def->field_count;
 	size_t sz = (field_count + 1) * sizeof(enum field_type);
-	enum field_type *colls_type =
-		(enum field_type *) sqlDbMallocZero(db, sz);
-	if (colls_type == NULL)
-		return;
+	enum field_type *colls_type = sqlDbMallocZero(sz);
 	for (uint32_t i = 0; i < field_count; ++i)
 		colls_type[i] = def->fields[i].type;
 	colls_type[field_count] = field_type_MAX;

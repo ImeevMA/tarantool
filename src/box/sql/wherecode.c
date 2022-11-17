@@ -463,8 +463,7 @@ codeEqualityTerm(Parse * pParse,	/* The parsing context */
 				pX->pLeft = pLhs->a[0].pExpr;
 			} else {
 				pLeft->x.pList = pLhs;
-				aiMap = sqlDbMallocZero(pParse->db,
-							sizeof(int) * nEq);
+				aiMap = sqlDbMallocZero(sizeof(int) * nEq);
 			}
 			pSelect->pEList = pRhs;
 			db->dbOptFlags |= SQL_QueryFlattener;

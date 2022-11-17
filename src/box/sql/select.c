@@ -395,7 +395,7 @@ sqlSelectNew(Parse * pParse,	/* Parsing context */
 	standin.addrOpenEphm[1] = -1;
 	standin.nSelectRow = 0;
 	if (pSrc == 0)
-		pSrc = sqlDbMallocZero(db, sizeof(*pSrc));
+		pSrc = sqlDbMallocZero(sizeof(*pSrc));
 	standin.pSrc = pSrc;
 	standin.pWhere = pWhere;
 	standin.pGroupBy = pGroupBy;
@@ -4675,9 +4675,7 @@ convertCompoundSelectToSubquery(Walker * pWalker, Select * p)
 
 	pParse = pWalker->pParse;
 	db = pParse->db;
-	pNew = sqlDbMallocZero(db, sizeof(*pNew));
-	if (pNew == 0)
-		return WRC_Abort;
+	pNew = sqlDbMallocZero(sizeof(*pNew));
 	memset(&dummy, 0, sizeof(dummy));
 	pNewSrc =
 	    sqlSrcListAppendFromTerm(pParse, 0, 0, &dummy, pNew, 0, 0);

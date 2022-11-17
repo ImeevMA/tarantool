@@ -3026,11 +3026,8 @@ struct IdList *
 sql_id_list_append(struct sql *db, struct IdList *list,
 		   struct Token *name_token)
 {
-	if (list == NULL &&
-	    (list = sqlDbMallocZero(db, sizeof(*list))) == NULL) {
-		diag_set(OutOfMemory, sizeof(*list), "sqlDbMallocZero", "list");
-		return NULL;
-	}
+	if (list == NULL)
+		list = sqlDbMallocZero(sizeof(*list));
 	int i;
 	list->a = sqlArrayAllocate(db, list->a, sizeof(list->a[0]),
 				   &list->nId, &i);
@@ -3447,7 +3444,7 @@ sqlWithAdd(Parse * pParse,	/* Parsing context */
 		    sizeof(*pWith) + (sizeof(pWith->a[1]) * pWith->nCte);
 		pNew = sqlDbRealloc(pWith, nByte);
 	} else {
-		pNew = sqlDbMallocZero(db, sizeof(*pWith));
+		pNew = sqlDbMallocZero(sizeof(*pWith));
 	}
 
 	pNew->a[pNew->nCte].pSelect = pQuery;

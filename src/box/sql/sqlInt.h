@@ -2380,7 +2380,9 @@ sqlMalloc(size_t n);
 void *
 sqlMallocZero(size_t n);
 
-void *sqlDbMallocZero(sql *, u64);
+/** Allocate and nullify memory. */
+void *
+sqlDbMallocZero(size_t n);
 
 /** Allocate memory, either lookaside (if possible) or heap. */
 void *
@@ -2432,7 +2434,7 @@ int sqlDbMallocSize(sql *, void *);
 #define sqlStackFree(P)
 #else
 #define sqlStackAllocRaw(N)   sqlDbMallocRawNN(N)
-#define sqlStackAllocZero(D,N)  sqlDbMallocZero(D,N)
+#define sqlStackAllocZero(N)  sqlDbMallocZero(N)
 #define sqlStackFree(P)       sqlDbFree(P)
 #endif
 

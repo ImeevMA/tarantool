@@ -2980,12 +2980,10 @@ sqlValueFree(sql_value * v)
 sql_value *
 sqlValueNew(sql * db)
 {
-	Mem *p = sqlDbMallocZero(db, sizeof(*p));
-	if (p) {
-		p->type = MEM_TYPE_NULL;
-		assert(p->flags == 0);
-		p->db = db;
-	}
+	struct Mem *p = sqlDbMallocZero(sizeof(*p));
+	p->type = MEM_TYPE_NULL;
+	assert(p->flags == 0);
+	p->db = db;
 	return p;
 }
 

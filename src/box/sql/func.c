@@ -948,11 +948,7 @@ func_zeroblob(struct sql_context *ctx, int argc, const struct Mem *argv)
 	if (arg->u.u == 0)
 		return mem_set_bin_static(ctx->pOut, "", 0);
 	uint64_t len = arg->u.u;
-	char *res = sqlDbMallocZero(sql_get(), len);
-	if (res == NULL) {
-		ctx->is_aborted = true;
-		return;
-	}
+	char *res = sqlDbMallocZero(len);
 	mem_set_bin_allocated(ctx->pOut, res, len);
 }
 
