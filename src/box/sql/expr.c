@@ -1215,7 +1215,6 @@ sqlExprFunction(Parse * pParse, ExprList * pList, Token * pToken)
 void
 sqlExprAssignVarNumber(Parse * pParse, Expr * pExpr, u32 n)
 {
-	sql *db = pParse->db;
 	const char *z;
 	ynVar x;
 
@@ -1276,8 +1275,7 @@ sqlExprAssignVarNumber(Parse * pParse, Expr * pExpr, u32 n)
 			}
 		}
 		if (doAdd) {
-			pParse->pVList =
-			    sqlVListAdd(db, pParse->pVList, z, n, x);
+			pParse->pVList = sqlVListAdd(pParse->pVList, z, n, x);
 		}
 	}
 	pExpr->iColumn = x;

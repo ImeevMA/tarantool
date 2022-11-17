@@ -1178,49 +1178,9 @@ sqlLogEstToInt(LogEst x)
 	return x >= 3 ? (n + 8) << (x - 3) : (n + 8) >> (3 - x);
 }
 
-/*
- * Add a new name/number pair to a VList.  This might require that the
- * VList object be reallocated, so return the new VList.
- *
- * A VList is really just an array of integers.  To destroy a VList,
- * simply pass it to sqlDbFree().
- *
- * The first integer is the number of integers allocated for the whole
- * VList.  The second integer is the number of integers actually used.
- * Each name/number pair is encoded by subsequent groups of 3 or more
- * integers.
- *
- * Each name/number pair starts with two integers which are the numeric
- * value for the pair and the size of the name/number pair, respectively.
- * The text name overlays one or more following integers.  The text name
- * is always zero-terminated.
- *
- * Conceptually:
- *
- *    struct VList {
- *      int nAlloc;   // Number of allocated slots
- *      int nUsed;    // Number of used slots
- *      struct VListEntry {
- *        int iValue;    // Value for this entry
- *        int nSlot;     // Slots used by this entry
- *        // ... variable name goes here
- *      } a[0];
- *    }
- *
- * During code generation, pointers to the variable names within the
- * VList are taken.  When that happens, nAlloc is set to zero as an
- * indication that the VList may never again be enlarged, since the
- * accompanying realloc() would invalidate the pointers.
- */
-VList *
-sqlVListAdd(sql * db,	/* The database connection used for malloc() */
-		VList * pIn,	/* The input VList.  Might be NULL */
-		const char *zName,	/* Name of symbol to add */
-		int nName,	/* Bytes of text in zName */
-		int iVal	/* Value to associate with zName */
-    )
+int *
+sqlVListAdd(int *pIn, const char *zName, int nName, int iVal)
 {
-	(void)db;
 	int nInt;		/* number of sizeof(int) objects needed for zName */
 	char *z;		/* Pointer to where zName will be stored */
 	int i;			/* Index in pIn[] where zName is stored */
