@@ -1578,20 +1578,17 @@ vdbe_emit_stat_space_clear(struct Parse *parse, const char *stat_table_name,
 			   const char *idx_name, const char *table_name)
 {
 	assert(idx_name != NULL || table_name != NULL);
-	struct sql *db = parse->db;
 	struct SrcList *src_list = sql_src_list_new();
 	src_list->a[0].zName = sqlDbStrDup(stat_table_name);
 	struct Expr *expr, *where = NULL;
 	if (idx_name != NULL) {
 		expr = sql_id_eq_str_expr(parse, "idx", idx_name);
-		where = sql_and_expr_new(db, expr, where);
+		where = sql_and_expr_new(expr, where);
 	}
 	if (table_name != NULL) {
 		expr = sql_id_eq_str_expr(parse, "tbl", table_name);
-		where = sql_and_expr_new(db, expr, where);
+		where = sql_and_expr_new(expr, where);
 	}
-	if (where == NULL)
-		parse->is_aborted = true;
 	/**
 	 * On memory allocation error sql_table delete_from
 	 * releases memory for its own.

@@ -1121,10 +1121,7 @@ sqlWhereCodeOneLoopStart(WhereInfo * pWInfo,	/* Complete information about the W
 				if ((pWC->a[iTerm].eOperator & WO_ALL) == 0)
 					continue;
 				pExpr = sqlExprDup(db, pExpr, 0);
-				pAndExpr = sql_and_expr_new(db, pAndExpr,
-							    pExpr);
-				if (pAndExpr == NULL)
-					pParse->is_aborted = true;
+				pAndExpr = sql_and_expr_new(pAndExpr, pExpr);
 			}
 			if (pAndExpr) {
 				pAndExpr =

@@ -383,7 +383,6 @@ fk_constraint_scan_children(struct Parse *parser, struct SrcList *src,
 		   int reg_data, int incr_count)
 {
 	assert(incr_count == -1 || incr_count == 1);
-	struct sql *db = parser->db;
 	struct Expr *where = NULL;
 	/* Address of OP_FkIfZero. */
 	int fkifzero_label = 0;
@@ -415,9 +414,7 @@ fk_constraint_scan_children(struct Parse *parser, struct SrcList *src,
 		const char *field_name = child_space->def->fields[fieldno].name;
 		struct Expr *chexpr = sql_expr_new_named(TK_ID, field_name);
 		struct Expr *eq = sqlPExpr(parser, TK_EQ, pexpr, chexpr);
-		where = sql_and_expr_new(db, where, eq);
-		if (where == NULL || pexpr == NULL)
-			parser->is_aborted = true;
+		where = sql_and_expr_new(where, eq);
 	}
 
 	/*
@@ -438,14 +435,10 @@ fk_constraint_scan_children(struct Parse *parser, struct SrcList *src,
 			chexpr = sql_expr_new_column_by_cursor(def, cursor,
 							       fieldno);
 			eq = sqlPExpr(parser, TK_EQ, pexpr, chexpr);
-			expr = sql_and_expr_new(db, expr, eq);
-			if (expr == NULL)
-				parser->is_aborted = true;
+			expr = sql_and_expr_new(expr, eq);
 		}
 		struct Expr *pNe = sqlPExpr(parser, TK_NOT, expr, 0);
-		where = sql_and_expr_new(db, where, pNe);
-		if (where == NULL)
-			parser->is_aborted = true;
+		where = sql_and_expr_new(where, pNe);
 	}
 
 	/* Resolve the references in the WHERE clause. */
@@ -752,9 +745,7 @@ fk_constraint_action_trigger(struct Parse *pParse, struct space_def *def,
 			sql_expr_new_2part_id(pParse, &t_old, &t_to_col);
 		struct Expr *from = sql_expr_new(TK_ID, &t_from_col);
 		struct Expr *eq = sqlPExpr(pParse, TK_EQ, old, from);
-		where = sql_and_expr_new(db, where, eq);
-		if (where == NULL)
-			pParse->is_aborted = true;
+		where = sql_and_expr_new(where, eq);
 		/*
 		 * For ON UPDATE, construct the next term of the
 		 * WHEN clause, which should return false in case
@@ -785,9 +776,7 @@ fk_constraint_action_trigger(struct Parse *pParse, struct space_def *def,
 			struct Expr *no_action_needed =
 				sqlPExpr(pParse, TK_OR, old_is_null,
 					     non_null_eq);
-			when = sql_and_expr_new(db, when, no_action_needed);
-			if (when == NULL)
-				pParse->is_aborted = true;
+			when = sql_and_expr_new(when, no_action_needed);
 		}
 
 		if (action != FKEY_ACTION_RESTRICT &&

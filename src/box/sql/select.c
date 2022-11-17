@@ -720,7 +720,6 @@ addWhereTerm(Parse * pParse,	/* Parsing context */
 	     int isOuterJoin,	/* True if this is an OUTER join */
 	     Expr ** ppWhere)	/* IN/OUT: The WHERE clause to add to */
 {
-	struct sql *db = pParse->db;
 	Expr *pEq;
 
 	assert(iLeft < iRight);
@@ -737,9 +736,7 @@ addWhereTerm(Parse * pParse,	/* Parsing context */
 		ExprSetVVAProperty(pEq, EP_NoReduce);
 		pEq->iRightJoinTable = (i16) pE2->iTable;
 	}
-	*ppWhere = sql_and_expr_new(db, *ppWhere, pEq);
-	if (*ppWhere == NULL)
-		pParse->is_aborted = true;
+	*ppWhere = sql_and_expr_new(*ppWhere, pEq);
 }
 
 /*
@@ -863,10 +860,7 @@ sqlProcessJoin(Parse * pParse, Select * p)
 		if (pRight->pOn) {
 			if (isOuter)
 				setJoinExpr(pRight->pOn, pRight->iCursor);
-			p->pWhere = sql_and_expr_new(pParse->db, p->pWhere,
-						     pRight->pOn);
-			if (p->pWhere == NULL)
-				pParse->is_aborted = true;
+			p->pWhere = sql_and_expr_new(p->pWhere, pRight->pOn);
 			pRight->pOn = 0;
 		}
 
@@ -4357,19 +4351,15 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 				sqlExprDup(db, pSub->pHaving, 0);
 			if (sub_having != NULL || pParent->pHaving != NULL) {
 				pParent->pHaving =
-					sql_and_expr_new(db, sub_having,
+					sql_and_expr_new(sub_having,
 							 pParent->pHaving);
-				if (pParent->pHaving == NULL)
-					pParse->is_aborted = true;
 			}
 			assert(pParent->pGroupBy == 0);
 			pParent->pGroupBy =
 			    sql_expr_list_dup(db, pSub->pGroupBy, 0);
 		} else if (pWhere != NULL || pParent->pWhere != NULL) {
 			pParent->pWhere =
-				sql_and_expr_new(db, pWhere, pParent->pWhere);
-			if (pParent->pWhere == NULL)
-				pParse->is_aborted = true;
+				sql_and_expr_new(pWhere, pParent->pWhere);
 		}
 		substSelect(pParse, pParent, iParent, pSub->pEList, 0);
 
@@ -4471,10 +4461,7 @@ pushDownWhereTerms(Parse * pParse,	/* Parse context (for malloc() and error repo
 		while (pSubq) {
 			pNew = sqlExprDup(pParse->db, pWhere, 0);
 			pNew = substExpr(pParse, pNew, iCursor, pSubq->pEList);
-			pSubq->pWhere = sql_and_expr_new(pParse->db,
-							 pSubq->pWhere, pNew);
-			if (pSubq->pWhere == NULL)
-				pParse->is_aborted = true;
+			pSubq->pWhere = sql_and_expr_new(pSubq->pWhere, pNew);
 			pSubq = pSubq->pPrior;
 		}
 	}

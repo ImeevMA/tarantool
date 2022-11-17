@@ -2577,22 +2577,19 @@ void sqlPExprAddSelect(Parse *, Expr *, Select *);
 
 /**
  * Join two expressions using an AND operator. If either
- * expression is NULL, then just return the other expression.
+ * expression is NULL, then just return the other expression. One of the
+ * expressions should be not NULL.
  *
  * If one side or the other of the AND is known to be false, then
  * instead of returning an AND expression, just return a constant
  * expression with a value of false.
  *
- * @param db The database connection.
  * @param left_expr The left-branch expresion to join.
  * @param right_expr The right-branch expression to join.
  * @retval Not NULL New expression root node pointer on success.
- * @retval NULL Error. A diag message is set.
- * @retval NULL Not an error. Both arguments were NULL.
  */
 struct Expr *
-sql_and_expr_new(struct sql *db, struct Expr *left_expr,
-		 struct Expr *right_expr);
+sql_and_expr_new(struct Expr *left_expr, struct Expr *right_expr);
 
 Expr *sqlExprFunction(Parse *, ExprList *, Token *);
 void sqlExprAssignVarNumber(Parse *, Expr *, u32);

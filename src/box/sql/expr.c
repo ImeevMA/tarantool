@@ -1108,9 +1108,7 @@ sqlPExpr(Parse * pParse,	/* Parsing context */
 		 * Take advantage of short-circuit false
 		 * optimization for AND.
 		 */
-		p = sql_and_expr_new(pParse->db, pLeft, pRight);
-		if (p == NULL)
-			pParse->is_aborted = true;
+		p = sql_and_expr_new(pLeft, pRight);
 	} else {
 		p = sqlDbMallocRawNN(sizeof(Expr));
 		memset(p, 0, sizeof(Expr));
@@ -1118,9 +1116,7 @@ sqlPExpr(Parse * pParse,	/* Parsing context */
 		p->iAgg = -1;
 		sqlExprAttachSubtrees(p, pLeft, pRight);
 	}
-	if (p) {
-		sqlExprCheckHeight(pParse, p->nHeight);
-	}
+	sqlExprCheckHeight(pParse, p->nHeight);
 	return p;
 }
 
@@ -1159,10 +1155,9 @@ exprAlwaysFalse(Expr * p)
 }
 
 struct Expr *
-sql_and_expr_new(struct sql *db, struct Expr *left_expr,
-		 struct Expr *right_expr)
+sql_and_expr_new(struct Expr *left_expr, struct Expr *right_expr)
 {
-	(void)db;
+	assert(left_expr != NULL || right_expr != NULL);
 	if (left_expr == NULL) {
 		return right_expr;
 	} else if (right_expr == NULL) {
