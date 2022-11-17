@@ -1327,7 +1327,7 @@ expr_new_variable(struct Parse *parse, const struct Token *spec,
  * Recursively delete an expression tree.
  */
 static SQL_NOINLINE void
-sqlExprDeleteNN(sql *db, Expr *p)
+sqlExprDeleteNN(struct Expr *p)
 {
 	assert(p != 0);
 	/* Sanity check: Assert that the IntValue is non-negative if it exists */
@@ -1343,10 +1343,10 @@ sqlExprDeleteNN(sql *db, Expr *p)
 		/* The Expr.x union is never used at the same time as Expr.pRight */
 		assert(p->x.pList == 0 || p->pRight == 0);
 		if (p->pLeft && p->op != TK_SELECT_COLUMN)
-			sqlExprDeleteNN(db, p->pLeft);
+			sqlExprDeleteNN(p->pLeft);
 		sql_expr_delete(p->pRight);
 		if (ExprHasProperty(p, EP_xIsSelect)) {
-			sql_select_delete(db, p->x.pSelect);
+			sql_select_delete(sql_get(), p->x.pSelect);
 		} else {
 			sql_expr_list_delete(p->x.pList);
 		}
@@ -1362,7 +1362,7 @@ void
 sql_expr_delete(Expr *expr)
 {
 	if (expr != NULL)
-		sqlExprDeleteNN(sql_get(), expr);
+		sqlExprDeleteNN(expr);
 }
 
 /*
