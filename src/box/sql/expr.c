@@ -1635,8 +1635,7 @@ withDup(sql * db, With * p)
 				    sqlSelectDup(db, p->a[i].pSelect, 0);
 				pRet->a[i].pCols =
 				    sql_expr_list_dup(db, p->a[i].pCols, 0);
-				pRet->a[i].zName =
-				    sqlDbStrDup(db, p->a[i].zName);
+				pRet->a[i].zName = sqlDbStrDup(p->a[i].zName);
 			}
 		}
 	}
@@ -1705,8 +1704,8 @@ sql_expr_list_dup(struct sql *db, struct ExprList *p, int flags)
 				pNewExpr->pLeft = pPriorSelectCol;
 			}
 		}
-		pItem->zName = sqlDbStrDup(db, pOldItem->zName);
-		pItem->zSpan = sqlDbStrDup(db, pOldItem->zSpan);
+		pItem->zName = sqlDbStrDup(pOldItem->zName);
+		pItem->zSpan = sqlDbStrDup(pOldItem->zSpan);
 		pItem->sort_order = pOldItem->sort_order;
 		pItem->done = 0;
 		pItem->bSpanIsTab = pOldItem->bSpanIsTab;
@@ -1737,15 +1736,15 @@ sqlSrcListDup(sql * db, SrcList * p, int flags)
 	for (i = 0; i < p->nSrc; i++) {
 		struct SrcList_item *pNewItem = &pNew->a[i];
 		struct SrcList_item *pOldItem = &p->a[i];
-		pNewItem->zName = sqlDbStrDup(db, pOldItem->zName);
-		pNewItem->zAlias = sqlDbStrDup(db, pOldItem->zAlias);
+		pNewItem->zName = sqlDbStrDup(pOldItem->zName);
+		pNewItem->zAlias = sqlDbStrDup(pOldItem->zAlias);
 		pNewItem->fg = pOldItem->fg;
 		pNewItem->iCursor = pOldItem->iCursor;
 		pNewItem->addrFillSub = pOldItem->addrFillSub;
 		pNewItem->regReturn = pOldItem->regReturn;
 		if (pNewItem->fg.isIndexedBy) {
 			pNewItem->u1.zIndexedBy =
-			    sqlDbStrDup(db, pOldItem->u1.zIndexedBy);
+				sqlDbStrDup(pOldItem->u1.zIndexedBy);
 		}
 		pNewItem->pIBIndex = pOldItem->pIBIndex;
 		if (pNewItem->fg.isTabFunc) {
@@ -1782,7 +1781,7 @@ sqlIdListDup(sql * db, IdList * p)
 	for (i = 0; i < p->nId; i++) {
 		struct IdList_item *pNewItem = &pNew->a[i];
 		struct IdList_item *pOldItem = &p->a[i];
-		pNewItem->zName = sqlDbStrDup(db, pOldItem->zName);
+		pNewItem->zName = sqlDbStrDup(pOldItem->zName);
 		pNewItem->idx = pOldItem->idx;
 	}
 	return pNew;
@@ -3810,8 +3809,7 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 		assert(pParse->vdbe_field_ref_reg > 0);
 		int reg = pParse->vdbe_field_ref_reg;
 		sqlVdbeAddOp4(v, OP_Fetch, reg, 0, target,
-			      sqlDbStrDup(pParse->db, pExpr->u.zToken),
-			      P4_DYNAMIC);
+			      sqlDbStrDup(pExpr->u.zToken), P4_DYNAMIC);
 		return target;
 	case TK_DOT:
 		assert(pParse->vdbe_field_ref_reg > 0);

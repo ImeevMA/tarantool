@@ -233,26 +233,15 @@ sqlDbRealloc(void *buf, size_t n)
 	return sqlRealloc(buf, n);
 }
 
-/*
- * Make a copy of a string in memory obtained from sqlMalloc(). These
- * functions call sqlMallocRaw() directly instead of sqlMalloc(). This
- * is because when memory debugging is turned on, these two functions are
- * called via macros that record the current file and line number in the
- * ThreadData structure.
- */
 char *
-sqlDbStrDup(sql * db, const char *z)
+sqlDbStrDup(const char *str)
 {
-	(void)db;
-	char *zNew;
-	size_t n;
-	if (z == 0) {
-		return 0;
-	}
-	n = strlen(z) + 1;
-	zNew = sqlDbMallocRawNN(n);
-	memcpy(zNew, z, n);
-	return zNew;
+	if (str == NULL)
+		return NULL;
+	size_t size = strlen(str) + 1;
+	char *new_str = sqlDbMallocRawNN(size);
+	memcpy(new_str, str, size);
+	return new_str;
 }
 
 char *

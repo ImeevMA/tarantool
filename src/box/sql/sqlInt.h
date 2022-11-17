@@ -2385,7 +2385,13 @@ void *sqlDbMallocZero(sql *, u64);
 void *
 sqlDbMallocRawNN(size_t n);
 
-char *sqlDbStrDup(sql *, const char *);
+/**
+ * Make a copy of a NULL-terminated string in memory obtained from
+ * sqlDbMallocRawNN().
+ */
+char *
+sqlDbStrDup(const char *str);
+
 char *sqlDbStrNDup(sql *, const char *, u64);
 
 /**

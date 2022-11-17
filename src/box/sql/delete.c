@@ -74,7 +74,7 @@ sql_materialize_view(struct Parse *parse, const char *name, struct Expr *where,
 	}
 	where = sqlExprDup(db, where, 0);
 	assert(from->nSrc == 1);
-	from->a[0].zName = sqlDbStrDup(db, name);
+	from->a[0].zName = sqlDbStrDup(name);
 	assert(from->a[0].pOn == NULL);
 	assert(from->a[0].pUsing == NULL);
 	struct Select *select = sqlSelectNew(parse, NULL, from, where, NULL,

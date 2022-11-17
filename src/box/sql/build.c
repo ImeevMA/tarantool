@@ -957,8 +957,7 @@ vdbe_emit_create_index(struct Parse *parse, struct space_def *def,
 		sqlVdbeAddOp2(v, OP_SCopy, index_id_reg, entry_reg + 1);
 	}
 	sqlVdbeAddOp4(v, OP_String8, 0, entry_reg + 2, 0,
-			  sqlDbStrDup(parse->db, idx_def->name),
-			  P4_DYNAMIC);
+		      sqlDbStrDup(idx_def->name), P4_DYNAMIC);
 	sqlVdbeAddOp4(v, OP_String8, 0, entry_reg + 3, 0, "tree",
 			  P4_STATIC);
 	sqlVdbeAddOp4(v, OP_Blob, index_opts_sz, entry_reg + 4,
@@ -1010,8 +1009,7 @@ vdbe_emit_space_create(struct Parse *pParse, int space_id_reg,
 			  iFirstCol + 1 /* owner */ );
 	sqlVdbeAddOp2(v, OP_SCopy, space_name_reg, iFirstCol + 2);
 	sqlVdbeAddOp4(v, OP_String8, 0, iFirstCol + 3 /* engine */ , 0,
-			  sqlDbStrDup(pParse->db, space->def->engine_name),
-			  P4_DYNAMIC);
+		      sqlDbStrDup(space->def->engine_name), P4_DYNAMIC);
 	sqlVdbeAddOp2(v, OP_Integer, space->def->field_count,
 			  iFirstCol + 4 /* field_count */ );
 	sqlVdbeAddOp4(v, OP_Blob, table_opts_stmt_sz, iFirstCol + 5,
@@ -1043,8 +1041,8 @@ emitNewSysSequenceRecord(Parse *pParse, int reg_seq_id, const char *seq_name)
 	/* 2. user is  */
 	sqlVdbeAddOp2(v, OP_Integer, effective_user()->uid, first_col + 2);
 	/* 3. New sequence name  */
-        sqlVdbeAddOp4(v, OP_String8, 0, first_col + 3, 0,
-			  sqlDbStrDup(pParse->db, seq_name), P4_DYNAMIC);
+	sqlVdbeAddOp4(v, OP_String8, 0, first_col + 3, 0, sqlDbStrDup(seq_name),
+		      P4_DYNAMIC);
 
 	/* 4. Step  */
 	sqlVdbeAddOp2(v, OP_Integer, 1, first_col + 4);
@@ -1114,7 +1112,6 @@ vdbe_emit_ck_constraint_create(struct Parse *parser,
 			       const struct ck_constraint_def *ck_def,
 			       uint32_t reg_space_id, const char *space_name)
 {
-	struct sql *db = parser->db;
 	struct Vdbe *v = sqlGetVdbe(parser);
 	assert(v != NULL);
 	/*
@@ -1124,12 +1121,12 @@ vdbe_emit_ck_constraint_create(struct Parse *parser,
 	int ck_constraint_reg = sqlGetTempRange(parser, 7);
 	sqlVdbeAddOp2(v, OP_SCopy, reg_space_id, ck_constraint_reg);
 	sqlVdbeAddOp4(v, OP_String8, 0, ck_constraint_reg + 1, 0,
-		      sqlDbStrDup(db, ck_def->name), P4_DYNAMIC);
+		      sqlDbStrDup(ck_def->name), P4_DYNAMIC);
 	sqlVdbeAddOp2(v, OP_Bool, false, ck_constraint_reg + 2);
 	sqlVdbeAddOp4(v, OP_String8, 0, ck_constraint_reg + 3, 0,
 		      ck_constraint_language_strs[ck_def->language], P4_STATIC);
 	sqlVdbeAddOp4(v, OP_String8, 0, ck_constraint_reg + 4, 0,
-		      sqlDbStrDup(db, ck_def->expr_str), P4_DYNAMIC);
+		      sqlDbStrDup(ck_def->expr_str), P4_DYNAMIC);
 	sqlVdbeAddOp2(v, OP_Bool, true, ck_constraint_reg + 5);
 	sqlVdbeAddOp3(v, OP_MakeRecord, ck_constraint_reg, 6,
 		      ck_constraint_reg + 6);
@@ -1171,11 +1168,8 @@ vdbe_emit_fk_constraint_create(struct Parse *parse_context,
 	 * _fk_constraint space plus one for final msgpack tuple.
 	 */
 	int constr_tuple_reg = sqlGetTempRange(parse_context, 10);
-	char *name_copy = sqlDbStrDup(parse_context->db, fk->name);
-	if (name_copy == NULL)
-		return;
-	sqlVdbeAddOp4(vdbe, OP_String8, 0, constr_tuple_reg, 0, name_copy,
-			  P4_DYNAMIC);
+	sqlVdbeAddOp4(vdbe, OP_String8, 0, constr_tuple_reg, 0,
+		      sqlDbStrDup(fk->name), P4_DYNAMIC);
 	/*
 	 * In case we are adding FK constraints during execution
 	 * of <CREATE TABLE ...> or <ALTER TABLE ADD COLUMN>
@@ -1207,7 +1201,7 @@ vdbe_emit_fk_constraint_create(struct Parse *parse_context,
 	 */
 	const char *error_msg =
 		tt_sprintf(tnt_errcode_desc(ER_CONSTRAINT_EXISTS),
-			   constraint_type_strs[CONSTRAINT_TYPE_FK], name_copy,
+			   constraint_type_strs[CONSTRAINT_TYPE_FK], fk->name,
 			   space_name);
 	if (vdbe_emit_halt_with_presence_test(parse_context,
 					      BOX_FK_CONSTRAINT_ID, 0,
@@ -1456,14 +1450,11 @@ sqlEndTable(struct Parse *pParse)
 	 * In case IF NOT EXISTS clause is specified and table
 	 * exists, we will silently halt VDBE execution.
 	 */
-	char *space_name_copy = sqlDbStrDup(pParse->db, new_space->def->name);
-	if (space_name_copy == NULL)
-		return;
 	int name_reg = ++pParse->nMem;
 	sqlVdbeAddOp4(pParse->pVdbe, OP_String8, 0, name_reg, 0,
-		      space_name_copy, P4_DYNAMIC);
-	const char *error_msg =
-		tt_sprintf(tnt_errcode_desc(ER_SPACE_EXISTS), space_name_copy);
+		      sqlDbStrDup(new_space->def->name), P4_DYNAMIC);
+	const char *error_msg = tt_sprintf(tnt_errcode_desc(ER_SPACE_EXISTS),
+					   new_space->def->name);
 	bool no_err = pParse->create_table_def.base.if_not_exist;
 	if (vdbe_emit_halt_with_presence_test(pParse, BOX_SPACE_ID, 2,
 					      name_reg, 1, ER_SPACE_EXISTS,
@@ -1546,12 +1537,9 @@ sql_create_view(struct Parse *parse_context)
 	}
 	const char *space_name =
 		sql_name_from_token(db, &create_entity_def->name);
-	char *name_copy = sqlDbStrDup(db, space_name);
-	if (name_copy == NULL)
-		goto create_view_fail;
 	int name_reg = ++parse_context->nMem;
-	sqlVdbeAddOp4(parse_context->pVdbe, OP_String8, 0, name_reg, 0, name_copy,
-		      P4_DYNAMIC);
+	sqlVdbeAddOp4(parse_context->pVdbe, OP_String8, 0, name_reg, 0,
+		      sqlDbStrDup(space_name), P4_DYNAMIC);
 	const char *error_msg =
 		tt_sprintf(tnt_errcode_desc(ER_SPACE_EXISTS), space_name);
 	bool no_err = create_entity_def->if_not_exist;
@@ -1632,7 +1620,7 @@ vdbe_emit_stat_space_clear(struct Parse *parse, const char *stat_table_name,
 		parse->is_aborted = true;
 		return;
 	}
-	src_list->a[0].zName = sqlDbStrDup(db, stat_table_name);
+	src_list->a[0].zName = sqlDbStrDup(stat_table_name);
 	struct Expr *expr, *where = NULL;
 	if (idx_name != NULL) {
 		expr = sql_id_eq_str_expr(parse, "idx", idx_name);
@@ -1672,8 +1660,8 @@ vdbe_emit_index_drop(struct Parse *parse_context, const char *name,
 	assert(parse_context->db != NULL);
 	int key_reg = sqlGetTempRange(parse_context, 3);
 	sqlVdbeAddOp2(vdbe, OP_Integer, space_def->id, key_reg);
-	sqlVdbeAddOp4(vdbe, OP_String8, 0, key_reg + 1, 0,
-		      sqlDbStrDup(parse_context->db, name), P4_DYNAMIC);
+	sqlVdbeAddOp4(vdbe, OP_String8, 0, key_reg + 1, 0, sqlDbStrDup(name),
+		      P4_DYNAMIC);
 	const char *error_msg =
 		tt_sprintf(tnt_errcode_desc(errcode), name, space_def->name);
 	if (vdbe_emit_halt_with_presence_test(parse_context, BOX_INDEX_ID, 2,
@@ -1700,9 +1688,8 @@ vdbe_emit_fk_constraint_drop(struct Parse *parse_context,
 	struct Vdbe *vdbe = sqlGetVdbe(parse_context);
 	assert(vdbe != NULL);
 	int key_reg = sqlGetTempRange(parse_context, 3);
-	const char *name_copy = sqlDbStrDup(parse_context->db, constraint_name);
-	sqlVdbeAddOp4(vdbe, OP_String8, 0, key_reg, 0, name_copy,
-			  P4_DYNAMIC);
+	sqlVdbeAddOp4(vdbe, OP_String8, 0, key_reg, 0,
+		      sqlDbStrDup(constraint_name), P4_DYNAMIC);
 	sqlVdbeAddOp2(vdbe, OP_Integer, child_def->id, key_reg + 1);
 	const char *error_msg =
 		tt_sprintf(tnt_errcode_desc(ER_NO_SUCH_CONSTRAINT),
@@ -1731,12 +1718,11 @@ vdbe_emit_ck_constraint_drop(struct Parse *parser, const char *ck_name,
 			     struct space_def *space_def)
 {
 	struct Vdbe *v = sqlGetVdbe(parser);
-	struct sql *db = v->db;
 	assert(v != NULL);
 	int key_reg = sqlGetTempRange(parser, 3);
 	sqlVdbeAddOp2(v, OP_Integer, space_def->id, key_reg);
-	sqlVdbeAddOp4(v, OP_String8, 0, key_reg + 1, 0,
-		      sqlDbStrDup(db, ck_name), P4_DYNAMIC);
+	sqlVdbeAddOp4(v, OP_String8, 0, key_reg + 1, 0, sqlDbStrDup(ck_name),
+		      P4_DYNAMIC);
 	const char *error_msg =
 		tt_sprintf(tnt_errcode_desc(ER_NO_SUCH_CONSTRAINT), ck_name,
 			   space_def->name);
@@ -2331,14 +2317,9 @@ sql_drop_constraint(struct Parse *parse_context)
 	assert(v != NULL);
 	struct constraint_id *id = space_find_constraint_id(space, name);
 	if (id == NULL) {
-		char *name_copy = sqlDbStrDup(parse_context->db, name);
-		if (name_copy == NULL) {
-			parse_context->is_aborted = true;
-			return;
-		}
 		sqlVdbeCountChanges(v);
 		sqlVdbeAddOp4(v, OP_DropTupleConstraint, space->def->id, 0, 0,
-			      name_copy, P4_DYNAMIC);
+			      sqlDbStrDup(name), P4_DYNAMIC);
 		return;
 	}
 	/*
@@ -2751,7 +2732,7 @@ sql_create_index(struct Parse *parse) {
 						  def->name, idx_count + 1);
 			}
 		} else {
-			name = sqlDbStrDup(db, constraint_name);
+			name = sqlDbStrDup(constraint_name);
 		}
 		sqlDbFree(db, constraint_name);
 	}
@@ -3531,11 +3512,6 @@ vdbe_emit_halt_with_presence_test(struct Parse *parser, int space_id,
 	struct Vdbe *v = sqlGetVdbe(parser);
 	assert(v != NULL);
 
-	struct sql *db = parser->db;
-	char *error = sqlDbStrDup(db, error_src);
-	if (error == NULL)
-		return -1;
-
 	int cursor = parser->nTab++;
 	vdbe_emit_open_cursor(parser, cursor, index_id, space_by_id(space_id));
 	sqlVdbeChangeP5(v, OPFLAG_SYSTEMSP);
@@ -3544,8 +3520,8 @@ vdbe_emit_halt_with_presence_test(struct Parse *parser, int space_id,
 	if (no_error) {
 		sqlVdbeAddOp0(v, OP_Halt);
 	} else {
-		sqlVdbeAddOp4(v, OP_SetDiag, tarantool_error_code, 0, 0, error,
-			      P4_DYNAMIC);
+		sqlVdbeAddOp4(v, OP_SetDiag, tarantool_error_code, 0, 0,
+			      sqlDbStrDup(error_src), P4_DYNAMIC);
 		sqlVdbeAddOp2(v, OP_Halt, -1, ON_CONFLICT_ACTION_ABORT);
 	}
 	sqlVdbeJumpHere(v, addr);

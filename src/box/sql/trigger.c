@@ -102,12 +102,9 @@ sql_trigger_begin(struct Parse *parse)
 		const char *error_msg =
 			tt_sprintf(tnt_errcode_desc(ER_TRIGGER_EXISTS),
 				   trigger_name);
-		char *name_copy = sqlDbStrDup(db, trigger_name);
-		if (name_copy == NULL)
-			goto trigger_cleanup;
 		int name_reg = ++parse->nMem;
 		sqlVdbeAddOp4(parse->pVdbe, OP_String8, 0, name_reg, 0,
-				  name_copy, P4_DYNAMIC);
+			      sqlDbStrDup(trigger_name), P4_DYNAMIC);
 		bool no_err = create_def->if_not_exist;
 		if (vdbe_emit_halt_with_presence_test(parse, BOX_TRIGGER_ID, 0,
 						      name_reg, 1,
@@ -208,14 +205,8 @@ sql_trigger_finish(struct Parse *parse, struct TriggerStep *step_list,
 		data = mp_encode_str(data, sql_str, sql_str_len);
 		sqlDbFree(db, sql_str);
 
-		trigger_name = sqlDbStrDup(db, trigger_name);
-		if (trigger_name == NULL) {
-			sqlDbFree(db, opts_buff);
-			goto cleanup;
-		}
-
 		sqlVdbeAddOp4(v, OP_String8, 0, first_col, 0,
-				  trigger_name, P4_DYNAMIC);
+			      sqlDbStrDup(trigger_name), P4_DYNAMIC);
 		sqlVdbeAddOp2(v, OP_Integer, trigger->space_id,
 				  first_col + 1);
 		sqlVdbeAddOp4(v, OP_Blob, opts_buff_sz, first_col + 2,
@@ -362,7 +353,6 @@ void
 vdbe_code_drop_trigger(struct Parse *parser, const char *trigger_name,
 		       bool account_changes)
 {
-	sql *db = parser->db;
 	struct Vdbe *v = sqlGetVdbe(parser);
 	if (v == NULL)
 		return;
@@ -373,7 +363,7 @@ vdbe_code_drop_trigger(struct Parse *parser, const char *trigger_name,
 	int trig_name_reg = ++parser->nMem;
 	int record_to_delete = ++parser->nMem;
 	sqlVdbeAddOp4(v, OP_String8, 0, trig_name_reg, 0,
-			  sqlDbStrDup(db, trigger_name), P4_DYNAMIC);
+		      sqlDbStrDup(trigger_name), P4_DYNAMIC);
 	sqlVdbeAddOp3(v, OP_MakeRecord, trig_name_reg, 1,
 			  record_to_delete);
 	sqlVdbeAddOp2(v, OP_SDelete, BOX_TRIGGER_ID,
@@ -404,11 +394,9 @@ sql_drop_trigger(struct Parse *parser)
 	const char *error_msg =
 		tt_sprintf(tnt_errcode_desc(ER_NO_SUCH_TRIGGER),
 			   trigger_name);
-	char *name_copy = sqlDbStrDup(db, trigger_name);
-	if (name_copy == NULL)
-		goto drop_trigger_cleanup;
 	int name_reg = ++parser->nMem;
-	sqlVdbeAddOp4(v, OP_String8, 0, name_reg, 0, name_copy, P4_DYNAMIC);
+	sqlVdbeAddOp4(v, OP_String8, 0, name_reg, 0, sqlDbStrDup(trigger_name),
+		      P4_DYNAMIC);
 	if (vdbe_emit_halt_with_presence_test(parser, BOX_TRIGGER_ID, 0,
 					      name_reg, 1, ER_NO_SUCH_TRIGGER,
 					      error_msg, no_err, OP_Found) != 0)
@@ -558,7 +546,7 @@ targetSrcList(Parse * pParse,	/* The parsing context */
 		return NULL;
 	}
 	assert(pSrc->nSrc > 0);
-	pSrc->a[pSrc->nSrc - 1].zName = sqlDbStrDup(db, pStep->zTarget);
+	pSrc->a[pSrc->nSrc - 1].zName = sqlDbStrDup(pStep->zTarget);
 	return pSrc;
 }
 

@@ -2130,9 +2130,9 @@ sqlColumnsFromExprList(Parse * parse, ExprList * expr_list,
 		}
 		if (zName == NULL) {
 			uint32_t idx = ++parse->autoname_i;
-			zName = sqlDbStrDup(db, sql_generate_column_name(idx));
+			zName = sqlDbStrDup(sql_generate_column_name(idx));
 		} else {
-			zName = sqlDbStrDup(db, zName);
+			zName = sqlDbStrDup(zName);
 		}
 
 		/* Make sure the column name is unique.  If the name is not unique,
@@ -5116,7 +5116,7 @@ selectExpander(Walker * pWalker, Select * p)
 		    expr_autoname_is_required(pE)) {
 			uint32_t idx = ++pParse->autoname_i;
 			pEList->a[k].zName =
-				sqlDbStrDup(db, sql_generate_column_name(idx));
+				sqlDbStrDup(sql_generate_column_name(idx));
 		}
 	}
 	if (has_asterisk) {
@@ -5263,8 +5263,7 @@ selectExpander(Walker * pWalker, Select * p)
 							    &pNew->a[pNew->
 								     nExpr - 1];
 							if (pSub) {
-								pX->zSpan = sqlDbStrDup(db,
-											    pSub->pEList->a[j].zSpan);
+								pX->zSpan = sqlDbStrDup(pSub->pEList->a[j].zSpan);
 							} else {
 								pX->zSpan = sqlMPrintf(db,
 											   "%s.%s",
@@ -5520,7 +5519,7 @@ finalize_agg_function(struct Vdbe *vdbe, const struct AggInfo_func *agg_func)
 	if (sql_func_finalize(agg_func->pExpr->u.zToken) == NULL)
 		return;
 	const char *name = tt_sprintf("%s_finalize", agg_func->pExpr->u.zToken);
-	const char *str = sqlDbStrDup(sql_get(), name);
+	const char *str = sqlDbStrDup(name);
 	sqlVdbeAddOp4(vdbe, OP_FunctionByName, 1, agg_func->iMem,
 		      agg_func->iMem, str, P4_DYNAMIC);
 }

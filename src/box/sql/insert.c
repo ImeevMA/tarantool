@@ -799,17 +799,15 @@ vdbe_emit_ck_constraint(struct Parse *parser, struct Expr *expr,
 {
 	parser->vdbe_field_ref_reg = vdbe_field_ref_reg;
 	struct Vdbe *v = sqlGetVdbe(parser);
-	const char *ck_constraint_name = sqlDbStrDup(parser->db, name);
-	VdbeNoopComment((v, "BEGIN: ck constraint %s test",
-			ck_constraint_name));
+	VdbeNoopComment((v, "BEGIN: ck constraint %s test", name));
 	int check_is_passed = sqlVdbeMakeLabel(v);
 	sqlExprIfTrue(parser, expr, check_is_passed, SQL_JUMPIFNULL);
 	const char *fmt = tnt_errcode_desc(ER_CK_CONSTRAINT_FAILED);
-	const char *error_msg = tt_sprintf(fmt, ck_constraint_name, expr_str);
+	const char *error_msg = tt_sprintf(fmt, name, expr_str);
 	sqlVdbeAddOp4(v, OP_SetDiag, ER_CK_CONSTRAINT_FAILED, 0, 0,
-		      sqlDbStrDup(parser->db, error_msg), P4_DYNAMIC);
+		      sqlDbStrDup(error_msg), P4_DYNAMIC);
 	sqlVdbeAddOp2(v, OP_Halt, -1, ON_CONFLICT_ACTION_ABORT);
-	VdbeNoopComment((v, "END: ck constraint %s test", ck_constraint_name));
+	VdbeNoopComment((v, "END: ck constraint %s test", name));
 	sqlVdbeResolveLabel(v, check_is_passed);
 }
 

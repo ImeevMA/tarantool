@@ -112,7 +112,7 @@ sql_alter_ck_constraint_enable(struct Parse *parse)
 	int key_reg = sqlGetTempRange(parse, 2);
 	sqlVdbeAddOp2(v, OP_Integer, space->def->id, key_reg);
 	sqlVdbeAddOp4(v, OP_String8, 0, key_reg + 1, 0,
-		      sqlDbStrDup(db, constraint_name), P4_DYNAMIC);
+		      sqlDbStrDup(constraint_name), P4_DYNAMIC);
 	int addr = sqlVdbeAddOp4Int(v, OP_Found, cursor, 0, key_reg, 2);
 	sqlVdbeAddOp4(v, OP_SetDiag, ER_NO_SUCH_CONSTRAINT, 0, 0,
 		      sqlMPrintf(db, tnt_errcode_desc(ER_NO_SUCH_CONSTRAINT),

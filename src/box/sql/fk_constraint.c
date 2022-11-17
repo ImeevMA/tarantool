@@ -617,7 +617,7 @@ fk_constraint_emit_check(struct Parse *parser, struct space *space, int reg_old,
 		struct space *child = space_by_id(fk->def->child_id);
 		assert(child != NULL);
 		item->space = child;
-		item->zName = sqlDbStrDup(db, child->def->name);
+		item->zName = sqlDbStrDup(child->def->name);
 		item->iCursor = parser->nTab++;
 
 		if (reg_new != 0) {

@@ -128,7 +128,7 @@ resolveAlias(Parse * pParse,	/* Parsing context */
 	memcpy(pExpr, pDup, sizeof(*pExpr));
 	if (!ExprHasProperty(pExpr, EP_IntValue) && pExpr->u.zToken != 0) {
 		assert((pExpr->flags & (EP_Reduced | EP_TokenOnly)) == 0);
-		pExpr->u.zToken = sqlDbStrDup(db, pExpr->u.zToken);
+		pExpr->u.zToken = sqlDbStrDup(pExpr->u.zToken);
 		pExpr->flags |= EP_MemToken;
 	}
 	sqlDbFree(db, pDup);
