@@ -46,8 +46,9 @@
 #include "box/coll_id_cache.h"
 #include "box/schema.h"
 
-/* Forward declaration of methods */
-static int whereLoopResize(sql *, WhereLoop *, int);
+/** Increase the memory allocation for pLoop->aLTerm[] to be at least n. */
+static void
+whereLoopResize(struct WhereLoop *p, int n);
 
 /* Test variable that can be set to enable WHERE tracing */
 #ifdef SQL_DEBUG
@@ -789,11 +790,7 @@ constructAutomaticIndex(Parse * pParse,			/* The parsing context */
 			Bitmask cMask =
 			    iCol >= BMS ? MASKBIT(BMS - 1) : MASKBIT(iCol);
 			if ((idxCols & cMask) == 0) {
-				if (whereLoopResize
-				    (pParse->db, pLoop, nKeyCol + 1)) {
-					pParse->is_aborted = true;
-					return;
-				}
+				whereLoopResize(pLoop, nKeyCol + 1);
 				pLoop->aLTerm[nKeyCol++] = pTerm;
 				idxCols |= cMask;
 			}
@@ -1776,16 +1773,12 @@ whereLoopClear(struct WhereLoop *p)
 	whereLoopInit(p);
 }
 
-/*
- * Increase the memory allocation for pLoop->aLTerm[] to be at least n.
- */
-static int
-whereLoopResize(sql * db, WhereLoop * p, int n)
+static void
+whereLoopResize(struct WhereLoop *p, int n)
 {
-	(void)db;
 	WhereTerm **paNew;
 	if (p->nLSlot >= n)
-		return 0;
+		return;
 	n = (n + 7) & ~7;
 	paNew = sqlDbMallocRawNN(sizeof(p->aLTerm[0]) * n);
 	memcpy(paNew, p->aLTerm, sizeof(p->aLTerm[0]) * p->nLSlot);
@@ -1793,7 +1786,6 @@ whereLoopResize(sql * db, WhereLoop * p, int n)
 		sqlDbFree(p->aLTerm);
 	p->aLTerm = paNew;
 	p->nLSlot = n;
-	return 0;
 }
 
 /*
@@ -1802,14 +1794,9 @@ whereLoopResize(sql * db, WhereLoop * p, int n)
 static int
 whereLoopXfer(sql * db, WhereLoop * pTo, WhereLoop * pFrom)
 {
+	(void)db;
 	whereLoopClearUnion(pTo);
-	if (whereLoopResize(db, pTo, pFrom->nLTerm)) {
-		pTo->nEq = 0;
-		pTo->nBtm = 0;
-		pTo->nTop = 0;
-		pTo->index_def = NULL;
-		return -1;
-	}
+	whereLoopResize(pTo, pFrom->nLTerm);
 	memcpy(pTo, pFrom, WHERE_LOOP_XFER_SZ);
 	memcpy(pTo->aLTerm, pFrom->aLTerm,
 	       pTo->nLTerm * sizeof(pTo->aLTerm[0]));
@@ -2332,7 +2319,6 @@ whereLoopAddBtreeIndex(WhereLoopBuilder * pBuilder,	/* The WhereLoop factory */
 {
 	WhereInfo *pWInfo = pBuilder->pWInfo;	/* WHERE analyse context */
 	Parse *pParse = pWInfo->pParse;	/* Parsing context */
-	sql *db = pParse->db;	/* Database connection malloc context */
 	WhereLoop *pNew;	/* Template WhereLoop under construction */
 	WhereTerm *pTerm;	/* A WhereTerm under consideration */
 	int opMask;		/* Valid operators for constraints */
@@ -2434,8 +2420,7 @@ whereLoopAddBtreeIndex(WhereLoopBuilder * pBuilder,	/* The WhereLoop factory */
 		pNew->nBtm = saved_nBtm;
 		pNew->nTop = saved_nTop;
 		pNew->nLTerm = saved_nLTerm;
-		if (whereLoopResize(db, pNew, pNew->nLTerm + 1))
-			break;	/* OOM */
+		whereLoopResize(pNew, pNew->nLTerm + 1);
 		pNew->aLTerm[pNew->nLTerm++] = pTerm;
 		pNew->prereq =
 		    (saved_prereq | pTerm->prereqRight) & ~pNew->maskSelf;
@@ -2508,8 +2493,7 @@ whereLoopAddBtreeIndex(WhereLoopBuilder * pBuilder,	/* The WhereLoop factory */
 				       pTerm->pWC->nTerm);
 				assert(pTop->wtFlags & TERM_LIKEOPT);
 				assert(pTop->eOperator == WO_LT);
-				if (whereLoopResize(db, pNew, pNew->nLTerm + 1))
-					break;	/* OOM */
+				whereLoopResize(pNew, pNew->nLTerm + 1);
 				pNew->aLTerm[pNew->nLTerm++] = pTop;
 				pNew->wsFlags |= WHERE_TOP_LIMIT;
 				pNew->nTop = 1;
@@ -2665,8 +2649,8 @@ whereLoopAddBtreeIndex(WhereLoopBuilder * pBuilder,	/* The WhereLoop factory */
 	if (saved_nEq == saved_nSkip && saved_nEq + 1U < probe_part_count &&
 	    stat->skip_scan_enabled == true &&
 	    /* TUNING: Minimum for skip-scan */
-	    index_field_tuple_est(probe, saved_nEq + 1) >= 42 &&
-	    (rc = whereLoopResize(db, pNew, pNew->nLTerm + 1)) == 0) {
+	    index_field_tuple_est(probe, saved_nEq + 1) >= 42) {
+		whereLoopResize(pNew, pNew->nLTerm + 1);
 		LogEst nIter;
 		pNew->nEq++;
 		pNew->nSkip++;
