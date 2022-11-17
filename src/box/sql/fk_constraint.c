@@ -298,7 +298,6 @@ fk_constraint_lookup_parent(struct Parse *parse_context, struct space *parent,
  * Build an expression that refers to a memory register
  * corresponding to @a column of given space.
  *
- * @param db SQL context.
  * @param def Definition of space whose content starts from
  *        @a reg_base register.
  * @param reg_base Index of a first element in an array of
@@ -306,13 +305,10 @@ fk_constraint_lookup_parent(struct Parse *parse_context, struct space *parent,
  *        reg_base + i holds an i-th column, i >= 1.
  * @param column Index of a first table column to point at.
  * @retval Not NULL Success. An expression representing register.
- * @retval NULL Error. A diag message is set.
  */
 static struct Expr *
-sql_expr_new_register(struct sql *db, struct space_def *def, int reg_base,
-		      uint32_t column)
+sql_expr_new_register(struct space_def *def, int reg_base, uint32_t column)
 {
-	(void)db;
 	struct Expr *expr = sql_expr_new_anon(TK_REGISTER);
 	expr->iTable = reg_base + column + 1;
 	expr->type = def->fields[column].type;
@@ -417,7 +413,7 @@ fk_constraint_scan_children(struct Parse *parser, struct SrcList *src,
 	for (uint32_t i = 0; i < fk_def->field_count; i++) {
 		uint32_t fieldno = fk_def->links[i].parent_field;
 		struct Expr *pexpr =
-			sql_expr_new_register(db, def, reg_data, fieldno);
+			sql_expr_new_register(def, reg_data, fieldno);
 		fieldno = fk_def->links[i].child_field;
 		const char *field_name = child_space->def->fields[fieldno].name;
 		struct Expr *chexpr = sql_expr_new_named(TK_ID, field_name);
@@ -440,14 +436,13 @@ fk_constraint_scan_children(struct Parse *parser, struct SrcList *src,
 		struct Expr *expr = NULL, *pexpr, *chexpr, *eq;
 		for (uint32_t i = 0; i < fk_def->field_count; i++) {
 			uint32_t fieldno = fk_def->links[i].parent_field;
-			pexpr = sql_expr_new_register(db, def, reg_data,
-						      fieldno);
+			pexpr = sql_expr_new_register(def, reg_data, fieldno);
 			int cursor = src->a[0].iCursor;
 			chexpr = sql_expr_new_column_by_cursor(db, def, cursor,
 							       fieldno);
 			eq = sqlPExpr(parser, TK_EQ, pexpr, chexpr);
 			expr = sql_and_expr_new(db, expr, eq);
-			if (expr == NULL || chexpr == NULL || pexpr == NULL)
+			if (expr == NULL || chexpr == NULL)
 				parser->is_aborted = true;
 		}
 		struct Expr *pNe = sqlPExpr(parser, TK_NOT, expr, 0);
