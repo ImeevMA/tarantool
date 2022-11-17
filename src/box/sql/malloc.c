@@ -168,10 +168,7 @@ sqlMallocZero(u64 n)
 	return p;
 }
 
-/*
- * Allocate and zero memory.  If the allocation fails, make
- * the mallocFailed flag in the connection pointer.
- */
+/** Allocate and zero memory. */
 void *
 sqlDbMallocZero(sql * db, u64 n)
 {
@@ -186,11 +183,6 @@ sqlDbMallocRawNN(size_t n)
 {
 	struct sql *db = sql_get();
 	assert(db != NULL);
-	if (db->mallocFailed != 0) {
-		fprintf(stderr, "Can't allocate %zu bytes at %s:%d", n,
-			__FILE__, __LINE__);
-		exit(EXIT_FAILURE);
-	}
 	LookasideSlot *pBuf;
 	if (db->lookaside.bDisable == 0) {
 		if (n > db->lookaside.sz) {
@@ -215,11 +207,6 @@ sqlDbRealloc(void *buf, size_t n)
 {
 	struct sql *db = sql_get();
 	assert(db != NULL);
-	if (db->mallocFailed != 0) {
-		fprintf(stderr, "Can't allocate %zu bytes at %s:%d", n,
-			__FILE__, __LINE__);
-		exit(EXIT_FAILURE);
-	}
 	if (buf == NULL)
 		return sqlDbMallocRawNN(n);
 	if (is_lookaside(buf)) {

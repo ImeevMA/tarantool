@@ -972,7 +972,6 @@ struct sql {
 	i64 szMmap;		/* Default mmap_size setting */
 	u16 dbOptFlags;		/* Flags to enable/disable optimizations */
 	u8 enc;			/* Text encoding */
-	u8 mallocFailed;	/* True if we have seen a malloc failure */
 	u8 dfltLockMode;	/* Default locking-mode for attached dbs */
 	u8 mTrace;		/* zero or more sql_TRACE flags */
 	u32 magic;		/* Magic number for detect library misuse */

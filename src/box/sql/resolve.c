@@ -718,8 +718,6 @@ resolveExprStep(Walker * pWalker, Expr * pExpr)
 	case TK_GT:
 	case TK_GE:{
 			int nLeft, nRight;
-			if (pParse->db->mallocFailed)
-				break;
 			assert(pExpr->pLeft != 0);
 			nLeft = sqlExprVectorSize(pExpr->pLeft);
 			if (pExpr->op == TK_BETWEEN) {
@@ -744,8 +742,7 @@ resolveExprStep(Walker * pWalker, Expr * pExpr)
 			break;
 		}
 	}
-	return (pParse->is_aborted
-		|| pParse->db->mallocFailed) ? WRC_Abort : WRC_Continue;
+	return pParse->is_aborted ? WRC_Abort : WRC_Continue;
 }
 
 /*
@@ -916,12 +913,9 @@ resolveCompoundOrderBy(Parse * pParse,	/* Parsing context.  Leave error messages
 				iCol = resolveAsName(pParse, pEList, pE);
 				if (iCol == 0) {
 					pDup = sqlExprDup(db, pE, 0);
-					if (!db->mallocFailed) {
-						assert(pDup);
-						iCol =
-						    resolveOrderByTermToExprList
-						    (pParse, pSelect, pDup);
-					}
+					assert(pDup);
+					iCol = resolveOrderByTermToExprList(
+						pParse, pSelect, pDup);
 					sql_expr_delete(db, pDup);
 				}
 			}
@@ -992,7 +986,7 @@ sqlResolveOrderGroupBy(Parse * pParse,	/* Parsing context.  Leave error messages
 	ExprList *pEList;
 	struct ExprList_item *pItem;
 
-	if (pOrderBy == 0 || pParse->db->mallocFailed)
+	if (pOrderBy == NULL)
 		return 0;
 #if SQL_MAX_COLUMN
 	if (pOrderBy->nExpr > db->aLimit[SQL_LIMIT_COLUMN]) {
@@ -1142,8 +1136,7 @@ resolveSelectStep(Walker * pWalker, Select * p)
 	 */
 	if ((p->selFlags & SF_Expanded) == 0) {
 		sqlSelectPrep(pParse, p, pOuterNC);
-		return (pParse->is_aborted
-			|| db->mallocFailed) ? WRC_Abort : WRC_Prune;
+		return pParse->is_aborted ? WRC_Abort : WRC_Prune;
 	}
 
 	isCompound = p->pPrior != 0;
@@ -1199,7 +1192,7 @@ resolveSelectStep(Walker * pWalker, Select * p)
 				sqlResolveSelectNames(pParse,
 							  pItem->pSelect,
 							  pOuterNC);
-				if (pParse->is_aborted || db->mallocFailed)
+				if (pParse->is_aborted)
 					return WRC_Abort;
 
 				for (pNC = pOuterNC; pNC; pNC = pNC->pNext)
@@ -1353,9 +1346,6 @@ resolveSelectStep(Walker * pWalker, Select * p)
 		    ) {
 			return WRC_Abort;
 		}
-		if (db->mallocFailed) {
-			return WRC_Abort;
-		}
 
 		/* Resolve the GROUP BY clause.  At the same time, make sure
 		 * the GROUP BY clause does not contain aggregate functions.
@@ -1363,10 +1353,9 @@ resolveSelectStep(Walker * pWalker, Select * p)
 		if (pGroupBy) {
 			struct ExprList_item *pItem;
 
-			if (resolveOrderGroupBy(&sNC, p, pGroupBy, "GROUP")
-			    || db->mallocFailed) {
+			if (resolveOrderGroupBy(&sNC, p, pGroupBy,
+						"GROUP") != 0)
 				return WRC_Abort;
-			}
 			const char *err_msg = "aggregate functions are not "\
 					      "allowed in the GROUP BY clause";
 			for (i = 0, pItem = pGroupBy->a; i < pGroupBy->nExpr;

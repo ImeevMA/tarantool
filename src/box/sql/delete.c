@@ -129,7 +129,7 @@ sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 		      struct Expr *where)
 {
 	struct sql *db = parse->db;
-	if (parse->is_aborted || db->mallocFailed)
+	if (parse->is_aborted)
 		goto delete_from_cleanup;
 
 	assert(tab_list->nSrc == 1);

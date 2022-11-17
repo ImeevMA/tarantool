@@ -71,8 +71,7 @@ whereAndInfoDelete(sql * db, WhereAndInfo * p)
  * The new WhereTerm object is constructed from Expr p and with wtFlags.
  * The index in pWC->a[] of the new WhereTerm is returned on success.
  * 0 is returned if the new WhereTerm could not be added due to a memory
- * allocation error.  The memory allocation failure will be recorded in
- * the db->mallocFailed flag so that higher-level functions can detect it.
+ * allocation error.
  *
  * This routine will increase the size of the pWC->a[] array as necessary.
  *
@@ -584,8 +583,6 @@ exprAnalyzeOrTerm(SrcList * pSrc,	/* the FROM clause */
 	sqlWhereClauseInit(pOrWc, pWInfo);
 	sqlWhereSplit(pOrWc, pExpr, TK_OR);
 	sqlWhereExprAnalyze(pSrc, pOrWc);
-	if (db->mallocFailed)
-		return;
 	assert(pOrWc->nTerm >= 2);
 
 	/*
@@ -616,16 +613,13 @@ exprAnalyzeOrTerm(SrcList * pSrc,	/* the FROM clause */
 					  TK_AND);
 			sqlWhereExprAnalyze(pSrc, pAndWC);
 			pAndWC->pOuter = pWC;
-			if (!db->mallocFailed) {
-				for (j = 0, pAndTerm = pAndWC->a;
-				     j < pAndWC->nTerm; j++, pAndTerm++) {
-					assert(pAndTerm->pExpr);
-					if (allowedOp(pAndTerm->pExpr->op) ||
-					    pAndTerm->eOperator == WO_MATCH) {
-						b |= sqlWhereGetMask(
-							&pWInfo->sMaskSet,
-							pAndTerm->leftCursor);
-					}
+			for (j = 0, pAndTerm = pAndWC->a; j < pAndWC->nTerm;
+			     j++, pAndTerm++) {
+				assert(pAndTerm->pExpr != NULL);
+				if (allowedOp(pAndTerm->pExpr->op) ||
+				    pAndTerm->eOperator == WO_MATCH) {
+					b |= sqlWhereGetMask(&pWInfo->sMaskSet,
+						pAndTerm->leftCursor);
 				}
 			}
 			indexable &= b;
@@ -993,9 +987,6 @@ exprAnalyze(SrcList * pSrc,	/* the FROM clause */
 	/* Database connection. */
 	sql *db = pParse->db;
 
-	if (db->mallocFailed) {
-		return;
-	}
 	pTerm = &pWC->a[idxTerm];
 	pMaskSet = &pWInfo->sMaskSet;
 	pExpr = pTerm->pExpr;
@@ -1059,10 +1050,6 @@ exprAnalyze(SrcList * pSrc,	/* the FROM clause */
 			if (pTerm->leftCursor >= 0) {
 				int idxNew;
 				pDup = sqlExprDup(db, pExpr, 0);
-				if (db->mallocFailed) {
-					sql_expr_delete(db, pDup);
-					return;
-				}
 				idxNew =
 				    whereClauseInsert(pWC, pDup,
 						      TERM_VIRTUAL |
@@ -1170,13 +1157,10 @@ exprAnalyze(SrcList * pSrc,	/* the FROM clause */
 		pLeft = pExpr->x.pList->a[1].pExpr;
 		pStr2 = sqlExprDup(db, pStr1, 0);
 
-		if (!db->mallocFailed) {
-			u8 c, *pC;	/* Last character before the first wildcard */
-			pC = (u8 *) & pStr2->u.
-			    zToken[sqlStrlen30(pStr2->u.zToken) - 1];
-			c = *pC;
-			*pC = c + 1;
-		}
+		u8 c, *pC;	/* Last character before the first wildcard */
+		pC = (u8 *)&pStr2->u.zToken[sqlStrlen30(pStr2->u.zToken) - 1];
+		c = *pC;
+		*pC = c + 1;
 		pNewExpr1 = sqlExprDup(db, pLeft, 0);
 		pNewExpr1 = sqlPExpr(pParse, TK_GE, pNewExpr1, pStr1);
 		transferJoinMarkings(pNewExpr1, pExpr);

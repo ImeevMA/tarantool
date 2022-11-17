@@ -76,7 +76,7 @@ sql_trigger_begin(struct Parse *parse)
 	assert(alter_def->alter_action == ALTER_ACTION_CREATE);
 
 	char *trigger_name = NULL;
-	if (alter_def->entity_name == NULL || db->mallocFailed)
+	if (alter_def->entity_name == NULL)
 		goto trigger_cleanup;
 	assert(alter_def->entity_name->nSrc == 1);
 	assert(create_def->name.n > 0);
@@ -187,8 +187,6 @@ sql_trigger_finish(struct Parse *parse, struct TriggerStep *step_list,
 
 		char *sql_str =
 			sqlMPrintf(db, "CREATE TRIGGER %s", token->z);
-		if (db->mallocFailed)
-			goto cleanup;
 
 		int first_col = parse->nMem + 1;
 		parse->nMem += 3;
@@ -290,7 +288,7 @@ sql_trigger_insert_step(struct sql *db, struct Token *table_name,
 			struct IdList *column_list, struct Select *select,
 			enum on_conflict_action orconf)
 {
-	assert(select != NULL || db->mallocFailed);
+	assert(select != NULL);
 	struct TriggerStep *trigger_step =
 		sql_trigger_step_new(db, TK_INSERT, table_name);
 	if (trigger_step != NULL) {
@@ -382,8 +380,6 @@ sql_drop_trigger(struct Parse *parser)
 	struct SrcList *name = alter_def->entity_name;
 	bool no_err = drop_def->if_exist;
 	sql *db = parser->db;
-	if (db->mallocFailed)
-		goto drop_trigger_cleanup;
 
 	struct Vdbe *v = sqlGetVdbe(parser);
 	if (v != NULL)
@@ -762,8 +758,7 @@ sql_row_trigger_program(struct Parse *parser, struct sql_trigger *trigger,
 		 */
 		if (trigger->pWhen != NULL) {
 			pWhen = sqlExprDup(db, trigger->pWhen, 0);
-			if (0 == sqlResolveExprNames(&sNC, pWhen)
-			    && db->mallocFailed == 0) {
+			if (sqlResolveExprNames(&sNC, pWhen) == 0) {
 				iEndTrigger = sqlVdbeMakeLabel(v);
 				sqlExprIfFalse(pSubParse, pWhen,
 						   iEndTrigger,
@@ -784,8 +779,7 @@ sql_row_trigger_program(struct Parse *parser, struct sql_trigger *trigger,
 
 		if (!parser->is_aborted)
 			parser->is_aborted = pSubParse->is_aborted;
-		if (db->mallocFailed == 0)
-			pProgram->aOp = sqlVdbeTakeOpArray(v, &pProgram->nOp);
+		pProgram->aOp = sqlVdbeTakeOpArray(v, &pProgram->nOp);
 		pProgram->nMem = pSubParse->nMem;
 		pProgram->nCsr = pSubParse->nTab;
 		pProgram->token = (void *)trigger;
@@ -854,8 +848,7 @@ vdbe_code_row_trigger_direct(struct Parse *parser, struct sql_trigger *trigger,
 	struct Vdbe *v = sqlGetVdbe(parser);
 
 	TriggerPrg *pPrg = sql_row_trigger(parser, trigger, space, orconf);
-	assert(pPrg != NULL || parser->is_aborted ||
-	       parser->db->mallocFailed != 0);
+	assert(pPrg != NULL || parser->is_aborted);
 
 	/*
 	 * Code the OP_Program opcode in the parent VDBE. P4 of

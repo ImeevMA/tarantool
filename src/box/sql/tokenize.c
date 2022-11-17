@@ -542,15 +542,13 @@ sqlRunParser(Parse * pParse, const char *zSql)
 			sqlParser(pEngine, tokenType, pParse->sLastToken,
 				      pParse);
 			lastTokenParsed = tokenType;
-			if (pParse->is_aborted || db->mallocFailed)
+			if (pParse->is_aborted)
 				break;
 		}
 		pParse->line_pos += pParse->sLastToken.n;
 	}
 	pParse->zTail = &zSql[i];
 	sqlParserFree(pEngine, sql_free);
-	if (db->mallocFailed)
-		pParse->is_aborted = true;
 	if (pParse->pVdbe != NULL && pParse->is_aborted) {
 		sqlVdbeDelete(pParse->pVdbe);
 		pParse->pVdbe = 0;

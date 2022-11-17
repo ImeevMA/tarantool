@@ -85,9 +85,8 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 	int upd_cols_cnt = 0;
 
 	db = pParse->db;
-	if (pParse->is_aborted || db->mallocFailed) {
+	if (pParse->is_aborted)
 		goto update_cleanup;
-	}
 	assert(pTabList->nSrc == 1);
 
 	/* Locate the table which we want to update.

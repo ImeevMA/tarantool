@@ -128,10 +128,6 @@ sqlStep(Vdbe * p)
 
 	/* Check that malloc() has not failed. If it has, return early. */
 	db = p->db;
-	if (db->mallocFailed) {
-		p->is_aborted = true;
-		return -1;
-	}
 
 	if (p->pc <= 0 && p->expired) {
 		p->is_aborted = true;

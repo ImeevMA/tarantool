@@ -49,7 +49,6 @@ sql_stmt_compile(const char *zSql, int nBytes, struct Vdbe *pReprepare,
 	sql_parser_create(&sParse, db, current_session()->sql_flags);
 	sParse.pReprepare = pReprepare;
 	*ppStmt = NULL;
-	/* assert( !db->mallocFailed ); // not true with SQL_USE_ALLOCA */
 
 	/* Check to verify that it is possible to get a read lock on all
 	 * database schemas.  The inability to get a read lock indicates that
@@ -89,8 +88,6 @@ sql_stmt_compile(const char *zSql, int nBytes, struct Vdbe *pReprepare,
 	}
 	assert(0 == sParse.nQueryLoop || sParse.is_aborted);
 
-	if (db->mallocFailed)
-		sParse.is_aborted = true;
 	if (pzTail) {
 		*pzTail = sParse.zTail;
 	}
@@ -147,7 +144,7 @@ sql_stmt_compile(const char *zSql, int nBytes, struct Vdbe *pReprepare,
 		Vdbe *pVdbe = sParse.pVdbe;
 		sqlVdbeSetSql(pVdbe, zSql, (int)(sParse.zTail - zSql));
 	}
-	if (sParse.pVdbe != NULL && (rc != 0 || db->mallocFailed)) {
+	if (sParse.pVdbe != NULL && rc != 0) {
 		sqlVdbeFinalize(sParse.pVdbe);
 		assert(!(*ppStmt));
 	} else {

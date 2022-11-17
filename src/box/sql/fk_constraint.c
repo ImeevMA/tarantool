@@ -872,10 +872,6 @@ fk_constraint_action_trigger(struct Parse *pParse, struct space_def *def,
 	sql_expr_delete(db, when);
 	sql_expr_list_delete(db, list);
 	sql_select_delete(db, select);
-	if (db->mallocFailed) {
-		sql_trigger_delete(db, trigger);
-		return NULL;
-	}
 	assert(step != NULL);
 
 	switch (action) {

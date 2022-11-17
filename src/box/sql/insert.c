@@ -265,9 +265,8 @@ sqlInsert(Parse * pParse,	/* Parser context */
 
 	db = pParse->db;
 	memset(&dest, 0, sizeof(dest));
-	if (pParse->is_aborted || db->mallocFailed) {
+	if (pParse->is_aborted)
 		goto insert_cleanup;
-	}
 
 	/* If the Select object is really just a simple VALUES() list with a
 	 * single row (the common case) then keep that one row of values
@@ -420,7 +419,7 @@ sqlInsert(Parse * pParse,	/* Parser context */
 		dest.nSdst = space_def->field_count;
 		rc = sqlSelect(pParse, pSelect, &dest);
 		regFromSelect = dest.iSdst;
-		if (rc || db->mallocFailed || pParse->is_aborted)
+		if (rc != 0 || pParse->is_aborted)
 			goto insert_cleanup;
 		sqlVdbeEndCoroutine(v, regYield);
 		sqlVdbeJumpHere(v, addrTop - 1);	/* label B: */

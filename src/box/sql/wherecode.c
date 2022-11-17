@@ -433,48 +433,47 @@ codeEqualityTerm(Parse * pParse,	/* The parsing context */
 								 pLhs, pNewLhs);
 				}
 			}
-			if (!db->mallocFailed) {
-				Expr *pLeft = pX->pLeft;
 
-				if (pSelect->pOrderBy) {
-					/* If the SELECT statement has an ORDER BY clause, zero the
-					 * iOrderByCol variables. These are set to non-zero when an
-					 * ORDER BY term exactly matches one of the terms of the
-					 * result-set. Since the result-set of the SELECT statement may
-					 * have been modified or reordered, these variables are no longer
-					 * set correctly.  Since setting them is just an optimization,
-					 * it's easiest just to zero them here.
-					 */
-					ExprList *pOrderBy = pSelect->pOrderBy;
-					for (i = 0; i < pOrderBy->nExpr; i++) {
-						pOrderBy->a[i].u.x.iOrderByCol =
-						    0;
-					}
-				}
-
-				/* Take care here not to generate a TK_VECTOR containing only a
-				 * single value. Since the parser never creates such a vector, some
-				 * of the subroutines do not handle this case.
+			Expr *pLeft = pX->pLeft;
+			if (pSelect->pOrderBy != NULL) {
+				/*
+				 * If the SELECT statement has an ORDER BY
+				 * clause, zero the iOrderByCol variables. These
+				 * are set to non-zero when an ORDER BY term
+				 * exactly matches one of the terms of the
+				 * result-set. Since the result-set of the
+				 * SELECT statement may have been modified or
+				 * reordered, these variables are no longer set
+				 * correctly. Since setting them is just an
+				 * optimization, it's easiest just to zero them
+				 * here.
 				 */
-				if (pLhs->nExpr == 1) {
-					pX->pLeft = pLhs->a[0].pExpr;
-				} else {
-					pLeft->x.pList = pLhs;
-					aiMap =
-					    (int *)sqlDbMallocZero(pParse->db,
-								       sizeof(int) * nEq);
-				}
-				pSelect->pEList = pRhs;
-				db->dbOptFlags |= SQL_QueryFlattener;
-				eType =
-				    sqlFindInIndex(pParse, pX,
-						       IN_INDEX_LOOP, 0, aiMap,
-						       0);
-				db->dbOptFlags = savedDbOptFlags;
-				pSelect->pEList = pOrigRhs;
-				pLeft->x.pList = pOrigLhs;
-				pX->pLeft = pLeft;
+				ExprList *pOrderBy = pSelect->pOrderBy;
+				for (i = 0; i < pOrderBy->nExpr; i++)
+					pOrderBy->a[i].u.x.iOrderByCol = 0;
 			}
+
+			/*
+			 * Take care here not to generate a TK_VECTOR containing
+			 * only a single value. Since the parser never creates
+			 * such a vector, some of the subroutines do not handle
+			 * this case.
+			 */
+			if (pLhs->nExpr == 1) {
+				pX->pLeft = pLhs->a[0].pExpr;
+			} else {
+				pLeft->x.pList = pLhs;
+				aiMap = sqlDbMallocZero(pParse->db,
+							sizeof(int) * nEq);
+			}
+			pSelect->pEList = pRhs;
+			db->dbOptFlags |= SQL_QueryFlattener;
+			eType = sqlFindInIndex(pParse, pX, IN_INDEX_LOOP, 0,
+					       aiMap, 0);
+			db->dbOptFlags = savedDbOptFlags;
+			pSelect->pEList = pOrigRhs;
+			pLeft->x.pList = pOrigLhs;
+			pX->pLeft = pLeft;
 			sql_expr_list_delete(pParse->db, pLhs);
 			sql_expr_list_delete(pParse->db, pRhs);
 		}
@@ -1162,8 +1161,7 @@ sqlWhereCodeOneLoopStart(WhereInfo * pWInfo,	/* Complete information about the W
 				    sqlWhereBegin(pParse, pOrTab, pOrExpr,
 						      0, 0, wctrlFlags,
 						      iCovCur);
-				assert(pSubWInfo || pParse->is_aborted
-				       || db->mallocFailed);
+				assert(pSubWInfo || pParse->is_aborted);
 				if (pSubWInfo) {
 					WhereLoop *pSubLoop;
 				    	sqlWhereExplainOneScan(pParse,

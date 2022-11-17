@@ -1095,29 +1095,24 @@ void
 sqlExprAttachSubtrees(sql * db,
 			  Expr * pRoot, Expr * pLeft, Expr * pRight)
 {
-	if (pRoot == 0) {
-		assert(db->mallocFailed);
-		sql_expr_delete(db, pLeft);
-		sql_expr_delete(db, pRight);
-	} else {
-		if (pRight) {
-			pRoot->pRight = pRight;
-			pRoot->flags |= EP_Propagate & pRight->flags;
-		}
-		if (pLeft) {
-			pRoot->pLeft = pLeft;
-			pRoot->flags |= EP_Propagate & pLeft->flags;
-		}
-		exprSetHeight(pRoot);
+	(void)db;
+	assert(pRoot != NULL);
+	if (pRight != NULL) {
+		pRoot->pRight = pRight;
+		pRoot->flags |= EP_Propagate & pRight->flags;
 	}
+	if (pLeft != NULL) {
+		pRoot->pLeft = pLeft;
+		pRoot->flags |= EP_Propagate & pLeft->flags;
+	}
+	exprSetHeight(pRoot);
 }
 
 /*
  * Allocate an Expr node which joins as many as two subtrees.
  *
  * One or both of the subtrees can be NULL.  Return a pointer to the new
- * Expr node.  Or, if an OOM error occurs, set pParse->db->mallocFailed,
- * free the subtrees and return NULL.
+ * Expr node.
  */
 Expr *
 sqlPExpr(Parse * pParse,	/* Parsing context */
@@ -1155,14 +1150,10 @@ sqlPExpr(Parse * pParse,	/* Parsing context */
 void
 sqlPExprAddSelect(Parse * pParse, Expr * pExpr, Select * pSelect)
 {
-	if (pExpr) {
-		pExpr->x.pSelect = pSelect;
-		ExprSetProperty(pExpr, EP_xIsSelect | EP_Subquery);
-		sqlExprSetHeightAndFlags(pParse, pExpr);
-	} else {
-		assert(pParse->db->mallocFailed);
-		sql_select_delete(pParse->db, pSelect);
-	}
+	assert(pExpr != NULL);
+	pExpr->x.pSelect = pSelect;
+	ExprSetProperty(pExpr, EP_xIsSelect | EP_Subquery);
+	sqlExprSetHeightAndFlags(pParse, pExpr);
 }
 
 /**
@@ -1617,8 +1608,7 @@ sql_expr_dup(struct sql *db, struct Expr *p, int flags, char **buffer)
 
 /*
  * Create and return a deep copy of the object passed as the second
- * argument. If an OOM condition is encountered, NULL is returned
- * and the db->mallocFailed flag set.
+ * argument.
  */
 static With *
 withDup(sql * db, With * p)
@@ -1938,8 +1928,7 @@ sqlExprListSetSortOrder(struct ExprList *p, enum sort_order sort_order)
  * on the expression list.
  *
  * pList might be NULL following an OOM error.  But pName should never be
- * NULL.  If a memory allocation fails, the pParse->db->mallocFailed flag
- * is set.
+ * NULL.
  */
 void
 sqlExprListSetName(Parse * pParse,	/* Parsing context */
@@ -1949,7 +1938,7 @@ sqlExprListSetName(Parse * pParse,	/* Parsing context */
     )
 {
 	struct sql *db = pParse->db;
-	assert(pList != NULL || db->mallocFailed != 0);
+	assert(pList != NULL);
 	if (pList == NULL || pName->n == 0)
 		return;
 	assert(pList->nExpr > 0);
@@ -1971,8 +1960,7 @@ sqlExprListSetName(Parse * pParse,	/* Parsing context */
  * on the expression list.
  *
  * pList might be NULL following an OOM error.  But pSpan should never be
- * NULL.  If a memory allocation fails, the pParse->db->mallocFailed flag
- * is set.
+ * NULL.
  */
 void
 sqlExprListSetSpan(Parse * pParse,	/* Parsing context */
@@ -1981,16 +1969,13 @@ sqlExprListSetSpan(Parse * pParse,	/* Parsing context */
     )
 {
 	sql *db = pParse->db;
-	assert(pList != 0 || db->mallocFailed != 0);
-	if (pList) {
-		struct ExprList_item *pItem = &pList->a[pList->nExpr - 1];
-		assert(pList->nExpr > 0);
-		assert(db->mallocFailed || pItem->pExpr == pSpan->pExpr);
-		sqlDbFree(db, pItem->zSpan);
-		pItem->zSpan = sqlDbStrNDup(db, (char *)pSpan->zStart,
-						(int)(pSpan->zEnd -
-						      pSpan->zStart));
-	}
+	assert(pList != NULL);
+	struct ExprList_item *pItem = &pList->a[pList->nExpr - 1];
+	assert(pList->nExpr > 0);
+	assert(pItem->pExpr == pSpan->pExpr);
+	sqlDbFree(db, pItem->zSpan);
+	pItem->zSpan = sqlDbStrNDup(db, pSpan->zStart,
+				    pSpan->zEnd - pSpan->zStart);
 }
 
 /*
@@ -3031,8 +3016,6 @@ sqlExprCodeIN(Parse * pParse,	/* Parsing and code generating context */
 	    (int *)sqlDbMallocZero(pParse->db,
 				       nVector * (sizeof(int) + sizeof(char)) +
 				       1);
-	if (pParse->db->mallocFailed)
-		goto sqlExprCodeIN_oom_error;
 
 	/* Attempt to compute the RHS. After this step, if anything other than
 	 * IN_INDEX_NOOP is returned, the table opened ith cursor pExpr->iTable
@@ -3228,7 +3211,6 @@ sqlExprCodeIN(Parse * pParse,	/* Parsing and code generating context */
 		sqlReleaseTempReg(pParse, rLhs);
 	sqlExprCachePop(pParse);
 	VdbeComment((v, "end IN expr"));
- sqlExprCodeIN_oom_error:
 	sqlDbFree(pParse->db, aiMap);
 	sqlDbFree(pParse->db, zAff);
 }
@@ -3465,7 +3447,7 @@ sqlExprCacheStore(Parse * pParse, int iTab, int iCol, int iReg)
 	struct yColCache *p;
 
 	/* Unless an error has occurred, register numbers are always positive. */
-	assert(iReg > 0 || pParse->is_aborted || pParse->db->mallocFailed);
+	assert(iReg > 0 || pParse->is_aborted);
 	assert(iCol >= -1 && iCol < 32768);	/* Finite column numbers */
 
 	/* The SQL_ColumnCache flag disables the column cache.  This is used
@@ -3752,10 +3734,7 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 	Expr tempX;		/* Temporary expression node */
 
 	assert(target > 0 && target <= pParse->nMem);
-	if (v == 0) {
-		assert(pParse->db->mallocFailed);
-		return 0;
-	}
+	assert(v != NULL);
 
 	if (pExpr == 0) {
 		op = TK_NULL;
@@ -4418,7 +4397,7 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			} else {
 				sqlVdbeAddOp2(v, OP_Null, 0, target);
 			}
-			assert(pParse->db->mallocFailed || pParse->is_aborted
+			assert(pParse->is_aborted
 			       || pParse->iCacheLevel == iCacheLevel);
 			sqlVdbeResolveLabel(v, endLabel);
 			enum field_type *type =
@@ -4547,7 +4526,7 @@ sqlExprCode(Parse * pParse, Expr * pExpr, int target)
 				  target);
 	} else {
 		inReg = sqlExprCodeTarget(pParse, pExpr, target);
-		assert(pParse->pVdbe != 0 || pParse->db->mallocFailed);
+		assert(pParse->pVdbe != 0);
 		if (inReg != target && pParse->pVdbe) {
 			sqlVdbeAddOp2(pParse->pVdbe, OP_SCopy, inReg,
 					  target);

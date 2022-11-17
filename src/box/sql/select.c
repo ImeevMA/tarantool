@@ -406,8 +406,7 @@ sqlSelectNew(Parse * pParse,	/* Parsing context */
 	standin.pLimit = pLimit;
 	standin.pOffset = pOffset;
 	standin.pWith = 0;
-	assert(pOffset == 0 || pLimit != 0 || pParse->is_aborted
-	       || db->mallocFailed != 0);
+	assert(pOffset == NULL || pLimit != NULL || pParse->is_aborted);
 	Select *pNew = sqlDbMallocRawNN(sizeof(*pNew));
 	assert(standin.pSrc != 0 || pParse->is_aborted);
 	memcpy(pNew, &standin, sizeof(standin));
@@ -1023,8 +1022,6 @@ pushOntoSorter(Parse * pParse,		/* Parser context */
 		sqlVdbeAddOp3(v, OP_Compare, regPrevKey, regBase,
 				  pSort->nOBSat);
 		pOp = sqlVdbeGetOp(v, pSort->addrSortIndex);
-		if (pParse->db->mallocFailed)
-			return;
 		pOp->p2 = nKey + nData;
 		assert(pOp->opcode == OP_OpenTEphemeral ||
 		       pOp->opcode == OP_SorterOpen);
@@ -1368,8 +1365,7 @@ selectInnerLoop(Parse * pParse,		/* The parser context */
 					}
 					sqlVdbeChangeP5(v, SQL_NULLEQ);
 				}
-				assert(sqlVdbeCurrentAddr(v) == iJump
-				       || pParse->db->mallocFailed);
+				assert(sqlVdbeCurrentAddr(v) == iJump);
 				sqlVdbeAddOp3(v, OP_Copy, regResult,
 						  regPrev, nResultCol - 1);
 				break;
@@ -1959,13 +1955,12 @@ generate_column_metadata(struct Parse *pParse, struct SrcList *pTabList,
 {
 	Vdbe *v = pParse->pVdbe;
 	int i, j;
-	sql *db = pParse->db;
 	/* If this is an EXPLAIN, skip this step */
 	if (pParse->explain) {
 		return;
 	}
 
-	if (pParse->colNamesSet || db->mallocFailed)
+	if (pParse->colNamesSet)
 		return;
 	assert(v != 0);
 	size_t size;
@@ -2208,17 +2203,13 @@ sqlSelectAddColumnTypeAndCollation(struct Parse *pParse,
 				       struct space_def *def,
 				       struct Select *pSelect)
 {
-	sql *db = pParse->db;
 	NameContext sNC;
 	Expr *p;
 	struct ExprList_item *a;
 
 	assert(pSelect != 0);
 	assert((pSelect->selFlags & SF_Resolved) != 0);
-	assert((int)def->field_count == pSelect->pEList->nExpr ||
-	       db->mallocFailed);
-	if (db->mallocFailed)
-		return;
+	assert((int)def->field_count == pSelect->pEList->nExpr);
 	memset(&sNC, 0, sizeof(sNC));
 	sNC.pSrcList = pSelect->pSrc;
 	a = pSelect->pEList->a;
@@ -2261,8 +2252,6 @@ sqlResultSetOfSelect(Parse * pParse, Select * pSelect)
 	assert(db->lookaside.bDisable);
 	sqlColumnsFromExprList(pParse, pSelect->pEList, space->def);
 	sqlSelectAddColumnTypeAndCollation(pParse, space->def, pSelect);
-	if (db->mallocFailed)
-		return NULL;
 	return space;
 }
 
@@ -3278,8 +3267,6 @@ generateOutputSubroutine(struct Parse *parse, struct Select *p,
 				  in->nSdst - 1);
 		sqlVdbeAddOp2(v, OP_Bool, true, reg_prev);
 	}
-	if (parse->db->mallocFailed)
-		return 0;
 
 	/* Suppress the first OFFSET entries if there is an OFFSET clause
 	 */
@@ -3530,7 +3517,7 @@ multiSelectOrderBy(Parse * pParse,	/* Parsing context */
 	 * terms to the ORDER BY clause as necessary.
 	 */
 	if (op != TK_ALL) {
-		for (i = 1; db->mallocFailed == 0 && i <= p->pEList->nExpr; i++) {
+		for (i = 1; i <= p->pEList->nExpr; i++) {
 			struct ExprList_item *pItem;
 			for (j = 0, pItem = pOrderBy->a; j < nOrderBy;
 			     j++, pItem++) {
@@ -3587,7 +3574,7 @@ multiSelectOrderBy(Parse * pParse,	/* Parsing context */
 		regPrev = 0;
 	} else {
 		int expr_count = p->pEList->nExpr;
-		assert(nOrderBy >= expr_count || db->mallocFailed);
+		assert(nOrderBy >= expr_count);
 		regPrev = pParse->nMem + 1;
 		pParse->nMem += expr_count + 1;
 		sqlVdbeAddOp2(v, OP_Bool, 0, regPrev);
@@ -4257,8 +4244,6 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 				    ("compound-subquery flattener creates %s.%p as peer\n",
 				     pNew->zSelName, pNew));
 		}
-		if (db->mallocFailed)
-			return 1;
 	}
 
 	/*
@@ -4839,8 +4824,6 @@ withExpand(Walker * pWalker, struct SrcList_item *pFrom)
 		if (pFrom->space == NULL)
 			return WRC_Abort;
 		pFrom->pSelect = sqlSelectDup(db, pCte->pSelect, 0);
-		if (db->mallocFailed)
-			return -1;
 		assert(pFrom->pSelect);
 
 		/* Check if this is a recursive CTE. */
@@ -4990,9 +4973,6 @@ selectExpander(Walker * pWalker, Select * p)
 	u16 selFlags = p->selFlags;
 
 	p->selFlags |= SF_Expanded;
-	if (db->mallocFailed) {
-		return WRC_Abort;
-	}
 	if (NEVER(p->pSrc == 0) || (selFlags & SF_Expanded) != 0) {
 		return WRC_Prune;
 	}
@@ -5090,9 +5070,8 @@ selectExpander(Walker * pWalker, Select * p)
 
 	/* Process NATURAL keywords, and ON and USING clauses of joins.
 	 */
-	if (db->mallocFailed || sqlProcessJoin(pParse, p)) {
+	if (sqlProcessJoin(pParse, p))
 		return WRC_Abort;
-	}
 
 	/* For every "*" that occurs in the column list, insert the names of
 	 * all columns in all tables.  And for every TABLE.* insert the names
@@ -5173,8 +5152,6 @@ selectExpander(Walker * pWalker, Select * p)
 					char *zTabName = pFrom->zAlias;
 					if (zTabName == NULL)
 						zTabName = space->def->name;
-					if (db->mallocFailed)
-						break;
 					if (pSub == 0
 					    || (pSub->
 						selFlags & SF_NestedFrom) ==
@@ -5333,8 +5310,7 @@ sqlExprWalkNoop(Walker * NotUsed, Expr * NotUsed2)
  * name resolution is performed.
  *
  * If anything goes wrong, an error message is written into pParse.
- * The calling function can detect the problem by looking at pParse->is_aborted
- * and/or pParse->db->mallocFailed.
+ * The calling function can detect the problem by looking at pParse->is_aborted.
  */
 static void
 sqlSelectExpand(Parse * pParse, Select * pSelect)
@@ -5433,19 +5409,15 @@ sqlSelectPrep(Parse * pParse,	/* The parser context */
 		  NameContext * pOuterNC	/* Name context for container */
     )
 {
-	sql *db;
 	if (NEVER(p == 0))
-		return;
-	db = pParse->db;
-	if (db->mallocFailed)
 		return;
 	if (p->selFlags & SF_HasTypeInfo)
 		return;
 	sqlSelectExpand(pParse, p);
-	if (pParse->is_aborted || db->mallocFailed)
+	if (pParse->is_aborted)
 		return;
 	sqlResolveSelectNames(pParse, p, pOuterNC);
-	if (pParse->is_aborted || db->mallocFailed)
+	if (pParse->is_aborted)
 		return;
 	sqlSelectAddTypeInfo(pParse, p);
 }
@@ -5728,9 +5700,8 @@ sqlSelect(Parse * pParse,		/* The parser context */
 	pParse->iSelectId = pParse->iNextSelectId++;
 
 	db = pParse->db;
-	if (p == 0 || db->mallocFailed || pParse->is_aborted) {
+	if (p == NULL || pParse->is_aborted)
 		return 1;
-	}
 	memset(&sAggInfo, 0, sizeof(sAggInfo));
 #ifdef SQL_DEBUG
 	pParse->nSelectIndent++;
@@ -5763,9 +5734,8 @@ sqlSelect(Parse * pParse,		/* The parser context */
 	memset(&sSort, 0, sizeof(sSort));
 	sSort.pOrderBy = p->pOrderBy;
 	pTabList = p->pSrc;
-	if (pParse->is_aborted || db->mallocFailed) {
+	if (pParse->is_aborted)
 		goto select_end;
-	}
 	assert(p->pEList != 0);
 	isAgg = (p->selFlags & SF_Aggregate) != 0;
 #ifdef SQL_DEBUG
@@ -5806,8 +5776,6 @@ sqlSelect(Parse * pParse,		/* The parser context */
 			i = -1;
 		}
 		pTabList = p->pSrc;
-		if (db->mallocFailed)
-			goto select_end;
 		if (!IgnorableOrderby(pDest)) {
 			sSort.pOrderBy = p->pOrderBy;
 		}
@@ -5969,8 +5937,6 @@ sqlSelect(Parse * pParse,		/* The parser context */
 			sqlVdbeChangeP1(v, topAddr, retAddr);
 			sqlClearTempRegCache(pParse);
 		}
-		if (db->mallocFailed)
-			goto select_end;
 		pParse->nHeight -= sqlSelectExprHeight(p);
 	}
 
@@ -6603,15 +6569,12 @@ sqlSelect(Parse * pParse,		/* The parser context */
 					pMinMax =
 					    sql_expr_list_dup(db, pMinMax, 0);
 					pDel = pMinMax;
-					assert(db->mallocFailed
-					       || pMinMax != 0);
-					if (!db->mallocFailed) {
-						pMinMax->a[0].sort_order =
-						    flag !=
-						    WHERE_ORDERBY_MIN ? 1 : 0;
-						pMinMax->a[0].pExpr->op =
-						    TK_COLUMN_REF;
-					}
+					assert(pMinMax != 0);
+					pMinMax->a[0].sort_order =
+						flag != WHERE_ORDERBY_MIN ?
+						1 : 0;
+					pMinMax->a[0].pExpr->op =
+						TK_COLUMN_REF;
 				}
 
 				/* This case runs if the aggregate has no GROUP BY clause.  The

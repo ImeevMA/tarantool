@@ -380,11 +380,6 @@ sql_init_db(sql **out_db)
 	db->nMaxSorterMmap = 0x7FFFFFFF;
 
 	db->magic = SQL_MAGIC_OPEN;
-	if (db->mallocFailed) {
-		sql_free(db);
-		*out_db = NULL;
-		return -1;
-	}
 
 	/* Enable the lookaside-malloc subsystem */
 	setupLookaside(db, 0, LOOKASIDE_SLOT_SIZE, LOOKASIDE_SLOT_NUMBER);

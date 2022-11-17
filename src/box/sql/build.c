@@ -64,12 +64,9 @@ void
 sql_finish_coding(struct Parse *parse_context)
 {
 	assert(parse_context->pToplevel == NULL);
-	struct sql *db = parse_context->db;
 	struct Vdbe *v = sqlGetVdbe(parse_context);
 	sqlVdbeAddOp0(v, OP_Halt);
 
-	if (db->mallocFailed)
-		parse_context->is_aborted = true;
 	if (parse_context->is_aborted)
 		return;
 	/*
@@ -109,7 +106,7 @@ sql_finish_coding(struct Parse *parse_context)
 		sqlVdbeGoto(v, 1);
 	}
 	/* Get the VDBE program ready for execution. */
-	if (!parse_context->is_aborted && !db->mallocFailed) {
+	if (!parse_context->is_aborted) {
 		assert(parse_context->iCacheLevel == 0);
 		sqlVdbeMakeReady(v, parse_context);
 	} else {
@@ -630,8 +627,6 @@ sqlAddPrimaryKey(struct Parse *pParse)
 			goto primary_key_exit;
 		pParse->create_index_def.cols = list;
 		sql_create_index(pParse);
-		if (db->mallocFailed)
-			goto primary_key_exit;
 	} else {
 		sql_create_index(pParse);
 		pList = NULL;
@@ -1029,7 +1024,6 @@ int
 emitNewSysSequenceRecord(Parse *pParse, int reg_seq_id, const char *seq_name)
 {
 	Vdbe *v = sqlGetVdbe(pParse);
-	sql *db = pParse->db;
 	int first_col = pParse->nMem + 1;
 	pParse->nMem += 10; /* 9 fields + new record pointer  */
 
@@ -1064,10 +1058,7 @@ emitNewSysSequenceRecord(Parse *pParse, int reg_seq_id, const char *seq_name)
 
 	sqlVdbeAddOp3(v, OP_MakeRecord, first_col + 1, 9, first_col);
 
-	if (db->mallocFailed)
-		return -1;
-	else
-		return first_col;
+	return first_col;
 }
 
 static int
@@ -1411,7 +1402,6 @@ vdbe_emit_create_constraints(struct Parse *parse, int reg_space_id)
 void
 sqlEndTable(struct Parse *pParse)
 {
-	assert(!pParse->db->mallocFailed);
 	struct space *new_space = pParse->create_table_def.new_space;
 	if (new_space == NULL)
 		return;
@@ -1614,7 +1604,6 @@ vdbe_emit_stat_space_clear(struct Parse *parse, const char *stat_table_name,
 {
 	assert(idx_name != NULL || table_name != NULL);
 	struct sql *db = parse->db;
-	assert(!db->mallocFailed);
 	struct SrcList *src_list = sql_src_list_new(db);
 	if (src_list == NULL) {
 		parse->is_aborted = true;
@@ -1923,9 +1912,8 @@ sql_drop_table(struct Parse *parse_context)
 	struct sql *db = parse_context->db;
 	bool is_view = drop_def.base.entity_type == ENTITY_TYPE_VIEW;
 	assert(is_view || drop_def.base.entity_type == ENTITY_TYPE_TABLE);
-	if (v == NULL || db->mallocFailed) {
+	if (v == NULL)
 		goto exit_drop_table;
-	}
 	sqlVdbeCountChanges(v);
 	assert(!parse_context->is_aborted);
 	assert(table_name_list->nSrc == 1);
@@ -2618,7 +2606,7 @@ sql_create_index(struct Parse *parse) {
 	struct ExprList *col_list = create_idx_def->cols;
 	struct SrcList *tbl_name = alter_entity_def->entity_name;
 
-	if (db->mallocFailed || parse->is_aborted)
+	if (parse->is_aborted)
 		goto exit_create_index;
 	enum sql_index_type idx_type = create_idx_def->idx_type;
 	if (idx_type == SQL_INDEX_TYPE_UNIQUE ||
@@ -2970,9 +2958,6 @@ sql_drop_index(struct Parse *parse_context)
 	assert(table_list->nSrc == 1);
 	char *table_name = table_list->a[0].zName;
 	const char *index_name = NULL;
-	if (db->mallocFailed) {
-		goto exit_drop_index;
-	}
 	sqlVdbeCountChanges(v);
 	struct space *space = space_by_name(table_name);
 	bool if_exists = drop_def->if_exist;
@@ -3175,18 +3160,13 @@ sqlSrcListAssignCursors(Parse * pParse, SrcList * pList)
 {
 	int i;
 	struct SrcList_item *pItem;
-	assert(pList || pParse->db->mallocFailed);
-	if (pList) {
-		for (i = 0, pItem = pList->a; i < pList->nSrc; i++, pItem++) {
-			if (pItem->iCursor >= 0)
-				break;
-			pItem->iCursor = pParse->nTab++;
-			if (pItem->pSelect) {
-				sqlSrcListAssignCursors(pParse,
-							    pItem->pSelect->
-							    pSrc);
-			}
-		}
+	assert(pList != NULL);
+	for (i = 0, pItem = pList->a; i < pList->nSrc; i++, pItem++) {
+		if (pItem->iCursor >= 0)
+			break;
+		pItem->iCursor = pParse->nTab++;
+		if (pItem->pSelect != NULL)
+			sqlSrcListAssignCursors(pParse, pItem->pSelect->pSrc);
 	}
 }
 
@@ -3444,7 +3424,10 @@ sqlWithAdd(Parse * pParse,	/* Parsing context */
 	char *name = sql_name_from_token(db, pName);
 	if (name == NULL) {
 		pParse->is_aborted = true;
-		goto error;
+		sql_expr_list_delete(db, pArglist);
+		sql_select_delete(db, pQuery);
+		sqlDbFree(db, name);
+		return pWith;
 	}
 	if (pWith != NULL) {
 		int i;
@@ -3466,20 +3449,11 @@ sqlWithAdd(Parse * pParse,	/* Parsing context */
 		pNew = sqlDbMallocZero(db, sizeof(*pWith));
 	}
 
-	if (db->mallocFailed) {
-error:
-		sql_expr_list_delete(db, pArglist);
-		sql_select_delete(db, pQuery);
-		sqlDbFree(db, name);
-		pNew = pWith;
-	} else {
-		pNew->a[pNew->nCte].pSelect = pQuery;
-		pNew->a[pNew->nCte].pCols = pArglist;
-		pNew->a[pNew->nCte].zName = name;
-		pNew->a[pNew->nCte].zCteErr = 0;
-		pNew->nCte++;
-	}
-
+	pNew->a[pNew->nCte].pSelect = pQuery;
+	pNew->a[pNew->nCte].pCols = pArglist;
+	pNew->a[pNew->nCte].zName = name;
+	pNew->a[pNew->nCte].zCteErr = 0;
+	pNew->nCte++;
 	return pNew;
 }
 

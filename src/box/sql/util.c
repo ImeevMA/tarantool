@@ -1188,9 +1188,7 @@ sqlLogEstToInt(LogEst x)
 
 /*
  * Add a new name/number pair to a VList.  This might require that the
- * VList object be reallocated, so return the new VList.  If an OOM
- * error occurs, the original VList returned and the
- * db->mallocFailed flag is set.
+ * VList object be reallocated, so return the new VList.
  *
  * A VList is really just an array of integers.  To destroy a VList,
  * simply pass it to sqlDbFree().

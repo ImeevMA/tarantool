@@ -968,6 +968,7 @@ whereKeyStats(Parse * pParse,	/* Database connection */
 	      int roundUp,	/* Round up if true.  Round down if false */
 	      tRowcnt * aStat)	/* OUT: stats written here */
 {
+	(void)pParse;
 	struct space *space = space_by_id(idx_def->space_id);
 	assert(space != NULL);
 	struct index *idx = space_index(space, idx_def->iid);
@@ -985,9 +986,6 @@ whereKeyStats(Parse * pParse,	/* Database connection */
 	int nField;		/* Number of fields in pRec */
 	tRowcnt iLower = 0;	/* anLt[] + anEq[] of largest sample pRec is > */
 
-#ifndef SQL_DEBUG
-	UNUSED_PARAMETER(pParse);
-#endif
 	assert(pRec != 0);
 	assert(pRec->nField > 0);
 
@@ -1083,45 +1081,41 @@ whereKeyStats(Parse * pParse,	/* Database connection */
 	 * above found the right answer. This block serves no purpose other
 	 * than to invoke the asserts.
 	 */
-	if (pParse->db->mallocFailed == 0) {
-		if (res == 0) {
-			/* If (res==0) is true, then pRec must be equal to sample i. */
-			assert(i < (int) sample_count);
-			assert(iCol == nField - 1);
-			pRec->nField = nField;
-			assert(0 ==
-			       sqlVdbeRecordCompareMsgpack(samples[i].sample_key,
-							       pRec)
-			       || pParse->db->mallocFailed);
-		} else {
-			/* Unless i==pIdx->nSample, indicating that pRec is larger than
-			 * all samples in the aSample[] array, pRec must be smaller than the
-			 * (iCol+1) field prefix of sample i.
-			 */
-			assert(i <= (int) sample_count && i >= 0);
-			pRec->nField = iCol + 1;
-			assert(i == (int) sample_count ||
-			       sqlVdbeRecordCompareMsgpack(samples[i].sample_key,
-							       pRec) > 0
-			       || pParse->db->mallocFailed);
+	if (res == 0) {
+		/* If res == 0, then pRec must be equal to sample i. */
+		assert(i < (int)sample_count);
+		assert(iCol == nField - 1);
+		pRec->nField = nField;
+		assert(sqlVdbeRecordCompareMsgpack(samples[i].sample_key,
+						   pRec) == 0);
+	} else {
+		/*
+		 * Unless i == pIdx->nSample, indicating that pRec is larger
+		 * than all samples in the aSample[] array, pRec must be smaller
+		 * than the iCol + 1 field prefix of sample i.
+		 */
+		assert(i <= (int)sample_count && i >= 0);
+		pRec->nField = iCol + 1;
+		assert(i == (int)sample_count ||
+		       sqlVdbeRecordCompareMsgpack(samples[i].sample_key,
+						       pRec) > 0);
 
-			/* if i==0 and iCol==0, then record pRec is smaller than all samples
-			 * in the aSample[] array. Otherwise, if (iCol>0) then pRec must
-			 * be greater than or equal to the (iCol) field prefix of sample i.
-			 * If (i>0), then pRec must also be greater than sample (i-1).
-			 */
-			if (iCol > 0) {
-				pRec->nField = iCol;
-				assert(sqlVdbeRecordCompareMsgpack
-				       (samples[i].sample_key, pRec) <= 0
-				       || pParse->db->mallocFailed);
-			}
-			if (i > 0) {
-				pRec->nField = nField;
-				assert(sqlVdbeRecordCompareMsgpack
-				       (samples[i - 1].sample_key, pRec) < 0 ||
-				       pParse->db->mallocFailed);
-			}
+		/*
+		 * if i == 0 and iCol == 0, then record pRec is smaller than all
+		 * samples in the aSample[] array. Otherwise, if iCol > 0 then
+		 * pRec must be greater than or equal to the iCol field prefix
+		 * of sample i. If i > 0, then pRec must also be greater than
+		 * sample i - 1.
+		 */
+		if (iCol > 0) {
+			pRec->nField = iCol;
+			assert(sqlVdbeRecordCompareMsgpack(
+				samples[i].sample_key, pRec) <= 0);
+		}
+		if (i > 0) {
+			pRec->nField = nField;
+			assert(sqlVdbeRecordCompareMsgpack(
+				samples[i - 1].sample_key, pRec) < 0);
 		}
 	}
 #endif				/* ifdef SQL_DEBUG */
@@ -2356,8 +2350,6 @@ whereLoopAddBtreeIndex(WhereLoopBuilder * pBuilder,	/* The WhereLoop factory */
 	uint32_t probe_part_count = probe->key_def->part_count;
 
 	pNew = pBuilder->pNew;
-	if (db->mallocFailed)
-		return -1;
 	WHERETRACE(0x800, ("BEGIN addBtreeIdx(%s), nEq=%d\n",
 			   probe->name, pNew->nEq));
 
@@ -3140,7 +3132,7 @@ whereLoopAddAll(WhereLoopBuilder * pBuilder)
 		if (rc == 0)
 			rc = whereLoopAddOr(pBuilder, mPrereq, mUnusable);
 		mPrior |= pNew->maskSelf;
-		if (rc || db->mallocFailed)
+		if (rc != 0)
 			break;
 	}
 
@@ -4391,8 +4383,6 @@ sqlWhereBegin(Parse * pParse,	/* The parser context */
 
 	/* Analyze all of the subexpressions. */
 	sqlWhereExprAnalyze(pTabList, &pWInfo->sWC);
-	if (db->mallocFailed)
-		goto whereBeginError;
 
 	if (wctrlFlags & WHERE_WANT_DISTINCT) {
 		if (isDistinctRedundant
@@ -4442,21 +4432,15 @@ sqlWhereBegin(Parse * pParse,	/* The parser context */
 #endif
 
 		wherePathSolver(pWInfo, 0);
-		if (db->mallocFailed)
-			goto whereBeginError;
-		if (pWInfo->pOrderBy) {
+		if (pWInfo->pOrderBy != NULL)
 			wherePathSolver(pWInfo, pWInfo->nRowOut + 1);
-			if (db->mallocFailed)
-				goto whereBeginError;
-		}
 	}
 	if (pWInfo->pOrderBy == 0 &&
 	    (pParse->sql_flags & SQL_ReverseOrder) != 0) {
 		pWInfo->revMask = ALLBITS;
 	}
-	if (pParse->is_aborted || NEVER(db->mallocFailed)) {
+	if (pParse->is_aborted)
 		goto whereBeginError;
-	}
 #ifdef SQL_DEBUG
 	if (sqlWhereTrace) {
 		sqlDebugPrintf("---- Solution nRow=%d", pWInfo->nRowOut);
@@ -4638,8 +4622,6 @@ sqlWhereBegin(Parse * pParse,	/* The parser context */
 		}
 	}
 	pWInfo->iTop = sqlVdbeCurrentAddr(v);
-	if (db->mallocFailed)
-		goto whereBeginError;
 
 	/* Generate the code to do the search.  Each iteration of the for
 	 * loop below generates code for a single nested loop of the VM
@@ -4652,8 +4634,6 @@ sqlWhereBegin(Parse * pParse,	/* The parser context */
 			constructAutomaticIndex(pParse, &pWInfo->sWC,
 						&pTabList->a[pLevel->iFrom],
 						notReady, pLevel);
-			if (db->mallocFailed)
-				goto whereBeginError;
 		}
 		sqlWhereExplainOneScan(pParse, pTabList, pLevel, ii,
 					       pLevel->iFrom, wctrlFlags);
@@ -4767,7 +4747,7 @@ sqlWhereEnd(WhereInfo * pWInfo)
 		/* For a co-routine, change all OP_Column references to the table of
 		 * the co-routine into OP_Copy of result contained in a register.
 		 */
-		if (pTabItem->fg.viaCoroutine && !db->mallocFailed) {
+		if (pTabItem->fg.viaCoroutine != 0) {
 			translateColumnToCopy(v, pLevel->addrBody,
 					      pLevel->iTabCur,
 					      pTabItem->regResult);
@@ -4791,7 +4771,7 @@ sqlWhereEnd(WhereInfo * pWInfo)
 		} else if (pLoop->wsFlags & WHERE_MULTI_OR) {
 			def = pLevel->u.pCovidx;
 		}
-		if (def != NULL && !db->mallocFailed) {
+		if (def != NULL) {
 			last = sqlVdbeCurrentAddr(v);
 			k = pLevel->addrBody;
 			pOp = sqlVdbeGetOp(v, k);
