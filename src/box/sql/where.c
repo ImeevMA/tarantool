@@ -1768,9 +1768,8 @@ whereLoopClearUnion(WhereLoop * p)
  * Deallocate internal memory used by a WhereLoop object
  */
 static void
-whereLoopClear(sql * db, WhereLoop * p)
+whereLoopClear(struct WhereLoop *p)
 {
-	(void)db;
 	if (p->aLTerm != p->aLTermSpace)
 		sqlDbFree(p->aLTerm);
 	whereLoopClearUnion(p);
@@ -1825,7 +1824,8 @@ whereLoopXfer(sql * db, WhereLoop * pTo, WhereLoop * pFrom)
 static void
 whereLoopDelete(sql * db, WhereLoop * p)
 {
-	whereLoopClear(db, p);
+	(void)db;
+	whereLoopClear(p);
 	sqlDbFree(p);
 }
 
@@ -3107,7 +3107,6 @@ whereLoopAddAll(WhereLoopBuilder * pBuilder)
 	SrcList *pTabList = pWInfo->pTabList;
 	struct SrcList_item *pItem;
 	struct SrcList_item *pEnd = &pTabList->a[pWInfo->nLevel];
-	sql *db = pWInfo->pParse->db;
 	int rc = 0;
 	WhereLoop *pNew;
 	u8 priorJointype = 0;
@@ -3138,7 +3137,7 @@ whereLoopAddAll(WhereLoopBuilder * pBuilder)
 			break;
 	}
 
-	whereLoopClear(db, pNew);
+	whereLoopClear(pNew);
 	return rc;
 }
 
