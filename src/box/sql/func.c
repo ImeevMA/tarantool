@@ -306,10 +306,7 @@ func_lower_upper(struct sql_context *ctx, int argc, const struct Mem *argv)
 		return mem_set_str0_static(ctx->pOut, "");
 	const char *str = arg->z;
 	int32_t len = arg->n;
-	struct sql *db = sql_get();
 	char *res = sqlDbMallocRawNN(len);
-	int32_t size = sqlDbMallocSize(db, res);
-	assert(size >= len);
 	UErrorCode status = U_ZERO_ERROR;
 	const char *locale = NULL;
 	if (ctx->coll != NULL && ctx->coll->type == COLL_TYPE_ICU) {
@@ -323,15 +320,15 @@ func_lower_upper(struct sql_context *ctx, int argc, const struct Mem *argv)
 	bool is_upper = ctx->func->def->name[0] == 'U';
 	int32_t new_len =
 		is_upper ?
-		ucasemap_utf8ToUpper(cm, res, size, str, len, &status) :
-		ucasemap_utf8ToLower(cm, res, size, str, len, &status);
-	if (new_len > size) {
+		ucasemap_utf8ToUpper(cm, res, len, str, len, &status) :
+		ucasemap_utf8ToLower(cm, res, len, str, len, &status);
+	if (new_len > len) {
 		res = sqlDbRealloc(res, new_len);
 		status = U_ZERO_ERROR;
 		if (is_upper)
-			ucasemap_utf8ToUpper(cm, res, size, str, len, &status);
+			ucasemap_utf8ToUpper(cm, res, new_len, str, len, &status);
 		else
-			ucasemap_utf8ToLower(cm, res, size, str, len, &status);
+			ucasemap_utf8ToLower(cm, res, new_len, str, len, &status);
 	}
 	ucasemap_close(cm);
 	mem_set_str_allocated(ctx->pOut, res, new_len);

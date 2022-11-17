@@ -846,7 +846,6 @@ sqlStrAccumEnlarge(StrAccum * p, int N)
 		if (!isMalloced(p) && p->nChar > 0)
 			memcpy(zNew, p->zText, p->nChar);
 		p->zText = zNew;
-		p->nAlloc = sqlDbMallocSize(p->db, zNew);
 		p->printfFlags |= SQL_PRINTF_MALLOCED;
 	}
 	return N;

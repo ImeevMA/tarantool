@@ -93,13 +93,14 @@ whereClauseInsert(WhereClause * pWC, Expr * p, u16 wtFlags)
 	int idx;
 	if (pWC->nTerm >= pWC->nSlot) {
 		WhereTerm *pOld = pWC->a;
-		sql *db = pWC->pWInfo->pParse->db;
-		pWC->a = sqlDbMallocRawNN(sizeof(pWC->a[0]) * pWC->nSlot * 2);
+		size_t size = sizeof(pWC->a[0]) * pWC->nSlot * 2;
+		pWC->a = sqlDbMallocRawNN(size);
 		memcpy(pWC->a, pOld, sizeof(pWC->a[0]) * pWC->nTerm);
 		if (pOld != pWC->aStatic) {
 			sqlDbFree(pOld);
 		}
-		pWC->nSlot = sqlDbMallocSize(db, pWC->a) / sizeof(pWC->a[0]);
+		assert(size / sizeof(pWC->a[0]) == (size_t)pWC->nSlot * 2);
+		pWC->nSlot *= 2;
 	}
 	pTerm = &pWC->a[idx = pWC->nTerm++];
 	if (p && ExprHasProperty(p, EP_Unlikely)) {

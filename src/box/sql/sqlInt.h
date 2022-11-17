@@ -2417,8 +2417,6 @@ sqlDbRealloc(void *buf, size_t n);
 void
 sqlDbFree(void *buf);
 
-int sqlDbMallocSize(sql *, void *);
-
 /*
  * On systems with ample stack space and that support alloca(), make
  * use of alloca() to obtain space for large automatic objects.  By default,

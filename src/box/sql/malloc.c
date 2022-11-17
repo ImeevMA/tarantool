@@ -41,21 +41,6 @@ enum {
 };
 static_assert(MALLOC_MAX < SIZE_MAX);
 
-
-/*
- * Report the allocated size of a prior return from sql_sized_malloc()
- * or sql_sized_realloc().
- */
-static int
-sql_sized_sizeof(void *pPrior)
-{
-	sql_int64 *p;
-	assert(pPrior != 0);
-	p = (sql_int64 *) pPrior;
-	p--;
-	return (int)p[0];
-}
-
 void *
 sqlMalloc(size_t n)
 {
@@ -78,16 +63,6 @@ is_lookaside(void *buf)
 	struct sql *db = sql_get();
 	assert(db != NULL);
 	return buf >= db->lookaside.pStart && buf < db->lookaside.pEnd;
-}
-
-int
-sqlDbMallocSize(sql * db, void *p)
-{
-	assert(p != 0);
-	if (db == NULL || !is_lookaside(p))
-		return sql_sized_sizeof(p);
-	else
-		return db->lookaside.sz;
 }
 
 /*

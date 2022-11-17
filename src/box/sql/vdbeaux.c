@@ -153,8 +153,9 @@ growOpArray(Vdbe * v, int nOp)
 
 	assert((unsigned)nOp <= (1024 / sizeof(Op)));
 	assert(nNew >= (p->nOpAlloc + nOp));
-	pNew = sqlDbRealloc(v->aOp, nNew * sizeof(Op));
-	p->szOpAlloc = sqlDbMallocSize(p->db, pNew);
+	size_t size = nNew * sizeof(Op);
+	pNew = sqlDbRealloc(v->aOp, size);
+	p->szOpAlloc = size;
 	p->nOpAlloc = p->szOpAlloc / sizeof(Op);
 	v->aOp = pNew;
 	return 0;
@@ -1248,7 +1249,7 @@ sqlVdbeList(Vdbe * p)
 		pMem++;
 
 		char *buf = sqlDbMallocRawNN(256);
-		zP4 = displayP4(pOp, buf, sqlDbMallocSize(sql_get(), buf));
+		zP4 = displayP4(pOp, buf, 256);
 		if (zP4 != buf) {
 			sqlDbFree(buf);
 			mem_set_str0_ephemeral(pMem, zP4);
