@@ -277,8 +277,24 @@ void sqlVdbeRecordUnpackMsgpack(struct key_def *key_def,
 
 int sqlVdbeRecordCompare(struct sql *db, int key_count,
 			     const void *key1, UnpackedRecord *key2);
-UnpackedRecord *sqlVdbeAllocUnpackedRecord(struct sql *,
-					       struct key_def *);
+
+/**
+ * This routine is used to allocate sufficient space for an UnpackedRecord
+ * structure large enough to be used with sqlVdbeRecordUnpack() if
+ * the first argument is a pointer to key_def structure.
+ *
+ * The space is either allocated using sqlDbMallocRawNN() or from within
+ * the unaligned buffer passed via the second and third arguments (presumably
+ * stack space). If the former, then *ppFree is set to a pointer that should
+ * be eventually freed by the caller using sqlDbFree(). Or, if the
+ * allocation comes from the pSpace/szSpace buffer, *ppFree is set to NULL
+ * before returning.
+ *
+ * If an OOM error occurs, NULL is returned.
+ */
+struct UnpackedRecord *
+sqlVdbeAllocUnpackedRecord(struct key_def *key_def);
+
 void sqlVdbeLinkSubProgram(Vdbe *, SubProgram *);
 
 /* Use SQL_ENABLE_COMMENTS to enable generation of extra comments on

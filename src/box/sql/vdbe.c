@@ -2759,9 +2759,8 @@ case OP_Found: {        /* jump, in3 */
 		pIdxKey = &r;
 		pFree = 0;
 	} else {
-		pFree = pIdxKey = sqlVdbeAllocUnpackedRecord(db, pC->key_def);
-		if (pIdxKey == NULL)
-			goto abort_due_to_error;
+		pIdxKey = sqlVdbeAllocUnpackedRecord(pC->key_def);
+		pFree = pIdxKey;
 		assert(mem_is_bin(pIn3));
 		sqlVdbeRecordUnpackMsgpack(pC->key_def,
 					       pIn3->z, pIdxKey);

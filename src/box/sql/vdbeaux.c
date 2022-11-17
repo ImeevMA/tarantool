@@ -2091,10 +2091,9 @@ sqlVdbeDelete(Vdbe * p)
  *
  * If an OOM error occurs, NULL is returned.
  */
-UnpackedRecord *
-sqlVdbeAllocUnpackedRecord(struct sql *db, struct key_def *key_def)
+struct UnpackedRecord *
+sqlVdbeAllocUnpackedRecord(struct key_def *key_def)
 {
-	(void)db;
 	UnpackedRecord *p;	/* Unpacked record to return */
 	int nByte;		/* Number of bytes required for *p */
 	nByte =
