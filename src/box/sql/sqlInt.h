@@ -2390,7 +2390,12 @@ sqlDbMallocRawNN(size_t n);
 char *
 sqlDbStrDup(const char *str);
 
-char *sqlDbStrNDup(sql *, const char *, u64);
+/**
+ * Make a copy of a string of given length in memory obtained from
+ * sqlDbMallocRawNN().
+ */
+char *
+sqlDbStrNDup(const char *str, size_t len);
 
 /**
  * Change the size of an existing memory allocation and remember the size of the

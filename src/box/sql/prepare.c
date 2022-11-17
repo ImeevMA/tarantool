@@ -75,7 +75,7 @@ sql_stmt_compile(const char *zSql, int nBytes, struct Vdbe *pReprepare,
 			rc = -1;
 			goto end_prepare;
 		}
-		zSqlCopy = sqlDbStrNDup(db, zSql, nBytes);
+		zSqlCopy = sqlDbStrNDup(zSql, nBytes);
 		if (zSqlCopy) {
 			sqlRunParser(&sParse, zSqlCopy);
 			sParse.zTail = &zSql[sParse.zTail - zSqlCopy];

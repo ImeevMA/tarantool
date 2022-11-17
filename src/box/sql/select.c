@@ -492,13 +492,7 @@ src_list_append_unique(struct sql *db, struct SrcList *list,
 	}
 	list = new_list;
 	struct SrcList_item *pItem = &list->a[list->nSrc - 1];
-	pItem->zName = sqlDbStrNDup(db, new_name, strlen(new_name));
-	if (pItem->zName == NULL) {
-		diag_set(OutOfMemory, strlen(new_name), "sqlDbStrNDup",
-			 "pItem->zName");
-		sqlSrcListDelete(db, list);
-		return NULL;
-	}
+	pItem->zName = sqlDbStrDup(new_name);
 	return list;
 }
 
@@ -5583,7 +5577,7 @@ updateAccumulator(Parse * pParse, AggInfo * pAggInfo)
 		} else {
 			const char *name = pF->func->def->name;
 			uint32_t len = pF->func->def->name_len;
-			const char *str = sqlDbStrNDup(pParse->db, name, len);
+			const char *str = sqlDbStrNDup(name, len);
 			assert(regAgg == pF->iMem - nArg);
 			sqlVdbeAddOp4(v, OP_FunctionByName, nArg + 1, regAgg,
 				      pF->iMem, str, P4_DYNAMIC);

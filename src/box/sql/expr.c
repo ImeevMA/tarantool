@@ -1949,7 +1949,7 @@ sqlExprListSetName(Parse * pParse,	/* Parsing context */
 		if (item->zName == NULL)
 			pParse->is_aborted = true;
 	} else {
-		item->zName = sqlDbStrNDup(db, pName->z, pName->n);
+		item->zName = sqlDbStrNDup(pName->z, pName->n);
 	}
 	if (item->zName != NULL)
 		sqlCheckIdentifierName(pParse, item->zName);
@@ -1968,14 +1968,13 @@ sqlExprListSetSpan(Parse * pParse,	/* Parsing context */
 		       ExprSpan * pSpan	/* The span to be added */
     )
 {
-	sql *db = pParse->db;
+	(void)pParse;
 	assert(pList != NULL);
 	struct ExprList_item *pItem = &pList->a[pList->nExpr - 1];
 	assert(pList->nExpr > 0);
 	assert(pItem->pExpr == pSpan->pExpr);
 	sqlDbFree(pItem->zSpan);
-	pItem->zSpan = sqlDbStrNDup(db, pSpan->zStart,
-				    pSpan->zEnd - pSpan->zStart);
+	pItem->zSpan = sqlDbStrNDup(pSpan->zStart, pSpan->zEnd - pSpan->zStart);
 }
 
 /*
@@ -4172,8 +4171,7 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			} else {
 				sqlVdbeAddOp4(v, OP_FunctionByName, nFarg,
 					      r1, target,
-					      sqlDbStrNDup(pParse->db,
-							   func->def->name,
+					      sqlDbStrNDup(func->def->name,
 							   func->def->name_len),
 					      P4_DYNAMIC);
 			}

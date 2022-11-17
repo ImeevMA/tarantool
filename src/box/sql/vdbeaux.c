@@ -94,7 +94,7 @@ sqlVdbeSetSql(Vdbe * p, const char *z, int n)
 	if (p == 0)
 		return;
 	assert(p->zSql == 0);
-	p->zSql = sqlDbStrNDup(p->db, z, n);
+	p->zSql = sqlDbStrNDup(z, n);
 }
 
 /*
@@ -686,7 +686,7 @@ vdbeChangeP4Full(Vdbe * p, Op * pOp, const char *zP4, int n)
 	} else {
 		if (n == 0)
 			n = sqlStrlen30(zP4);
-		pOp->p4.z = sqlDbStrNDup(p->db, zP4, n);
+		pOp->p4.z = sqlDbStrNDup(zP4, n);
 		pOp->p4type = P4_DYNAMIC;
 	}
 }

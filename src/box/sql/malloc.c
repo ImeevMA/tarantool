@@ -228,16 +228,12 @@ sqlDbStrDup(const char *str)
 }
 
 char *
-sqlDbStrNDup(sql * db, const char *z, u64 n)
+sqlDbStrNDup(const char *str, size_t len)
 {
-	char *zNew;
-	assert(db != 0);
-	if (z == 0) {
-		return 0;
-	}
-	assert((n & 0x7fffffff) == n);
-	zNew = sqlDbMallocRawNN(n + 1);
-	memcpy(zNew, z, (size_t) n);
-	zNew[n] = 0;
-	return zNew;
+	if (str == NULL)
+		return NULL;
+	char *new_str = sqlDbMallocRawNN(len + 1);
+	memcpy(new_str, str, len);
+	new_str[len] = '\0';
+	return new_str;
 }
