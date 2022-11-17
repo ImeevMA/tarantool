@@ -1075,17 +1075,10 @@ sql_expr_new_dequoted(int op, const struct Token *token)
 	return e;
 }
 
-/*
- * Attach subtrees pLeft and pRight to the Expr node pRoot.
- *
- * If pRoot==NULL that means that a memory allocation error has occurred.
- * In that case, delete the subtrees pLeft and pRight.
- */
 void
-sqlExprAttachSubtrees(sql * db,
-			  Expr * pRoot, Expr * pLeft, Expr * pRight)
+sqlExprAttachSubtrees(struct Expr *pRoot, struct Expr *pLeft,
+		      struct Expr *pRight)
 {
-	(void)db;
 	assert(pRoot != NULL);
 	if (pRight != NULL) {
 		pRoot->pRight = pRight;
@@ -1125,7 +1118,7 @@ sqlPExpr(Parse * pParse,	/* Parsing context */
 		memset(p, 0, sizeof(Expr));
 		p->op = op & TKFLG_MASK;
 		p->iAgg = -1;
-		sqlExprAttachSubtrees(pParse->db, p, pLeft, pRight);
+		sqlExprAttachSubtrees(p, pLeft, pRight);
 	}
 	if (p) {
 		sqlExprCheckHeight(pParse, p->nHeight);
@@ -1184,7 +1177,7 @@ sql_and_expr_new(struct sql *db, struct Expr *left_expr,
 		return f;
 	} else {
 		struct Expr *new_expr = sql_expr_new_anon(db, TK_AND);
-		sqlExprAttachSubtrees(db, new_expr, left_expr, right_expr);
+		sqlExprAttachSubtrees(new_expr, left_expr, right_expr);
 		return new_expr;
 	}
 }

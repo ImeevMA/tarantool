@@ -467,16 +467,13 @@ findRightmost(Select * p)
  * normalized: it is parser's business and in struct Select they
  * are already in uppercased or unquoted form.
  *
- * @param db Database handler.
  * @param list List of entries.
  * @param new_name Name of entity to be added.
  * @retval @list with new element on success, old one otherwise.
  */
 static struct SrcList *
-src_list_append_unique(struct sql *db, struct SrcList *list,
-		       const char *new_name)
+src_list_append_unique(struct SrcList *list, const char *new_name)
 {
-	(void)db;
 	assert(list != NULL);
 	assert(new_name != NULL);
 
@@ -502,7 +499,7 @@ select_collect_table_names(struct Walker *walker, struct Select *select)
 		if (select->pSrc->a[i].zName == NULL)
 			continue;
 		walker->u.pSrcList =
-			src_list_append_unique(sql_get(), walker->u.pSrcList,
+			src_list_append_unique(walker->u.pSrcList,
 					       select->pSrc->a[i].zName);
 		if (walker->u.pSrcList == NULL)
 			return WRC_Abort;

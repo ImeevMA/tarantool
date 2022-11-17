@@ -1061,7 +1061,7 @@ expr(A) ::= CAST(X) LP expr(E) AS typedef(T) RP(Y). {
   spanSet(&A,&X,&Y); /*A-overwrites-X*/
   A.pExpr = sql_expr_new_dequoted(TK_CAST, NULL);
   A.pExpr->type = T.type;
-  sqlExprAttachSubtrees(pParse->db, A.pExpr, E.pExpr, 0);
+  sqlExprAttachSubtrees(A.pExpr, E.pExpr, 0);
 }
 
 expr(A) ::= expr(X) LB getlist(Y) RB(E). {

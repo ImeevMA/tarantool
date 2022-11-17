@@ -2569,7 +2569,11 @@ sql_expr_new_anon(struct sql *db, int op)
 	return sql_expr_new_named(db, op, NULL);
 }
 
-void sqlExprAttachSubtrees(sql *, Expr *, Expr *, Expr *);
+/** Attach subtrees pLeft and pRight to the Expr node pRoot. */
+void
+sqlExprAttachSubtrees(struct Expr *pRoot, struct Expr *pLeft,
+		      struct Expr *pRight);
+
 Expr *sqlPExpr(Parse *, int, Expr *, Expr *);
 void sqlPExprAddSelect(Parse *, Expr *, Select *);
 
