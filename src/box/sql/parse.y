@@ -620,11 +620,7 @@ selcollist(A) ::= sclp(A) STAR. {
   A = sql_expr_list_append(pParse->db, A, p);
 }
 selcollist(A) ::= sclp(A) nm(X) DOT STAR. {
-  struct Expr *pLeft = sql_expr_new_dequoted(pParse->db, TK_ID, &X);
-  if (pLeft == NULL) {
-    pParse->is_aborted = true;
-    return;
-  }
+  struct Expr *pLeft = sql_expr_new_dequoted(TK_ID, &X);
   Expr *pRight = sqlPExpr(pParse, TK_ASTERISK, 0, 0);
   Expr *pDot = sqlPExpr(pParse, TK_DOT, pLeft, pRight);
   A = sql_expr_list_append(pParse->db,A, pDot);
@@ -1025,17 +1021,8 @@ term(A) ::= NULL(X).        {spanExpr(&A,pParse,@X,X);/*A-overwrites-X*/}
 expr(A) ::= id(X).          {spanExpr(&A,pParse,TK_ID,X); /*A-overwrites-X*/}
 expr(A) ::= JOIN_KW(X).     {spanExpr(&A,pParse,TK_ID,X); /*A-overwrites-X*/}
 expr(A) ::= nm(X) DOT nm(Y). {
-  struct Expr *temp1 = sql_expr_new_dequoted(pParse->db, TK_ID, &X);
-  if (temp1 == NULL) {
-    pParse->is_aborted = true;
-    return;
-  }
-  struct Expr *temp2 = sql_expr_new_dequoted(pParse->db, TK_ID, &Y);
-  if (temp2 == NULL) {
-    sql_expr_delete(pParse->db, temp1);
-    pParse->is_aborted = true;
-    return;
-  }
+  struct Expr *temp1 = sql_expr_new_dequoted(TK_ID, &X);
+  struct Expr *temp2 = sql_expr_new_dequoted(TK_ID, &Y);
   spanSet(&A,&X,&Y); /*A-overwrites-X*/
   A.pExpr = sqlPExpr(pParse, TK_DOT, temp1, temp2);
 }
@@ -1047,11 +1034,7 @@ term(A) ::= UNKNOWN(X) . {spanExpr(&A,pParse,@X,X);/*A-overwrites-X*/}
 term(A) ::= DECIMAL(X) . {spanExpr(&A,pParse,@X,X);/*A-overwrites-X*/}
 
 term(A) ::= INTEGER(X). {
-  A.pExpr = sql_expr_new_dequoted(pParse->db, TK_INTEGER, &X);
-  if (A.pExpr == NULL) {
-    pParse->is_aborted = true;
-    return;
-  }
+  A.pExpr = sql_expr_new_dequoted(TK_INTEGER, &X);
   A.pExpr->type = FIELD_TYPE_INTEGER;
   A.zStart = X.z;
   A.zEnd = X.z + X.n;
@@ -1076,11 +1059,7 @@ expr(A) ::= expr(A) COLLATE id(C). {
 
 expr(A) ::= CAST(X) LP expr(E) AS typedef(T) RP(Y). {
   spanSet(&A,&X,&Y); /*A-overwrites-X*/
-  A.pExpr = sql_expr_new_dequoted(pParse->db, TK_CAST, NULL);
-  if (A.pExpr == NULL) {
-    pParse->is_aborted = true;
-    return;
-  }
+  A.pExpr = sql_expr_new_dequoted(TK_CAST, NULL);
   A.pExpr->type = T.type;
   sqlExprAttachSubtrees(pParse->db, A.pExpr, E.pExpr, 0);
 }
@@ -1168,31 +1147,27 @@ expr(A) ::= TRIM(X) LP trim_operands(Y) RP(E). {
 
 trim_operands(A) ::= trim_specification(N) expr(Z) FROM expr(Y). {
   A = sql_expr_list_append(pParse->db, NULL, Y.pExpr);
-  struct Expr *p = sql_expr_new_dequoted(pParse->db, TK_INTEGER,
-                                         &sqlIntTokens[N]);
+  struct Expr *p = sql_expr_new_dequoted(TK_INTEGER, &sqlIntTokens[N]);
   A = sql_expr_list_append(pParse->db, A, p);
   A = sql_expr_list_append(pParse->db, A, Z.pExpr);
 }
 
 trim_operands(A) ::= trim_specification(N) FROM expr(Y). {
   A = sql_expr_list_append(pParse->db, NULL, Y.pExpr);
-  struct Expr *p = sql_expr_new_dequoted(pParse->db, TK_INTEGER,
-                                         &sqlIntTokens[N]);
+  struct Expr *p = sql_expr_new_dequoted(TK_INTEGER, &sqlIntTokens[N]);
   A = sql_expr_list_append(pParse->db, A, p);
 }
 
 trim_operands(A) ::= expr(Z) FROM expr(Y). {
   A = sql_expr_list_append(pParse->db, NULL, Y.pExpr);
-  struct Expr *p = sql_expr_new_dequoted(pParse->db, TK_INTEGER,
-                                         &sqlIntTokens[TRIM_BOTH]);
+  struct Expr *p = sql_expr_new_dequoted(TK_INTEGER, &sqlIntTokens[TRIM_BOTH]);
   A = sql_expr_list_append(pParse->db, A, p);
   A = sql_expr_list_append(pParse->db, A, Z.pExpr);
 }
 
 trim_operands(A) ::= expr(Y). {
   A = sql_expr_list_append(pParse->db, NULL, Y.pExpr);
-  struct Expr *p = sql_expr_new_dequoted(pParse->db, TK_INTEGER,
-                                         &sqlIntTokens[TRIM_BOTH]);
+  struct Expr *p = sql_expr_new_dequoted(TK_INTEGER, &sqlIntTokens[TRIM_BOTH]);
   A = sql_expr_list_append(pParse->db, A, p);
 }
 
@@ -1754,11 +1729,7 @@ expr(A) ::= RAISE(X) LP IGNORE RP(Y).  {
 }
 expr(A) ::= RAISE(X) LP raisetype(T) COMMA STRING(Z) RP(Y).  {
   spanSet(&A,&X,&Y);  /*A-overwrites-X*/
-  A.pExpr = sql_expr_new_dequoted(pParse->db, TK_RAISE, &Z);
-  if(A.pExpr == NULL) {
-    pParse->is_aborted = true;
-    return;
-  }
+  A.pExpr = sql_expr_new_dequoted(TK_RAISE, &Z);
   A.pExpr->on_conflict_action = (enum on_conflict_action) T;
 }
 

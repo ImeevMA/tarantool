@@ -2546,7 +2546,7 @@ sql_expr_new(struct sql *db, int op, const struct Token *token);
  * @a token. Quotes are removed if they are presented.
  */
 struct Expr *
-sql_expr_new_dequoted(struct sql *db, int op, const struct Token *token);
+sql_expr_new_dequoted(int op, const struct Token *token);
 
 /**
  * The same as @a sql_expr_new, but takes const char instead of

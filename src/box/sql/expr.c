@@ -224,7 +224,7 @@ sqlExprAddCollateToken(Parse * pParse,	/* Parsing context */
 	struct Expr *new_expr;
 	struct sql *db = pParse->db;
 	if (dequote)
-		new_expr = sql_expr_new_dequoted(db, TK_COLLATE, pCollName);
+		new_expr = sql_expr_new_dequoted(TK_COLLATE, pCollName);
 	else
 		new_expr = sql_expr_new(db, TK_COLLATE, pCollName);
 	if (new_expr == NULL) {
@@ -981,7 +981,7 @@ sqlExprSetHeightAndFlags(Parse * pParse, Expr * p)
 /**
  * Allocate a new empty expression object with reserved extra
  * memory.
- * @param db SQL context.
+ *
  * @param op Expression value type.
  * @param extra_size Extra size, needed to be allocated together
  *        with the expression.
@@ -989,9 +989,8 @@ sqlExprSetHeightAndFlags(Parse * pParse, Expr * p)
  * @retval NULL Error. A diag message is set.
  */
 static struct Expr *
-sql_expr_new_empty(struct sql *db, int op, int extra_size)
+sql_expr_new_empty(int op, int extra_size)
 {
-	(void)db;
 	struct Expr *e = sqlDbMallocRawNN(sizeof(*e) + extra_size);
 	memset(e, 0, sizeof(*e));
 	e->op = (u8)op;
@@ -1021,29 +1020,28 @@ sql_expr_token_to_int(int op, const struct Token *token, int *res)
 
 /** Create an expression of a constant integer. */
 static inline struct Expr *
-sql_expr_new_int(struct sql *db, int value)
+sql_expr_new_int(int value)
 {
-	struct Expr *e = sql_expr_new_empty(db, TK_INTEGER, 0);
-	if (e != NULL) {
-		e->type = FIELD_TYPE_INTEGER;
-		e->flags |= EP_IntValue;
-		e->u.iValue = value;
-	}
+	struct Expr *e = sql_expr_new_empty(TK_INTEGER, 0);
+	e->type = FIELD_TYPE_INTEGER;
+	e->flags |= EP_IntValue;
+	e->u.iValue = value;
 	return e;
 }
 
 struct Expr *
 sql_expr_new(struct sql *db, int op, const struct Token *token)
 {
+	(void)db;
 	int extra_sz = 0;
 	if (token != NULL) {
 		int val;
 		if (sql_expr_token_to_int(op, token, &val) == 0)
-			return sql_expr_new_int(db, val);
+			return sql_expr_new_int(val);
 		extra_sz = token->n + 1;
 	}
-	struct Expr *e = sql_expr_new_empty(db, op, extra_sz);
-	if (e == NULL || token == NULL)
+	struct Expr *e = sql_expr_new_empty(op, extra_sz);
+	if (token == NULL)
 		return e;
 	e->u.zToken = (char *) &e[1];
 	assert(token->z != NULL || token->n == 0);
@@ -1053,18 +1051,18 @@ sql_expr_new(struct sql *db, int op, const struct Token *token)
 }
 
 struct Expr *
-sql_expr_new_dequoted(struct sql *db, int op, const struct Token *token)
+sql_expr_new_dequoted(int op, const struct Token *token)
 {
 	int extra_size = 0, rc;
 	if (token != NULL) {
 		int val;
 		assert(token->z != NULL || token->n == 0);
 		if (sql_expr_token_to_int(op, token, &val) == 0)
-			return sql_expr_new_int(db, val);
+			return sql_expr_new_int(val);
 		extra_size = token->n + 1;
 	}
-	struct Expr *e = sql_expr_new_empty(db, op, extra_size);
-	if (e == NULL || token == NULL || token->n == 0)
+	struct Expr *e = sql_expr_new_empty(op, extra_size);
+	if (token == NULL || token->n == 0)
 		return e;
 	e->u.zToken = (char *) &e[1];
 	if (token->z[0] == '"')
@@ -1206,14 +1204,8 @@ sql_and_expr_new(struct sql *db, struct Expr *left_expr,
 Expr *
 sqlExprFunction(Parse * pParse, ExprList * pList, Token * pToken)
 {
-	struct sql *db = pParse->db;
 	assert(pToken != NULL);
-	struct Expr *new_expr = sql_expr_new_dequoted(db, TK_FUNCTION, pToken);
-	if (new_expr == NULL) {
-		sql_expr_list_delete(db, pList);
-		pParse->is_aborted = true;
-		return NULL;
-	}
+	struct Expr *new_expr = sql_expr_new_dequoted(TK_FUNCTION, pToken);
 	new_expr->x.pList = pList;
 	assert(!ExprHasProperty(new_expr, EP_xIsSelect));
 	sqlExprSetHeightAndFlags(pParse, new_expr);
@@ -1342,9 +1334,7 @@ expr_new_variable(struct Parse *parse, const struct Token *spec,
 		}
 		len += id->n;
 	}
-	struct Expr *expr = sql_expr_new_empty(parse->db, TK_VARIABLE, len + 1);
-	if (expr == NULL)
-		return NULL;
+	struct Expr *expr = sql_expr_new_empty(TK_VARIABLE, len + 1);
 	expr->type = FIELD_TYPE_BOOLEAN;
 	expr->flags = EP_Leaf;
 	expr->u.zToken = (char *)(expr + 1);
