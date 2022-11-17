@@ -197,9 +197,7 @@ engine_opts ::= ENGINE EQ STRING(A). {
     return;
   }
   /* Need to dequote name. */
-  char *normalized_name = sql_name_from_token(pParse->db, &A);
-  if (normalized_name == NULL)
-    return;
+  char *normalized_name = sql_name_from_token(&A);
   memcpy(pParse->create_table_def.new_space->def->engine_name, normalized_name,
          strlen(normalized_name) + 1);
   sqlDbFree(normalized_name);

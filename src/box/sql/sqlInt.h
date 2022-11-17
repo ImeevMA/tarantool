@@ -3033,15 +3033,12 @@ void sqlExprIfFalse(Parse *, Expr *, int, int);
  * so are not \000 terminated and are not persistent. The returned
  * string is \000 terminated and is persistent.
  *
- * @param db The database connection.
  * @param t The source token with text.
  * @retval Not NULL Formatted name on new memory.
- * @retval NULL Error. Diag message is set.
  */
 static inline char *
-sql_name_from_token(struct sql *db, struct Token *t)
+sql_name_from_token(struct Token *t)
 {
-	(void)db;
 	assert(t != NULL && t->z != NULL);
 	return sql_normalized_name_db_new(t->z, t->n);
 }

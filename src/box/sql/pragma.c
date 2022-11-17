@@ -331,7 +331,6 @@ sqlPragma(struct Parse *pParse, struct Token *pragma, struct Token *table,
 {
 	char *table_name = NULL;
 	char *index_name = NULL;
-	struct sql *db = pParse->db;
 	struct Vdbe *v = sqlGetVdbe(pParse);
 
 	if (v == NULL)
@@ -339,25 +338,11 @@ sqlPragma(struct Parse *pParse, struct Token *pragma, struct Token *table,
 	sqlVdbeRunOnlyOnce(v);
 	pParse->nMem = 2;
 
-	char *pragma_name = sql_name_from_token(db, pragma);
-	if (pragma_name == NULL) {
-		pParse->is_aborted = true;
-		goto pragma_out;
-	}
-	if (table != NULL) {
-		table_name = sql_name_from_token(db, table);
-		if (table_name == NULL) {
-			pParse->is_aborted = true;
-			goto pragma_out;
-		}
-	}
-	if (index != NULL) {
-		index_name = sql_name_from_token(db, index);
-		if (index_name == NULL) {
-			pParse->is_aborted = true;
-			goto pragma_out;
-		}
-	}
+	char *pragma_name = sql_name_from_token(pragma);
+	if (table != NULL)
+		table_name = sql_name_from_token(table);
+	if (index != NULL)
+		index_name = sql_name_from_token(index);
 
 	/* Locate the pragma in the lookup table */
 	const struct PragmaName *pPragma = pragmaLocate(pragma_name);

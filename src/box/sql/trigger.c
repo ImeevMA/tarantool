@@ -80,10 +80,7 @@ sql_trigger_begin(struct Parse *parse)
 		goto trigger_cleanup;
 	assert(alter_def->entity_name->nSrc == 1);
 	assert(create_def->name.n > 0);
-	trigger_name = sql_name_from_token(db, &create_def->name);
-	if (trigger_name == NULL)
-		goto set_tarantool_error_and_cleanup;
-
+	trigger_name = sql_name_from_token(&create_def->name);
 	if (sqlCheckIdentifierName(parse, trigger_name) != 0)
 		goto trigger_cleanup;
 

@@ -213,12 +213,7 @@ sqlStartTable(Parse *pParse, Token *pName)
 		goto cleanup;
 	sqlVdbeCountChanges(v);
 
-	zName = sql_name_from_token(db, pName);
-	if (zName == NULL) {
-		pParse->is_aborted = true;
-		goto cleanup;
-	}
-
+	zName = sql_name_from_token(pName);
 	if (sqlCheckIdentifierName(pParse, zName) != 0)
 		goto cleanup;
 
@@ -809,12 +804,7 @@ sqlAddCollateType(Parse * pParse, Token * pToken)
 	struct space *space = pParse->create_column_def.space;
 	assert(space != NULL);
 	uint32_t i = space->def->field_count - 1;
-	sql *db = pParse->db;
-	char *coll_name = sql_name_from_token(db, pToken);
-	if (coll_name == NULL) {
-		pParse->is_aborted = true;
-		return;
-	}
+	char *coll_name = sql_name_from_token(pToken);
 	uint32_t *coll_id = &space->def->fields[i].coll_id;
 	if (sql_get_coll_seq(pParse, coll_name, coll_id) != NULL) {
 		/* If the column is declared as "<name> PRIMARY KEY COLLATE <type>",
@@ -1464,9 +1454,10 @@ sql_create_view(struct Parse *parse_context)
 	(void) alter_entity_def;
 	struct sql *db = parse_context->db;
 	if (parse_context->nVar > 0) {
-		diag_set(ClientError, ER_CREATE_SPACE,
-			 sql_name_from_token(db, &create_entity_def->name),
+		char *name = sql_name_from_token(&create_entity_def->name);
+		diag_set(ClientError, ER_CREATE_SPACE, name,
 			 "parameters are not allowed in views");
+		sqlDbFree(name);
 		parse_context->is_aborted = true;
 		goto create_view_fail;
 	}
@@ -1521,11 +1512,10 @@ sql_create_view(struct Parse *parse_context)
 		parse_context->is_aborted = true;
 		goto create_view_fail;
 	}
-	const char *space_name =
-		sql_name_from_token(db, &create_entity_def->name);
+	const char *space_name = sql_name_from_token(&create_entity_def->name);
 	int name_reg = ++parse_context->nMem;
 	sqlVdbeAddOp4(parse_context->pVdbe, OP_String8, 0, name_reg, 0,
-		      sqlDbStrDup(space_name), P4_DYNAMIC);
+		      space_name, P4_DYNAMIC);
 	const char *error_msg =
 		tt_sprintf(tnt_errcode_desc(ER_SPACE_EXISTS), space_name);
 	bool no_err = create_entity_def->if_not_exist;
@@ -2058,9 +2048,7 @@ sql_create_foreign_key(struct Parse *parse_context)
 	}
 	struct Token *parent = create_fk_def->parent_name;
 	assert(parent != NULL);
-	parent_name = sql_name_from_token(db, parent);
-	if (parent_name == NULL)
-		goto tnt_error;
+	parent_name = sql_name_from_token(parent);
 	/*
 	 * Within ALTER TABLE ADD CONSTRAINT FK also can be
 	 * self-referenced, but in this case parent (which is
@@ -2108,14 +2096,10 @@ sql_create_foreign_key(struct Parse *parse_context)
 						     space->def->name, idx);
 		} else {
 			constraint_name =
-				sql_name_from_token(db, &create_def->name);
-			if (constraint_name == NULL)
-				parse_context->is_aborted = true;
+				sql_name_from_token(&create_def->name);
 		}
 	} else {
-		constraint_name = sql_name_from_token(db, &create_def->name);
-		if (constraint_name == NULL)
-			parse_context->is_aborted = true;
+		constraint_name = sql_name_from_token(&create_def->name);
 	}
 	if (constraint_name == NULL)
 		goto exit_create_fk;
@@ -2624,9 +2608,10 @@ sql_create_index(struct Parse *parse) {
 	struct space_def *def = space->def;
 
 	if (def->opts.is_view) {
-		diag_set(ClientError, ER_MODIFY_INDEX,
-			 sql_name_from_token(db, &token), def->name,
+		char *name = sql_name_from_token(&token);
+		diag_set(ClientError, ER_MODIFY_INDEX, name, def->name,
 			 "views can not be indexed");
+		sqlDbFree(name);
 		parse->is_aborted = true;
 		goto exit_create_index;
 	}
@@ -2656,11 +2641,7 @@ sql_create_index(struct Parse *parse) {
 	 */
 	if (!is_create_table_or_add_col) {
 		assert(token.z != NULL);
-		name = sql_name_from_token(db, &token);
-		if (name == NULL) {
-			parse->is_aborted = true;
-			goto exit_create_index;
-		}
+		name = sql_name_from_token(&token);
 		if (space_index_by_name(space, name) != NULL) {
 			if (! create_entity_def->if_not_exist) {
 				diag_set(ClientError, ER_INDEX_EXISTS_IN_SPACE,
@@ -2673,12 +2654,7 @@ sql_create_index(struct Parse *parse) {
 		char *constraint_name = NULL;
 		if (create_entity_def->name.n > 0) {
 			constraint_name =
-				sql_name_from_token(db,
-						    &create_entity_def->name);
-			if (constraint_name == NULL) {
-				parse->is_aborted = true;
-				goto exit_create_index;
-			}
+				sql_name_from_token(&create_entity_def->name);
 		}
 
 	       /*
@@ -2945,11 +2921,7 @@ sql_drop_index(struct Parse *parse_context)
 		}
 		goto exit_drop_index;
 	}
-	index_name = sql_name_from_token(db, &drop_def->name);
-	if (index_name == NULL) {
-		parse_context->is_aborted = true;
-		goto exit_drop_index;
-	}
+	index_name = sql_name_from_token(&drop_def->name);
 
 	vdbe_emit_index_drop(parse_context, index_name, space->def,
 			     ER_NO_SUCH_INDEX_NAME, if_exists);
@@ -2980,14 +2952,14 @@ struct IdList *
 sql_id_list_append(struct sql *db, struct IdList *list,
 		   struct Token *name_token)
 {
+	(void)db;
 	if (list == NULL)
 		list = sqlDbMallocZero(sizeof(*list));
 	int i;
 	list->a = sqlArrayAllocate(list->a, sizeof(list->a[0]), &list->nId, &i);
 	if (i >= 0) {
-		list->a[i].zName = sql_name_from_token(db, name_token);
-		if (list->a[i].zName != NULL)
-			return list;
+		list->a[i].zName = sql_name_from_token(name_token);
+		return list;
 	}
 	sqlIdListDelete(list);
 	return NULL;
@@ -3072,6 +3044,7 @@ struct SrcList *
 sql_src_list_append(struct sql *db, struct SrcList *list,
 		    struct Token *name_token)
 {
+	(void)db;
 	if (list == NULL) {
 		list = sql_src_list_new();
 	} else {
@@ -3080,13 +3053,8 @@ sql_src_list_append(struct sql *db, struct SrcList *list,
 		list = new_list;
 	}
 	struct SrcList_item *item = &list->a[list->nSrc - 1];
-	if (name_token != NULL) {
-		item->zName = sql_name_from_token(db, name_token);
-		if (item->zName == NULL) {
-			sqlSrcListDelete(db, list);
-			return NULL;
-		}
-	}
+	if (name_token != NULL)
+		item->zName = sql_name_from_token(name_token);
 	return list;
 }
 
@@ -3183,11 +3151,7 @@ sqlSrcListAppendFromTerm(Parse * pParse,	/* Parsing context */
 	pItem = &p->a[p->nSrc - 1];
 	assert(pAlias != 0);
 	if (pAlias->n != 0) {
-		pItem->zAlias = sql_name_from_token(db, pAlias);
-		if (pItem->zAlias == NULL) {
-			pParse->is_aborted = true;
-			goto append_from_error;
-		}
+		pItem->zAlias = sql_name_from_token(pAlias);
 	}
 	pItem->pSelect = pSubquery;
 	pItem->pOn = pOn;
@@ -3209,6 +3173,7 @@ sqlSrcListAppendFromTerm(Parse * pParse,	/* Parsing context */
 void
 sqlSrcListIndexedBy(Parse * pParse, SrcList * p, Token * pIndexedBy)
 {
+	(void)pParse;
 	assert(pIndexedBy != 0);
 	if (p && ALWAYS(p->nSrc > 0)) {
 		struct SrcList_item *pItem = &p->a[p->nSrc - 1];
@@ -3221,12 +3186,7 @@ sqlSrcListIndexedBy(Parse * pParse, SrcList * p, Token * pIndexedBy)
 			 */
 			pItem->fg.notIndexed = 1;
 		} else if (pIndexedBy->z != NULL) {
-			pItem->u1.zIndexedBy =
-				sql_name_from_token(pParse->db, pIndexedBy);
-			if (pItem->u1.zIndexedBy == NULL) {
-				pParse->is_aborted = true;
-				return;
-			}
+			pItem->u1.zIndexedBy = sql_name_from_token(pIndexedBy);
 			pItem->fg.isIndexedBy = true;
 		}
 	}
@@ -3312,21 +3272,15 @@ sql_transaction_rollback(Parse *pParse)
 void
 sqlSavepoint(Parse * pParse, int op, Token * pName)
 {
-	struct sql *db = pParse->db;
-	char *zName = sql_name_from_token(db, pName);
-	if (zName) {
-		Vdbe *v = sqlGetVdbe(pParse);
-		if (!v) {
-			sqlDbFree(zName);
-			return;
-		}
-		if (op == SAVEPOINT_BEGIN &&
-		    sqlCheckIdentifierName(pParse, zName) != 0)
-			return;
-		sqlVdbeAddOp4(v, OP_Savepoint, op, 0, 0, zName, P4_DYNAMIC);
-	} else {
-		pParse->is_aborted = true;
+	char *zName = sql_name_from_token(pName);
+	Vdbe *v = sqlGetVdbe(pParse);
+	if (v == NULL) {
+		sqlDbFree(zName);
+		return;
 	}
+	if (op == SAVEPOINT_BEGIN && sqlCheckIdentifierName(pParse, zName) != 0)
+		return;
+	sqlVdbeAddOp4(v, OP_Savepoint, op, 0, 0, zName, P4_DYNAMIC);
 }
 
 /**
@@ -3352,21 +3306,13 @@ sqlWithAdd(Parse * pParse,	/* Parsing context */
 	       Select * pQuery	/* Query used to initialize the table */
     )
 {
-	sql *db = pParse->db;
 	With *pNew;
 
 	/*
 	 * Check that the CTE name is unique within this WITH
 	 * clause. If not, store an error in the Parse structure.
 	 */
-	char *name = sql_name_from_token(db, pName);
-	if (name == NULL) {
-		pParse->is_aborted = true;
-		sql_expr_list_delete(db, pArglist);
-		sql_select_delete(db, pQuery);
-		sqlDbFree(name);
-		return pWith;
-	}
+	char *name = sql_name_from_token(pName);
 	if (pWith != NULL) {
 		int i;
 		const char *err = "Ambiguous table name in WITH query: %s";
@@ -3653,9 +3599,7 @@ sql_setting_set(struct Parse *parse_context, struct Token *name,
 	if (vdbe == NULL)
 		goto abort;
 	sqlVdbeCountChanges(vdbe);
-	char *key = sql_name_from_token(parse_context->db, name);
-	if (key == NULL)
-		goto abort;
+	char *key = sql_name_from_token(name);
 	int target = ++parse_context->nMem;
 	sqlExprCode(parse_context, expr, target);
 	sqlVdbeAddOp4(vdbe, OP_SetSession, target, 0, 0, key, P4_DYNAMIC);
