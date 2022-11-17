@@ -480,6 +480,6 @@ sqlUpdate(Parse * pParse,		/* The parser context */
  update_cleanup:
 	sqlSrcListDelete(db, pTabList);
 	sql_expr_list_delete(db, pChanges);
-	sql_expr_delete(db, pWhere);
+	sql_expr_delete(pWhere);
 	return;
 }

@@ -1332,9 +1332,8 @@ sqlWhereClauseClear(WhereClause * pWC)
 	WhereTerm *a;
 	sql *db = pWC->pWInfo->pParse->db;
 	for (i = pWC->nTerm - 1, a = pWC->a; i >= 0; i--, a++) {
-		if (a->wtFlags & TERM_DYNAMIC) {
-			sql_expr_delete(db, a->pExpr);
-		}
+		if (a->wtFlags & TERM_DYNAMIC)
+			sql_expr_delete(a->pExpr);
 		if (a->wtFlags & TERM_ORINFO) {
 			whereOrInfoDelete(db, a->u.pOrInfo);
 		} else if (a->wtFlags & TERM_ANDINFO) {

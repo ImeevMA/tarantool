@@ -75,7 +75,7 @@ sql_expr_compile_cb(const char *expr, int expr_len)
 static void
 sql_expr_delete_cb(struct Expr *expr)
 {
-	sql_expr_delete(sql_get(), expr);
+	sql_expr_delete(expr);
 }
 
 void

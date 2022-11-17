@@ -1162,13 +1162,14 @@ struct Expr *
 sql_and_expr_new(struct sql *db, struct Expr *left_expr,
 		 struct Expr *right_expr)
 {
+	(void)db;
 	if (left_expr == NULL) {
 		return right_expr;
 	} else if (right_expr == NULL) {
 		return left_expr;
 	} else if (exprAlwaysFalse(left_expr) || exprAlwaysFalse(right_expr)) {
-		sql_expr_delete(db, left_expr);
-		sql_expr_delete(db, right_expr);
+		sql_expr_delete(left_expr);
+		sql_expr_delete(right_expr);
 		struct Expr *f = sql_expr_new_anon(TK_FALSE);
 		f->type = FIELD_TYPE_BOOLEAN;
 		return f;
@@ -1348,7 +1349,7 @@ sqlExprDeleteNN(sql *db, Expr *p)
 		assert(p->x.pList == 0 || p->pRight == 0);
 		if (p->pLeft && p->op != TK_SELECT_COLUMN)
 			sqlExprDeleteNN(db, p->pLeft);
-		sql_expr_delete(db, p->pRight);
+		sql_expr_delete(p->pRight);
 		if (ExprHasProperty(p, EP_xIsSelect)) {
 			sql_select_delete(db, p->x.pSelect);
 		} else {
@@ -1363,10 +1364,10 @@ sqlExprDeleteNN(sql *db, Expr *p)
 }
 
 void
-sql_expr_delete(sql *db, Expr *expr)
+sql_expr_delete(Expr *expr)
 {
 	if (expr != NULL)
-		sqlExprDeleteNN(db, expr);
+		sqlExprDeleteNN(sql_get(), expr);
 }
 
 /*
@@ -1817,7 +1818,6 @@ sqlExprListAppendVector(Parse * pParse,	/* Parsing context */
 			    Expr * pExpr	/* Vector expression to be appended. Might be NULL */
     )
 {
-	sql *db = pParse->db;
 	int n;
 	int i;
 	int iFirst = pList ? pList->nExpr : 0;
@@ -1872,7 +1872,7 @@ sqlExprListAppendVector(Parse * pParse,	/* Parsing context */
 	}
 
  vector_append_error:
-	sql_expr_delete(db, pExpr);
+	sql_expr_delete(pExpr);
 	sqlIdListDelete(pColumns);
 	return pList;
 }
@@ -1946,11 +1946,12 @@ sqlExprListSetSpan(Parse * pParse,	/* Parsing context */
 static SQL_NOINLINE void
 exprListDeleteNN(sql * db, ExprList * pList)
 {
+	(void)db;
 	int i;
 	struct ExprList_item *pItem;
 	assert(pList->a != 0 || pList->nExpr == 0);
 	for (pItem = pList->a, i = 0; i < pList->nExpr; i++, pItem++) {
-		sql_expr_delete(db, pItem->pExpr);
+		sql_expr_delete(pItem->pExpr);
 		sqlDbFree(pItem->zName);
 		sqlDbFree(pItem->zSpan);
 	}

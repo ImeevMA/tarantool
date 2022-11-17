@@ -53,7 +53,7 @@ sqlDeleteTriggerStep(sql * db, TriggerStep * pTriggerStep)
 		TriggerStep *pTmp = pTriggerStep;
 		pTriggerStep = pTriggerStep->pNext;
 
-		sql_expr_delete(db, pTmp->pWhere);
+		sql_expr_delete(pTmp->pWhere);
 		sql_expr_list_delete(db, pTmp->pExprList);
 		sql_select_delete(db, pTmp->pSelect);
 		sqlIdListDelete(pTmp->pIdList);
@@ -133,7 +133,7 @@ sql_trigger_begin(struct Parse *parse)
 	sqlDbFree(trigger_name);
 	sqlSrcListDelete(db, alter_def->entity_name);
 	sqlIdListDelete(trigger_def->cols);
-	sql_expr_delete(db, trigger_def->when);
+	sql_expr_delete(trigger_def->when);
 	if (parse->parsed_ast.trigger == NULL)
 		sql_trigger_delete(db, trigger);
 	else
@@ -292,7 +292,7 @@ sql_trigger_update_step(struct sql *db, struct Token *table_name,
 	trigger_step->pWhere = sqlExprDup(db, where, EXPRDUP_REDUCE);
 	trigger_step->orconf = orconf;
 	sql_expr_list_delete(db, new_list);
-	sql_expr_delete(db, where);
+	sql_expr_delete(where);
 	return trigger_step;
 }
 
@@ -304,7 +304,7 @@ sql_trigger_delete_step(struct sql *db, struct Token *table_name,
 		sql_trigger_step_new(TK_DELETE, table_name);
 	trigger_step->pWhere = sqlExprDup(db, where, EXPRDUP_REDUCE);
 	trigger_step->orconf = ON_CONFLICT_ACTION_DEFAULT;
-	sql_expr_delete(db, where);
+	sql_expr_delete(where);
 	return trigger_step;
 }
 
@@ -315,7 +315,7 @@ sql_trigger_delete(struct sql *db, struct sql_trigger *trigger)
 		return;
 	sqlDeleteTriggerStep(db, trigger->step_list);
 	sqlDbFree(trigger->zName);
-	sql_expr_delete(db, trigger->pWhen);
+	sql_expr_delete(trigger->pWhen);
 	sqlIdListDelete(trigger->pColumns);
 	sqlDbFree(trigger);
 }
@@ -726,7 +726,7 @@ sql_row_trigger_program(struct Parse *parser, struct sql_trigger *trigger,
 						   iEndTrigger,
 						   SQL_JUMPIFNULL);
 			}
-			sql_expr_delete(db, pWhen);
+			sql_expr_delete(pWhen);
 		}
 
 		/* Code the trigger program into the sub-vdbe. */

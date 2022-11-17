@@ -124,7 +124,7 @@ resolveAlias(Parse * pParse,	/* Parsing context */
 	 * make a copy of the token before doing the sqlDbFree().
 	 */
 	ExprSetProperty(pExpr, EP_Static);
-	sql_expr_delete(db, pExpr);
+	sql_expr_delete(pExpr);
 	memcpy(pExpr, pDup, sizeof(*pExpr));
 	if (!ExprHasProperty(pExpr, EP_IntValue) && pExpr->u.zToken != 0) {
 		assert((pExpr->flags & (EP_Reduced | EP_TokenOnly)) == 0);
@@ -214,7 +214,6 @@ lookupName(Parse * pParse,	/* The parsing context */
 	int cnt = 0;		/* Number of matching column names */
 	int cntTab = 0;		/* Number of matching table names */
 	int nSubquery = 0;	/* How many levels of subquery */
-	sql *db = pParse->db;	/* The database connection */
 	struct SrcList_item *pItem;	/* Use for looping over pSrcList items */
 	struct SrcList_item *pMatch = 0;	/* The matching pSrcList item */
 	NameContext *pTopNC = pNC;	/* First namecontext in the list */
@@ -456,9 +455,9 @@ lookupName(Parse * pParse,	/* The parsing context */
 
 	/* Clean up and return
 	 */
-	sql_expr_delete(db, pExpr->pLeft);
+	sql_expr_delete(pExpr->pLeft);
 	pExpr->pLeft = 0;
-	sql_expr_delete(db, pExpr->pRight);
+	sql_expr_delete(pExpr->pRight);
 	pExpr->pRight = 0;
 	pExpr->op = (isTrigger ? TK_TRIGGER : TK_COLUMN_REF);
  lookupname_end:
@@ -913,7 +912,7 @@ resolveCompoundOrderBy(Parse * pParse,	/* Parsing context.  Leave error messages
 					assert(pDup);
 					iCol = resolveOrderByTermToExprList(
 						pParse, pSelect, pDup);
-					sql_expr_delete(db, pDup);
+					sql_expr_delete(pDup);
 				}
 			}
 			if (iCol > 0) {
@@ -935,7 +934,7 @@ resolveCompoundOrderBy(Parse * pParse,	/* Parsing context.  Leave error messages
 					assert(pParent->pLeft == pE);
 					pParent->pLeft = pNew;
 				}
-				sql_expr_delete(db, pE);
+				sql_expr_delete(pE);
 				pItem->u.x.iOrderByCol = (u16) iCol;
 				pItem->done = 1;
 			} else {
@@ -1109,7 +1108,6 @@ resolveSelectStep(Walker * pWalker, Select * p)
 	int i;			/* Loop counter */
 	ExprList *pGroupBy;	/* The GROUP BY clause */
 	Select *pLeftmost;	/* Left-most of SELECT of a compound */
-	sql *db;		/* Database connection */
 
 	assert(p != 0);
 	if (p->selFlags & SF_Resolved) {
@@ -1117,7 +1115,6 @@ resolveSelectStep(Walker * pWalker, Select * p)
 	}
 	pOuterNC = pWalker->u.pNC;
 	pParse = pWalker->pParse;
-	db = pParse->db;
 
 	/* Normally sqlSelectExpand() will be called first and will have
 	 * already expanded this SELECT.  However, if this is a subquery within
@@ -1283,7 +1280,7 @@ resolveSelectStep(Walker * pWalker, Select * p)
 			 * LIMIT but there is no reason to
 			 * restrict it directly).
 			 */
-			sql_expr_delete(db, p->pLimit);
+			sql_expr_delete(p->pLimit);
 			p->pLimit = sql_expr_new(TK_INTEGER, &sqlIntTokens[1]);
 		} else {
 			if (sqlResolveExprNames(&sNC, p->pHaving))

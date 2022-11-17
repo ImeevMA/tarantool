@@ -2324,7 +2324,7 @@ func_sql_expr_new(const struct func_def *def)
 	struct Vdbe *v = sqlGetVdbe(&parser);
 	if (v == NULL) {
 		sql_parser_destroy(&parser);
-		sql_expr_delete(db, expr);
+		sql_expr_delete(expr);
 		return NULL;
 	}
 	int ref_reg = ++parser.nMem;
@@ -2340,7 +2340,7 @@ func_sql_expr_new(const struct func_def *def)
 	bool is_error = parser.is_aborted;
 	sql_finish_coding(&parser);
 	sql_parser_destroy(&parser);
-	sql_expr_delete(db, expr);
+	sql_expr_delete(expr);
 
 	if (is_error) {
 		sql_stmt_finalize((struct sql_stmt *)v);

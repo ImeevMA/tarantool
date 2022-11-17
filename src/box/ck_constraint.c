@@ -245,11 +245,11 @@ ck_constraint_new(struct ck_constraint_def *ck_constraint_def,
 	if (ck_constraint->stmt == NULL)
 		goto error;
 
-	sql_expr_delete(sql_get(), expr);
+	sql_expr_delete(expr);
 	ck_constraint->def = ck_constraint_def;
 	return ck_constraint;
 error:
-	sql_expr_delete(sql_get(), expr);
+	sql_expr_delete(expr);
 	ck_constraint_delete(ck_constraint);
 	return NULL;
 }

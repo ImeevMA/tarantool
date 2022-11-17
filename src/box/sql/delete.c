@@ -404,7 +404,7 @@ sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 
  delete_from_cleanup:
 	sqlSrcListDelete(db, tab_list);
-	sql_expr_delete(db, where);
+	sql_expr_delete(where);
 }
 
 void
