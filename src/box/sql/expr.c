@@ -3787,7 +3787,7 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			z = &pExpr->u.zToken[2];
 			n = sqlStrlen30(z) - 1;
 			assert(z[n] == '\'');
-			zBlob = sqlHexToBlob(sqlVdbeDb(v), z, n);
+			zBlob = sqlHexToBlob(z, n);
 			sqlVdbeAddOp4(v, OP_Blob, n / 2, target, 0, zBlob,
 					  P4_DYNAMIC);
 			return target;

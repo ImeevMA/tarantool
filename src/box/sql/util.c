@@ -902,16 +902,9 @@ sqlHexToInt(int h)
 	return (u8) (h & 0xf);
 }
 
-/*
- * Convert a BLOB literal of the form "x'hhhhhh'" into its binary
- * value.  Return a pointer to its binary value.  Space to hold the
- * binary value has been obtained from malloc and must be freed by
- * the calling routine.
- */
 void *
-sqlHexToBlob(sql * db, const char *z, int n)
+sqlHexToBlob(const char *z, int n)
 {
-	(void)db;
 	char *zBlob;
 	int i;
 

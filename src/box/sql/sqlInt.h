@@ -3718,7 +3718,15 @@ field_type_sequence_dup(struct Parse *parse, enum field_type *types,
 int
 sql_atoi64(const char *z, int64_t *val, bool *is_neg, int length);
 
-void *sqlHexToBlob(sql *, const char *z, int n);
+/**
+ * Convert a BLOB literal of the form "x'hhhhhh'" into its binary
+ * value.  Return a pointer to its binary value.  Space to hold the
+ * binary value has been obtained from malloc and must be freed by
+ * the calling routine.
+ */
+void *
+sqlHexToBlob(const char *z, int n);
+
 u8 sqlHexToInt(int h);
 
 /**
