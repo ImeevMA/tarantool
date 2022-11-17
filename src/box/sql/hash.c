@@ -63,13 +63,13 @@ sqlHashClear(Hash * pH)
 	assert(pH != 0);
 	elem = pH->first;
 	pH->first = 0;
-	sql_free(pH->ht);
+	free(pH->ht);
 	pH->ht = 0;
 	pH->htsize = 0;
 	while (elem) {
 		HashElem *next_elem = elem->next;
 		free(elem->pKey);
-		sql_free(elem);
+		free(elem);
 		elem = next_elem;
 	}
 	pH->count = 0;
@@ -144,8 +144,8 @@ rehash(Hash * pH, unsigned int new_size)
 	if (new_size == pH->htsize)
 		return 0;
 #endif
-	new_ht = (struct _ht *)sqlMalloc(new_size * sizeof(struct _ht));
-	sql_free(pH->ht);
+	new_ht = xmalloc(new_size * sizeof(struct _ht));
+	free(pH->ht);
 	pH->ht = new_ht;
 	pH->htsize = new_size;
 	memset(new_ht, 0, new_size * sizeof(struct _ht));
@@ -220,7 +220,7 @@ removeElementGivenHash(Hash * pH,	/* The pH containing "elem" */
 		assert(pEntry->count >= 0);
 	}
 	free(elem->pKey);
-	sql_free(elem);
+	free(elem);
 	pH->count--;
 	if (pH->count == 0) {
 		assert(pH->first == 0);
@@ -281,7 +281,7 @@ sqlHashInsert(Hash * pH, const char *pKey, void *data)
 	}
 	if (data == 0)
 		return 0;
-	new_elem = (HashElem *) sqlMalloc(sizeof(HashElem));
+	new_elem = xmalloc(sizeof(HashElem));
 	new_elem->pKey = xmalloc(strlen(pKey) + 1);
 	strcpy(new_elem->pKey, pKey);
 	new_elem->data = data;

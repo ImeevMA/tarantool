@@ -49,7 +49,7 @@ static TreeView *
 sqlTreeViewPush(TreeView * p, u8 moreToFollow)
 {
 	if (p == 0) {
-		p = sqlMalloc(sizeof(*p));
+		p = xmalloc(sizeof(*p));
 		memset(p, 0, sizeof(*p));
 	} else {
 		p->iLevel++;
@@ -70,7 +70,7 @@ sqlTreeViewPop(TreeView * p)
 		return;
 	p->iLevel--;
 	if (p->iLevel < 0)
-		sql_free(p);
+		free(p);
 }
 
 /*

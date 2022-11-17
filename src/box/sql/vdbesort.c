@@ -419,7 +419,7 @@ struct PmaWriter {
  * Or, if using the single large allocation method (VdbeSorter.list.aMemory!=0),
  * then while records are being accumulated the list is linked using the
  * SorterRecord.u.iNext offset. This is because the aMemory[] array may
- * be sqlRealloc()ed while records are being accumulated. Once the VM
+ * be xrealloc()ed while records are being accumulated. Once the VM
  * has finished passing records to the sorter, or when the in-memory buffer
  * is full, the list is sorted. As part of the sorting process, it is
  * converted to use the SorterRecord.u.pNext pointers. See function
@@ -454,8 +454,8 @@ static void vdbeIncrFree(IncrMerger *);
 static void
 vdbePmaReaderClear(PmaReader * pReadr)
 {
-	sql_free(pReadr->aAlloc);
-	sql_free(pReadr->aBuffer);
+	free(pReadr->aAlloc);
+	free(pReadr->aBuffer);
 	if (pReadr->aMap)
 		sqlOsUnfetch(pReadr->pFd, 0, pReadr->aMap);
 	vdbeIncrFree(pReadr->pIncr);
@@ -533,7 +533,7 @@ vdbePmaReadBlob(PmaReader * p,	/* PmaReader from which to take the blob */
 			while (nByte > nNew)
 				nNew = nNew * 2;
 			assert(nNew > 0);
-			aNew = sqlRealloc(p->aAlloc, nNew);
+			aNew = xrealloc(p->aAlloc, nNew);
 			p->nAlloc = nNew;
 			p->aAlloc = aNew;
 		}
@@ -654,7 +654,7 @@ vdbePmaReaderSeek(SortSubtask * pTask,	/* Task context */
 		int pgsz = pTask->pSorter->pgsz;
 		int iBuf = pReadr->iReadOff % pgsz;
 		if (pReadr->aBuffer == 0) {
-			pReadr->aBuffer = (u8 *) sqlMalloc(pgsz);
+			pReadr->aBuffer = xmalloc(pgsz);
 			pReadr->nBuffer = pgsz;
 		}
 		if (rc == 0 && iBuf != 0) {
@@ -830,7 +830,7 @@ sqlVdbeSorterInit(sql * db,	/* Database connection (for malloc()) */
 	pSorter->mxPmaSize = MAX(pSorter->mnPmaSize, (int)mxCache);
 	assert(pSorter->iMemory == 0);
 	pSorter->nMemory = pgsz;
-	pSorter->list.aMemory = (u8 *) sqlMalloc(pgsz);
+	pSorter->list.aMemory = xmalloc(pgsz);
 
 	if (pCsr->key_def->part_count < 13 &&
 	    pCsr->key_def->parts[0].coll == NULL)
@@ -898,7 +898,7 @@ vdbeMergeEngineNew(int nReader)
 		N += N;
 	nByte = sizeof(MergeEngine) + N * (sizeof(int) + sizeof(PmaReader));
 
-	pNew = sqlMallocZero(nByte);
+	pNew = xcalloc(1, nByte);
 	pNew->nTree = N;
 	pNew->pTask = 0;
 	pNew->aReadr = (PmaReader *)&pNew[1];
@@ -918,7 +918,7 @@ vdbeMergeEngineFree(MergeEngine * pMerger)
 			vdbePmaReaderClear(&pMerger->aReadr[i]);
 		}
 	}
-	sql_free(pMerger);
+	free(pMerger);
 }
 
 /*
@@ -930,7 +930,7 @@ vdbeIncrFree(IncrMerger * pIncr)
 {
 	if (pIncr) {
 		vdbeMergeEngineFree(pIncr->pMerger);
-		sql_free(pIncr);
+		free(pIncr);
 	}
 }
 
@@ -969,7 +969,7 @@ sqlVdbeSorterClose(sql * db, VdbeCursor * pCsr)
 	pSorter = pCsr->uc.pSorter;
 	if (pSorter) {
 		sqlVdbeSorterReset(db, pSorter);
-		sql_free(pSorter->list.aMemory);
+		free(pSorter->list.aMemory);
 		sqlDbFree(pSorter);
 		pCsr->uc.pSorter = 0;
 	}
@@ -1120,7 +1120,7 @@ vdbeSorterSort(SortSubtask * pTask, SorterList * pList)
 	p = pList->pList;
 	pTask->xCompare = vdbeSorterGetCompare(pTask->pSorter);
 
-	aSlot = sqlMallocZero(64 * sizeof(SorterRecord *));
+	aSlot = xcalloc(64, sizeof(SorterRecord *));
 
 	while (p) {
 		SorterRecord *pNext;
@@ -1153,7 +1153,7 @@ vdbeSorterSort(SortSubtask * pTask, SorterList * pList)
 	}
 	pList->pList = p;
 
-	sql_free(aSlot);
+	free(aSlot);
 	return 0;
 }
 
@@ -1168,7 +1168,7 @@ vdbePmaWriterInit(sql_file * pFd,	/* File handle to write to */
     )
 {
 	memset(p, 0, sizeof(PmaWriter));
-	p->aBuffer = (u8 *) sqlMalloc(nBuf);
+	p->aBuffer = xmalloc(nBuf);
 	p->iBufEnd = p->iBufStart = (iStart % nBuf);
 	p->iWriteOff = iStart - p->iBufStart;
 	p->nBuffer = nBuf;
@@ -1225,7 +1225,7 @@ vdbePmaWriterFinish(PmaWriter * p, i64 * piEof)
 					   p->iWriteOff + p->iBufStart);
 	}
 	*piEof = (p->iWriteOff + p->iBufEnd);
-	sql_free(p->aBuffer);
+	free(p->aBuffer);
 	rc = p->eFWErr;
 	memset(p, 0, sizeof(PmaWriter));
 	return rc;
@@ -1307,7 +1307,7 @@ vdbeSorterListToPMA(SortSubtask * pTask, SorterList * pList)
 			vdbePmaWriteVarint(&writer, p->nVal);
 			vdbePmaWriteBlob(&writer, SRVAL(p), p->nVal);
 			if (pList->aMemory == 0)
-				sql_free(p);
+				free(p);
 		}
 		pList->pList = p;
 		rc = vdbePmaWriterFinish(&writer, &pTask->file.iEof);
@@ -1493,7 +1493,7 @@ sqlVdbeSorterWrite(const VdbeCursor * pCsr,	/* Sorter cursor */
 				nNew = nMin;
 
 			assert(nNew > 0);
-			aNew = sqlRealloc(pSorter->list.aMemory, nNew);
+			aNew = xrealloc(pSorter->list.aMemory, nNew);
 			pSorter->list.pList = (SorterRecord *) & aNew[iListOff];
 			pSorter->list.aMemory = aNew;
 			pSorter->nMemory = nNew;
@@ -1508,7 +1508,7 @@ sqlVdbeSorterWrite(const VdbeCursor * pCsr,	/* Sorter cursor */
 				  pSorter->list.aMemory);
 		}
 	} else {
-		pNew = (SorterRecord *) sqlMalloc(nReq);
+		pNew = xmalloc(nReq);
 		pNew->u.pNext = pSorter->list.pList;
 	}
 
@@ -1607,7 +1607,7 @@ vdbeIncrMergerNew(SortSubtask * pTask,	/* The thread that will be using the new 
     )
 {
 	int rc = 0;
-	IncrMerger *pIncr = sqlMallocZero(sizeof(*pIncr));
+	IncrMerger *pIncr = xcalloc(1, sizeof(*pIncr));
 	*ppOut = pIncr;
 	pIncr->pMerger = pMerger;
 	pIncr->pTask = pTask;

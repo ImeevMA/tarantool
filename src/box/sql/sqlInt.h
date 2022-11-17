@@ -311,9 +311,6 @@ enum sql_ret_code {
 	SQL_DONE = 2,
 };
 
-void
-sql_free(void *);
-
 int
 sql_stricmp(const char *, const char *);
 
@@ -2372,14 +2369,6 @@ int sqlStrICmp(const char *, const char *);
 unsigned sqlStrlen30(const char *);
 #define sqlStrNICmp sql_strnicmp
 
-/** Allocate memory. Like malloc(), but remember the size of the allocation. */
-void *
-sqlMalloc(size_t n);
-
-/** Allocate and nullify memory. */
-void *
-sqlMallocZero(size_t n);
-
 /** Allocate and nullify memory. */
 void *
 sqlDbMallocZero(size_t n);
@@ -2401,13 +2390,6 @@ sqlDbStrDup(const char *str);
  */
 char *
 sqlDbStrNDup(const char *str, size_t len);
-
-/**
- * Change the size of an existing memory allocation and remember the size of the
- * allocation.
- */
-void *
-sqlRealloc(void *old, size_t n);
 
 /** Resize the block of memory pointed to by buf to n bytes. */
 void *
@@ -2490,7 +2472,7 @@ int
 sql_normalize_name(char *dst, int dst_size, const char *src, int src_len);
 
 /**
- * Duplicate a normalized version of @a name onto an sqlMalloc.
+ * Duplicate a normalized version of @a name onto an sqlDbMallocRawNN().
  * For normalization rules @sa sql_normalize_name().
  * @param db SQL context.
  * @param name Source string.
@@ -3023,7 +3005,7 @@ void sqlExprIfFalse(Parse *, Expr *, int, int);
 /**
  * Given a token, return a string that consists of the text of
  * that token. Space to hold the returned string is obtained
- * from sqlMalloc() and must be freed by the calling function.
+ * from sqlDbMallocRawNN() and must be freed by the calling function.
  *
  * Any quotation marks (ex:  "name", 'name', [name], or `name`)
  * that surround the body of the token are removed.

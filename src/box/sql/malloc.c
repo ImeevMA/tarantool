@@ -36,26 +36,6 @@
 #include "sqlInt.h"
 #include <stdarg.h>
 
-enum {
-	MALLOC_MAX = 0x7fffff00,
-};
-static_assert(MALLOC_MAX < SIZE_MAX);
-
-void *
-sqlMalloc(size_t n)
-{
-	if (n >= MALLOC_MAX) {
-		fprintf(stderr, "Can't allocate %zu bytes at %s:%d", n,
-			__FILE__, __LINE__);
-		exit(EXIT_FAILURE);
-	}
-	size_t size = ROUND8(n);
-	int64_t *buf = xmalloc(size + 8);
-	buf[0] = size;
-	buf++;
-	return buf;
-}
-
 /** Return TRUE if buf is a lookaside memory allocation. */
 static inline bool
 is_lookaside(void *buf)
@@ -63,19 +43,6 @@ is_lookaside(void *buf)
 	struct sql *db = sql_get();
 	assert(db != NULL);
 	return buf >= db->lookaside.pStart && buf < db->lookaside.pEnd;
-}
-
-/*
- * Free memory previously obtained from sqlMalloc().
- */
-void
-sql_free(void *p)
-{
-	if (p == NULL)
-		return;
-	sql_int64 *raw_p = (sql_int64 *) p;
-	raw_p--;
-	free(raw_p);
 }
 
 void
@@ -90,40 +57,7 @@ sqlDbFree(void *buf)
 		db->lookaside.nOut--;
 		return;
 	}
-	sql_free(buf);
-}
-
-void *
-sqlRealloc(void *buf, size_t n)
-{
-	if (buf == NULL)
-		return sqlMalloc(n);
-	if (n == 0) {
-		sql_free(buf);
-		return NULL;
-	}
-	if (n >= MALLOC_MAX) {
-		fprintf(stderr, "Can't allocate %zu bytes at %s:%d", n,
-			__FILE__, __LINE__);
-		exit(EXIT_FAILURE);
-	}
-	size_t size = ROUND8(n);
-	int64_t *new_buf = buf;
-	--new_buf;
-	if ((size_t)new_buf[0] == size)
-		return buf;
-	new_buf = xrealloc(new_buf, size + 8);
-	new_buf[0] = size;
-	new_buf++;
-	return new_buf;
-}
-
-void *
-sqlMallocZero(size_t n)
-{
-	void *p = sqlMalloc(n);
-	memset(p, 0, (size_t) n);
-	return p;
+	free(buf);
 }
 
 void *
@@ -155,7 +89,7 @@ sqlDbMallocRawNN(size_t n)
 			return (void *)pBuf;
 		}
 	}
-	return sqlMalloc(n);
+	return xmalloc(n);
 }
 
 void *
@@ -173,7 +107,7 @@ sqlDbRealloc(void *buf, size_t n)
 		sqlDbFree(buf);
 		return new_buf;
 	}
-	return sqlRealloc(buf, n);
+	return xrealloc(buf, n);
 }
 
 char *

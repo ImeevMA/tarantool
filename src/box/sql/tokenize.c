@@ -469,6 +469,12 @@ parser_space_delete(struct sql *db, struct space *space)
 		index_def_delete(space->index[i]->def);
 }
 
+static void *
+new_xmalloc(size_t n)
+{
+	return xmalloc(n);
+}
+
 /**
  * Run the parser on the given SQL string.
  *
@@ -492,7 +498,7 @@ sqlRunParser(Parse * pParse, const char *zSql)
 	pParse->zTail = zSql;
 	i = 0;
 	/* sqlParserTrace(stdout, "parser: "); */
-	pEngine = sqlParserAlloc(sqlMalloc);
+	pEngine = sqlParserAlloc(new_xmalloc);
 	assert(pParse->create_table_def.new_space == NULL);
 	assert(pParse->parsed_ast.trigger == NULL);
 	assert(pParse->nVar == 0);
@@ -548,7 +554,7 @@ sqlRunParser(Parse * pParse, const char *zSql)
 		pParse->line_pos += pParse->sLastToken.n;
 	}
 	pParse->zTail = &zSql[i];
-	sqlParserFree(pEngine, sql_free);
+	sqlParserFree(pEngine, free);
 	if (pParse->pVdbe != NULL && pParse->is_aborted) {
 		sqlVdbeDelete(pParse->pVdbe);
 		pParse->pVdbe = 0;

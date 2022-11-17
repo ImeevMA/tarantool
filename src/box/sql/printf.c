@@ -430,7 +430,8 @@ sqlVXPrintf(StrAccum * pAccum,	/* Accumulate results here */
 				zOut = buf;
 			} else {
 				nOut = precision + 10;
-				zOut = zExtra = sqlMalloc(nOut);
+				zExtra = sqlDbMallocRawNN(nOut);
+				zOut = zExtra;
 			}
 			bufpt = &zOut[nOut - 1];
 			if (xtype == etORDINAL) {
@@ -561,9 +562,10 @@ sqlVXPrintf(StrAccum * pAccum,	/* Accumulate results here */
 			}
 			if (MAX(e2, 0) + (i64) precision + (i64) width >
 			    etBUFSIZE - 15) {
-				bufpt = zExtra =
-				    sqlMalloc(MAX(e2, 0) + (i64) precision +
-						  (i64) width + 15);
+				zExtra = sqlDbMallocRawNN(MAX(e2, 0) +
+							  (int64_t)precision +
+							  (int64_t)width + 15);
+				bufpt = zExtra;
 			}
 			zOut = bufpt;
 			nsd = 16 + flag_altform2 * 10;
@@ -732,7 +734,8 @@ sqlVXPrintf(StrAccum * pAccum,	/* Accumulate results here */
 				needQuote = !isnull && xtype == etSQLESCAPE2;
 				n += i + 3;
 				if (n > etBUFSIZE) {
-					bufpt = zExtra = sqlMalloc(n);
+					zExtra = sqlDbMallocRawNN(n);
+					bufpt = zExtra;
 				} else {
 					bufpt = buf;
 				}
@@ -837,11 +840,8 @@ sqlStrAccumEnlarge(StrAccum * p, int N)
 		} else {
 			p->nAlloc = (int)szNew;
 		}
-		if (p->db) {
-			zNew = sqlDbRealloc(zOld, p->nAlloc);
-		} else {
-			zNew = sqlRealloc(zOld, p->nAlloc);
-		}
+		assert(p->db != NULL);
+		zNew = sqlDbRealloc(zOld, p->nAlloc);
 		assert(p->zText != 0 || p->nChar == 0);
 		if (!isMalloced(p) && p->nChar > 0)
 			memcpy(zNew, p->zText, p->nChar);
@@ -982,7 +982,7 @@ sqlStrAccumInit(StrAccum * p, sql * db, char *zBase, int n, int mx)
 }
 
 /*
- * Print into memory obtained from sqlMalloc().  Use the internal
+ * Print into memory obtained from sqlDbMallocRawNN(). Use the internal
  * %-conversion extensions.
  */
 char *
@@ -1001,7 +1001,7 @@ sqlVMPrintf(sql * db, const char *zFormat, va_list ap)
 }
 
 /*
- * Print into memory obtained from sqlMalloc().  Use the internal
+ * Print into memory obtained from sqlDbMallocRawNN(). Use the internal
  * %-conversion extensions.
  */
 char *

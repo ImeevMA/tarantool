@@ -176,7 +176,7 @@ setupLookaside(sql * db, void *pBuf, int sz, int cnt)
 	 * both at the same time.
 	 */
 	if (db->lookaside.bMalloced)
-		sql_free(db->lookaside.pStart);
+		free(db->lookaside.pStart);
 	/* The size of a lookaside slot after ROUNDDOWN8 needs to be larger
 	 * than a pointer to be useful.
 	 */
@@ -189,7 +189,7 @@ setupLookaside(sql * db, void *pBuf, int sz, int cnt)
 		sz = 0;
 		pStart = 0;
 	} else if (pBuf == 0) {
-		pStart = sqlMalloc(sz * cnt);	/* IMP: R-61949-35727 */
+		pStart = xmalloc(sz * cnt);
 	} else {
 		pStart = pBuf;
 	}
@@ -363,7 +363,7 @@ sql_init_db(sql **out_db)
 		return -1;
 
 	/* Allocate the sql data structure */
-	db = sqlMallocZero(sizeof(sql));
+	db = xcalloc(1, sizeof(*db));
 	db->magic = SQL_MAGIC_BUSY;
 
 	db->pVfs = sql_vfs_find(0);

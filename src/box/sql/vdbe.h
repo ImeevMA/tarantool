@@ -120,7 +120,8 @@ struct SubProgram {
  * Allowed values of VdbeOp.p4type
  */
 #define P4_NOTUSED    0		/* The P4 parameter is not used */
-#define P4_DYNAMIC  (-1)	/* Pointer to a string obtained from sqlMalloc() */
+/* Pointer to a string obtained from sqlDbMallocRawNN(). */
+#define P4_DYNAMIC  (-1)
 #define P4_STATIC   (-2)	/* Pointer to a static string */
 #define P4_COLLSEQ  (-3)	/* P4 is a pointer to a CollSeq structure */
 /** P4 is a pointer to a func structure. */

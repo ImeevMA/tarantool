@@ -153,9 +153,9 @@ sqlOsOpenMalloc(sql_vfs * pVfs,
 		    const char *zFile,
 		    sql_file ** ppFile, int flags, int *pOutFlags)
 {
-	sql_file *pFile = sqlMallocZero(pVfs->szOsFile);
+	sql_file *pFile = xcalloc(1, pVfs->szOsFile);
 	if (sqlOsOpen(pVfs, zFile, pFile, flags, pOutFlags) != 0) {
-		sql_free(pFile);
+		free(pFile);
 		return -1;
 	}
 	*ppFile = pFile;
@@ -167,7 +167,7 @@ sqlOsCloseFree(sql_file * pFile)
 {
 	assert(pFile);
 	sqlOsClose(pFile);
-	sql_free(pFile);
+	free(pFile);
 }
 
 /*

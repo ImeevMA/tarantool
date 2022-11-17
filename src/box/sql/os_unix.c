@@ -339,7 +339,7 @@ closePendingFds(unixFile * pFile)
 	for (p = pInode->pUnused; p; p = pNext) {
 		pNext = p->pNext;
 		close(p->fd);
-		sql_free(p);
+		free(p);
 	}
 	pInode->pUnused = 0;
 }
@@ -366,7 +366,7 @@ releaseInodeInfo(unixFile * pFile)
 				assert(pInode->pNext->pPrev == pInode);
 				pInode->pNext->pPrev = pInode->pPrev;
 			}
-			sql_free(pInode);
+			free(pInode);
 		}
 	}
 }
@@ -407,7 +407,7 @@ findInodeInfo(unixFile * pFile,	/* Unix file with file desc used in the key */
 		pInode = pInode->pNext;
 	}
 	if (pInode == 0) {
-		pInode = sqlMalloc(sizeof(*pInode));
+		pInode = xmalloc(sizeof(*pInode));
 		memset(pInode, 0, sizeof(*pInode));
 		memcpy(&pInode->fileId, &fileId, sizeof(fileId));
 		pInode->nRef = 1;
@@ -643,7 +643,7 @@ closeUnixFile(sql_file * id)
 		close(pFile->h);
 		pFile->h = -1;
 	}
-	sql_free(pFile->pUnused);
+	free(pFile->pUnused);
 	memset(pFile, 0, sizeof(unixFile));
 	return 0;
 }
@@ -1011,7 +1011,7 @@ unixFileControl(sql_file * id, int op, void *pArg)
 			return 0;
 		}
 	case SQL_FCNTL_TEMPFILENAME:{
-			char *zTFile = sqlMalloc(pFile->pVfs->mxPathname);
+			char *zTFile = xmalloc(pFile->pVfs->mxPathname);
 			unixGetTempname(pFile->pVfs->mxPathname, zTFile);
 			*(char **)pArg = zTFile;
 			return 0;
@@ -1689,7 +1689,7 @@ unixOpen(sql_vfs * pVfs,	/* The VFS for which this is the xOpen method */
 		if (pUnused) {
 			fd = pUnused->fd;
 		} else {
-			pUnused = sqlMalloc(sizeof(*pUnused));
+			pUnused = xmalloc(sizeof(*pUnused));
 		}
 		p->pUnused = pUnused;
 
@@ -1788,7 +1788,7 @@ unixOpen(sql_vfs * pVfs,	/* The VFS for which this is the xOpen method */
 
  open_finished:
 	if (rc != 0)
-		sql_free(p->pUnused);
+		free(p->pUnused);
 	return rc;
 }
 
