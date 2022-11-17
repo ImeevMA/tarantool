@@ -333,7 +333,10 @@ void sqlVdbeFrameDelete(VdbeFrame *);
 int sqlVdbeFrameRestore(VdbeFrame *);
 
 int sqlVdbeSorterInit(struct sql *db, struct VdbeCursor *cursor);
-void sqlVdbeSorterReset(sql *, VdbeSorter *);
+
+/** Reset a sorting cursor back to its original empty state. */
+void
+sqlVdbeSorterReset(struct VdbeSorter * pSorter);
 
 void sqlVdbeSorterClose(sql *, VdbeCursor *);
 int sqlVdbeSorterRowkey(const VdbeCursor *, Mem *);

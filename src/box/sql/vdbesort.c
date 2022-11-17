@@ -858,9 +858,8 @@ vdbeSorterRecordFree(struct SorterRecord *pRecord)
  * fields of *pTask are zeroed before returning.
  */
 static void
-vdbeSortSubtaskCleanup(sql * db, SortSubtask * pTask)
+vdbeSortSubtaskCleanup(struct SortSubtask * pTask)
 {
-	(void)db;
 	sqlDbFree(pTask->pUnpacked);
 
 	assert(pTask->list.aMemory == 0);
@@ -933,17 +932,14 @@ vdbeIncrFree(IncrMerger * pIncr)
 	}
 }
 
-/*
- * Reset a sorting cursor back to its original empty state.
- */
 void
-sqlVdbeSorterReset(sql * db, VdbeSorter * pSorter)
+sqlVdbeSorterReset(struct VdbeSorter * pSorter)
 {
 	(void)vdbeSorterJoinAll(pSorter, 0);
 	assert(pSorter->pReader == 0);
 	vdbeMergeEngineFree(pSorter->pMerger);
 	pSorter->pMerger = 0;
-	vdbeSortSubtaskCleanup(db, &pSorter->aTask);
+	vdbeSortSubtaskCleanup(&pSorter->aTask);
 	pSorter->aTask.pSorter = pSorter;
 	if (pSorter->list.aMemory == 0)
 		vdbeSorterRecordFree(pSorter->list.pList);
@@ -962,11 +958,12 @@ sqlVdbeSorterReset(sql * db, VdbeSorter * pSorter)
 void
 sqlVdbeSorterClose(sql * db, VdbeCursor * pCsr)
 {
+	(void)db;
 	VdbeSorter *pSorter;
 	assert(pCsr->eCurType == CURTYPE_SORTER);
 	pSorter = pCsr->uc.pSorter;
 	if (pSorter) {
-		sqlVdbeSorterReset(db, pSorter);
+		sqlVdbeSorterReset(pSorter);
 		free(pSorter->list.aMemory);
 		sqlDbFree(pSorter);
 		pCsr->uc.pSorter = 0;

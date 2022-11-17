@@ -3783,7 +3783,7 @@ case OP_ResetSorter: {
 	pC = p->apCsr[pOp->p1];
 	assert(pC!=0);
 	if (isSorter(pC)) {
-		sqlVdbeSorterReset(db, pC->uc.pSorter);
+		sqlVdbeSorterReset(pC->uc.pSorter);
 	} else {
 		assert(pC->eCurType==CURTYPE_TARANTOOL);
 		assert(pC->uc.pCursor->curFlags & BTCF_TEphemCursor);
