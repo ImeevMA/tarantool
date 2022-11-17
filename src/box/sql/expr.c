@@ -2606,9 +2606,8 @@ sqlFindInIndex(Parse * pParse,	/* Parsing context */
  * string is eventually freed using sqlDbFree().
  */
 static enum field_type *
-expr_in_type(Parse *pParse, Expr *pExpr)
+expr_in_type(struct Expr *pExpr)
 {
-	(void)pParse;
 	Expr *pLeft = pExpr->pLeft;
 	int nVal = sqlExprVectorSize(pLeft);
 	Select *pSelect = (pExpr->flags & EP_xIsSelect) ? pExpr->x.pSelect : 0;
@@ -2737,8 +2736,7 @@ sqlCodeSubselect(Parse * pParse,	/* Parsing context */
 					int i;
 					sqlSelectDestInit(&dest, SRT_Set,
 							      pExpr->iTable, reg_eph);
-					dest.dest_type =
-						expr_in_type(pParse, pExpr);
+					dest.dest_type = expr_in_type(pExpr);
 					assert((pExpr->iTable & 0x0000FFFF) ==
 					       pExpr->iTable);
 					pSelect->iLimit = 0;
@@ -2957,7 +2955,7 @@ sqlExprCodeIN(Parse * pParse,	/* Parsing and code generating context */
 	if (sqlExprCheckIN(pParse, pExpr))
 		return;
 	/* Type sequence for comparisons. */
-	enum field_type *zAff = expr_in_type(pParse, pExpr);
+	enum field_type *zAff = expr_in_type(pExpr);
 	nVector = sqlExprVectorSize(pExpr->pLeft);
 	aiMap = sqlDbMallocZero(nVector * (sizeof(int) + sizeof(char)) + 1);
 
