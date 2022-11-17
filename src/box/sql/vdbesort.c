@@ -843,9 +843,8 @@ sqlVdbeSorterInit(sql * db,	/* Database connection (for malloc()) */
  * Free the list of sorted records starting at pRecord.
  */
 static void
-vdbeSorterRecordFree(sql * db, SorterRecord * pRecord)
+vdbeSorterRecordFree(struct SorterRecord *pRecord)
 {
-	(void)db;
 	SorterRecord *p;
 	SorterRecord *pNext;
 	for (p = pRecord; p; p = pNext) {
@@ -865,7 +864,7 @@ vdbeSortSubtaskCleanup(sql * db, SortSubtask * pTask)
 	sqlDbFree(pTask->pUnpacked);
 
 	assert(pTask->list.aMemory == 0);
-	vdbeSorterRecordFree(0, pTask->list.pList);
+	vdbeSorterRecordFree(pTask->list.pList);
 
 	if (pTask->file.pFd) {
 		sqlOsCloseFree(pTask->file.pFd);
@@ -946,9 +945,8 @@ sqlVdbeSorterReset(sql * db, VdbeSorter * pSorter)
 	pSorter->pMerger = 0;
 	vdbeSortSubtaskCleanup(db, &pSorter->aTask);
 	pSorter->aTask.pSorter = pSorter;
-	if (pSorter->list.aMemory == 0) {
-		vdbeSorterRecordFree(0, pSorter->list.pList);
-	}
+	if (pSorter->list.aMemory == 0)
+		vdbeSorterRecordFree(pSorter->list.pList);
 	pSorter->list.pList = 0;
 	pSorter->list.szPMA = 0;
 	pSorter->bUsePMA = 0;
@@ -2061,6 +2059,7 @@ sqlVdbeSorterRewind(const VdbeCursor * pCsr, int *pbEof)
 int
 sqlVdbeSorterNext(sql * db, const VdbeCursor * pCsr, int *pbEof)
 {
+	(void)db;
 	VdbeSorter *pSorter;
 	int rc;			/* Return code */
 
@@ -2078,7 +2077,7 @@ sqlVdbeSorterNext(sql * db, const VdbeCursor * pCsr, int *pbEof)
 		pSorter->list.pList = pFree->u.pNext;
 		pFree->u.pNext = 0;
 		if (pSorter->list.aMemory == 0)
-			vdbeSorterRecordFree(db, pFree);
+			vdbeSorterRecordFree(pFree);
 		*pbEof = !pSorter->list.pList;
 		rc = 0;
 	}
