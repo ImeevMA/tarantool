@@ -2532,14 +2532,12 @@ void sqlClearTempRegCache(Parse *);
  * into u.iValue and the EP_IntValue flag is set. No extra storage
  * is allocated to hold the integer text.
  *
- * @param db The database connection.
  * @param op Expression opcode (TK_*).
  * @param token Source token. Might be NULL.
  * @retval Not NULL New expression object on success.
- * @retval NULL Otherwise. The diag message is set.
  */
 struct Expr *
-sql_expr_new(struct sql *db, int op, const struct Token *token);
+sql_expr_new(int op, const struct Token *token);
 
 /**
  * The same as @sa sql_expr_new, but normalizes name, stored in
@@ -2555,9 +2553,10 @@ sql_expr_new_dequoted(int op, const struct Token *token);
 static inline struct Expr *
 sql_expr_new_named(struct sql *db, int op, const char *name)
 {
+	(void)db;
 	struct Token name_token;
 	sqlTokenInit(&name_token, (char *)name);
-	return sql_expr_new(db, op, &name_token);
+	return sql_expr_new(op, &name_token);
 }
 
 /**

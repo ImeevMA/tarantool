@@ -1291,10 +1291,7 @@ resolveSelectStep(Walker * pWalker, Select * p)
 			 * restrict it directly).
 			 */
 			sql_expr_delete(db, p->pLimit);
-			p->pLimit = sql_expr_new(db, TK_INTEGER,
-						 &sqlIntTokens[1]);
-			if (p->pLimit == NULL)
-				pParse->is_aborted = true;
+			p->pLimit = sql_expr_new(TK_INTEGER, &sqlIntTokens[1]);
 		} else {
 			if (sqlResolveExprNames(&sNC, p->pHaving))
 				return WRC_Abort;

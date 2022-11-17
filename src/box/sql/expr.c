@@ -208,9 +208,6 @@ field_type_sequence_dup(struct Parse *parse, enum field_type *types,
  * Set the collating sequence for expression pExpr to be the collating
  * sequence named by pToken.   Return a pointer to a new Expr node that
  * implements the COLLATE operator.
- *
- * If a memory allocation error occurs, that fact is recorded in pParse->db
- * and the pExpr parameter is returned unchanged.
  */
 Expr *
 sqlExprAddCollateToken(Parse * pParse,	/* Parsing context */
@@ -219,18 +216,14 @@ sqlExprAddCollateToken(Parse * pParse,	/* Parsing context */
 			   int dequote	/* True to dequote pCollName */
     )
 {
+	(void)pParse;
 	if (pCollName->n == 0)
 		return pExpr;
 	struct Expr *new_expr;
-	struct sql *db = pParse->db;
 	if (dequote)
 		new_expr = sql_expr_new_dequoted(TK_COLLATE, pCollName);
 	else
-		new_expr = sql_expr_new(db, TK_COLLATE, pCollName);
-	if (new_expr == NULL) {
-		pParse->is_aborted = true;
-		return pExpr;
-	}
+		new_expr = sql_expr_new(TK_COLLATE, pCollName);
 	new_expr->pLeft = pExpr;
 	new_expr->flags |= EP_Collate | EP_Skip;
 	return new_expr;
@@ -1030,9 +1023,8 @@ sql_expr_new_int(int value)
 }
 
 struct Expr *
-sql_expr_new(struct sql *db, int op, const struct Token *token)
+sql_expr_new(int op, const struct Token *token)
 {
-	(void)db;
 	int extra_sz = 0;
 	if (token != NULL) {
 		int val;
@@ -2880,15 +2872,9 @@ sqlCodeSubselect(Parse * pParse,	/* Parsing context */
 				VdbeComment((v, "Init EXISTS result"));
 			}
 			if (pSel->pLimit == NULL) {
-				pSel->pLimit =
-					sql_expr_new(pParse->db, TK_INTEGER,
-						     &sqlIntTokens[1]);
-				if (pSel->pLimit == NULL) {
-					pParse->is_aborted = true;
-				} else {
-					ExprSetProperty(pSel->pLimit,
-							EP_System);
-				}
+				pSel->pLimit = sql_expr_new(TK_INTEGER,
+							    &sqlIntTokens[1]);
+				ExprSetProperty(pSel->pLimit, EP_System);
 			}
 			pSel->selFlags |= SF_SingleRow;
 			pSel->iLimit = 0;

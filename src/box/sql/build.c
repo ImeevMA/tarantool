@@ -617,11 +617,7 @@ sqlAddPrimaryKey(struct Parse *pParse)
 		struct ExprList *list;
 		struct Token token;
 		sqlTokenInit(&token, space->def->fields[iCol].name);
-		struct Expr *expr = sql_expr_new(db, TK_ID, &token);
-		if (expr == NULL) {
-			pParse->is_aborted = true;
-			goto primary_key_exit;
-		}
+		struct Expr *expr = sql_expr_new(TK_ID, &token);
 		list = sql_expr_list_append(db, NULL, expr);
 		if (list == NULL)
 			goto primary_key_exit;
@@ -2741,11 +2737,7 @@ sql_create_index(struct Parse *parse) {
 		struct Token prev_col;
 		uint32_t last_field = def->field_count - 1;
 		sqlTokenInit(&prev_col, def->fields[last_field].name);
-		struct Expr *expr = sql_expr_new(db, TK_ID, &prev_col);
-		if (expr == NULL) {
-			parse->is_aborted = true;
-			goto exit_create_index;
-		}
+		struct Expr *expr = sql_expr_new(TK_ID, &prev_col);
 		col_list = sql_expr_list_append(db, NULL, expr);
 		if (col_list == NULL)
 			goto exit_create_index;

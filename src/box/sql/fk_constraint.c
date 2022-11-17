@@ -675,10 +675,8 @@ static inline struct Expr *
 sql_expr_new_2part_id(struct Parse *parser, const struct Token *main,
 		      const struct Token *sub)
 {
-	struct Expr *emain = sql_expr_new(parser->db, TK_ID, main);
-	struct Expr *esub = sql_expr_new(parser->db, TK_ID, sub);
-	if (emain == NULL || esub == NULL)
-		parser->is_aborted = true;
+	struct Expr *emain = sql_expr_new(TK_ID, main);
+	struct Expr *esub = sql_expr_new(TK_ID, sub);
 	return sqlPExpr(parser, TK_DOT, emain, esub);
 }
 
@@ -766,10 +764,10 @@ fk_constraint_action_trigger(struct Parse *pParse, struct space_def *def,
 		 */
 		struct Expr *new, *old =
 			sql_expr_new_2part_id(pParse, &t_old, &t_to_col);
-		struct Expr *from = sql_expr_new(db, TK_ID, &t_from_col);
+		struct Expr *from = sql_expr_new(TK_ID, &t_from_col);
 		struct Expr *eq = sqlPExpr(pParse, TK_EQ, old, from);
 		where = sql_and_expr_new(db, where, eq);
-		if (where == NULL || from == NULL)
+		if (where == NULL)
 			pParse->is_aborted = true;
 		/*
 		 * For ON UPDATE, construct the next term of the
