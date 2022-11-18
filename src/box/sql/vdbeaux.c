@@ -571,7 +571,7 @@ static void vdbeFreeOpArray(sql *, Op *, int);
 static void
 freeP4(sql * db, int p4type, void *p4)
 {
-	assert(db);
+	(void)db;
 	switch (p4type) {
 	case P4_FUNCCTX:{
 			sql_context_delete(p4);

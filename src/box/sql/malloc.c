@@ -36,21 +36,12 @@
 #include "sqlInt.h"
 #include <stdarg.h>
 
-/** Return TRUE if buf is a lookaside memory allocation. */
-static inline bool
-is_lookaside(void *buf)
-{
-	struct sql *db = sql_get();
-	assert(db != NULL);
-	return buf >= db->lookaside.pStart && buf < db->lookaside.pEnd;
-}
-
 void
 sqlDbFree(void *buf)
 {
 	struct sql *db = sql_get();
 	assert(db != NULL);
-	if (is_lookaside(buf)) {
+	if (buf >= db->lookaside.pStart && buf < db->lookaside.pEnd) {
 		LookasideSlot *pBuf = (LookasideSlot *)buf;
 		pBuf->pNext = db->lookaside.pFree;
 		db->lookaside.pFree = pBuf;
@@ -99,7 +90,7 @@ sqlDbRealloc(void *buf, size_t n)
 	assert(db != NULL);
 	if (buf == NULL)
 		return sqlDbMallocRawNN(n);
-	if (is_lookaside(buf)) {
+	if (buf >= db->lookaside.pStart && buf < db->lookaside.pEnd) {
 		if (n <= (size_t)db->lookaside.sz)
 			return buf;
 		void *new_buf = sqlDbMallocRawNN(n);

@@ -210,11 +210,8 @@ sql_parser_destroy(Parse *parser)
 	struct create_fk_constraint_parse_def *create_fk_constraint_parse_def =
 		&parser->create_fk_constraint_parse_def;
 	create_fk_constraint_parse_def_destroy(create_fk_constraint_parse_def);
-	if (db != NULL) {
-		assert(db->lookaside.bDisable >=
-		       parser->disableLookaside);
-		db->lookaside.bDisable -= parser->disableLookaside;
-	}
+	assert(db->lookaside.bDisable >= parser->disableLookaside);
+	db->lookaside.bDisable -= parser->disableLookaside;
 	parser->disableLookaside = 0;
 	switch (parser->parsed_ast_type) {
 	case AST_TYPE_SELECT:

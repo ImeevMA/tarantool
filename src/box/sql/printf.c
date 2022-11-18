@@ -991,7 +991,6 @@ sqlVMPrintf(sql * db, const char *zFormat, va_list ap)
 	char *z;
 	char zBase[SQL_PRINT_BUF_SIZE];
 	StrAccum acc;
-	assert(db != 0);
 	sqlStrAccumInit(&acc, db, zBase, sizeof(zBase),
 			    db->aLimit[SQL_LIMIT_LENGTH]);
 	acc.printfFlags = SQL_PRINTF_INTERNAL;

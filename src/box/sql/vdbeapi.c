@@ -84,7 +84,6 @@ sql_stmt_finalize(sql_stmt * pStmt)
 		return 0;
 	Vdbe *v = (Vdbe *) pStmt;
 	sql *db = v->db;
-	assert(db != NULL);
 	checkProfileCallback(db, v);
 	return sqlVdbeFinalize(v);
 }

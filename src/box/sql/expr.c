@@ -1663,7 +1663,6 @@ sqlSrcListDup(sql * db, SrcList * p, int flags)
 	SrcList *pNew;
 	int i;
 	int nByte;
-	assert(db != 0);
 	if (p == 0)
 		return 0;
 	nByte =
@@ -1701,9 +1700,9 @@ sqlSrcListDup(sql * db, SrcList * p, int flags)
 IdList *
 sqlIdListDup(sql * db, IdList * p)
 {
+	(void)db;
 	IdList *pNew;
 	int i;
-	assert(db != 0);
 	if (p == 0)
 		return 0;
 	pNew = sqlDbMallocRawNN(sizeof(*pNew));
@@ -1728,7 +1727,6 @@ Select *
 sqlSelectDup(sql * db, Select * p, int flags)
 {
 	Select *pNew, *pPrior;
-	assert(db != 0);
 	if (p == 0)
 		return 0;
 	pNew = sqlDbMallocRawNN(sizeof(*p));
@@ -1760,7 +1758,7 @@ struct ExprList *
 sql_expr_list_append(struct sql *db, struct ExprList *expr_list,
 		     struct Expr *expr)
 {
-	assert(db != NULL);
+	(void)db;
 	if (expr_list == NULL) {
 		expr_list = sqlDbMallocRawNN(sizeof(ExprList));
 		expr_list->nExpr = 0;
