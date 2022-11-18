@@ -488,11 +488,8 @@ sql_triggers_exist(struct space_def *space_def, int op,
  * to that SrcList.
  */
 static SrcList *
-targetSrcList(Parse * pParse,	/* The parsing context */
-	      TriggerStep * pStep	/* The trigger containing the target token */
-    )
+targetSrcList(struct TriggerStep * pStep)
 {
-	(void)pParse;
 	SrcList *pSrc = sql_src_list_append(NULL, NULL);
 	assert(pSrc->nSrc > 0);
 	pSrc->a[pSrc->nSrc - 1].zName = sqlDbStrDup(pStep->zTarget);
@@ -547,14 +544,14 @@ codeTriggerProgram(Parse * pParse,	/* The parser context */
 
 		switch (pStep->op) {
 		case TK_UPDATE:{
-			sqlUpdate(pParse, targetSrcList(pParse, pStep),
+			sqlUpdate(pParse, targetSrcList(pStep),
 				  sql_expr_list_dup(pStep->pExprList, 0),
 				  sqlExprDup(pStep->pWhere, 0),
 				  pParse->eOrconf);
 			break;
 		}
 		case TK_INSERT:{
-			sqlInsert(pParse, targetSrcList(pParse, pStep),
+			sqlInsert(pParse, targetSrcList(pStep),
 				  sqlSelectDup(pStep->pSelect, 0),
 				  sqlIdListDup(pStep->pIdList),
 				  pParse->eOrconf);
@@ -562,7 +559,7 @@ codeTriggerProgram(Parse * pParse,	/* The parser context */
 		}
 		case TK_DELETE:{
 			sql_table_delete_from(pParse,
-					      targetSrcList(pParse, pStep),
+					      targetSrcList(pStep),
 					      sqlExprDup(pStep->pWhere, 0));
 			break;
 		}
