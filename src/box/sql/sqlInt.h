@@ -378,13 +378,6 @@ sql_stmt_reset(struct sql_stmt *stmt);
 bool
 sql_metadata_is_full();
 
-int
-sql_exec(sql *,	/* An open database */
-	     const char *sql,	/* SQL to be evaluated */
-	     int (*callback) (void *, int, char **, char **),	/* Callback function */
-	     void *	/* 1st argument to callback */
-	);
-
 /**
  * Subtype of a main type. Allows to do some subtype specific
  * things: serialization, unpacking etc.
@@ -468,9 +461,6 @@ struct sql_io_methods {
 
 void
 sql_os_init(void);
-
-int
-sql_limit(sql *, int id, int newVal);
 
 extern char *
 sql_temp_directory;
@@ -2640,7 +2630,6 @@ void
 sqlExprListSetSpan(struct ExprList *pList, struct ExprSpan *pSpan);
 
 u32 sqlExprListFlags(const ExprList *);
-int sqlInit(sql *);
 
 /*
  * Process a pragma statement.
@@ -3833,7 +3822,13 @@ Expr *sqlExprAddCollateToken(Parse * pParse, Expr *, const Token *, int);
 Expr *sqlExprAddCollateString(Parse *, Expr *, const char *);
 Expr *sqlExprSkipCollate(Expr *);
 int sqlCheckIdentifierName(Parse *, char *);
-void sqlVdbeSetChanges(sql *, int);
+
+/**
+ * This routine sets the value to be returned by subsequent calls to
+ * sql_changes() on the database.
+ */
+void
+sqlVdbeSetChanges(int nChange);
 
 /**
  * Attempt to add, subtract, multiply or get the remainder of

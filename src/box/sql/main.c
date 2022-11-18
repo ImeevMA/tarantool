@@ -299,54 +299,6 @@ static const int aHardLimit[] = {
 #error SQL_MAX_TRIGGER_DEPTH must be at least 1
 #endif
 
-/*
- * Change the value of a limit.  Report the old value.
- * If an invalid limit index is supplied, report -1.
- * Make no changes but still report the old value if the
- * new limit is negative.
- *
- * A new lower limit does not shrink existing constructs.
- * It merely prevents new constructs that exceed the limit
- * from forming.
- */
-int
-sql_limit(sql * db, int limitId, int newLimit)
-{
-	int oldLimit;
-
-	/* EVIDENCE-OF: R-30189-54097 For each limit category SQL_LIMIT_NAME
-	 * there is a hard upper bound set at compile-time by a C preprocessor
-	 * macro called SQL_MAX_NAME. (The "_LIMIT_" in the name is changed to
-	 * "_MAX_".)
-	 */
-	assert(aHardLimit[SQL_LIMIT_LENGTH] == SQL_MAX_LENGTH);
-	assert(aHardLimit[SQL_LIMIT_SQL_LENGTH] == SQL_MAX_SQL_LENGTH);
-	assert(aHardLimit[SQL_LIMIT_COLUMN] == SQL_MAX_COLUMN);
-	assert(aHardLimit[SQL_LIMIT_EXPR_DEPTH] == SQL_MAX_EXPR_DEPTH);
-	assert(aHardLimit[SQL_LIMIT_COMPOUND_SELECT] ==
-	       SQL_MAX_COMPOUND_SELECT);
-	assert(aHardLimit[SQL_LIMIT_VDBE_OP] == SQL_MAX_VDBE_OP);
-	assert(aHardLimit[SQL_LIMIT_FUNCTION_ARG] ==
-	       SQL_MAX_FUNCTION_ARG);
-	assert(aHardLimit[SQL_LIMIT_ATTACHED] == SQL_MAX_ATTACHED);
-	assert(aHardLimit[SQL_LIMIT_LIKE_PATTERN_LENGTH] ==
-	       SQL_MAX_LIKE_PATTERN_LENGTH);
-	assert(aHardLimit[SQL_LIMIT_TRIGGER_DEPTH] ==
-	       SQL_MAX_TRIGGER_DEPTH);
-
-	if (limitId < 0 || limitId >= SQL_N_LIMIT) {
-		return -1;
-	}
-	oldLimit = db->aLimit[limitId];
-	if (newLimit >= 0) {	/* IMP: R-52476-28732 */
-		if (newLimit > aHardLimit[limitId]) {
-			newLimit = aHardLimit[limitId];	/* IMP: R-51463-25634 */
-		}
-		db->aLimit[limitId] = newLimit;
-	}
-	return oldLimit;	/* IMP: R-53341-35419 */
-}
-
 /**
  * This routine does the work of initialization of main
  * SQL connection instance.

@@ -677,7 +677,7 @@ case OP_Halt: {
 		pFrame = p->pFrame;
 		p->pFrame = pFrame->pParent;
 		p->nFrame--;
-		sqlVdbeSetChanges(db, p->nChange);
+		sqlVdbeSetChanges(p->nChange);
 		pcx = sqlVdbeFrameRestore(pFrame);
 		if (pOp->p2 == ON_CONFLICT_ACTION_IGNORE) {
 			/* Instruction pcx is the OP_Program that invoked the sub-program
@@ -2966,7 +2966,7 @@ case OP_Delete: {
  * This is used by trigger programs.
  */
 case OP_ResetCount: {
-	sqlVdbeSetChanges(db, p->nChange);
+	sqlVdbeSetChanges(p->nChange);
 	p->nChange = 0;
 	p->ignoreRaised = 0;
 	break;

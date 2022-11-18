@@ -1923,7 +1923,7 @@ sqlVdbeHalt(Vdbe * p)
 		 * Other statements should return 0 (zero).
 		 */
 		if (p->changeCntOn) {
-			sqlVdbeSetChanges(db, p->nChange);
+			sqlVdbeSetChanges(p->nChange);
 			p->nChange = 0;
 		} else {
 			db->nChange = 0;
@@ -2106,14 +2106,10 @@ sqlVdbeAllocUnpackedRecord(struct key_def *key_def)
 	return p;
 }
 
-/*
- * This routine sets the value to be returned by subsequent calls to
- * sql_changes() on the database handle 'db'.
- */
 void
-sqlVdbeSetChanges(sql * db, int nChange)
+sqlVdbeSetChanges(int nChange)
 {
-	db->nChange = nChange;
+	sql_get()->nChange = nChange;
 }
 
 /*
