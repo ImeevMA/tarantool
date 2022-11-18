@@ -45,7 +45,6 @@ sql_alter_table_rename(struct Parse *parse)
 	assert(rename_def->base.entity_type == ENTITY_TYPE_TABLE);
 	assert(rename_def->base.alter_action == ALTER_ACTION_RENAME);
 	assert(src_tab->nSrc == 1);
-	struct sql *db = parse->db;
 	char *new_name = sql_name_from_token(&rename_def->new_name);
 	/* Check that new name isn't occupied by another table. */
 	if (space_by_name(new_name) != NULL) {
@@ -64,7 +63,7 @@ sql_alter_table_rename(struct Parse *parse)
 	sqlVdbeAddOp4(v, OP_RenameTable, space->def->id, 0, 0, new_name,
 			  P4_DYNAMIC);
 exit_rename_table:
-	sqlSrcListDelete(db, src_tab);
+	sqlSrcListDelete(src_tab);
 	return;
 tnt_error:
 	sqlDbFree(new_name);
@@ -80,7 +79,6 @@ sql_alter_ck_constraint_enable(struct Parse *parse)
 	assert(enable_def->base.entity_type == ENTITY_TYPE_CK);
 	assert(enable_def->base.alter_action == ALTER_ACTION_ENABLE);
 	assert(src_tab->nSrc == 1);
-	struct sql *db = parse->db;
 
 	char *constraint_name = NULL;
 	const char *tbl_name = src_tab->a[0].zName;
@@ -128,7 +126,7 @@ sql_alter_ck_constraint_enable(struct Parse *parse)
 	sqlVdbeAddOp2(v, OP_IdxReplace, tuple_reg + field_count, reg);
 exit_alter_ck_constraint:
 	sqlDbFree(constraint_name);
-	sqlSrcListDelete(db, src_tab);
+	sqlSrcListDelete(src_tab);
 }
 
 char *

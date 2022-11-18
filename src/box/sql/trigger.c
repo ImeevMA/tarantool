@@ -131,7 +131,7 @@ sql_trigger_begin(struct Parse *parse)
 
  trigger_cleanup:
 	sqlDbFree(trigger_name);
-	sqlSrcListDelete(db, alter_def->entity_name);
+	sqlSrcListDelete(alter_def->entity_name);
 	sqlIdListDelete(trigger_def->cols);
 	sql_expr_delete(trigger_def->when);
 	if (parse->parsed_ast.trigger == NULL)
@@ -347,7 +347,6 @@ sql_drop_trigger(struct Parse *parser)
 	assert(alter_def->alter_action == ALTER_ACTION_DROP);
 	struct SrcList *name = alter_def->entity_name;
 	bool no_err = drop_def->if_exist;
-	sql *db = parser->db;
 
 	struct Vdbe *v = sqlGetVdbe(parser);
 	if (v != NULL)
@@ -369,7 +368,7 @@ sql_drop_trigger(struct Parse *parser)
 	vdbe_code_drop_trigger(parser, trigger_name, true);
 
  drop_trigger_cleanup:
-	sqlSrcListDelete(db, name);
+	sqlSrcListDelete(name);
 }
 
 int

@@ -510,7 +510,6 @@ fk_constraint_emit_check(struct Parse *parser, struct space *space, int reg_old,
 			 int reg_new, const int *changed_cols)
 {
 	bool is_update = changed_cols != NULL;
-	struct sql *db = parser->db;
 
 	/*
 	 * Exactly one of reg_old and reg_new should be non-zero.
@@ -607,7 +606,7 @@ fk_constraint_emit_check(struct Parse *parser, struct space *space, int reg_old,
 			fk_constraint_scan_children(parser, src, space->def,
 						    fk->def, reg_old, 1);
 		}
-		sqlSrcListDelete(db, src);
+		sqlSrcListDelete(src);
 	}
 }
 

@@ -308,10 +308,11 @@ sql_space_info_normalize(struct sql_space_info *info, uint32_t drop_count)
 static void
 clearSelect(sql * db, Select * p, int bFree)
 {
+	(void)db;
 	while (p) {
 		Select *pPrior = p->pPrior;
 		sql_expr_list_delete(p->pEList);
-		sqlSrcListDelete(db, p->pSrc);
+		sqlSrcListDelete(p->pSrc);
 		sql_expr_delete(p->pWhere);
 		sql_expr_list_delete(p->pGroupBy);
 		sql_expr_delete(p->pHaving);
@@ -515,7 +516,7 @@ sql_select_expand_from_tables(struct Select *select)
 	walker.xSelectCallback = select_collect_table_names;
 	walker.u.pSrcList = table_names;
 	if (sqlWalkSelect(&walker, select) != 0) {
-		sqlSrcListDelete(sql_get(), walker.u.pSrcList);
+		sqlSrcListDelete(walker.u.pSrcList);
 		return NULL;
 	}
 	return walker.u.pSrcList;

@@ -334,7 +334,7 @@ sql_src_list_entry_name(const struct SrcList *list, int i);
 
 /** Delete an entire SrcList including all its substructure. */
 void
-sqlSrcListDelete(struct sql *db, struct SrcList *list);
+sqlSrcListDelete(struct SrcList *list);
 
 /**
  * Auxiliary VDBE structure to speed-up tuple data field access.

@@ -393,11 +393,11 @@ sql_create_column_start(struct Parse *parse)
 	column_def->type = create_column_def->type_def->type;
 	def->field_count++;
 
-	sqlSrcListDelete(db, alter_entity_def->entity_name);
+	sqlSrcListDelete(alter_entity_def->entity_name);
 	return;
 tnt_error:
 	parse->is_aborted = true;
-	sqlSrcListDelete(db, alter_entity_def->entity_name);
+	sqlSrcListDelete(alter_entity_def->entity_name);
 }
 
 static void
@@ -1874,7 +1874,6 @@ sql_drop_table(struct Parse *parse_context)
 	assert(drop_def.base.alter_action == ALTER_ACTION_DROP);
 	struct SrcList *table_name_list = drop_def.base.entity_name;
 	struct Vdbe *v = sqlGetVdbe(parse_context);
-	struct sql *db = parse_context->db;
 	bool is_view = drop_def.base.entity_type == ENTITY_TYPE_VIEW;
 	assert(is_view || drop_def.base.entity_type == ENTITY_TYPE_TABLE);
 	if (v == NULL)
@@ -1934,7 +1933,7 @@ sql_drop_table(struct Parse *parse_context)
 	sql_code_drop_table(parse_context, space, is_view);
 
  exit_drop_table:
-	sqlSrcListDelete(db, table_name_list);
+	sqlSrcListDelete(table_name_list);
 }
 
 /**
@@ -2884,7 +2883,7 @@ sql_create_index(struct Parse *parse) {
 	if (index != NULL && index->def != NULL)
 		index_def_delete(index->def);
 	sql_expr_list_delete(col_list);
-	sqlSrcListDelete(db, tbl_name);
+	sqlSrcListDelete(tbl_name);
 	sqlDbFree(name);
 }
 
@@ -2896,7 +2895,6 @@ sql_drop_index(struct Parse *parse_context)
 	assert(drop_def->base.alter_action == ALTER_ACTION_DROP);
 	struct Vdbe *v = sqlGetVdbe(parse_context);
 	assert(v != NULL);
-	struct sql *db = parse_context->db;
 	/* Never called with prior errors. */
 	assert(!parse_context->is_aborted);
 	struct SrcList *table_list = drop_def->base.entity_name;
@@ -2919,7 +2917,7 @@ sql_drop_index(struct Parse *parse_context)
 			     ER_NO_SUCH_INDEX_NAME, if_exists);
 	sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
  exit_drop_index:
-	sqlSrcListDelete(db, table_list);
+	sqlSrcListDelete(table_list);
 	sqlDbFree(index_name);
 }
 
@@ -3063,7 +3061,7 @@ sqlSrcListAssignCursors(Parse * pParse, SrcList * pList)
 }
 
 void
-sqlSrcListDelete(sql * db, SrcList * pList)
+sqlSrcListDelete(struct SrcList *pList)
 {
 	int i;
 	struct SrcList_item *pItem;
@@ -3086,7 +3084,7 @@ sqlSrcListDelete(sql * db, SrcList * pList)
 		assert(pItem->space == NULL ||
 			!pItem->space->def->opts.is_ephemeral ||
 			pItem->space->index == NULL);
-		sql_select_delete(db, pItem->pSelect);
+		sql_select_delete(sql_get(), pItem->pSelect);
 		sql_expr_delete(pItem->pOn);
 		sqlIdListDelete(pItem->pUsing);
 	}

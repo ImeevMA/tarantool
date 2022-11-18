@@ -629,11 +629,11 @@ as(X) ::= .            {X.n = 0; X.z = 0;}
 
 
 %type seltablist {SrcList*}
-%destructor seltablist {sqlSrcListDelete(pParse->db, $$);}
+%destructor seltablist {sqlSrcListDelete($$);}
 %type stl_prefix {SrcList*}
-%destructor stl_prefix {sqlSrcListDelete(pParse->db, $$);}
+%destructor stl_prefix {sqlSrcListDelete($$);}
 %type from {SrcList*}
-%destructor from {sqlSrcListDelete(pParse->db, $$);}
+%destructor from {sqlSrcListDelete($$);}
 
 // A complete FROM clause.
 //
@@ -678,7 +678,7 @@ seltablist(A) ::= stl_prefix(A) LP seltablist(F) RP
       pOld->zName =  0;
       pOld->pSelect = 0;
     }
-    sqlSrcListDelete(pParse->db, F);
+    sqlSrcListDelete(F);
   }else{
     Select *pSubquery;
     sqlSrcListShiftJoinType(F);
@@ -688,7 +688,7 @@ seltablist(A) ::= stl_prefix(A) LP seltablist(F) RP
 }
 
 %type fullname {SrcList*}
-%destructor fullname {sqlSrcListDelete(pParse->db, $$);}
+%destructor fullname {sqlSrcListDelete($$);}
 fullname(A) ::= nm(X). {
   /* A-overwrites-X. */
   A = sql_src_list_append(NULL ,&X);

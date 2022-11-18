@@ -111,7 +111,7 @@ sql_table_truncate(struct Parse *parse, struct SrcList *tab_list)
 	}
 	sqlVdbeAddOp2(v, OP_Clear, space->def->id, true);
 cleanup:
-	sqlSrcListDelete(parse->db, tab_list);
+	sqlSrcListDelete(tab_list);
 	return;
 
 tarantool_error:
@@ -123,7 +123,6 @@ void
 sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 		      struct Expr *where)
 {
-	struct sql *db = parse->db;
 	if (parse->is_aborted)
 		goto delete_from_cleanup;
 
@@ -402,7 +401,7 @@ sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 	}
 
  delete_from_cleanup:
-	sqlSrcListDelete(db, tab_list);
+	sqlSrcListDelete(tab_list);
 	sql_expr_delete(where);
 }
 

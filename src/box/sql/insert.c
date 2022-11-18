@@ -780,7 +780,7 @@ sqlInsert(Parse * pParse,	/* Parser context */
 	}
 
  insert_cleanup:
-	sqlSrcListDelete(db, pTabList);
+	sqlSrcListDelete(pTabList);
 	sql_expr_list_delete(pList);
 	sql_select_delete(db, pSelect);
 	sqlIdListDelete(pColumn);

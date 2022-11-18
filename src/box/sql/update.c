@@ -56,7 +56,6 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 	int addrTop = 0;	/* VDBE instruction address of the start of the loop */
 	WhereInfo *pWInfo;	/* Information about the WHERE clause */
 	Vdbe *v;		/* The virtual database engine */
-	sql *db;		/* The database structure */
 	int *aXRef = 0;		/* aXRef[i] is the index in pChanges->a[] of the
 				 * an expression for the i-th column of the table.
 				 * aXRef[i]==-1 if the i-th column is not changed.
@@ -84,7 +83,6 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 	/* Count of changed rows. Match aXRef items != -1. */
 	int upd_cols_cnt = 0;
 
-	db = pParse->db;
 	if (pParse->is_aborted)
 		goto update_cleanup;
 	assert(pTabList->nSrc == 1);
@@ -478,7 +476,7 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 	sqlVdbeResolveLabel(v, labelBreak);
 
  update_cleanup:
-	sqlSrcListDelete(db, pTabList);
+	sqlSrcListDelete(pTabList);
 	sql_expr_list_delete(pChanges);
 	sql_expr_delete(pWhere);
 	return;

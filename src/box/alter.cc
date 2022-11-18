@@ -1951,7 +1951,7 @@ update_view_references(struct Select *select, int update_value,
 			if (! suppress_error) {
 				assert(not_found_space != NULL);
 				*not_found_space = tt_sprintf("%s", space_name);
-				sqlSrcListDelete(sql_get(), list);
+				sqlSrcListDelete(list);
 				return -1;
 			}
 			continue;
@@ -1959,7 +1959,7 @@ update_view_references(struct Select *select, int update_value,
 		assert(space->def->view_ref_count > 0 || update_value > 0);
 		space->def->view_ref_count += update_value;
 	}
-	sqlSrcListDelete(sql_get(), list);
+	sqlSrcListDelete(list);
 	return 0;
 }
 
