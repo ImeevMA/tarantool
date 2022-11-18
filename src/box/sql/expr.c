@@ -208,13 +208,8 @@ field_type_sequence_dup(enum field_type *types, uint32_t len)
  * implements the COLLATE operator.
  */
 Expr *
-sqlExprAddCollateToken(Parse * pParse,	/* Parsing context */
-			   Expr * pExpr,	/* Add the "COLLATE" clause to this expression */
-			   const Token * pCollName,	/* Name of collating sequence */
-			   int dequote	/* True to dequote pCollName */
-    )
+sqlExprAddCollateToken(struct Expr *pExpr, const Token *pCollName, int dequote)
 {
-	(void)pParse;
 	if (pCollName->n == 0)
 		return pExpr;
 	struct Expr *new_expr;
@@ -230,10 +225,11 @@ sqlExprAddCollateToken(Parse * pParse,	/* Parsing context */
 Expr *
 sqlExprAddCollateString(Parse * pParse, Expr * pExpr, const char *zC)
 {
+	(void)pParse;
 	Token s;
 	assert(zC != 0);
 	sqlTokenInit(&s, (char *)zC);
-	return sqlExprAddCollateToken(pParse, pExpr, &s, 0);
+	return sqlExprAddCollateToken(pExpr, &s, 0);
 }
 
 /*

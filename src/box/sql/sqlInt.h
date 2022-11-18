@@ -3829,7 +3829,14 @@ int
 sql_expr_coll(Parse *parse, Expr *p, bool *is_explicit_coll, uint32_t *coll_id,
 	      struct coll **coll);
 
-Expr *sqlExprAddCollateToken(Parse * pParse, Expr *, const Token *, int);
+/**
+ * Set the collating sequence for expression pExpr to be the collating sequence
+ * named by pCollName. Return a pointer to a new Expr node that implements the
+ * COLLATE operator.
+ */
+Expr *
+sqlExprAddCollateToken(struct Expr *pExpr, const Token *pCollName, int dequote);
+
 Expr *sqlExprAddCollateString(Parse *, Expr *, const char *);
 Expr *sqlExprSkipCollate(Expr *);
 int sqlCheckIdentifierName(Parse *, char *);
