@@ -43,13 +43,9 @@
 /* See comment in sqlInt.h */
 int sqlSubProgramsRemaining;
 
-/*
- * Delete a linked list of TriggerStep structures.
- */
 void
-sqlDeleteTriggerStep(sql * db, TriggerStep * pTriggerStep)
+sqlDeleteTriggerStep(struct TriggerStep *pTriggerStep)
 {
-	(void)db;
 	while (pTriggerStep) {
 		TriggerStep *pTmp = pTriggerStep;
 		pTriggerStep = pTriggerStep->pNext;
@@ -218,7 +214,7 @@ sql_trigger_finish(struct Parse *parse, struct TriggerStep *step_list,
 cleanup:
 	sql_trigger_delete(db, trigger);
 	assert(parse->parsed_ast.trigger == NULL || parse->parse_only);
-	sqlDeleteTriggerStep(db, step_list);
+	sqlDeleteTriggerStep(step_list);
 }
 
 struct TriggerStep *
@@ -308,9 +304,10 @@ sql_trigger_delete_step(struct Token *table_name, struct Expr *where)
 void
 sql_trigger_delete(struct sql *db, struct sql_trigger *trigger)
 {
+	(void)db;
 	if (trigger == NULL)
 		return;
-	sqlDeleteTriggerStep(db, trigger->step_list);
+	sqlDeleteTriggerStep(trigger->step_list);
 	sqlDbFree(trigger->zName);
 	sql_expr_delete(trigger->pWhen);
 	sqlIdListDelete(trigger->pColumns);

@@ -1586,7 +1586,7 @@ when_clause(A) ::= .             { A = 0; }
 when_clause(A) ::= WHEN expr(X). { A = X.pExpr; }
 
 %type trigger_cmd_list {TriggerStep*}
-%destructor trigger_cmd_list {sqlDeleteTriggerStep(pParse->db, $$);}
+%destructor trigger_cmd_list {sqlDeleteTriggerStep($$);}
 trigger_cmd_list(A) ::= trigger_cmd_list(A) trigger_cmd(X) SEMI. {
   assert( A!=0 );
   A->pLast->pNext = X;
@@ -1632,7 +1632,7 @@ tridxby ::= NOT INDEXED. {
 
 
 %type trigger_cmd {TriggerStep*}
-%destructor trigger_cmd {sqlDeleteTriggerStep(pParse->db, $$);}
+%destructor trigger_cmd {sqlDeleteTriggerStep($$);}
 // UPDATE 
 trigger_cmd(A) ::=
    UPDATE orconf(R) trnm(X) tridxby SET setlist(Y) where_opt(Z). {

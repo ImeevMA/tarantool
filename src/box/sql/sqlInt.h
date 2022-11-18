@@ -3451,7 +3451,9 @@ vdbe_code_row_trigger_direct(struct Parse *parser, struct sql_trigger *trigger,
 			     struct space *space, int reg, int orconf,
 			     int ignore_jump);
 
-void sqlDeleteTriggerStep(sql *, TriggerStep *);
+/** Delete a linked list of TriggerStep structures. */
+void
+sqlDeleteTriggerStep(struct TriggerStep *pTriggerStep);
 
 /**
  * Turn a SELECT statement (that the select parameter points to)
