@@ -262,7 +262,6 @@ mem_create(struct Mem *mem)
 	mem->zMalloc = NULL;
 	mem->szMalloc = 0;
 	mem->uTemp = 0;
-	mem->db = sql_get();
 #ifdef SQL_DEBUG
 	mem->pScopyFrom = NULL;
 	mem->pFiller = NULL;
@@ -2975,7 +2974,6 @@ releaseMemArray(Mem * p, int N)
 	if (p && N) {
 		Mem *pEnd = &p[N];
 		do {
-			assert((&p[1]) == pEnd || p[0].db == p[1].db);
 			assert(sqlVdbeCheckMemInvariants(p));
 			mem_destroy(p);
 			p->type = MEM_TYPE_INVALID;
@@ -2991,9 +2989,8 @@ releaseMemArray(Mem * p, int N)
 int
 sqlVdbeMemTooBig(Mem * p)
 {
-	assert(p->db != 0);
 	if (mem_is_bytes(p))
-		return p->n > p->db->aLimit[SQL_LIMIT_LENGTH];
+		return p->n > SQL_MAX_LENGTH;
 	return 0;
 }
 

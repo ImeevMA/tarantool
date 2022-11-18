@@ -93,7 +93,6 @@ struct Mem {
 	char *zMalloc;		/* Space to hold MEM_Str or MEM_Blob if szMalloc>0 */
 	int szMalloc;		/* Size of the zMalloc allocation */
 	u32 uTemp;		/* Transient storage for serial_type in OP_MakeRecord */
-	sql *db;		/* The associated database connection */
 #ifdef SQL_DEBUG
 	Mem *pScopyFrom;	/* This Mem is a shallow copy of pScopyFrom */
 	void *pFiller;		/* So that sizeof(Mem) is a multiple of 8 */

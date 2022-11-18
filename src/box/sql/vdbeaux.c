@@ -1353,9 +1353,6 @@ allocSpace(struct ReusableSpace *p,	/* Bulk memory available for allocation */
 void
 sqlVdbeRewind(Vdbe * p)
 {
-#if defined(SQL_DEBUG)
-	int i;
-#endif
 	assert(p != 0);
 	assert(p->magic == VDBE_MAGIC_INIT || p->magic == VDBE_MAGIC_RESET);
 
@@ -1366,11 +1363,6 @@ sqlVdbeRewind(Vdbe * p)
 	/* Set the magic to VDBE_MAGIC_RUN sooner rather than later. */
 	p->magic = VDBE_MAGIC_RUN;
 
-#ifdef SQL_DEBUG
-	for (i = 0; i < p->nMem; i++) {
-		assert(p->aMem[i].db == p->db);
-	}
-#endif
 	p->pc = -1;
 	p->is_aborted = false;
 	p->ignoreRaised = 0;
