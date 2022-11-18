@@ -3268,8 +3268,6 @@ sql_set_multi_write(Parse *, bool);
 struct Expr *
 sqlExprDup(struct Expr *p, int flags);
 
-SrcList *sqlSrcListDup(sql *, SrcList *, int);
-
 /** Duplicate ID list. */
 struct IdList *
 sqlIdListDup(struct IdList *p);

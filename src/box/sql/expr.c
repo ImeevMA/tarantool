@@ -1657,8 +1657,8 @@ sql_expr_list_dup(struct ExprList *p, int flags)
  * sqlSelectDup(), can be called. sqlSelectDup() is sometimes
  * called with a NULL argument.
  */
-SrcList *
-sqlSrcListDup(sql * db, SrcList * p, int flags)
+static struct SrcList *
+sqlSrcListDup(struct SrcList * p, int flags)
 {
 	SrcList *pNew;
 	int i;
@@ -1689,7 +1689,7 @@ sqlSrcListDup(sql * db, SrcList * p, int flags)
 		}
 		pNewItem->space = pOldItem->space;
 		pNewItem->pSelect =
-		    sqlSelectDup(db, pOldItem->pSelect, flags);
+		    sqlSelectDup(sql_get(), pOldItem->pSelect, flags);
 		pNewItem->pOn = sqlExprDup(pOldItem->pOn, flags);
 		pNewItem->pUsing = sqlIdListDup(pOldItem->pUsing);
 		pNewItem->colUsed = pOldItem->colUsed;
@@ -1730,7 +1730,7 @@ sqlSelectDup(sql * db, Select * p, int flags)
 		return 0;
 	pNew = sqlDbMallocRawNN(sizeof(*p));
 	pNew->pEList = sql_expr_list_dup(p->pEList, flags);
-	pNew->pSrc = sqlSrcListDup(db, p->pSrc, flags);
+	pNew->pSrc = sqlSrcListDup(p->pSrc, flags);
 	pNew->pWhere = sqlExprDup(p->pWhere, flags);
 	pNew->pGroupBy = sql_expr_list_dup(p->pGroupBy, flags);
 	pNew->pHaving = sqlExprDup(p->pHaving, flags);
