@@ -261,11 +261,9 @@ sql_trigger_step_new(u8 op, struct Token *target_name)
 }
 
 struct TriggerStep *
-sql_trigger_insert_step(struct sql *db, struct Token *table_name,
-			struct IdList *column_list, struct Select *select,
-			enum on_conflict_action orconf)
+sql_trigger_insert_step(struct Token *table_name, struct IdList *column_list,
+			struct Select *select, enum on_conflict_action orconf)
 {
-	(void)db;
 	assert(select != NULL);
 	struct TriggerStep *trigger_step =
 		sql_trigger_step_new(TK_INSERT, table_name);

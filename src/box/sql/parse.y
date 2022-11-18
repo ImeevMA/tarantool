@@ -1646,7 +1646,7 @@ trigger_cmd(A) ::=
 // INSERT
 trigger_cmd(A) ::= insert_cmd(R) INTO trnm(X) idlist_opt(F) select(S). {
   /*A-overwrites-R. */
-  A = sql_trigger_insert_step(pParse->db, &X, F, S, R);
+  A = sql_trigger_insert_step(&X, F, S, R);
 }
 
 // DELETE

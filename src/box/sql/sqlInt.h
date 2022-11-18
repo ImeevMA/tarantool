@@ -3473,7 +3473,6 @@ sql_trigger_select_step(struct Select *select);
  * The parser calls this routine when it sees an INSERT inside the
  * body of a trigger.
  *
- * @param db The database connection.
  * @param table_name Name of the table into which we insert.
  * @param column_list List of columns in table to insert into. Is
  *        deleted on error.
@@ -3481,12 +3480,10 @@ sql_trigger_select_step(struct Select *select);
  *        deleted anyway.
  * @param orconf A conflict processing algorithm.
  * @retval Not NULL TriggerStep object on success.
- * @retval NULL Error. The diag message is set.
  */
 struct TriggerStep *
-sql_trigger_insert_step(struct sql *db, struct Token *table_name,
-			struct IdList *column_list, struct Select *select,
-			enum on_conflict_action orconf);
+sql_trigger_insert_step(struct Token *table_name, struct IdList *column_list,
+			struct Select *select, enum on_conflict_action orconf);
 
 /**
  * Construct a trigger step that implements an UPDATE statemen.
