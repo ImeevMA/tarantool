@@ -272,8 +272,7 @@ sql_trigger_insert_step(struct sql *db, struct Token *table_name,
 	assert(select != NULL);
 	struct TriggerStep *trigger_step =
 		sql_trigger_step_new(TK_INSERT, table_name);
-	trigger_step->pSelect =
-		sqlSelectDup(db, select, EXPRDUP_REDUCE);
+	trigger_step->pSelect = sqlSelectDup(select, EXPRDUP_REDUCE);
 	trigger_step->pIdList = column_list;
 	trigger_step->orconf = orconf;
 	sql_select_delete(db, select);
@@ -571,7 +570,7 @@ codeTriggerProgram(Parse * pParse,	/* The parser context */
 		}
 		case TK_INSERT:{
 			sqlInsert(pParse, targetSrcList(pParse, pStep),
-				  sqlSelectDup(db, pStep->pSelect, 0),
+				  sqlSelectDup(pStep->pSelect, 0),
 				  sqlIdListDup(pStep->pIdList),
 				  pParse->eOrconf);
 			break;
@@ -585,8 +584,7 @@ codeTriggerProgram(Parse * pParse,	/* The parser context */
 		default:
 			assert(pStep->op == TK_SELECT); {
 				SelectDest sDest;
-				Select *pSelect =
-				    sqlSelectDup(db, pStep->pSelect, 0);
+				Select *pSelect = sqlSelectDup(pStep->pSelect, 0);
 				sqlSelectDestInit(&sDest, SRT_Discard, 0, -1);
 				sqlSelect(pParse, pSelect, &sDest);
 				sql_select_delete(db, pSelect);

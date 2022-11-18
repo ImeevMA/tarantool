@@ -3272,7 +3272,10 @@ sqlExprDup(struct Expr *p, int flags);
 struct IdList *
 sqlIdListDup(struct IdList *p);
 
-Select *sqlSelectDup(sql *, Select *, int);
+/** Duplicate SELECT statement. */
+struct Select *
+sqlSelectDup(struct Select *p, int flags);
+
 #ifdef SQL_DEBUG
 void sqlSelectSetName(Select *, const char *);
 #else

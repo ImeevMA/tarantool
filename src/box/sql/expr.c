@@ -1539,9 +1539,8 @@ sql_expr_dup(struct Expr *p, int flags, char **buffer)
 
 	if (((p->flags | pNew->flags) & (EP_TokenOnly | EP_Leaf)) == 0) {
 		/* Fill in the pNew->x.pSelect or pNew->x.pList member. */
-		struct sql *db = sql_get();
 		if (ExprHasProperty(p, EP_xIsSelect))
-			pNew->x.pSelect = sqlSelectDup(db, p->x.pSelect, flags);
+			pNew->x.pSelect = sqlSelectDup(p->x.pSelect, flags);
 		else
 			pNew->x.pList = sql_expr_list_dup(p->x.pList, flags);
 	}
@@ -1587,8 +1586,7 @@ withDup(struct With *p)
 	With *pRet = sqlDbMallocZero(nByte);
 	pRet->nCte = p->nCte;
 	for (int i = 0; i < p->nCte; i++) {
-		struct sql *db = sql_get();
-		pRet->a[i].pSelect = sqlSelectDup(db, p->a[i].pSelect, 0);
+		pRet->a[i].pSelect = sqlSelectDup(p->a[i].pSelect, 0);
 		pRet->a[i].pCols = sql_expr_list_dup(p->a[i].pCols, 0);
 		pRet->a[i].zName = sqlDbStrDup(p->a[i].zName);
 	}
@@ -1686,8 +1684,7 @@ sqlSrcListDup(struct SrcList * p, int flags)
 				sql_expr_list_dup(pOldItem->u1.pFuncArg, flags);
 		}
 		pNewItem->space = pOldItem->space;
-		pNewItem->pSelect =
-		    sqlSelectDup(sql_get(), pOldItem->pSelect, flags);
+		pNewItem->pSelect = sqlSelectDup(pOldItem->pSelect, flags);
 		pNewItem->pOn = sqlExprDup(pOldItem->pOn, flags);
 		pNewItem->pUsing = sqlIdListDup(pOldItem->pUsing);
 		pNewItem->colUsed = pOldItem->colUsed;
@@ -1720,8 +1717,8 @@ sqlIdListDup(struct IdList *p)
 	return pNew;
 }
 
-Select *
-sqlSelectDup(sql * db, Select * p, int flags)
+struct Select *
+sqlSelectDup(struct Select *p, int flags)
 {
 	Select *pNew, *pPrior;
 	if (p == 0)
@@ -1734,7 +1731,7 @@ sqlSelectDup(sql * db, Select * p, int flags)
 	pNew->pHaving = sqlExprDup(p->pHaving, flags);
 	pNew->pOrderBy = sql_expr_list_dup(p->pOrderBy, flags);
 	pNew->op = p->op;
-	pNew->pPrior = pPrior = sqlSelectDup(db, p->pPrior, flags);
+	pNew->pPrior = pPrior = sqlSelectDup(p->pPrior, flags);
 	if (pPrior)
 		pPrior->pNext = pNew;
 	pNew->pNext = 0;

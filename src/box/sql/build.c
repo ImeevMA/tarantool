@@ -1550,7 +1550,7 @@ sql_view_assign_cursors(struct Parse *parse, const char *view_stmt)
 void
 sql_store_select(struct Parse *parse_context, struct Select *select)
 {
-	Select *select_copy = sqlSelectDup(parse_context->db, select, 0);
+	Select *select_copy = sqlSelectDup(select, 0);
 	parse_context->parsed_ast_type = AST_TYPE_SELECT;
 	parse_context->parsed_ast.select = select_copy;
 }

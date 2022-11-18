@@ -4195,7 +4195,7 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 		p->pPrior = 0;
 		p->pLimit = 0;
 		p->pOffset = 0;
-		pNew = sqlSelectDup(db, p, 0);
+		pNew = sqlSelectDup(p, 0);
 		sqlSelectSetName(pNew, pSub->zSelName);
 		p->pOffset = pOffset;
 		p->pLimit = pLimit;
@@ -4731,7 +4731,6 @@ static int
 withExpand(Walker * pWalker, struct SrcList_item *pFrom)
 {
 	Parse *pParse = pWalker->pParse;
-	sql *db = pParse->db;
 	struct Cte *pCte;	/* Matched CTE (or NULL if no match) */
 	With *pWith;		/* WITH clause that pCte belongs to */
 
@@ -4768,7 +4767,7 @@ withExpand(Walker * pWalker, struct SrcList_item *pFrom)
 		pFrom->space = sql_template_space_new(pParse, pCte->zName);
 		if (pFrom->space == NULL)
 			return WRC_Abort;
-		pFrom->pSelect = sqlSelectDup(db, pCte->pSelect, 0);
+		pFrom->pSelect = sqlSelectDup(pCte->pSelect, 0);
 		assert(pFrom->pSelect);
 
 		/* Check if this is a recursive CTE. */
