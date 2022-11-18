@@ -111,11 +111,11 @@ sql_trigger_compile(struct sql *db, const char *sql);
 
 /**
  * Free AST pointed by trigger.
- * @param db SQL handle.
+ *
  * @param trigger AST object.
  */
 void
-sql_trigger_delete(struct sql *db, struct sql_trigger *trigger);
+sql_trigger_delete(struct sql_trigger *trigger);
 
 /**
  * Get server triggers list by space_id.

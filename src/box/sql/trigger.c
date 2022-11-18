@@ -64,8 +64,6 @@ sql_trigger_begin(struct Parse *parse)
 {
 	/* The new trigger. */
 	struct sql_trigger *trigger = NULL;
-	/* The database connection. */
-	struct sql *db = parse->db;
 	struct create_trigger_def *trigger_def = &parse->create_trigger_def;
 	struct create_entity_def *create_def = &trigger_def->base;
 	struct alter_entity_def *alter_def = &create_def->base;
@@ -132,7 +130,7 @@ sql_trigger_begin(struct Parse *parse)
 	sqlIdListDelete(trigger_def->cols);
 	sql_expr_delete(trigger_def->when);
 	if (parse->parsed_ast.trigger == NULL)
-		sql_trigger_delete(db, trigger);
+		sql_trigger_delete(trigger);
 	else
 		assert(parse->parsed_ast.trigger == trigger);
 
@@ -149,8 +147,6 @@ sql_trigger_finish(struct Parse *parse, struct TriggerStep *step_list,
 {
 	/* Trigger being finished. */
 	struct sql_trigger *trigger = parse->parsed_ast.trigger;
-	/* The database. */
-	struct sql *db = parse->db;
 
 	parse->parsed_ast.trigger = NULL;
 	if (NEVER(parse->is_aborted) || trigger == NULL)
@@ -212,7 +208,7 @@ sql_trigger_finish(struct Parse *parse, struct TriggerStep *step_list,
 	}
 
 cleanup:
-	sql_trigger_delete(db, trigger);
+	sql_trigger_delete(trigger);
 	assert(parse->parsed_ast.trigger == NULL || parse->parse_only);
 	sqlDeleteTriggerStep(step_list);
 }
@@ -300,9 +296,8 @@ sql_trigger_delete_step(struct Token *table_name, struct Expr *where)
 }
 
 void
-sql_trigger_delete(struct sql *db, struct sql_trigger *trigger)
+sql_trigger_delete(struct sql_trigger *trigger)
 {
-	(void)db;
 	if (trigger == NULL)
 		return;
 	sqlDeleteTriggerStep(trigger->step_list);

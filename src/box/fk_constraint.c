@@ -49,8 +49,8 @@ const char *fk_constraint_match_strs[] = {
 void
 fk_constraint_delete(struct fk_constraint *fk)
 {
-	sql_trigger_delete(sql_get(), fk->on_delete_trigger);
-	sql_trigger_delete(sql_get(), fk->on_update_trigger);
+	sql_trigger_delete(fk->on_delete_trigger);
+	sql_trigger_delete(fk->on_update_trigger);
 	free(fk->def);
 	free(fk);
 }
