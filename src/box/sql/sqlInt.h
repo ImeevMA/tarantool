@@ -3494,15 +3494,12 @@ sql_trigger_update_step(struct Token *table_name, struct ExprList *new_list,
  * The parser calls this routine when it sees a DELETE statement
  * inside the body of a CREATE TRIGGER.
  *
- * @param db The database connection.
  * @param table_name The table from which rows are deleted.
  * @param where The WHERE clause. Is deleted anyway.
  * @retval Not NULL TriggerStep object on success.
- * @retval NULL Error. The diag message is set.
  */
 struct TriggerStep *
-sql_trigger_delete_step(struct sql *db, struct Token *table_name,
-			struct Expr *where);
+sql_trigger_delete_step(struct Token *table_name, struct Expr *where);
 
 /**
  * Triggers may access values stored in the old.* or new.*

@@ -294,10 +294,8 @@ sql_trigger_update_step(struct Token *table_name, struct ExprList *new_list,
 }
 
 struct TriggerStep *
-sql_trigger_delete_step(struct sql *db, struct Token *table_name,
-			struct Expr *where)
+sql_trigger_delete_step(struct Token *table_name, struct Expr *where)
 {
-	(void)db;
 	struct TriggerStep *trigger_step =
 		sql_trigger_step_new(TK_DELETE, table_name);
 	trigger_step->pWhere = sqlExprDup(where, EXPRDUP_REDUCE);

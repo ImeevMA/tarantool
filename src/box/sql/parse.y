@@ -1647,19 +1647,11 @@ trigger_cmd(A) ::=
 trigger_cmd(A) ::= insert_cmd(R) INTO trnm(X) idlist_opt(F) select(S). {
   /*A-overwrites-R. */
   A = sql_trigger_insert_step(pParse->db, &X, F, S, R);
-  if (A == NULL) {
-    pParse->is_aborted = true;
-    return;
-  }
 }
 
 // DELETE
 trigger_cmd(A) ::= DELETE FROM trnm(X) tridxby where_opt(Y). {
-  A = sql_trigger_delete_step(pParse->db, &X, Y);
-  if (A == NULL) {
-    pParse->is_aborted = true;
-    return;
-  }
+  A = sql_trigger_delete_step(&X, Y);
 }
 
 // SELECT
