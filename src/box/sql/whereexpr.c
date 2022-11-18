@@ -50,9 +50,8 @@ static void exprAnalyze(SrcList *, WhereClause *, int);
  * Deallocate all memory associated with a WhereOrInfo object.
  */
 static void
-whereOrInfoDelete(sql * db, WhereOrInfo * p)
+whereOrInfoDelete(struct WhereOrInfo * p)
 {
-	(void)db;
 	sqlWhereClauseClear(&p->wc);
 	sqlDbFree(p);
 }
@@ -1323,7 +1322,7 @@ sqlWhereClauseClear(WhereClause * pWC)
 		if (a->wtFlags & TERM_DYNAMIC)
 			sql_expr_delete(a->pExpr);
 		if (a->wtFlags & TERM_ORINFO) {
-			whereOrInfoDelete(db, a->u.pOrInfo);
+			whereOrInfoDelete(a->u.pOrInfo);
 		} else if (a->wtFlags & TERM_ANDINFO) {
 			whereAndInfoDelete(db, a->u.pAndInfo);
 		}
