@@ -624,9 +624,8 @@ sql_view_compile(const char *view_stmt)
 }
 
 struct sql_trigger *
-sql_trigger_compile(struct sql *db, const char *sql)
+sql_trigger_compile(const char *sql)
 {
-	(void)db;
 	struct Parse parser;
 	sql_parser_create(&parser, default_flags);
 	parser.parse_only = true;

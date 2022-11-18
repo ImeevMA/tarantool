@@ -106,7 +106,7 @@ sql_view_compile(const char *view_stmt);
  * @retval not NULL sql_trigger AST pointer on success.
  */
 struct sql_trigger *
-sql_trigger_compile(struct sql *db, const char *sql);
+sql_trigger_compile(const char *sql);
 
 /**
  * Free AST pointed by trigger.

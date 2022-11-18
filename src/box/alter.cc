@@ -4878,8 +4878,7 @@ on_replace_dd_trigger(struct trigger * /* trigger */, void *event)
 		struct region *region = &fiber()->gc;
 		if (space_opts_decode(&opts, space_opts, region) != 0)
 			return -1;
-		struct sql_trigger *new_trigger =
-			sql_trigger_compile(sql_get(), opts.sql);
+		struct sql_trigger *new_trigger = sql_trigger_compile(opts.sql);
 		if (new_trigger == NULL)
 			return -1;
 
