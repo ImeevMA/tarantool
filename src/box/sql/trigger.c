@@ -121,7 +121,7 @@ sql_trigger_begin(struct Parse *parse)
 	trigger->op = (u8) trigger_def->op;
 	trigger->tr_tm = trigger_def->tr_tm;
 	trigger->pWhen = sqlExprDup(trigger_def->when, EXPRDUP_REDUCE);
-	trigger->pColumns = sqlIdListDup(db, trigger_def->cols);
+	trigger->pColumns = sqlIdListDup(trigger_def->cols);
 	if ((trigger->pWhen != NULL && trigger->pWhen == NULL) ||
 	    (trigger->pColumns != NULL && trigger->pColumns == NULL))
 		goto trigger_cleanup;
@@ -570,16 +570,12 @@ codeTriggerProgram(Parse * pParse,	/* The parser context */
 			break;
 		}
 		case TK_INSERT:{
-				sqlInsert(pParse,
-					      targetSrcList(pParse, pStep),
-					      sqlSelectDup(db,
-							       pStep->pSelect,
-							       0),
-					      sqlIdListDup(db,
-							       pStep->pIdList),
-					      pParse->eOrconf);
-				break;
-			}
+			sqlInsert(pParse, targetSrcList(pParse, pStep),
+				  sqlSelectDup(db, pStep->pSelect, 0),
+				  sqlIdListDup(pStep->pIdList),
+				  pParse->eOrconf);
+			break;
+		}
 		case TK_DELETE:{
 			sql_table_delete_from(pParse,
 					      targetSrcList(pParse, pStep),

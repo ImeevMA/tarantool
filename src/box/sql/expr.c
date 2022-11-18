@@ -1691,16 +1691,15 @@ sqlSrcListDup(sql * db, SrcList * p, int flags)
 		pNewItem->pSelect =
 		    sqlSelectDup(db, pOldItem->pSelect, flags);
 		pNewItem->pOn = sqlExprDup(pOldItem->pOn, flags);
-		pNewItem->pUsing = sqlIdListDup(db, pOldItem->pUsing);
+		pNewItem->pUsing = sqlIdListDup(pOldItem->pUsing);
 		pNewItem->colUsed = pOldItem->colUsed;
 	}
 	return pNew;
 }
 
-IdList *
-sqlIdListDup(sql * db, IdList * p)
+struct IdList *
+sqlIdListDup(struct IdList *p)
 {
-	(void)db;
 	IdList *pNew;
 	int i;
 	if (p == 0)
