@@ -777,9 +777,8 @@ case OP_String8: {         /* same as TK_STRING, out2 */
 	pOp->opcode = OP_String;
 	pOp->p1 = sqlStrlen30(pOp->p4.z);
 
-	if (pOp->p1>db->aLimit[SQL_LIMIT_LENGTH]) {
+	if (pOp->p1 > SQL_MAX_LENGTH)
 		goto too_big;
-	}
 	assert(rc == 0);
 	/* Fall through to the next case, OP_String */
 	FALLTHROUGH;
@@ -2069,7 +2068,7 @@ case OP_MakeRecord: {
 	char *tuple = mem_encode_array(pData0, nField, &tuple_size, region);
 	if (tuple == NULL)
 		goto abort_due_to_error;
-	if ((int64_t)tuple_size > db->aLimit[SQL_LIMIT_LENGTH])
+	if (tuple_size > SQL_MAX_LENGTH)
 		goto too_big;
 
 	/* In case of ephemeral space, it is possible to save some memory
@@ -3084,9 +3083,8 @@ case OP_RowData: {
 	assert(pCrsr->curFlags & BTCF_TaCursor ||
 	       pCrsr->curFlags & BTCF_TEphemCursor);
 	tarantoolsqlPayloadFetch(pCrsr, &n);
-	if (n>(u32)db->aLimit[SQL_LIMIT_LENGTH]) {
+	if (n > SQL_MAX_LENGTH)
 		goto too_big;
-	}
 
 	char *buf = region_alloc(&fiber()->gc, n);
 	if (buf == NULL) {
@@ -3912,7 +3910,7 @@ case OP_Program: {        /* jump */
 		break;
 	}
 
-	if (p->nFrame>=db->aLimit[SQL_LIMIT_TRIGGER_DEPTH]) {
+	if (p->nFrame >= SQL_MAX_TRIGGER_DEPTH) {
 		diag_set(ClientError, ER_SQL_EXECUTE, "too many levels of "\
 			 "trigger recursion");
 		goto abort_due_to_error;
@@ -3966,7 +3964,7 @@ case OP_Program: {        /* jump */
 	p->nFrame++;
 	pFrame->pParent = p->pFrame;
 	pFrame->nChange = p->nChange;
-	pFrame->nDbChange = p->db->nChange;
+	pFrame->nDbChange = db->nChange;
 	p->nChange = 0;
 	p->pFrame = pFrame;
 	p->aMem = aMem = VdbeFrameMem(pFrame);
