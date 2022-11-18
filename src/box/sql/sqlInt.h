@@ -3958,19 +3958,6 @@ sql_get_coll_seq(Parse *parser, const char *name, uint32_t *coll_id);
 ssize_t
 sql_index_tuple_size(struct space *space, struct index *idx);
 
-/**
- * Load the content of the _sql_stat1 and sql_stat4 tables. The
- * contents of _sql_stat1 are used to populate the tuple_stat1[]
- * arrays. The contents of sql_stat4 are used to populate the
- * samples[] arrays.
- *
- * @param db Database handler.
- * @retval 0 Success.
- * @retval -1 Error.
- */
-int
-sql_analysis_load(struct sql *db);
-
 struct sql_key_info;
 
 /**
@@ -4128,14 +4115,6 @@ static inline void
 sqlStat4ProbeFree(struct UnpackedRecord *rec)
 {
 	(void)rec;
-}
-
-/* TODO: Enable this function when stat-tables will be revived. */
-static inline int
-sql_stat4_column(struct sql *db, ...)
-{
-	(void)db;
-	return 0;
 }
 
 /*

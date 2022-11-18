@@ -1227,7 +1227,6 @@ whereRangeSkipScanEst(Parse * pParse,		/* Parsing & code generating context */
 	struct index *index = space_index(space, p->iid);
 	assert(index != NULL && index->def->opts.stat != NULL);
 	int nEq = pLoop->nEq;
-	sql *db = pParse->db;
 	int nLower = -1;
 	int nUpper = index->def->opts.stat->sample_count + 1;
 	int rc = 0;
@@ -1252,19 +1251,12 @@ whereRangeSkipScanEst(Parse * pParse,		/* Parsing & code generating context */
 	if (p1 || p2) {
 		int i;
 		int nDiff;
-		struct index_sample *samples = index->def->opts.stat->samples;
 		uint32_t sample_count = index->def->opts.stat->sample_count;
-		for (i = 0; rc == 0 && i < (int) sample_count; i++) {
-			rc = sql_stat4_column(db, samples[i].sample_key, nEq,
-					      &pVal);
-			if (rc == 0 && p1 != NULL) {
-				if (mem_cmp_scalar(p1, pVal, coll) >= 0)
-					nLower++;
-			}
-			if (rc == 0 && p2 != NULL) {
-				if (mem_cmp_scalar(p2, pVal, coll) >= 0)
-					nUpper++;
-			}
+		for (i = 0; i < (int)sample_count; i++) {
+			if (p1 != NULL && mem_cmp_scalar(p1, pVal, coll) >= 0)
+				nLower++;
+			if (p2 != NULL && mem_cmp_scalar(p2, pVal, coll) >= 0)
+				nUpper++;
 		}
 		nDiff = (nUpper - nLower);
 		if (nDiff <= 0)
