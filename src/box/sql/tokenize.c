@@ -448,13 +448,12 @@ sql_token(const char *z, int *type, bool *is_reserved)
  * Note that this functions can't be called on ordinary
  * space object. It's purpose is to clean-up parser->new_space.
  *
- * @param db Database handler.
  * @param space Space to be deleted.
  */
 static void
-parser_space_delete(struct sql *db, struct space *space)
+parser_space_delete(struct space *space)
 {
-	if (space == NULL || db == NULL)
+	if (space == NULL)
 		return;
 	assert(space->def->opts.is_ephemeral);
 	struct space *altered_space = space_by_name(space->def->name);
@@ -490,11 +489,8 @@ sqlRunParser(Parse * pParse, const char *zSql)
 	void *pEngine;		/* The LEMON-generated LALR(1) parser */
 	int tokenType;		/* type of the next token */
 	int lastTokenParsed = -1;	/* type of the previous token */
-	sql *db = pParse->db;	/* The database connection */
-	int mxSqlLen;		/* Max length of an SQL string */
 
 	assert(zSql != 0);
-	mxSqlLen = db->aLimit[SQL_LIMIT_SQL_LENGTH];
 	pParse->zTail = zSql;
 	i = 0;
 	/* sqlParserTrace(stdout, "parser: "); */
@@ -511,9 +507,10 @@ sqlRunParser(Parse * pParse, const char *zSql)
 			    sql_token(&zSql[i], &tokenType,
 				      &pParse->sLastToken.isReserved);
 			i += pParse->sLastToken.n;
-			if (i > mxSqlLen) {
+			if (i > SQL_MAX_SQL_LENGTH) {
 				diag_set(ClientError, ER_SQL_PARSER_LIMIT,
-					 "SQL command length", i, mxSqlLen);
+					 "SQL command length", i,
+					 SQL_MAX_SQL_LENGTH);
 				pParse->is_aborted = true;
 				break;
 			}
@@ -559,7 +556,7 @@ sqlRunParser(Parse * pParse, const char *zSql)
 		sqlVdbeDelete(pParse->pVdbe);
 		pParse->pVdbe = 0;
 	}
-	parser_space_delete(db, pParse->create_column_def.space);
+	parser_space_delete(pParse->create_column_def.space);
 
 	if (pParse->pWithToFree)
 		sqlWithDelete(pParse->pWithToFree);
