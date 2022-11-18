@@ -87,17 +87,17 @@ incrAggFunctionDepth(Expr * pExpr, int N)
  * zero but it might be more if the alias is contained within a subquery
  * of the original expression.  The Expr.op2 field of TK_AGG_FUNCTION
  * structures must be increased by the nSubquery amount.
+ *
+ * @param pEList A result set.
+ * @param iCol A column in the result set.  0..pEList->nExpr-1.
+ * @param pExpr Transform this into an alias to the result set.
+ * @param zType "GROUP" or "ORDER" or "".
+ * @param nSubquery Number of subqueries that the label is moving.
  */
 static void
-resolveAlias(Parse * pParse,	/* Parsing context */
-	     ExprList * pEList,	/* A result set */
-	     int iCol,		/* A column in the result set.  0..pEList->nExpr-1 */
-	     Expr * pExpr,	/* Transform this into an alias to the result set */
-	     const char *zType,	/* "GROUP" or "ORDER" or "" */
-	     int nSubquery	/* Number of subqueries that the label is moving */
-    )
+resolveAlias(struct ExprList *pEList, int iCol, struct Expr *pExpr,
+	     const char *zType, int nSubquery)
 {
-	(void)pParse;
 	Expr *pOrig;		/* The iCol-th column of the result set */
 	Expr *pDup;		/* Copy of pOrig */
 
@@ -389,8 +389,8 @@ lookupName(Parse * pParse,	/* The parsing context */
 						pParse->is_aborted = true;
 						return WRC_Abort;
 					}
-					resolveAlias(pParse, pEList, j, pExpr,
-						     "", nSubquery);
+					resolveAlias(pEList, j, pExpr, "",
+						     nSubquery);
 					cnt = 1;
 					pMatch = 0;
 					assert(zTab == 0);
@@ -999,7 +999,7 @@ sqlResolveOrderGroupBy(Parse * pParse,	/* Parsing context.  Leave error messages
 				pParse->is_aborted = true;
 				return 1;
 			}
-			resolveAlias(pParse, pEList, pItem->u.x.iOrderByCol - 1,
+			resolveAlias(pEList, pItem->u.x.iOrderByCol - 1,
 				     pItem->pExpr, zType, 0);
 		}
 	}
