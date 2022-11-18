@@ -761,8 +761,7 @@ vdbeVComment(Vdbe * p, const char *zFormat, va_list ap)
 	if (p->nOp) {
 		assert(p->aOp);
 		sqlDbFree(p->aOp[p->nOp - 1].zComment);
-		p->aOp[p->nOp - 1].zComment =
-		    sqlVMPrintf(p->db, zFormat, ap);
+		p->aOp[p->nOp - 1].zComment = sqlVMPrintf(zFormat, ap);
 	}
 }
 

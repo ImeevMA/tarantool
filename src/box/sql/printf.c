@@ -973,9 +973,8 @@ sqlStrAccumInit(struct StrAccum *p, char *zBase, int n, int mx)
  * %-conversion extensions.
  */
 char *
-sqlVMPrintf(sql * db, const char *zFormat, va_list ap)
+sqlVMPrintf(const char *zFormat, va_list ap)
 {
-	(void)db;
 	char *z;
 	char zBase[SQL_PRINT_BUF_SIZE];
 	StrAccum acc;
@@ -993,10 +992,11 @@ sqlVMPrintf(sql * db, const char *zFormat, va_list ap)
 char *
 sqlMPrintf(sql * db, const char *zFormat, ...)
 {
+	(void)db;
 	va_list ap;
 	char *z;
 	va_start(ap, zFormat);
-	z = sqlVMPrintf(db, zFormat, ap);
+	z = sqlVMPrintf(zFormat, ap);
 	va_end(ap);
 	return z;
 }
