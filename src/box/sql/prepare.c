@@ -43,7 +43,6 @@ int
 sql_stmt_compile(const char *zSql, int nBytes, struct Vdbe *pReprepare,
 		 sql_stmt **ppStmt, const char **pzTail)
 {
-	struct sql *db = sql_get();
 	int rc = 0;	/* Result code */
 	Parse sParse;		/* Parsing context */
 	sql_parser_create(&sParse, current_session()->sql_flags);
@@ -68,7 +67,7 @@ sql_stmt_compile(const char *zSql, int nBytes, struct Vdbe *pReprepare,
 	 */
 	if (nBytes >= 0 && (nBytes == 0 || zSql[nBytes - 1] != 0)) {
 		char *zSqlCopy;
-		int mxLen = db->aLimit[SQL_LIMIT_SQL_LENGTH];
+		int mxLen = SQL_MAX_SQL_LENGTH;
 		if (nBytes > mxLen) {
 			diag_set(ClientError, ER_SQL_PARSER_LIMIT,
 				 "SQL command length", nBytes, mxLen);
@@ -140,7 +139,7 @@ sql_stmt_compile(const char *zSql, int nBytes, struct Vdbe *pReprepare,
 		}
 	}
 
-	if (db->init.busy == 0) {
+	if (sql_get()->init.busy == 0) {
 		Vdbe *pVdbe = sParse.pVdbe;
 		sqlVdbeSetSql(pVdbe, zSql, (int)(sParse.zTail - zSql));
 	}
@@ -204,14 +203,13 @@ sql_parser_destroy(Parse *parser)
 {
 	assert(parser != NULL);
 	assert(!parser->parse_only || parser->pVdbe == NULL);
-	sql *db = parser->db;
 	sqlDbFree(parser->aLabel);
 	sql_expr_list_delete(parser->pConstExpr);
 	struct create_fk_constraint_parse_def *create_fk_constraint_parse_def =
 		&parser->create_fk_constraint_parse_def;
 	create_fk_constraint_parse_def_destroy(create_fk_constraint_parse_def);
-	assert(db->lookaside.bDisable >= parser->disableLookaside);
-	db->lookaside.bDisable -= parser->disableLookaside;
+	assert(sql_get()->lookaside.bDisable >= parser->disableLookaside);
+	sql_get()->lookaside.bDisable -= parser->disableLookaside;
 	parser->disableLookaside = 0;
 	switch (parser->parsed_ast_type) {
 	case AST_TYPE_SELECT:
