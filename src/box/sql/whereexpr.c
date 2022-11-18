@@ -60,9 +60,8 @@ whereOrInfoDelete(struct WhereOrInfo * p)
  * Deallocate all memory associated with a WhereAndInfo object.
  */
 static void
-whereAndInfoDelete(sql * db, WhereAndInfo * p)
+whereAndInfoDelete(struct WhereAndInfo * p)
 {
-	(void)db;
 	sqlWhereClauseClear(&p->wc);
 	sqlDbFree(p);
 }
@@ -1317,14 +1316,13 @@ sqlWhereClauseClear(WhereClause * pWC)
 {
 	int i;
 	WhereTerm *a;
-	sql *db = pWC->pWInfo->pParse->db;
 	for (i = pWC->nTerm - 1, a = pWC->a; i >= 0; i--, a++) {
 		if (a->wtFlags & TERM_DYNAMIC)
 			sql_expr_delete(a->pExpr);
 		if (a->wtFlags & TERM_ORINFO) {
 			whereOrInfoDelete(a->u.pOrInfo);
 		} else if (a->wtFlags & TERM_ANDINFO) {
-			whereAndInfoDelete(db, a->u.pAndInfo);
+			whereAndInfoDelete(a->u.pAndInfo);
 		}
 	}
 	if (pWC->a != pWC->aStatic) {
