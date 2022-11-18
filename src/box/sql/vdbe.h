@@ -273,9 +273,6 @@ void sqlVdbeRecordUnpackMsgpack(struct key_def *key_def,
 				    const void *msgpack,
 				    struct UnpackedRecord *dest);
 
-int sqlVdbeRecordCompare(struct sql *db, int key_count,
-			     const void *key1, UnpackedRecord *key2);
-
 /**
  * This routine is used to allocate sufficient space for an UnpackedRecord
  * structure large enough to be used with sqlVdbeRecordUnpack() if

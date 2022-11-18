@@ -44,8 +44,9 @@
  * know that the profile callback is defined and needs to be invoked.
  */
 static SQL_NOINLINE void
-invokeProfileCallback(sql * db, Vdbe * p)
+invokeProfileCallback(struct Vdbe * p)
 {
+	struct sql *db = sql_get();
 	sql_int64 iNow;
 	sql_int64 iElapse;
 	assert(p->startTime > 0);
@@ -65,11 +66,11 @@ invokeProfileCallback(sql * db, Vdbe * p)
 }
 
 /*
- * The checkProfileCallback(DB,P) macro checks to see if a profile callback
+ * The checkProfileCallback(P) macro checks to see if a profile callback
  * is needed, and it invokes the callback if it is needed.
  */
-#define checkProfileCallback(DB,P) \
-   if( ((P)->startTime)>0 ){ invokeProfileCallback(DB,P); }
+#define checkProfileCallback(P) \
+	if (((P)->startTime) > 0) {invokeProfileCallback(P);}
 
 /*
  * The following routine destroys a virtual machine that is created by
@@ -83,8 +84,7 @@ sql_stmt_finalize(sql_stmt * pStmt)
 	if (pStmt == NULL)
 		return 0;
 	Vdbe *v = (Vdbe *) pStmt;
-	sql *db = v->db;
-	checkProfileCallback(db, v);
+	checkProfileCallback(v);
 	return sqlVdbeFinalize(v);
 }
 
@@ -93,8 +93,7 @@ sql_stmt_reset(sql_stmt *pStmt)
 {
 	assert(pStmt != NULL);
 	struct Vdbe *v = (Vdbe *) pStmt;
-	struct sql *db = v->db;
-	checkProfileCallback(db, v);
+	checkProfileCallback(v);
 	int rc = sqlVdbeReset(v);
 	sqlVdbeRewind(v);
 	return rc;
@@ -118,15 +117,12 @@ sql_metadata_is_full()
 static int
 sqlStep(Vdbe * p)
 {
-	sql *db;
+	struct sql *db = sql_get();
 	int rc;
 
 	assert(p);
 	if (p->magic != VDBE_MAGIC_RUN)
 		sql_stmt_reset((sql_stmt *) p);
-
-	/* Check that malloc() has not failed. If it has, return early. */
-	db = p->db;
 
 	if (p->pc <= 0 && p->expired) {
 		p->is_aborted = true;
@@ -154,7 +150,7 @@ sqlStep(Vdbe * p)
 
 	/* If the statement completed successfully, invoke the profile callback */
 	if (rc != SQL_ROW)
-		checkProfileCallback(db, p);
+		checkProfileCallback(p);
 
 	if (rc != SQL_ROW && rc != SQL_DONE) {
 		/* If this statement was prepared using sql_prepare(), and an
