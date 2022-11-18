@@ -568,9 +568,8 @@ sqlRunParser(Parse * pParse, const char *zSql)
 }
 
 struct Expr *
-sql_expr_compile(sql *db, const char *expr, int expr_len)
+sql_expr_compile(const char *expr, int expr_len)
 {
-	(void)db;
 	const char *outer = "FUNCTION ";
 	int len = strlen(outer) + expr_len;
 

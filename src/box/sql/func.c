@@ -2311,10 +2311,9 @@ struct func_sql_expr {
 struct func *
 func_sql_expr_new(const struct func_def *def)
 {
-	struct sql *db = sql_get();
 	const char *body = def->body;
 	uint32_t body_len = body == NULL ? 0 : strlen(body);
-	struct Expr *expr = sql_expr_compile(db, body, body_len);
+	struct Expr *expr = sql_expr_compile(body, body_len);
 	if (expr == NULL)
 		return NULL;
 

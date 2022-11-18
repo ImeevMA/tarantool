@@ -230,7 +230,7 @@ ck_constraint_new(struct ck_constraint_def *ck_constraint_def,
 	ck_constraint->stmt = NULL;
 	rlist_create(&ck_constraint->link);
 	struct Expr *expr =
-		sql_expr_compile(sql_get(), ck_constraint_def->expr_str,
+		sql_expr_compile(ck_constraint_def->expr_str,
 				 strlen(ck_constraint_def->expr_str));
 	if (expr == NULL ||
 	    ck_constraint_resolve_field_names(expr, space_def) != 0) {

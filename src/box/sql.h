@@ -77,7 +77,7 @@ struct space_def;
  * surrounding the expression w/ 'SELECT ' prefix and perform
  * convetional parsing. Then extract result expression value from
  * stuct Select and return it.
- * @param db SQL context handle.
+ *
  * @param expr Expression to parse.
  * @param expr_len Length of @an expr.
  *
@@ -85,7 +85,7 @@ struct space_def;
  * @retval not NULL Expr AST pointer on success.
  */
 struct Expr *
-sql_expr_compile(struct sql *db, const char *expr, int expr_len);
+sql_expr_compile(const char *expr, int expr_len);
 
 /**
  * This routine executes parser on 'CREATE VIEW ...' statement

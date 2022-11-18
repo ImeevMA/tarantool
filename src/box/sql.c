@@ -69,7 +69,7 @@ static const uint32_t default_sql_flags = SQL_EnableTrigger
 static Expr *
 sql_expr_compile_cb(const char *expr, int expr_len)
 {
-	return sql_expr_compile(sql_get(), expr, expr_len);
+	return sql_expr_compile(expr, expr_len);
 }
 
 static void
