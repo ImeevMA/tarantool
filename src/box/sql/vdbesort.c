@@ -955,9 +955,10 @@ sqlVdbeSorterClose(struct VdbeCursor *pCsr)
  * the specific VFS implementation.
  */
 static void
-vdbeSorterExtendFile(sql * db, sql_file * pFd, i64 nByte)
+vdbeSorterExtendFile(struct sql_file * pFd, i64 nByte)
 {
-	if (nByte <= (i64) (db->nMaxSorterMmap) && pFd->pMethods->iVersion >= 3) {
+	struct sql *db = sql_get();
+	if (nByte <= db->nMaxSorterMmap && pFd->pMethods->iVersion >= 3) {
 		void *p = 0;
 		int chunksize = 4 * 1024;
 		sqlOsFileControlHint(pFd, SQL_FCNTL_CHUNK_SIZE,
@@ -968,7 +969,7 @@ vdbeSorterExtendFile(sql * db, sql_file * pFd, i64 nByte)
 	}
 }
 #else
-#define vdbeSorterExtendFile(x,y,z)
+#define vdbeSorterExtendFile(y, z)
 #endif
 
 /*
@@ -991,7 +992,7 @@ vdbeSorterOpenTempFile(sql * db,	/* Database handle doing sort */
 		sqlOsFileControlHint(*ppFd, SQL_FCNTL_MMAP_SIZE,
 					 (void *)&max);
 		if (nExtend > 0) {
-			vdbeSorterExtendFile(db, *ppFd, nExtend);
+			vdbeSorterExtendFile(*ppFd, nExtend);
 		}
 	}
 	return rc;
@@ -1252,7 +1253,7 @@ vdbeSorterListToPMA(SortSubtask * pTask, SorterList * pList)
 
 	/* Try to get the file to memory map */
 	if (rc == 0) {
-		vdbeSorterExtendFile(db, pTask->file.pFd,
+		vdbeSorterExtendFile(pTask->file.pFd,
 				     pTask->file.iEof + pList->szPMA + 9);
 	}
 
