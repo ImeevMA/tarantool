@@ -569,9 +569,8 @@ sqlVdbeJumpHere(Vdbe * p, int addr)
 static void vdbeFreeOpArray(sql *, Op *, int);
 
 static void
-freeP4(sql * db, int p4type, void *p4)
+freeP4(int p4type, void *p4)
 {
-	(void)db;
 	switch (p4type) {
 	case P4_FUNCCTX:{
 			sql_context_delete(p4);
@@ -605,11 +604,12 @@ freeP4(sql * db, int p4type, void *p4)
 static void
 vdbeFreeOpArray(sql * db, Op * aOp, int nOp)
 {
+	(void)db;
 	if (aOp) {
 		Op *pOp;
 		for (pOp = aOp; pOp < &aOp[nOp]; pOp++) {
 			if (pOp->p4type)
-				freeP4(db, pOp->p4type, pOp->p4.p);
+				freeP4(pOp->p4type, pOp->p4.p);
 #ifdef SQL_ENABLE_EXPLAIN_COMMENTS
 			sqlDbFree(pOp->zComment);
 #endif
@@ -639,7 +639,7 @@ sqlVdbeChangeToNoop(Vdbe * p, int addr)
 	VdbeOp *pOp;
 	assert(addr >= 0 && addr < p->nOp);
 	pOp = &p->aOp[addr];
-	freeP4(p->db, pOp->p4type, pOp->p4.p);
+	freeP4(pOp->p4type, pOp->p4.p);
 	pOp->p4type = P4_NOTUSED;
 	pOp->p4.z = 0;
 	pOp->opcode = OP_Noop;
@@ -678,7 +678,7 @@ static void SQL_NOINLINE
 vdbeChangeP4Full(Vdbe * p, Op * pOp, const char *zP4, int n)
 {
 	if (pOp->p4type) {
-		freeP4(p->db, pOp->p4type, pOp->p4.p);
+		freeP4(pOp->p4type, pOp->p4.p);
 		pOp->p4type = 0;
 		pOp->p4.p = 0;
 	}
