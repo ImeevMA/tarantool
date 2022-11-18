@@ -2141,15 +2141,6 @@ sqlExpirePreparedStatements()
 	}
 }
 
-/*
- * Return the database associated with the Vdbe.
- */
-sql *
-sqlVdbeDb(Vdbe * v)
-{
-	return v->db;
-}
-
 const struct Mem *
 vdbe_get_bound_value(struct Vdbe *vdbe, int id)
 {

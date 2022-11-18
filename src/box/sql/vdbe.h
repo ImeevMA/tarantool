@@ -254,7 +254,6 @@ const struct Mem *
 vdbe_get_bound_value(struct Vdbe *vdbe, int id);
 
 void sqlVdbeCountChanges(Vdbe *);
-sql *sqlVdbeDb(Vdbe *);
 void sqlVdbeSetSql(Vdbe *, const char *z, int n);
 void sqlVdbeSwap(Vdbe *, Vdbe *);
 
