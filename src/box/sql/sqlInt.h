@@ -2872,13 +2872,19 @@ SrcList *sqlSrcListAppendFromTerm(Parse *, SrcList *, Token *,
 				      Token *, Select *, Expr *, IdList *);
 
 /**
- * Add an INDEXED BY or NOT INDEXED clause to the most recently added
- * element of the source-list passed as the second argument.
+ * Add an INDEXED BY or NOT INDEXED clause to the most recently added element of
+ * the source-list passed as the second argument.
  */
 void
 sqlSrcListIndexedBy(struct SrcList *p, struct Token *pIndexedBy);
 
-void sqlSrcListFuncArgs(Parse *, SrcList *, ExprList *);
+/**
+ * Add the list of function arguments to the SrcList entry for a
+ * table-valued-function.
+ */
+void
+sqlSrcListFuncArgs(struct SrcList *p, struct ExprList *pList);
+
 int sqlIndexedByLookup(Parse *, struct SrcList_item *);
 void sqlSrcListShiftJoinType(SrcList *);
 void sqlSrcListAssignCursors(Parse *, SrcList *);

@@ -657,7 +657,7 @@ seltablist(A) ::= stl_prefix(A) nm(Y) as(Z) indexed_opt(I)
 seltablist(A) ::= stl_prefix(A) nm(Y) LP exprlist(E) RP as(Z)
                   on_opt(N) using_opt(U). {
   A = sqlSrcListAppendFromTerm(pParse,A,&Y,&Z,0,N,U);
-  sqlSrcListFuncArgs(pParse, A, E);
+  sqlSrcListFuncArgs(A, E);
 }
 seltablist(A) ::= stl_prefix(A) LP select(S) RP
                   as(Z) on_opt(N) using_opt(U). {
@@ -1389,7 +1389,8 @@ expr(A) ::= expr(A) in_op(N) LP select(Y) RP(E).  [IN] {
 expr(A) ::= expr(A) in_op(N) nm(Y) paren_exprlist(E). [IN] {
   struct SrcList *pSrc = sql_src_list_append(NULL, &Y);
   Select *pSelect = sqlSelectNew(pParse, 0,pSrc,0,0,0,0,0,0,0);
-  if( E )  sqlSrcListFuncArgs(pParse, pSelect ? pSrc : 0, E);
+  if(E != NULL)
+    sqlSrcListFuncArgs(pSelect != NULL ? pSrc : NULL, E);
   A.pExpr = sqlPExpr(pParse, TK_IN, A.pExpr, 0);
   sqlPExprAddSelect(pParse, A.pExpr, pSelect);
   exprNot(pParse, N, &A);

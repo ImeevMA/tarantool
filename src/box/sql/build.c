@@ -3168,9 +3168,8 @@ sqlSrcListIndexedBy(struct SrcList *p, struct Token *pIndexedBy)
  * table-valued-function.
  */
 void
-sqlSrcListFuncArgs(Parse * pParse, SrcList * p, ExprList * pList)
+sqlSrcListFuncArgs(struct SrcList *p, struct ExprList *pList)
 {
-	(void)pParse;
 	if (p) {
 		struct SrcList_item *pItem = &p->a[p->nSrc - 1];
 		assert(pItem->fg.notIndexed == 0);
