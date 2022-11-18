@@ -953,7 +953,7 @@ displayP4(Op * pOp, char *zTemp, int nTemp)
 	char *zP4 = zTemp;
 	StrAccum x;
 	assert(nTemp >= 20);
-	sqlStrAccumInit(&x, 0, zTemp, nTemp, 0);
+	sqlStrAccumInit(&x, zTemp, nTemp, 0);
 	switch (pOp->p4type) {
 	case P4_KEYINFO:{
 			struct key_def *def = NULL;

@@ -180,7 +180,6 @@ sqlWhereExplainOneScan(Parse * pParse,	/* Parse context */
 	{
 		struct SrcList_item *pItem = &pTabList->a[pLevel->iFrom];
 		Vdbe *v = pParse->pVdbe;	/* VM being constructed */
-		sql *db = pParse->db;	/* Database handle */
 		int iId = pParse->iSelectId;	/* Select id (left-most output column) */
 		int isSearch;	/* True for a SEARCH. False for SCAN. */
 		WhereLoop *pLoop;	/* The controlling WhereLoop object */
@@ -199,8 +198,7 @@ sqlWhereExplainOneScan(Parse * pParse,	/* Parse context */
 		    || (pLoop->nEq > 0)
 		    || (wctrlFlags & (WHERE_ORDERBY_MIN | WHERE_ORDERBY_MAX));
 
-		sqlStrAccumInit(&str, db, zBuf, sizeof(zBuf),
-				    SQL_MAX_LENGTH);
+		sqlStrAccumInit(&str, zBuf, sizeof(zBuf), SQL_MAX_LENGTH);
 		sqlStrAccumAppendAll(&str, isSearch ? "SEARCH" : "SCAN");
 		if (pItem->pSelect) {
 			sqlXPrintf(&str, " SUBQUERY %d", pItem->iSelectId);

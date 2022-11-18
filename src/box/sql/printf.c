@@ -956,24 +956,11 @@ sqlStrAccumReset(StrAccum * p)
 	p->zText = 0;
 }
 
-/*
- * Initialize a string accumulator.
- *
- * p:     The accumulator to be initialized.
- * db:    Pointer to a database connection.  May be NULL.  Lookaside
- *        memory is used if not NULL.
- * zBase: An initial buffer.  May be NULL in which case the initial buffer
- *        is malloced.
- * n:     Size of zBase in bytes.  If total space requirements never exceed
- *        n then no memory allocations ever occur.
- * mx:    Maximum number of bytes to accumulate.  If mx==0 then no memory
- *        allocations will ever occur.
- */
 void
-sqlStrAccumInit(StrAccum * p, sql * db, char *zBase, int n, int mx)
+sqlStrAccumInit(struct StrAccum *p, char *zBase, int n, int mx)
 {
 	p->zText = p->zBase = zBase;
-	p->db = db;
+	p->db = sql_get();
 	p->nChar = 0;
 	p->nAlloc = n;
 	p->mxAlloc = mx;
@@ -988,11 +975,11 @@ sqlStrAccumInit(StrAccum * p, sql * db, char *zBase, int n, int mx)
 char *
 sqlVMPrintf(sql * db, const char *zFormat, va_list ap)
 {
+	(void)db;
 	char *z;
 	char zBase[SQL_PRINT_BUF_SIZE];
 	StrAccum acc;
-	sqlStrAccumInit(&acc, db, zBase, sizeof(zBase),
-			    db->aLimit[SQL_LIMIT_LENGTH]);
+	sqlStrAccumInit(&acc, zBase, sizeof(zBase), SQL_MAX_LENGTH);
 	acc.printfFlags = SQL_PRINTF_INTERNAL;
 	sqlVXPrintf(&acc, zFormat, ap);
 	z = sqlStrAccumFinish(&acc);
@@ -1024,7 +1011,7 @@ sql_vmprintf(const char *zFormat, va_list ap)
 	char *z;
 	char zBase[SQL_PRINT_BUF_SIZE];
 	StrAccum acc;
-	sqlStrAccumInit(&acc, 0, zBase, sizeof(zBase), SQL_MAX_LENGTH);
+	sqlStrAccumInit(&acc, zBase, sizeof(zBase), SQL_MAX_LENGTH);
 	sqlVXPrintf(&acc, zFormat, ap);
 	z = sqlStrAccumFinish(&acc);
 	return z;
@@ -1064,7 +1051,7 @@ sql_vsnprintf(int n, char *zBuf, const char *zFormat, va_list ap)
 	StrAccum acc;
 	if (n <= 0)
 		return zBuf;
-	sqlStrAccumInit(&acc, 0, zBuf, n, 0);
+	sqlStrAccumInit(&acc, zBuf, n, 0);
 	sqlVXPrintf(&acc, zFormat, ap);
 	zBuf[acc.nChar] = 0;
 	return zBuf;
@@ -1091,7 +1078,7 @@ sqlDebugPrintf(const char *zFormat, ...)
 	va_list ap;
 	StrAccum acc;
 	char zBuf[500];
-	sqlStrAccumInit(&acc, 0, zBuf, sizeof(zBuf), 0);
+	sqlStrAccumInit(&acc, zBuf, sizeof(zBuf), 0);
 	va_start(ap, zFormat);
 	sqlVXPrintf(&acc, zFormat, ap);
 	va_end(ap);

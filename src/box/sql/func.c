@@ -882,8 +882,7 @@ func_printf(struct sql_context *ctx, int argc, const struct Mem *argv)
 	pargs.nArg = argc - 1;
 	pargs.nUsed = 0;
 	pargs.apArg = argv + 1;
-	struct sql *db = sql_get();
-	sqlStrAccumInit(&acc, db, 0, 0, db->aLimit[SQL_LIMIT_LENGTH]);
+	sqlStrAccumInit(&acc, NULL, 0, SQL_MAX_LENGTH);
 	acc.printfFlags = SQL_PRINTF_SQLFUNC;
 	sqlXPrintf(&acc, format, &pargs);
 	mem_set_str_allocated(ctx->pOut, sqlStrAccumFinish(&acc), acc.nChar);

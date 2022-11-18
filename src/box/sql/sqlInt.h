@@ -4041,7 +4041,20 @@ sql_ephemeral_space_new(const struct sql_space_info *info);
 int
 sql_is_like_func(struct Expr *expr);
 
-void sqlStrAccumInit(StrAccum *, sql *, char *, int, int);
+/**
+ * Initialize a string accumulator.
+ *
+ * @param p The accumulator to be initialized.
+ * @param zBase An initial buffer. May be NULL in which case the initial buffer
+ *              is malloced.
+ * @param n Size of zBase in bytes. If total space requirements never exceed n
+ *          then no memory allocations ever occur.
+ * @param mx Maximum number of bytes to accumulate. If mx == 0 then no memory
+ *           allocations will ever occur.
+ */
+void
+sqlStrAccumInit(struct StrAccum *p, char *zBase, int n, int mx);
+
 void sqlStrAccumAppend(StrAccum *, const char *, int);
 void sqlStrAccumAppendAll(StrAccum *, const char *);
 void sqlAppendChar(StrAccum *, int, char);

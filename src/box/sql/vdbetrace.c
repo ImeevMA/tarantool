@@ -101,8 +101,7 @@ sqlVdbeExpandSql(Vdbe * p,	/* The prepared statement being evaluated */
 	char zBase[100];	/* Initial working space */
 
 	db = p->db;
-	sqlStrAccumInit(&out, 0, zBase, sizeof(zBase),
-			    db->aLimit[SQL_LIMIT_LENGTH]);
+	sqlStrAccumInit(&out, zBase, sizeof(zBase), SQL_MAX_LENGTH);
 	if (db->nVdbeExec > 1) {
 		while (*zRawSql) {
 			const char *zStart = zRawSql;
