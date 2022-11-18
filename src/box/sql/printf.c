@@ -840,7 +840,6 @@ sqlStrAccumEnlarge(StrAccum * p, int N)
 		} else {
 			p->nAlloc = (int)szNew;
 		}
-		assert(p->db != NULL);
 		zNew = sqlDbRealloc(zOld, p->nAlloc);
 		assert(p->zText != 0 || p->nChar == 0);
 		if (!isMalloced(p) && p->nChar > 0)
@@ -960,7 +959,6 @@ void
 sqlStrAccumInit(struct StrAccum *p, char *zBase, int n, int mx)
 {
 	p->zText = p->zBase = zBase;
-	p->db = sql_get();
 	p->nChar = 0;
 	p->nAlloc = n;
 	p->mxAlloc = mx;

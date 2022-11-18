@@ -2241,7 +2241,6 @@ struct TriggerStep {
  * do not necessarily know how big the string will be in the end.
  */
 struct StrAccum {
-	sql *db;		/* Optional database for lookaside.  Can be NULL */
 	char *zBase;		/* A base allocation.  Not from malloc. */
 	char *zText;		/* The string collected so far */
 	u32 nChar;		/* Length of the string so far */
