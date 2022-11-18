@@ -957,15 +957,16 @@ constructAutomaticIndex(Parse * pParse,			/* The parsing context */
  * into the aSample[] array - it is an index into a virtual set of samples
  * based on the contents of aSample[] and the number of fields in record
  * pRec.
+ *
+ * @param idx_def Definiton of index.
+ * @param pRec Vector of values to consider.
+ * @param roundUp Round up if true.  Round down if false.
+ * @param[out] aStat stats written here.
  */
 static int
-whereKeyStats(Parse * pParse,	/* Database connection */
-	      struct index_def *idx_def,
-	      UnpackedRecord * pRec,	/* Vector of values to consider */
-	      int roundUp,	/* Round up if true.  Round down if false */
-	      tRowcnt * aStat)	/* OUT: stats written here */
+whereKeyStats(struct index_def *idx_def, struct UnpackedRecord *pRec,
+	      int roundUp, unsigned *aStat)
 {
-	(void)pParse;
 	struct space *space = space_by_id(idx_def->space_id);
 	assert(space != NULL);
 	struct index *idx = space_index(space, idx_def->iid);
@@ -1402,7 +1403,7 @@ whereRangeScanEst(Parse * pParse,	/* Parsing & code generating context */
 				/* Note: this call could be optimized away - since the same values must
 				 * have been requested when testing key $P in whereEqualScanEst().
 				 */
-				whereKeyStats(pParse, p, pRec, 0, a);
+				whereKeyStats(p, pRec, 0, a);
 				iLower = a[0];
 				iUpper = a[0] + a[1];
 			}
@@ -1430,9 +1431,7 @@ whereRangeScanEst(Parse * pParse,	/* Parsing & code generating context */
 					u16 mask = WO_GT | WO_LE;
 					if (sqlExprVectorSize(pExpr) > n)
 						mask = (WO_LE | WO_LT);
-					iLwrIdx =
-					    whereKeyStats(pParse, p, pRec, 0,
-							  a);
+					iLwrIdx = whereKeyStats(p, pRec, 0, a);
 					iNew =
 					    a[0] +
 					    ((pLower->
@@ -1456,9 +1455,7 @@ whereRangeScanEst(Parse * pParse,	/* Parsing & code generating context */
 					u16 mask = WO_GT | WO_LE;
 					if (sqlExprVectorSize(pExpr) > n)
 						mask = (WO_LE | WO_LT);
-					iUprIdx =
-					    whereKeyStats(pParse, p, pRec, 1,
-							  a);
+					iUprIdx = whereKeyStats(p, pRec, 1, a);
 					iNew =
 					    a[0] +
 					    ((pUpper->
@@ -1572,7 +1569,7 @@ whereEqualScanEst(Parse * pParse,	/* Parsing & code generating context */
 	assert(bOk != 0);
 	pBuilder->nRecValid = nEq;
 
-	whereKeyStats(pParse, p, pRec, 0, a);
+	whereKeyStats(p, pRec, 0, a);
 	WHERETRACE(0x10, ("equality scan regions %s(%d): %d\n", p->name,
 		   nEq - 1, (int)a[1]));
 	*pnRow = a[1];
