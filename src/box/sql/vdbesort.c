@@ -310,7 +310,6 @@ struct VdbeSorter {
 	int pgsz;		/* Main database page size */
 	PmaReader *pReader;	/* Readr data from here after Rewind() */
 	MergeEngine *pMerger;	/* Or here, if bUseThreads==0 */
-	sql *db;		/* Database connection */
 	struct key_def *key_def;
 	UnpackedRecord *pUnpacked;	/* Used by VdbeSorterCompare() */
 	SorterList list;	/* List of in-memory records */
@@ -614,8 +613,9 @@ vdbePmaReadVarint(PmaReader * p, u64 * pnOut)
 static int
 vdbeSorterMapFile(SortSubtask * pTask, SorterFile * pFile, u8 ** pp)
 {
+	(void)pTask;
 	int rc = 0;
-	if (pFile->iEof <= (i64) (pTask->pSorter->db->nMaxSorterMmap)) {
+	if (pFile->iEof <= (i64)(sql_get()->nMaxSorterMmap)) {
 		sql_file *pFd = pFile->pFd;
 		if (pFd->pMethods->iVersion >= 3) {
 			rc = sqlOsFetch(pFd, 0, (int)pFile->iEof,
@@ -795,7 +795,6 @@ sqlVdbeSorterInit(struct VdbeCursor *pCsr)
 
 	pSorter->key_def = pCsr->key_def;
 	pSorter->pgsz = pgsz = 1024;
-	pSorter->db = sql_get();
 	pSorter->aTask.pSorter = pSorter;
 
 	/* Cache size in bytes */
@@ -1228,7 +1227,7 @@ vdbePmaWriteVarint(PmaWriter * p, u64 iVal)
 static int
 vdbeSorterListToPMA(SortSubtask * pTask, SorterList * pList)
 {
-	sql *db = pTask->pSorter->db;
+	sql *db = sql_get();
 	int rc = 0;	/* Return code */
 	PmaWriter writer;	/* Object used to write to the file */
 
@@ -1697,7 +1696,7 @@ vdbePmaReaderIncrMergeInit(PmaReader * pReadr)
 	int rc = 0;
 	IncrMerger *pIncr = pReadr->pIncr;
 	SortSubtask *pTask = pIncr->pTask;
-	sql *db = pTask->pSorter->db;
+	sql *db = sql_get();
 
 	rc = vdbeMergeEngineInit(pTask, pIncr->pMerger);
 
