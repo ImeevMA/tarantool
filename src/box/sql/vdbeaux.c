@@ -566,7 +566,12 @@ sqlVdbeJumpHere(Vdbe * p, int addr)
 	sqlVdbeChangeP2(p, addr, p->nOp);
 }
 
-static void vdbeFreeOpArray(sql *, Op *, int);
+/**
+ * Free the space allocated for aOp and any p4 values allocated for the opcodes
+ * contained within. If aOp is not NULL it is assumed to contain nOp entries.
+ */
+static void
+vdbeFreeOpArray(struct VdbeOp *aOp, int nOp);
 
 static void
 freeP4(int p4type, void *p4)
@@ -596,15 +601,9 @@ freeP4(int p4type, void *p4)
 	}
 }
 
-/*
- * Free the space allocated for aOp and any p4 values allocated for the
- * opcodes contained within. If aOp is not NULL it is assumed to contain
- * nOp entries.
- */
 static void
-vdbeFreeOpArray(sql * db, Op * aOp, int nOp)
+vdbeFreeOpArray(struct VdbeOp *aOp, int nOp)
 {
-	(void)db;
 	if (aOp) {
 		Op *pOp;
 		for (pOp = aOp; pOp < &aOp[nOp]; pOp++) {
@@ -2028,12 +2027,12 @@ sqlVdbeFinalize(Vdbe * p)
 void
 sqlVdbeClearObject(sql * db, Vdbe * p)
 {
+	(void)db;
 	SubProgram *pSub, *pNext;
-	assert(p->db == 0 || p->db == db);
 	vdbe_metadata_delete(p);
 	for (pSub = p->pProgram; pSub; pSub = pNext) {
 		pNext = pSub->pNext;
-		vdbeFreeOpArray(db, pSub->aOp, pSub->nOp);
+		vdbeFreeOpArray(pSub->aOp, pSub->nOp);
 		sqlDbFree(pSub);
 	}
 	if (p->magic != VDBE_MAGIC_INIT) {
@@ -2041,7 +2040,7 @@ sqlVdbeClearObject(sql * db, Vdbe * p)
 		sqlDbFree(p->pVList);
 		sqlDbFree(p->pFree);
 	}
-	vdbeFreeOpArray(db, p->aOp, p->nOp);
+	vdbeFreeOpArray(p->aOp, p->nOp);
 	sqlDbFree(p->zSql);
 }
 
