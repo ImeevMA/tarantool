@@ -3143,9 +3143,8 @@ sqlSrcListAppendFromTerm(Parse * pParse,	/* Parsing context */
  * element of the source-list passed as the second argument.
  */
 void
-sqlSrcListIndexedBy(Parse * pParse, SrcList * p, Token * pIndexedBy)
+sqlSrcListIndexedBy(struct SrcList *p, struct Token *pIndexedBy)
 {
-	(void)pParse;
 	assert(pIndexedBy != 0);
 	if (p && ALWAYS(p->nSrc > 0)) {
 		struct SrcList_item *pItem = &p->a[p->nSrc - 1];

@@ -652,7 +652,7 @@ stl_prefix(A) ::= .                           {A = 0;}
 seltablist(A) ::= stl_prefix(A) nm(Y) as(Z) indexed_opt(I)
                   on_opt(N) using_opt(U). {
   A = sqlSrcListAppendFromTerm(pParse,A,&Y,&Z,0,N,U);
-  sqlSrcListIndexedBy(pParse, A, &I);
+  sqlSrcListIndexedBy(A, &I);
 }
 seltablist(A) ::= stl_prefix(A) nm(Y) LP exprlist(E) RP as(Z)
                   on_opt(N) using_opt(U). {
@@ -828,7 +828,7 @@ limit_opt(A) ::= LIMIT expr(X) COMMA expr(Y).
 //
 cmd ::= with(C) DELETE FROM fullname(X) indexed_opt(I) where_opt(W). {
   sqlWithPush(pParse, C, 1);
-  sqlSrcListIndexedBy(pParse, X, &I);
+  sqlSrcListIndexedBy(X, &I);
   sqlSubProgramsRemaining = SQL_MAX_COMPILING_TRIGGERS;
   /* Instruct SQL to initate Tarantool's transaction.  */
   pParse->initiateTTrans = true;
@@ -853,7 +853,7 @@ where_opt(A) ::= WHERE expr(X).       {A = X.pExpr;}
 cmd ::= with(C) UPDATE orconf(R) fullname(X) indexed_opt(I) SET setlist(Y)
         where_opt(W).  {
   sqlWithPush(pParse, C, 1);
-  sqlSrcListIndexedBy(pParse, X, &I);
+  sqlSrcListIndexedBy(X, &I);
   if (Y != NULL && Y->nExpr > SQL_MAX_COLUMN) {
     diag_set(ClientError, ER_SQL_PARSER_LIMIT, "The number of columns in set "\
              "list", Y->nExpr, SQL_MAX_COLUMN);

@@ -2870,7 +2870,14 @@ sql_src_list_append(struct SrcList *list, struct Token *name_token);
 
 SrcList *sqlSrcListAppendFromTerm(Parse *, SrcList *, Token *,
 				      Token *, Select *, Expr *, IdList *);
-void sqlSrcListIndexedBy(Parse *, SrcList *, Token *);
+
+/**
+ * Add an INDEXED BY or NOT INDEXED clause to the most recently added
+ * element of the source-list passed as the second argument.
+ */
+void
+sqlSrcListIndexedBy(struct SrcList *p, struct Token *pIndexedBy);
+
 void sqlSrcListFuncArgs(Parse *, SrcList *, ExprList *);
 int sqlIndexedByLookup(Parse *, struct SrcList_item *);
 void sqlSrcListShiftJoinType(SrcList *);
