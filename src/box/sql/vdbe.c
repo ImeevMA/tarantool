@@ -2400,7 +2400,7 @@ case OP_SorterOpen: {
 	if (pCx == NULL)
 		goto abort_due_to_error;
 	pCx->key_def = def;
-	if (sqlVdbeSorterInit(db, pCx) != 0)
+	if (sqlVdbeSorterInit(pCx) != 0)
 		goto abort_due_to_error;
 	break;
 }

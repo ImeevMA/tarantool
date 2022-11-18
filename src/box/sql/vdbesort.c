@@ -780,29 +780,8 @@ vdbeSorterCompare(struct SortSubtask *task, bool *key2_cached,
 	return sqlVdbeRecordCompareMsgpack(key1, r2);
 }
 
-/*
- * Initialize the temporary index cursor just opened as a sorter cursor.
- *
- * Usually, the sorter module uses the value of (pCsr->key_def->part_count)
- * to determine the number of fields that should be compared from the
- * records being sorted. However, if the value passed as argument nField
- * is non-zero and the sorter is able to guarantee a stable sort, nField
- * is used instead. This is used when sorting records for a CREATE INDEX
- * statement. In this case, keys are always delivered to the sorter in
- * order of the primary key, which happens to be make up the final part
- * of the records being sorted. So if the sort is stable, there is never
- * any reason to compare PK fields and they can be ignored for a small
- * performance boost.
- *
- * The sorter can guarantee a stable sort when running in single-threaded
- * mode, but not in multi-threaded mode.
- *
- * 0 is returned if successful, or an sql error code otherwise.
- */
 int
-sqlVdbeSorterInit(sql * db,	/* Database connection (for malloc()) */
-		      VdbeCursor * pCsr	/* Cursor that holds the new sorter */
-    )
+sqlVdbeSorterInit(struct VdbeCursor *pCsr)
 {
 	int pgsz;		/* Page size of main database */
 	VdbeSorter *pSorter;	/* The new sorter */
@@ -816,7 +795,7 @@ sqlVdbeSorterInit(sql * db,	/* Database connection (for malloc()) */
 
 	pSorter->key_def = pCsr->key_def;
 	pSorter->pgsz = pgsz = 1024;
-	pSorter->db = db;
+	pSorter->db = sql_get();
 	pSorter->aTask.pSorter = pSorter;
 
 	/* Cache size in bytes */
