@@ -1029,8 +1029,8 @@ struct sql {
 /*
  * Macros for testing whether or not optimizations are enabled or disabled.
  */
-#define OptimizationDisabled(db, mask)  (((db)->dbOptFlags&(mask))!=0)
-#define OptimizationEnabled(db, mask)   (((db)->dbOptFlags&(mask))==0)
+#define OptimizationDisabled(mask)  ((sql_get()->dbOptFlags & (mask)) != 0)
+#define OptimizationEnabled(mask)   ((sql_get()->dbOptFlags & (mask)) == 0)
 
 /*
  * Return true if it OK to factor constant expressions into the initialization

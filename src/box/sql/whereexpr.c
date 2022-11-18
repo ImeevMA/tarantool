@@ -827,7 +827,7 @@ exprAnalyzeOrTerm(SrcList * pSrc,	/* the FROM clause */
 static int
 termIsEquivalence(Parse * pParse, Expr * pExpr)
 {
-	if (!OptimizationEnabled(pParse->db, SQL_Transitive))
+	if (!OptimizationEnabled(SQL_Transitive))
 		return 0;
 	if (pExpr->op != TK_EQ)
 		return 0;

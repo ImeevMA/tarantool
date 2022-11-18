@@ -2199,8 +2199,6 @@ sqlSelectAddColumnTypeAndCollation(struct Parse *pParse,
 struct space *
 sqlResultSetOfSelect(Parse * pParse, Select * pSelect)
 {
-	sql *db = pParse->db;
-
 	uint32_t saved_flags = pParse->sql_flags;
 	pParse->sql_flags = 0;
 	sqlSelectPrep(pParse, pSelect, 0);
@@ -2215,7 +2213,7 @@ sqlResultSetOfSelect(Parse * pParse, Select * pSelect)
 	/* The sqlResultSetOfSelect() is only used in contexts where lookaside
 	 * is disabled
 	 */
-	assert(db->lookaside.bDisable);
+	assert(sql_get()->lookaside.bDisable);
 	sqlColumnsFromExprList(pParse, pSelect->pEList, space->def);
 	sqlSelectAddColumnTypeAndCollation(pParse, space->def, pSelect);
 	return space;
@@ -2233,11 +2231,8 @@ allocVdbe(Parse * pParse)
 		return NULL;
 	v->sql_flags = pParse->sql_flags;
 	sqlVdbeAddOp2(v, OP_Init, 0, 1);
-	if (pParse->pToplevel == 0
-	    && OptimizationEnabled(pParse->db, SQL_FactorOutConst)
-	    ) {
+	if (pParse->pToplevel == 0 && OptimizationEnabled(SQL_FactorOutConst))
 		pParse->okConstFactor = 1;
-	}
 	return v;
 }
 
@@ -3994,13 +3989,12 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 	int i;			/* Loop counter */
 	Expr *pWhere;		/* The WHERE clause */
 	struct SrcList_item *pSubitem;	/* The subquery */
-	sql *db = pParse->db;
 
 	/* Check to see if flattening is permitted.  Return 0 if not.
 	 */
 	assert(p != 0);
 	assert(p->pPrior == 0);	/* Unable to flatten compound queries */
-	if (OptimizationDisabled(db, SQL_QueryFlattener))
+	if (OptimizationDisabled(SQL_QueryFlattener))
 		return 0;
 	pSrc = p->pSrc;
 	assert(pSrc && iFrom >= 0 && iFrom < pSrc->nSrc);
@@ -5605,11 +5599,9 @@ sqlSelect(Parse * pParse,		/* The parser context */
 	SortCtx sSort;		/* Info on how to code the ORDER BY clause */
 	AggInfo sAggInfo;	/* Information used by aggregate queries */
 	int iEnd;		/* Address of the end of the query */
-	sql *db;		/* The database connection */
 	int iRestoreSelectId = pParse->iSelectId;
 	pParse->iSelectId = pParse->iNextSelectId++;
 
-	db = pParse->db;
 	if (p == NULL || pParse->is_aborted)
 		return 1;
 	memset(&sAggInfo, 0, sizeof(sAggInfo));
@@ -5782,7 +5774,7 @@ sqlSelect(Parse * pParse,		/* The parser context */
 		 */
 		if (i == 0 && (pTabList->nSrc == 1 || (pTabList->a[1].fg.jointype & (JT_LEFT | JT_CROSS)) != 0)	/* (1) */
 		    &&(p->selFlags & SF_All) == 0	/* (2) */
-		    && OptimizationEnabled(db, SQL_SubqCoroutine)	/* (3) */
+		    && OptimizationEnabled(SQL_SubqCoroutine)	/* (3) */
 		    ) {
 			/* Implement a co-routine that will return a single row of the result
 			 * set on each invocation.
@@ -6278,7 +6270,7 @@ sqlSelect(Parse * pParse,		/* The parser context */
 			 * disable this optimization for testing purposes.
 			 */
 			if (orderByGrp
-			    && OptimizationEnabled(db, SQL_GroupByOrder)
+			    && OptimizationEnabled(SQL_GroupByOrder)
 			    && (groupBySort || sqlWhereIsSorted(pWInfo))
 			    ) {
 				sSort.pOrderBy = 0;

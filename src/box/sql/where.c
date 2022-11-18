@@ -3157,7 +3157,6 @@ wherePathSatisfiesOrderBy(WhereInfo * pWInfo,	/* The WHERE clause */
 	WhereTerm *pTerm;	/* A single term of the WHERE clause */
 	Expr *pOBExpr;		/* An expression from the ORDER BY clause */
 	struct index_def *idx_def;
-	sql *db = pWInfo->pParse->db;	/* Database connection */
 	Bitmask obSat = 0;	/* Mask of ORDER BY terms satisfied so far */
 	Bitmask obDone;		/* Mask of all ORDER BY terms */
 	Bitmask orderDistinctMask;	/* Mask of all well-ordered loops */
@@ -3182,7 +3181,7 @@ wherePathSatisfiesOrderBy(WhereInfo * pWInfo,	/* The WHERE clause */
 	 */
 
 	assert(pOrderBy != 0);
-	if (nLoop && OptimizationDisabled(db, SQL_OrderByIdxJoin))
+	if (nLoop && OptimizationDisabled(SQL_OrderByIdxJoin))
 		return 0;
 
 	nOrderBy = pOrderBy->nExpr;
@@ -4209,7 +4208,6 @@ sqlWhereBegin(Parse * pParse,	/* The parser context */
 	WhereLevel *pLevel;	/* A single level in pWInfo->a[] */
 	WhereLoop *pLoop;	/* Pointer to a single WhereLoop object */
 	int ii;			/* Loop counter */
-	sql *db;		/* Database connection */
 	int rc;			/* Return code */
 	u8 bFordelete = 0;	/* OPFLAG_FORDELETE or zero, as appropriate */
 
@@ -4231,7 +4229,6 @@ sqlWhereBegin(Parse * pParse,	/* The parser context */
 	       || (wctrlFlags & WHERE_USE_LIMIT) == 0);
 
 	/* Variable initialization */
-	db = pParse->db;
 	memset(&sWLB, 0, sizeof(sWLB));
 
 	/* An ORDER/GROUP BY clause of more than 63 terms cannot be optimized */
@@ -4242,7 +4239,7 @@ sqlWhereBegin(Parse * pParse,	/* The parser context */
 	/* Disable the DISTINCT optimization if SQL_DistinctOpt is set via
 	 * sql_test_ctrl(SQL_TESTCTRL_OPTIMIZATIONS,...)
 	 */
-	if (OptimizationDisabled(db, SQL_DistinctOpt)) {
+	if (OptimizationDisabled(SQL_DistinctOpt)) {
 		wctrlFlags &= ~WHERE_WANT_DISTINCT;
 	}
 
@@ -4442,7 +4439,7 @@ sqlWhereBegin(Parse * pParse,	/* The parser context */
 #endif
 	/* Attempt to omit tables from the join that do not effect the result */
 	if (pWInfo->nLevel >= 2
-	    && pDistinctSet != 0 && OptimizationEnabled(db, SQL_OmitNoopJoin)
+	    && pDistinctSet != 0 && OptimizationEnabled(SQL_OmitNoopJoin)
 	    ) {
 		Bitmask tabUsed =
 		    sqlWhereExprListUsage(pMaskSet, pDistinctSet);

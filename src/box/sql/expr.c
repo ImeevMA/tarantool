@@ -3354,7 +3354,7 @@ sqlExprCacheStore(Parse * pParse, int iTab, int iCol, int iReg)
 	 * for testing only - to verify that sql always gets the same answer
 	 * with and without the column cache.
 	 */
-	if (OptimizationDisabled(pParse->db, SQL_ColumnCache))
+	if (OptimizationDisabled(SQL_ColumnCache))
 		return;
 
 	/* First replace any existing entry.
