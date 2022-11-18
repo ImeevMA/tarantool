@@ -3324,18 +3324,16 @@ sqlWithAdd(Parse * pParse,	/* Parsing context */
 	return pNew;
 }
 
-/*
- * Free the contents of the With object passed as the second argument.
- */
+/** Free the contents of the With object and remove the object. */
 void
-sqlWithDelete(sql * db, With * pWith)
+sqlWithDelete(struct With *pWith)
 {
 	if (pWith) {
 		int i;
 		for (i = 0; i < pWith->nCte; i++) {
 			struct Cte *pCte = &pWith->a[i];
 			sql_expr_list_delete(pCte->pCols);
-			sql_select_delete(db, pCte->pSelect);
+			sql_select_delete(sql_get(), pCte->pSelect);
 			sqlDbFree(pCte->zName);
 		}
 		sqlDbFree(pWith);

@@ -4195,7 +4195,11 @@ int
 sql_binary_compare_coll_seq(Parse *parser, Expr *left, Expr *right,
 			    uint32_t *id);
 With *sqlWithAdd(Parse *, With *, Token *, ExprList *, Select *);
-void sqlWithDelete(sql *, With *);
+
+/** Free the contents of the With object and remove the object. */
+void
+sqlWithDelete(struct With *pWith);
+
 void sqlWithPush(Parse *, With *, u8);
 
 /*

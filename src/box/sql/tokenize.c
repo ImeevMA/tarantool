@@ -562,7 +562,7 @@ sqlRunParser(Parse * pParse, const char *zSql)
 	parser_space_delete(db, pParse->create_column_def.space);
 
 	if (pParse->pWithToFree)
-		sqlWithDelete(db, pParse->pWithToFree);
+		sqlWithDelete(pParse->pWithToFree);
 	sqlDbFree(pParse->pVList);
 	return pParse->is_aborted ? -1 : 0;
 }

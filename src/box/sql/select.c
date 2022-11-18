@@ -319,7 +319,7 @@ clearSelect(sql * db, Select * p, int bFree)
 		sql_expr_delete(p->pLimit);
 		sql_expr_delete(p->pOffset);
 		if (p->pWith)
-			sqlWithDelete(db, p->pWith);
+			sqlWithDelete(p->pWith);
 		if (bFree)
 			sqlDbFree(p);
 		p = pPrior;

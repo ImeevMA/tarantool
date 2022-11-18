@@ -500,7 +500,7 @@ select(A) ::= with(W) selectnowith(X). {
     p->pWith = W;
     parserDoubleLinkSelect(pParse, p);
   }else{
-    sqlWithDelete(pParse->db, W);
+    sqlWithDelete(W);
   }
   A = p; /*A-overwrites-W*/
 }
@@ -1769,8 +1769,8 @@ cmd ::= alter_table_start(A) enable(E) CHECK CONSTRAINT nm(Z). {
 //////////////////////// COMMON TABLE EXPRESSIONS ////////////////////////////
 %type with {With*}
 %type wqlist {With*}
-%destructor with {sqlWithDelete(pParse->db, $$);}
-%destructor wqlist {sqlWithDelete(pParse->db, $$);}
+%destructor with {sqlWithDelete($$);}
+%destructor wqlist {sqlWithDelete($$);}
 
 with(A) ::= . {A = 0;}
 with(A) ::= WITH wqlist(W).              { A = W; }
