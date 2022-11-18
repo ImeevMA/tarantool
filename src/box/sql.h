@@ -189,21 +189,6 @@ int
 sql_expr_sizeof(struct Expr *p, int flags);
 
 /**
- * This function is similar to sqlExprDup(), except that if pzBuffer
- * is not NULL then *pzBuffer is assumed to point to a buffer large enough
- * to store the copy of expression p, the copies of p->u.zToken
- * (if applicable), and the copies of the p->pLeft and p->pRight expressions,
- * if any. Before returning, *pzBuffer is set to the first byte past the
- * portion of the buffer copied into by this function.
- * @param db SQL handle.
- * @param p Root of expression's AST.
- * @param dupFlags EXPRDUP_REDUCE or 0.
- * @param pzBuffer If not NULL, then buffer to store duplicate.
- */
-struct Expr *
-sql_expr_dup(struct sql *db, struct Expr *p, int flags, char **buffer);
-
-/**
  * Free AST pointed by expr.
  *
  * @param expr Root pointer of ASR

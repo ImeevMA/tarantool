@@ -1468,8 +1468,20 @@ sql_expr_sizeof(struct Expr *p, int flags)
 	return size;
 }
 
-struct Expr *
-sql_expr_dup(struct sql *db, struct Expr *p, int flags, char **buffer)
+/**
+ * This function is similar to sqlExprDup(), except that if pzBuffer
+ * is not NULL then *pzBuffer is assumed to point to a buffer large enough
+ * to store the copy of expression p, the copies of p->u.zToken
+ * (if applicable), and the copies of the p->pLeft and p->pRight expressions,
+ * if any. Before returning, *pzBuffer is set to the first byte past the
+ * portion of the buffer copied into by this function.
+ *
+ * @param p Root of expression's AST.
+ * @param dupFlags EXPRDUP_REDUCE or 0.
+ * @param pzBuffer If not NULL, then buffer to store duplicate.
+ */
+static struct Expr *
+sql_expr_dup(struct Expr *p, int flags, char **buffer)
 {
 	Expr *pNew;		/* Value to return */
 	u32 staticFlag;         /* EP_Static if space not obtained from malloc */
@@ -1486,85 +1498,77 @@ sql_expr_dup(struct sql *db, struct Expr *p, int flags, char **buffer)
 		zAlloc = sqlDbMallocRawNN(sql_expr_sizeof(p, flags));
 		staticFlag = 0;
 	}
+	assert(zAlloc != NULL);
 	pNew = (Expr *) zAlloc;
 
-	if (pNew) {
-		/* Set nNewSize to the size allocated for the structure pointed to
-		 * by pNew. This is either EXPR_FULLSIZE, EXPR_REDUCEDSIZE or
-		 * EXPR_TOKENONLYSIZE. nToken is set to the number of bytes consumed
-		 * by the copy of the p->u.zToken string (if any).
-		 */
-		const unsigned nStructSize = dupedExprStructSize(p, flags);
-		const int nNewSize = nStructSize & 0xfff;
-		int nToken;
-		if (!ExprHasProperty(p, EP_IntValue) && p->u.zToken)
-			nToken = sqlStrlen30(p->u.zToken) + 1;
+	/*
+	 * Set nNewSize to the size allocated for the structure pointed to
+	 * by pNew. This is either EXPR_FULLSIZE, EXPR_REDUCEDSIZE or
+	 * EXPR_TOKENONLYSIZE. nToken is set to the number of bytes consumed
+	 * by the copy of the p->u.zToken string (if any).
+	 */
+	const unsigned nStructSize = dupedExprStructSize(p, flags);
+	const int nNewSize = nStructSize & 0xfff;
+	int nToken;
+	if (!ExprHasProperty(p, EP_IntValue) && p->u.zToken)
+		nToken = sqlStrlen30(p->u.zToken) + 1;
+	else
+		nToken = 0;
+	if (flags != 0) {
+		assert(ExprHasProperty(p, EP_Reduced) == 0);
+		memcpy(zAlloc, p, nNewSize);
+	} else {
+		size_t nSize = exprStructSize(p);
+		memcpy(zAlloc, p, nSize);
+		if (nSize < EXPR_FULLSIZE)
+			memset(&zAlloc[nSize], 0, EXPR_FULLSIZE - nSize);
+	}
+
+	/*
+	 * Set the EP_Reduced, EP_TokenOnly, and EP_Static flags appropriately.
+	 */
+	pNew->flags &= ~(EP_Reduced | EP_TokenOnly | EP_Static | EP_MemToken);
+	pNew->flags |= nStructSize & (EP_Reduced | EP_TokenOnly);
+	pNew->flags |= staticFlag;
+
+	/* Copy the p->u.zToken string, if any. */
+	if (nToken != 0) {
+		pNew->u.zToken = &zAlloc[nNewSize];
+		memcpy(pNew->u.zToken, p->u.zToken, nToken);
+	}
+
+	if (((p->flags | pNew->flags) & (EP_TokenOnly | EP_Leaf)) == 0) {
+		/* Fill in the pNew->x.pSelect or pNew->x.pList member. */
+		struct sql *db = sql_get();
+		if (ExprHasProperty(p, EP_xIsSelect))
+			pNew->x.pSelect = sqlSelectDup(db, p->x.pSelect, flags);
 		else
-			nToken = 0;
-		if (flags) {
-			assert(ExprHasProperty(p, EP_Reduced) == 0);
-			memcpy(zAlloc, p, nNewSize);
-		} else {
-			u32 nSize = (u32) exprStructSize(p);
-			memcpy(zAlloc, p, nSize);
-			if (nSize < EXPR_FULLSIZE) {
-				memset(&zAlloc[nSize], 0,
-				       EXPR_FULLSIZE - nSize);
-			}
+			pNew->x.pList = sql_expr_list_dup(p->x.pList, flags);
+	}
+
+	/* Fill in pNew->pLeft and pNew->pRight. */
+	if (ExprHasProperty(pNew, EP_Reduced | EP_TokenOnly)) {
+		zAlloc += dupedExprNodeSize(p, flags);
+		if (!ExprHasProperty(pNew, EP_TokenOnly | EP_Leaf)) {
+			pNew->pLeft = p->pLeft != NULL ?
+				      sql_expr_dup(p->pLeft, EXPRDUP_REDUCE,
+						   &zAlloc) : NULL;
+			pNew->pRight = p->pRight != NULL ?
+				       sql_expr_dup(p->pRight, EXPRDUP_REDUCE,
+						    &zAlloc) : NULL;
 		}
-
-		/* Set the EP_Reduced, EP_TokenOnly, and EP_Static flags appropriately. */
-		pNew->flags &=
-		    ~(EP_Reduced | EP_TokenOnly | EP_Static | EP_MemToken);
-		pNew->flags |= nStructSize & (EP_Reduced | EP_TokenOnly);
-		pNew->flags |= staticFlag;
-
-		/* Copy the p->u.zToken string, if any. */
-		if (nToken) {
-			char *zToken = pNew->u.zToken =
-			    (char *)&zAlloc[nNewSize];
-			memcpy(zToken, p->u.zToken, nToken);
-		}
-
-		if (0 == ((p->flags | pNew->flags) & (EP_TokenOnly | EP_Leaf))) {
-			/* Fill in the pNew->x.pSelect or pNew->x.pList member. */
-			if (ExprHasProperty(p, EP_xIsSelect)) {
-				pNew->x.pSelect =
-				    sqlSelectDup(db, p->x.pSelect,
-						     flags);
+		if (buffer != NULL)
+			*buffer = zAlloc;
+	} else {
+		if (!ExprHasProperty(p, EP_TokenOnly | EP_Leaf)) {
+			if (pNew->op == TK_SELECT_COLUMN) {
+				pNew->pLeft = p->pLeft;
+				assert(p->iColumn == 0 || p->pRight == 0);
+				assert(p->pRight == 0 || p->pRight == p->pLeft);
 			} else {
-				pNew->x.pList =
-					sql_expr_list_dup(p->x.pList, flags);
+				pNew->pLeft = sqlExprDup(p->pLeft, 0);
 			}
-		}
-
-		/* Fill in pNew->pLeft and pNew->pRight. */
-		if (ExprHasProperty(pNew, EP_Reduced | EP_TokenOnly)) {
-			zAlloc += dupedExprNodeSize(p, flags);
-			if (!ExprHasProperty(pNew, EP_TokenOnly | EP_Leaf)) {
-				pNew->pLeft = p->pLeft ?
-				    sql_expr_dup(db, p->pLeft, EXPRDUP_REDUCE,
-						 &zAlloc) : 0;
-				pNew->pRight =
-				    p->pRight ? sql_expr_dup(db, p->pRight,
-							     EXPRDUP_REDUCE,
-							     &zAlloc) : 0;
-			}
-			if (buffer)
-				*buffer = zAlloc;
-		} else {
-			if (!ExprHasProperty(p, EP_TokenOnly | EP_Leaf)) {
-				if (pNew->op == TK_SELECT_COLUMN) {
-					pNew->pLeft = p->pLeft;
-					assert(p->iColumn == 0
-					       || p->pRight == 0);
-					assert(p->pRight == 0
-					       || p->pRight == p->pLeft);
-				} else {
-					pNew->pLeft = sqlExprDup(p->pLeft, 0);
-				}
-				pNew->pRight = sqlExprDup(p->pRight, 0);
-			}
+			pNew->pRight = sqlExprDup(p->pRight, 0);
 		}
 	}
 	return pNew;
@@ -1597,7 +1601,7 @@ struct Expr *
 sqlExprDup(struct Expr *p, int flags)
 {
 	assert(flags == 0 || flags == EXPRDUP_REDUCE);
-	return p != NULL ? sql_expr_dup(sql_get(), p, flags, 0) : NULL;
+	return p != NULL ? sql_expr_dup(p, flags, 0) : NULL;
 }
 
 struct ExprList *
