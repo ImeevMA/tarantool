@@ -1728,17 +1728,16 @@ vdbe_metadata_set_col_span(struct Vdbe *p, int idx, const char *span)
 static void
 checkActiveVdbeCnt()
 {
-	struct sql *db = sql_get();
 	Vdbe *p;
 	int cnt = 0;
-	p = db->pVdbe;
+	p = sql_get()->pVdbe;
 	while (p) {
 		if (sql_stmt_busy((sql_stmt *) p)) {
 			cnt++;
 		}
 		p = p->pNext;
 	}
-	assert(cnt == db->nVdbeActive);
+	assert(cnt == sql_get()->nVdbeActive);
 }
 #else
 #define checkActiveVdbeCnt()
