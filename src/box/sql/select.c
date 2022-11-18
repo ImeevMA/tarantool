@@ -4896,7 +4896,6 @@ selectExpander(Walker * pWalker, Select * p)
 	SrcList *pTabList;
 	ExprList *pEList;
 	struct SrcList_item *pFrom;
-	sql *db = pParse->db;
 	Expr *pE, *pRight, *pExpr;
 	u16 selFlags = p->selFlags;
 
@@ -4978,7 +4977,7 @@ selectExpander(Walker * pWalker, Select * p)
 			}
 			if (space->def->opts.is_view) {
 				struct Select *select =
-					sql_view_compile(db, space->def->opts.sql);
+					sql_view_compile(space->def->opts.sql);
 				if (select == NULL)
 					return WRC_Abort;
 				sqlSrcListAssignCursors(pParse,
@@ -5185,10 +5184,10 @@ selectExpander(Walker * pWalker, Select * p)
 		p->pEList = pNew;
 	}
 #if SQL_MAX_COLUMN
-	if (p->pEList && p->pEList->nExpr > db->aLimit[SQL_LIMIT_COLUMN]) {
+	if (p->pEList && p->pEList->nExpr > SQL_MAX_COLUMN) {
 		diag_set(ClientError, ER_SQL_PARSER_LIMIT, "The number of "\
 			 "columns in result set", p->pEList->nExpr,
-			 db->aLimit[SQL_LIMIT_COLUMN]);
+			 SQL_MAX_COLUMN);
 		pParse->is_aborted = true;
 		return WRC_Abort;
 	}

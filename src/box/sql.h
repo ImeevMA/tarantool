@@ -91,12 +91,11 @@ sql_expr_compile(const char *expr, int expr_len);
  * This routine executes parser on 'CREATE VIEW ...' statement
  * and loads content of SELECT into internal structs as result.
  *
- * @param db Current SQL context.
  * @param view_stmt String containing 'CREATE VIEW' statement.
  * @retval AST of SELECT statement on success, NULL otherwise.
  */
 struct Select *
-sql_view_compile(struct sql *db, const char *view_stmt);
+sql_view_compile(const char *view_stmt);
 
 /**
  * Perform parsing of provided SQL request and construct trigger AST.

@@ -1534,8 +1534,7 @@ int
 sql_view_assign_cursors(struct Parse *parse, const char *view_stmt)
 {
 	assert(view_stmt != NULL);
-	struct sql *db = parse->db;
-	struct Select *select = sql_view_compile(db, view_stmt);
+	struct Select *select = sql_view_compile(view_stmt);
 	if (select == NULL)
 		return -1;
 	sqlSrcListAssignCursors(parse, select->pSrc);

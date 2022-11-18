@@ -2157,8 +2157,7 @@ on_replace_dd_space(struct trigger * /* trigger */, void *event)
 			return -1;
 		txn_stmt_on_rollback(stmt, on_rollback);
 		if (def->opts.is_view) {
-			struct Select *select = sql_view_compile(sql_get(),
-								 def->opts.sql);
+			struct Select *select = sql_view_compile(def->opts.sql);
 			if (select == NULL)
 				return -1;
 			auto select_guard = make_scoped_guard([=] {
@@ -2272,8 +2271,7 @@ on_replace_dd_space(struct trigger * /* trigger */, void *event)
 		txn_stmt_on_rollback(stmt, on_rollback);
 		if (old_space->def->opts.is_view) {
 			struct Select *select =
-				sql_view_compile(sql_get(),
-						 old_space->def->opts.sql);
+				sql_view_compile(old_space->def->opts.sql);
 			if (select == NULL)
 				return -1;
 			auto select_guard = make_scoped_guard([=] {

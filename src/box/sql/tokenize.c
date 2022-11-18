@@ -603,9 +603,8 @@ end:
 }
 
 struct Select *
-sql_view_compile(struct sql *db, const char *view_stmt)
+sql_view_compile(const char *view_stmt)
 {
-	(void)db;
 	struct Parse parser;
 	sql_parser_create(&parser, default_flags);
 	parser.parse_only = true;
