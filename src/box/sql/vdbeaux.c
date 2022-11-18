@@ -2024,10 +2024,9 @@ sqlVdbeFinalize(Vdbe * p)
  * VdbeDelete() also unlinks the Vdbe from the list of VMs associated with
  * the database connection and frees the object itself.
  */
-void
-sqlVdbeClearObject(sql * db, Vdbe * p)
+static void
+sqlVdbeClearObject(struct Vdbe *p)
 {
-	(void)db;
 	SubProgram *pSub, *pNext;
 	vdbe_metadata_delete(p);
 	for (pSub = p->pProgram; pSub; pSub = pNext) {
@@ -2055,7 +2054,7 @@ sqlVdbeDelete(Vdbe * p)
 	if (NEVER(p == 0))
 		return;
 	db = p->db;
-	sqlVdbeClearObject(db, p);
+	sqlVdbeClearObject(p);
 	if (p->pPrev) {
 		p->pPrev->pNext = p->pNext;
 	} else {

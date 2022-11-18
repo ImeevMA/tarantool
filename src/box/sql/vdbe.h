@@ -217,7 +217,6 @@ void
 vdbe_metadata_delete(struct Vdbe *v);
 
 void sqlVdbeDelete(Vdbe *);
-void sqlVdbeClearObject(sql *, Vdbe *);
 void sqlVdbeMakeReady(Vdbe *, Parse *);
 int sqlVdbeFinalize(Vdbe *);
 void sqlVdbeResolveLabel(Vdbe *, int);
