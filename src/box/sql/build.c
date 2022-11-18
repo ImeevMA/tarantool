@@ -2086,7 +2086,7 @@ sql_create_foreign_key(struct Parse *parse_context)
 						    in_child_space)
 					idx++;
 			}
-			constraint_name = sqlMPrintf(db, "fk_unnamed_%s_%u",
+			constraint_name = sqlMPrintf("fk_unnamed_%s_%u",
 						     space->def->name, idx);
 		} else {
 			constraint_name =
@@ -2664,10 +2664,10 @@ sql_create_index(struct Parse *parse) {
 		uint32_t idx_count = space->index_count;
 		if (constraint_name == NULL) {
 			if (idx_type == SQL_INDEX_TYPE_CONSTRAINT_UNIQUE) {
-				name = sqlMPrintf(db, "unique_unnamed_%s_%d",
+				name = sqlMPrintf("unique_unnamed_%s_%d",
 						  def->name, idx_count + 1);
 			} else {
-				name = sqlMPrintf(db, "pk_unnamed_%s_%d",
+				name = sqlMPrintf("pk_unnamed_%s_%d",
 						  def->name, idx_count + 1);
 			}
 		} else {

@@ -2432,7 +2432,13 @@ struct PrintfArguments {
 
 void sqlVXPrintf(StrAccum *, const char *, va_list);
 void sqlXPrintf(StrAccum *, const char *, ...);
-char *sqlMPrintf(sql *, const char *, ...);
+
+/**
+ * Print into memory obtained from sqlDbMallocRawNN(). Use the internal
+ * %-conversion extensions.
+ */
+char *
+sqlMPrintf(const char *zFormat, ...);
 
 /**
  * Print into memory obtained from sqlDbMallocRawNN(). Use the internal

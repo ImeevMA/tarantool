@@ -1715,9 +1715,7 @@ explainTempTable(Parse * pParse, const char *zUsage)
 {
 	if (pParse->explain == 2) {
 		Vdbe *v = pParse->pVdbe;
-		char *zMsg =
-		    sqlMPrintf(pParse->db, "USE TEMP B-TREE FOR %s",
-				   zUsage);
+		char *zMsg = sqlMPrintf("USE TEMP B-TREE FOR %s", zUsage);
 		sqlVdbeAddOp4(v, OP_Explain, pParse->iSelectId, 0, 0, zMsg,
 				  P4_DYNAMIC);
 	}
@@ -1749,13 +1747,9 @@ explainComposite(Parse * pParse,	/* Parse context */
 	       || op == TK_ALL);
 	if (pParse->explain == 2) {
 		Vdbe *v = pParse->pVdbe;
-		char *zMsg =
-		    sqlMPrintf(pParse->db,
-				   "COMPOUND SUBQUERIES %d AND %d %s(%s)",
-				   iSub1, iSub2,
-				   bUseTmp ? "USING TEMP B-TREE " : "",
-				   sql_select_op_name(op)
-		    );
+		char *zMsg = sqlMPrintf("COMPOUND SUBQUERIES %d AND %d %s(%s)",
+			iSub1, iSub2, bUseTmp ? "USING TEMP B-TREE " : "",
+			sql_select_op_name(op));
 		sqlVdbeAddOp4(v, OP_Explain, pParse->iSelectId, 0, 0, zMsg,
 				  P4_DYNAMIC);
 	}
@@ -2059,7 +2053,6 @@ sqlColumnsFromExprList(Parse * parse, ExprList * expr_list,
 			   struct space_def *space_def)
 {
 	/* Database connection */
-	sql *db = parse->db;
 	u32 cnt;		/* Index added to make the name unique */
 	char *zName;		/* Column name */
 	int nName;		/* Size of name in zName[] */
@@ -2135,8 +2128,7 @@ sqlColumnsFromExprList(Parse * parse, ExprList * expr_list,
 				if (zName[j] == '_')
 					nName = j;
 			}
-			zName =
-			    sqlMPrintf(db, "%.*z_%u", nName, zName, ++cnt);
+			zName = sqlMPrintf("%.*z_%u", nName, zName, ++cnt);
 		}
 		size_t name_len = strlen(zName);
 		void *field = &space_def->fields[i];
@@ -5145,9 +5137,8 @@ selectExpander(Walker * pWalker, Select * p)
 									 pRight);
 							if (longNames) {
 								zColname =
-								    sqlMPrintf
-								    (db,
-								     "%s.%s",
+								    sqlMPrintf(
+								    "%s.%s",
 								     zTabName,
 								     zName);
 								zToFree =
@@ -5172,10 +5163,9 @@ selectExpander(Walker * pWalker, Select * p)
 							if (pSub) {
 								pX->zSpan = sqlDbStrDup(pSub->pEList->a[j].zSpan);
 							} else {
-								pX->zSpan = sqlMPrintf(db,
-											   "%s.%s",
-											   zTabName,
-											   zColname);
+								pX->zSpan = sqlMPrintf("%s.%s",
+										       zTabName,
+										       zColname);
 							}
 							pX->bSpanIsTab = 1;
 						}
@@ -5556,8 +5546,7 @@ static void
 explain_simple_count(struct Parse *parse_context, const char *table_name)
 {
 	if (parse_context->explain == 2) {
-		char *zEqp = sqlMPrintf(parse_context->db, "B+tree count %s",
-					    table_name);
+		char *zEqp = sqlMPrintf("B+tree count %s", table_name);
 		sqlVdbeAddOp4(parse_context->pVdbe, OP_Explain,
 				  parse_context->iSelectId, 0, 0, zEqp,
 				  P4_DYNAMIC);

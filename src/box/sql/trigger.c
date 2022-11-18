@@ -178,8 +178,7 @@ sql_trigger_finish(struct Parse *parse, struct TriggerStep *step_list,
 		if (v == 0)
 			goto cleanup;
 
-		char *sql_str =
-			sqlMPrintf(db, "CREATE TRIGGER %s", token->z);
+		char *sql_str = sqlMPrintf("CREATE TRIGGER %s", token->z);
 
 		int first_col = parse->nMem + 1;
 		parse->nMem += 3;
@@ -691,10 +690,9 @@ sql_row_trigger_program(struct Parse *parser, struct sql_trigger *trigger,
 			     (trigger->op == TK_INSERT ? "INSERT" : ""),
 			     (trigger->op == TK_DELETE ? "DELETE" : ""),
 			      space->def->name));
-		sqlVdbeChangeP4(v, -1,
-				    sqlMPrintf(db, "-- TRIGGER %s",
-						   trigger->zName),
-				    P4_DYNAMIC);
+		sqlVdbeChangeP4(v, -1, sqlMPrintf("-- TRIGGER %s",
+						  trigger->zName),
+				P4_DYNAMIC);
 
 		/*
 		 * If one was specified, code the WHEN clause. If

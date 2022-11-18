@@ -968,10 +968,6 @@ sqlStrAccumInit(struct StrAccum *p, char *zBase, int n, int mx)
 	p->printfFlags = 0;
 }
 
-/*
- * Print into memory obtained from sqlDbMallocRawNN(). Use the internal
- * %-conversion extensions.
- */
 char *
 sqlVMPrintf(const char *zFormat, va_list ap)
 {
@@ -985,14 +981,9 @@ sqlVMPrintf(const char *zFormat, va_list ap)
 	return z;
 }
 
-/*
- * Print into memory obtained from sqlDbMallocRawNN(). Use the internal
- * %-conversion extensions.
- */
 char *
-sqlMPrintf(sql * db, const char *zFormat, ...)
+sqlMPrintf(const char *zFormat, ...)
 {
-	(void)db;
 	va_list ap;
 	char *z;
 	va_start(ap, zFormat);

@@ -108,7 +108,7 @@ sql_alter_ck_constraint_enable(struct Parse *parse)
 		      sqlDbStrDup(constraint_name), P4_DYNAMIC);
 	int addr = sqlVdbeAddOp4Int(v, OP_Found, cursor, 0, key_reg, 2);
 	sqlVdbeAddOp4(v, OP_SetDiag, ER_NO_SUCH_CONSTRAINT, 0, 0,
-		      sqlMPrintf(db, tnt_errcode_desc(ER_NO_SUCH_CONSTRAINT),
+		      sqlMPrintf(tnt_errcode_desc(ER_NO_SUCH_CONSTRAINT),
 				 constraint_name, tbl_name), P4_DYNAMIC);
 	sqlVdbeAddOp2(v, OP_Halt, -1, ON_CONFLICT_ACTION_ABORT);
 	sqlVdbeJumpHere(v, addr);
@@ -140,6 +140,7 @@ char*
 rename_trigger(sql *db, char const *sql_stmt, char const *table_name,
 	       bool *is_quoted)
 {
+	(void)db;
 	assert(sql_stmt);
 	assert(table_name);
 	assert(is_quoted);
@@ -149,7 +150,6 @@ rename_trigger(sql *db, char const *sql_stmt, char const *table_name,
 	int dist = 3;
 	char const *csr = (char const*)sql_stmt;
 	int len = 0;
-	char *new_sql_stmt;
 	bool unused;
 
 	/* The principle used to locate the table name in the CREATE TRIGGER
@@ -194,8 +194,6 @@ rename_trigger(sql *db, char const *sql_stmt, char const *table_name,
 	/* Variable tname now contains the token that is the old table-name
 	 * in the CREATE TRIGGER statement.
 	 */
-	new_sql_stmt = sqlMPrintf(db, "%.*s\"%w\"%s",
-				      (int)((tname.z) - sql_stmt), sql_stmt,
-				      table_name, tname.z + tname.n);
-	return new_sql_stmt;
+	return sqlMPrintf("%.*s\"%w\"%s", (int)((tname.z) - sql_stmt), sql_stmt,
+			  table_name, tname.z + tname.n);
 }

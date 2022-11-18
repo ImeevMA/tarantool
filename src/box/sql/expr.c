@@ -2382,7 +2382,6 @@ sqlFindInIndex(Parse * pParse,	/* Parsing context */
 	 * ephemeral table.
 	 */
 	if (!pParse->is_aborted && (p = isCandidateForInOpt(pX)) != 0) {
-		sql *db = pParse->db;	/* Database connection */
 		ExprList *pEList = p->pEList;
 		int nExpr = pEList->nExpr;
 
@@ -2483,12 +2482,11 @@ sqlFindInIndex(Parse * pParse,	/* Parsing context */
 				if (colUsed == (MASKBIT(nExpr) - 1)) {
 					/* If we reach this point, that means the index pIdx is usable */
 					int iAddr = sqlVdbeAddOp0(v, OP_Once);
-					sqlVdbeAddOp4(v, OP_Explain,
-							  0, 0, 0,
-							  sqlMPrintf(db,
-							  "USING INDEX %s FOR IN-OPERATOR",
-							  idx->def->name),
-							  P4_DYNAMIC);
+					char *str = sqlMPrintf("USING INDEX %s "
+						"FOR IN-OPERATOR",
+						idx->def->name);
+					sqlVdbeAddOp4(v, OP_Explain, 0, 0, 0,
+						      str, P4_DYNAMIC);
 					vdbe_emit_open_cursor(pParse, iTab,
 							      idx->def->iid,
 							      space);
@@ -2640,11 +2638,10 @@ sqlCodeSubselect(Parse * pParse,	/* Parsing context */
 	if (!ExprHasProperty(pExpr, EP_VarSelect))
 		jmpIfDynamic = sqlVdbeAddOp0(v, OP_Once);
 	if (pParse->explain == 2) {
-		char *zMsg =
-		    sqlMPrintf(pParse->db, "EXECUTE %s%s SUBQUERY %d",
-				   jmpIfDynamic >= 0 ? "" : "CORRELATED ",
-				   pExpr->op == TK_IN ? "LIST" : "SCALAR",
-				   pParse->iNextSelectId);
+		char *zMsg = sqlMPrintf("EXECUTE %s%s SUBQUERY %d",
+			jmpIfDynamic >= 0 ? "" : "CORRELATED ",
+			pExpr->op == TK_IN ? "LIST" : "SCALAR",
+			pParse->iNextSelectId);
 		sqlVdbeAddOp4(v, OP_Explain, pParse->iSelectId, 0, 0, zMsg,
 				  P4_DYNAMIC);
 	}
