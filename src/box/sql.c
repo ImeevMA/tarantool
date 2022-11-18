@@ -663,7 +663,7 @@ int tarantoolsqlRenameTrigger(const char *trig_name,
 	memcpy(trigger_stmt, trigger_stmt_old, trigger_stmt_len);
 	trigger_stmt[trigger_stmt_len] = '\0';
 	bool is_quoted = false;
-	trigger_stmt = rename_trigger(db, trigger_stmt, new_table_name, &is_quoted);
+	trigger_stmt = rename_trigger(trigger_stmt, new_table_name, &is_quoted);
 
 	uint32_t trigger_stmt_new_len = trigger_stmt_len + new_table_name_len -
 					old_table_name_len + 2 * (!is_quoted);

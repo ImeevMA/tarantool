@@ -3924,7 +3924,15 @@ int sqlResolveExprListNames(NameContext *, ExprList *);
 void sqlResolveSelectNames(Parse *, Select *, NameContext *);
 int sqlResolveOrderGroupBy(Parse *, Select *, ExprList *, const char *);
 
-char* rename_trigger(sql *, char const *, char const *, bool *);
+/**
+ * This function is used to implement the ALTER TABLE command. The table name in
+ * the CREATE TRIGGER statement is replaced with the third argument and the
+ * result returned. This is analagous to rename_table() above, except for
+ * CREATE TRIGGER, not CREATE INDEX and CREATE TABLE.
+ */
+char *
+rename_trigger(char const *sql_stmt, char const *table_name, bool *is_quoted);
+
 /**
  * Find a collation by name. Set error in @a parser if not found.
  * @param parser Parser.

@@ -131,16 +131,9 @@ exit_alter_ck_constraint:
 	sqlSrcListDelete(db, src_tab);
 }
 
-/* This function is used to implement the ALTER TABLE command.
- * The table name in the CREATE TRIGGER statement is replaced with the third
- * argument and the result returned. This is analagous to rename_table()
- * above, except for CREATE TRIGGER, not CREATE INDEX and CREATE TABLE.
- */
-char*
-rename_trigger(sql *db, char const *sql_stmt, char const *table_name,
-	       bool *is_quoted)
+char *
+rename_trigger(char const *sql_stmt, char const *table_name, bool *is_quoted)
 {
-	(void)db;
 	assert(sql_stmt);
 	assert(table_name);
 	assert(is_quoted);
