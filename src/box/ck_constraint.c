@@ -86,7 +86,7 @@ ck_constraint_resolve_field_names(struct Expr *expr,
 				  struct space_def *space_def)
 {
 	struct Parse parser;
-	sql_parser_create(&parser, sql_get(), default_flags);
+	sql_parser_create(&parser, default_flags);
 	parser.parse_only = true;
 	sql_resolve_self_reference(&parser, space_def, NC_IsCheck, expr);
 	int rc = parser.is_aborted ? -1 : 0;
@@ -113,9 +113,8 @@ static struct sql_stmt *
 ck_constraint_program_compile(struct ck_constraint_def *ck_constraint_def,
 			      struct Expr *expr)
 {
-	struct sql *db = sql_get();
 	struct Parse parser;
-	sql_parser_create(&parser, db, default_flags);
+	sql_parser_create(&parser, default_flags);
 	struct Vdbe *v = sqlGetVdbe(&parser);
 	if (v == NULL) {
 		sql_parser_destroy(&parser);

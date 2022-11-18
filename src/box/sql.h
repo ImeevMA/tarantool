@@ -263,11 +263,10 @@ sql_resolve_self_reference(struct Parse *parser, struct space_def *def,
  * A number of service allocations are performed on the region,
  * which is also cleared in the destroy function.
  * @param parser object to initialize.
- * @param db sql object.
  * @param sql_flags flags to control parser behaviour.
  */
 void
-sql_parser_create(struct Parse *parser, struct sql *db, uint32_t sql_flags);
+sql_parser_create(struct Parse *parser, uint32_t sql_flags);
 
 /**
  * Release the parser object resources.

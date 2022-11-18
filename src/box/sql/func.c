@@ -2319,7 +2319,7 @@ func_sql_expr_new(const struct func_def *def)
 		return NULL;
 
 	struct Parse parser;
-	sql_parser_create(&parser, db, default_flags);
+	sql_parser_create(&parser, default_flags);
 	struct Vdbe *v = sqlGetVdbe(&parser);
 	if (v == NULL) {
 		sql_parser_destroy(&parser);

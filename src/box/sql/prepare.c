@@ -46,7 +46,7 @@ sql_stmt_compile(const char *zSql, int nBytes, struct Vdbe *pReprepare,
 	struct sql *db = sql_get();
 	int rc = 0;	/* Result code */
 	Parse sParse;		/* Parsing context */
-	sql_parser_create(&sParse, db, current_session()->sql_flags);
+	sql_parser_create(&sParse, current_session()->sql_flags);
 	sParse.pReprepare = pReprepare;
 	*ppStmt = NULL;
 
@@ -188,10 +188,10 @@ sqlReprepare(Vdbe * p)
 }
 
 void
-sql_parser_create(struct Parse *parser, struct sql *db, uint32_t sql_flags)
+sql_parser_create(struct Parse *parser, uint32_t sql_flags)
 {
 	memset(parser, 0, sizeof(struct Parse));
-	parser->db = db;
+	parser->db = sql_get();
 	parser->sql_flags = sql_flags;
 	parser->line_count = 1;
 	parser->line_pos = 1;

@@ -570,11 +570,12 @@ sqlRunParser(Parse * pParse, const char *zSql)
 struct Expr *
 sql_expr_compile(sql *db, const char *expr, int expr_len)
 {
+	(void)db;
 	const char *outer = "FUNCTION ";
 	int len = strlen(outer) + expr_len;
 
 	struct Parse parser;
-	sql_parser_create(&parser, db, default_flags);
+	sql_parser_create(&parser, default_flags);
 	/*
 	 * Since SELECT token is added to the original expression,
 	 * to make error message display correct position we should
@@ -605,8 +606,9 @@ end:
 struct Select *
 sql_view_compile(struct sql *db, const char *view_stmt)
 {
+	(void)db;
 	struct Parse parser;
-	sql_parser_create(&parser, db, default_flags);
+	sql_parser_create(&parser, default_flags);
 	parser.parse_only = true;
 
 	struct Select *select = NULL;
@@ -626,8 +628,9 @@ sql_view_compile(struct sql *db, const char *view_stmt)
 struct sql_trigger *
 sql_trigger_compile(struct sql *db, const char *sql)
 {
+	(void)db;
 	struct Parse parser;
-	sql_parser_create(&parser, db, default_flags);
+	sql_parser_create(&parser, default_flags);
 	parser.parse_only = true;
 	struct sql_trigger *trigger = NULL;
 	if (sqlRunParser(&parser, sql) == 0 &&

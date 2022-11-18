@@ -629,8 +629,6 @@ sql_row_trigger_program(struct Parse *parser, struct sql_trigger *trigger,
 			struct space *space, int orconf)
 {
 	Parse *pTop = sqlParseToplevel(parser);
-	/* Database handle. */
-	sql *db = parser->db;
 	TriggerPrg *pPrg;	/* Value to return */
 	Expr *pWhen = 0;	/* Duplicate of trigger WHEN expression */
 	NameContext sNC;	/* Name context for sub-vdbe */
@@ -661,7 +659,7 @@ sql_row_trigger_program(struct Parse *parser, struct sql_trigger *trigger,
 	 * coding the trigger sub-program.
 	 */
 	pSubParse = sqlStackAllocZero(sizeof(Parse));
-	sql_parser_create(pSubParse, db, parser->sql_flags);
+	sql_parser_create(pSubParse, parser->sql_flags);
 	memset(&sNC, 0, sizeof(sNC));
 	sNC.pParse = pSubParse;
 	pSubParse->triggered_space = space;
