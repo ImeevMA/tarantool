@@ -102,7 +102,7 @@ struct TrigEvent { int a; IdList * b; };
 */
 static void disableLookaside(Parse *pParse){
   pParse->disableLookaside++;
-  pParse->db->lookaside.bDisable++;
+  sql_get()->lookaside.bDisable++;
 }
 
 } // end %include
@@ -471,7 +471,7 @@ cmd ::= select(X).  {
   /**
    * For a compound SELECT statement, make sure
    * p->pPrior->pNext==p for all elements in the list. And make
-   * sure list length does not exceed SQL_LIMIT_COMPOUND_SELECT.
+   * sure list length does not exceed SQL_MAX_COMPOUND_SELECT.
    */
   static void parserDoubleLinkSelect(Parse *pParse, Select *p){
     if( p->pPrior ){
@@ -481,13 +481,12 @@ cmd ::= select(X).  {
         pLoop->pNext = pNext;
         pLoop->selFlags |= SF_Compound;
       }
-      if( (p->selFlags & SF_MultiValue)==0 && 
-        (mxSelect = pParse->db->aLimit[SQL_LIMIT_COMPOUND_SELECT])>0 &&
-        cnt>mxSelect
-      ){
-         diag_set(ClientError, ER_SQL_PARSER_LIMIT, "The number of UNION or "\
-                  "EXCEPT or INTERSECT operations", cnt,
-                  pParse->db->aLimit[SQL_LIMIT_COMPOUND_SELECT]);
+      if((p->selFlags & SF_MultiValue) == 0 &&
+         (mxSelect = sql_get()->aLimit[SQL_LIMIT_COMPOUND_SELECT]) > 0 &&
+         cnt > mxSelect) {
+          diag_set(ClientError, ER_SQL_PARSER_LIMIT, "The number of UNION or "\
+                   "EXCEPT or INTERSECT operations", cnt,
+                   sql_get()->aLimit[SQL_LIMIT_COMPOUND_SELECT]);
          pParse->is_aborted = true;
       }
     }
@@ -815,8 +814,8 @@ having_opt(A) ::= HAVING expr(X).  {A = X.pExpr;}
 // except as a transient.  So there is never anything to destroy.
 //
 //%destructor limit_opt {
-//  sqlExprDelete(pParse->db, $$.pLimit);
-//  sqlExprDelete(pParse->db, $$.pOffset);
+//  sqlExprDelete($$.pLimit);
+//  sqlExprDelete($$.pOffset);
 //}
 limit_opt(A) ::= .                    {A.pLimit = 0; A.pOffset = 0;}
 limit_opt(A) ::= LIMIT expr(X).       {A.pLimit = X.pExpr; A.pOffset = 0;}

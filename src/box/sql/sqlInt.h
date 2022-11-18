@@ -1938,7 +1938,6 @@ enum ast_type {
  * each recursion.
  */
 struct Parse {
-	sql *db;		/* The main database structure */
 	Vdbe *pVdbe;		/* An engine for executing database bytecode */
 	u8 colNamesSet;		/* TRUE after OP_ColumnName has been issued to pVdbe */
 	u8 nTempReg;		/* Number of temporary registers in aTempReg[] */

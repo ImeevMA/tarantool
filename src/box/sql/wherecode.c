@@ -403,7 +403,7 @@ codeEqualityTerm(Parse * pParse,	/* The parsing context */
 					       &iSingleIdxCol);
 		} else {
 			Select *pSelect = pX->x.pSelect;
-			sql *db = pParse->db;
+			sql *db = sql_get();
 			u16 savedDbOptFlags = db->dbOptFlags;
 			ExprList *pOrigRhs = pSelect->pEList;
 			ExprList *pOrigLhs = pX->pLeft->x.pList;

@@ -845,10 +845,9 @@ codeVectorCompare(Parse * pParse,	/* Code generator context */
 int
 sqlExprCheckHeight(Parse * pParse, int nHeight)
 {
-	int mxHeight = pParse->db->aLimit[SQL_LIMIT_EXPR_DEPTH];
-	if (nHeight > mxHeight) {
+	if (nHeight > SQL_MAX_EXPR_DEPTH) {
 		diag_set(ClientError, ER_SQL_PARSER_LIMIT, "Number of nodes "\
-			 "in expression tree", nHeight, mxHeight);
+			 "in expression tree", nHeight, SQL_MAX_EXPR_DEPTH);
 		pParse->is_aborted = true;
 		return -1;
 	}

@@ -53,7 +53,7 @@ Vdbe *
 sqlVdbeCreate(Parse * pParse)
 {
 	assert(!pParse->parse_only);
-	sql *db = pParse->db;
+	sql *db = sql_get();
 	Vdbe *p;
 	p = sqlDbMallocRawNN(sizeof(Vdbe));
 	memset(p, 0, sizeof(Vdbe));

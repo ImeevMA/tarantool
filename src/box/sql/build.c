@@ -1385,7 +1385,7 @@ sqlEndTable(struct Parse *pParse)
 	struct space *new_space = pParse->create_table_def.new_space;
 	if (new_space == NULL)
 		return;
-	assert(!pParse->db->init.busy);
+	assert(!sql_get()->init.busy);
 	assert(!new_space->def->opts.is_view);
 
 	if (sql_space_primary_key(new_space) == NULL) {
@@ -1606,7 +1606,7 @@ vdbe_emit_index_drop(struct Parse *parse_context, const char *name,
 	       errcode == ER_NO_SUCH_CONSTRAINT);
 	struct Vdbe *vdbe = sqlGetVdbe(parse_context);
 	assert(vdbe != NULL);
-	assert(parse_context->db != NULL);
+	assert(sql_get() != NULL);
 	int key_reg = sqlGetTempRange(parse_context, 3);
 	sqlVdbeAddOp2(vdbe, OP_Integer, space_def->id, key_reg);
 	sqlVdbeAddOp4(vdbe, OP_String8, 0, key_reg + 1, 0, sqlDbStrDup(name),
@@ -2221,7 +2221,7 @@ fk_constraint_change_defer_mode(struct Parse *parse_context, bool is_deferred)
 {
 	struct rlist *fkeys =
 		&parse_context->create_fk_constraint_parse_def.fkeys;
-	if (parse_context->db->init.busy || rlist_empty(fkeys))
+	if (sql_get()->init.busy || rlist_empty(fkeys))
 		return;
 	rlist_first_entry(fkeys, struct fk_constraint_parse,
 			  link)->fk_def->is_deferred = is_deferred;
