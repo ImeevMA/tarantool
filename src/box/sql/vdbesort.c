@@ -978,12 +978,10 @@ vdbeSorterExtendFile(struct sql_file * pFd, i64 nByte)
  * Otherwise, set *ppFd to 0 and return an sql error code.
  */
 static int
-vdbeSorterOpenTempFile(sql * db,	/* Database handle doing sort */
-		       i64 nExtend,	/* Attempt to extend file to this size */
-		       sql_file ** ppFd)
+vdbeSorterOpenTempFile(int64_t nExtend, struct sql_file **ppFd)
 {
 	int rc;
-	rc = sqlOsOpenMalloc(db->pVfs, 0, ppFd,
+	rc = sqlOsOpenMalloc(sql_get()->pVfs, 0, ppFd,
 				 SQL_OPEN_READWRITE | SQL_OPEN_CREATE |
 				 SQL_OPEN_EXCLUSIVE |
 				 SQL_OPEN_DELETEONCLOSE, &rc);
@@ -1228,7 +1226,6 @@ vdbePmaWriteVarint(PmaWriter * p, u64 iVal)
 static int
 vdbeSorterListToPMA(SortSubtask * pTask, SorterList * pList)
 {
-	sql *db = sql_get();
 	int rc = 0;	/* Return code */
 	PmaWriter writer;	/* Object used to write to the file */
 
@@ -1245,7 +1242,7 @@ vdbeSorterListToPMA(SortSubtask * pTask, SorterList * pList)
 
 	/* If the first temporary PMA file has not been opened, open it now. */
 	if (pTask->file.pFd == 0) {
-		rc = vdbeSorterOpenTempFile(db, 0, &pTask->file.pFd);
+		rc = vdbeSorterOpenTempFile(0, &pTask->file.pFd);
 		assert(rc != 0 || pTask->file.pFd);
 		assert(pTask->file.iEof == 0);
 		assert(pTask->nPMA == 0);
@@ -1697,7 +1694,6 @@ vdbePmaReaderIncrMergeInit(PmaReader * pReadr)
 	int rc = 0;
 	IncrMerger *pIncr = pReadr->pIncr;
 	SortSubtask *pTask = pIncr->pTask;
-	sql *db = sql_get();
 
 	rc = vdbeMergeEngineInit(pTask, pIncr->pMerger);
 
@@ -1709,8 +1705,7 @@ vdbePmaReaderIncrMergeInit(PmaReader * pReadr)
 		int mxSz = pIncr->mxSz;
 		if (pTask->file2.pFd == 0) {
 			assert(pTask->file2.iEof > 0);
-			rc = vdbeSorterOpenTempFile(db,
-						    pTask->file2.iEof,
+			rc = vdbeSorterOpenTempFile(pTask->file2.iEof,
 						    &pTask->file2.pFd);
 			pTask->file2.iEof = 0;
 		}
