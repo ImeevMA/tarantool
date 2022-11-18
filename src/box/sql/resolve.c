@@ -854,18 +854,16 @@ resolveCompoundOrderBy(Parse * pParse,	/* Parsing context.  Leave error messages
 	int i;
 	ExprList *pOrderBy;
 	ExprList *pEList;
-	sql *db;
 	int moreToDo = 1;
 
 	pOrderBy = pSelect->pOrderBy;
 	if (pOrderBy == 0)
 		return 0;
-	db = pParse->db;
 #if SQL_MAX_COLUMN
-	if (pOrderBy->nExpr > db->aLimit[SQL_LIMIT_COLUMN]) {
+	if (pOrderBy->nExpr > SQL_MAX_COLUMN) {
 		diag_set(ClientError, ER_SQL_PARSER_LIMIT,
 			 "The number of terms in ORDER BY clause",
-			 pOrderBy->nExpr, db->aLimit[SQL_LIMIT_COLUMN]);
+			 pOrderBy->nExpr, SQL_MAX_COLUMN);
 		pParse->is_aborted = true;
 		return 1;
 	}
@@ -972,18 +970,17 @@ sqlResolveOrderGroupBy(Parse * pParse,	/* Parsing context.  Leave error messages
     )
 {
 	int i;
-	sql *db = pParse->db;
 	ExprList *pEList;
 	struct ExprList_item *pItem;
 
 	if (pOrderBy == NULL)
 		return 0;
 #if SQL_MAX_COLUMN
-	if (pOrderBy->nExpr > db->aLimit[SQL_LIMIT_COLUMN]) {
+	if (pOrderBy->nExpr > SQL_MAX_COLUMN) {
 		const char *err = tt_sprintf("The number of terms in %s BY "\
 					     "clause", zType);
 		diag_set(ClientError, ER_SQL_PARSER_LIMIT, err,
-			 pOrderBy->nExpr, db->aLimit[SQL_LIMIT_COLUMN]);
+			 pOrderBy->nExpr, SQL_MAX_COLUMN);
 		pParse->is_aborted = true;
 		return 1;
 	}

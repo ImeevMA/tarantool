@@ -855,9 +855,9 @@ cmd ::= with(C) UPDATE orconf(R) fullname(X) indexed_opt(I) SET setlist(Y)
         where_opt(W).  {
   sqlWithPush(pParse, C, 1);
   sqlSrcListIndexedBy(pParse, X, &I);
-  if (Y != NULL && Y->nExpr > pParse->db->aLimit[SQL_LIMIT_COLUMN]) {
+  if (Y != NULL && Y->nExpr > SQL_MAX_COLUMN) {
     diag_set(ClientError, ER_SQL_PARSER_LIMIT, "The number of columns in set "\
-             "list", Y->nExpr, pParse->db->aLimit[SQL_LIMIT_COLUMN]);
+             "list", Y->nExpr, SQL_MAX_COLUMN);
     pParse->is_aborted = true;
   }
   sqlSubProgramsRemaining = SQL_MAX_COMPILING_TRIGGERS;
@@ -1149,11 +1149,11 @@ trim_specification(A) ::= TRAILING. { A = TRIM_TRAILING; }
 trim_specification(A) ::= BOTH.     { A = TRIM_BOTH; }
 
 expr(A) ::= id(X) LP distinct(D) exprlist(Y) RP(E). {
-  if( Y && Y->nExpr>pParse->db->aLimit[SQL_LIMIT_FUNCTION_ARG] ){
+  if (Y != NULL && Y->nExpr > SQL_MAX_FUNCTION_ARG){
     const char *err =
       tt_sprintf("Number of arguments to function %.*s", X.n, X.z);
     diag_set(ClientError, ER_SQL_PARSER_LIMIT, err, Y->nExpr,
-             pParse->db->aLimit[SQL_LIMIT_FUNCTION_ARG]);
+             SQL_MAX_FUNCTION_ARG);
     pParse->is_aborted = true;
   }
   A.pExpr = sqlExprFunction(pParse, Y, &X);
@@ -1169,11 +1169,11 @@ expr(A) ::= id(X) LP distinct(D) exprlist(Y) RP(E). {
  */
 type_func(A) ::= CHAR(A) .
 expr(A) ::= type_func(X) LP distinct(D) exprlist(Y) RP(E). {
-  if( Y && Y->nExpr>pParse->db->aLimit[SQL_LIMIT_FUNCTION_ARG] ){
+  if (Y != NULL && Y->nExpr > SQL_MAX_FUNCTION_ARG){
     const char *err =
       tt_sprintf("Number of arguments to function %.*s", X.n, X.z);
     diag_set(ClientError, ER_SQL_PARSER_LIMIT, err, Y->nExpr,
-             pParse->db->aLimit[SQL_LIMIT_FUNCTION_ARG]);
+             SQL_MAX_FUNCTION_ARG);
     pParse->is_aborted = true;
   }
   A.pExpr = sqlExprFunction(pParse, Y, &X);
