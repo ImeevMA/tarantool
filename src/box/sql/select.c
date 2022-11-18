@@ -306,9 +306,8 @@ sql_space_info_normalize(struct sql_space_info *info, uint32_t drop_count)
  * itself only if bFree is true.
  */
 static void
-clearSelect(sql * db, Select * p, int bFree)
+clearSelect(struct Select *p, int bFree)
 {
-	(void)db;
 	while (p) {
 		Select *pPrior = p->pPrior;
 		sql_expr_list_delete(p->pEList);
@@ -427,8 +426,9 @@ sqlSelectSetName(Select * p, const char *zName)
 void
 sql_select_delete(sql *db, Select *p)
 {
+	(void)db;
 	if (p)
-		clearSelect(db, p, 1);
+		clearSelect(p, 1);
 }
 
 int
