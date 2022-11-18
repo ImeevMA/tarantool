@@ -2969,19 +2969,6 @@ sqlValueFree(sql_value * v)
 	sqlDbFree(v);
 }
 
-/*
- * Create a new sql_value object.
- */
-sql_value *
-sqlValueNew(sql * db)
-{
-	struct Mem *p = sqlDbMallocZero(sizeof(*p));
-	p->type = MEM_TYPE_NULL;
-	assert(p->flags == 0);
-	p->db = db;
-	return p;
-}
-
 void
 releaseMemArray(Mem * p, int N)
 {

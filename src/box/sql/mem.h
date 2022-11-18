@@ -855,7 +855,6 @@ int sqlVdbeCheckMemInvariants(struct Mem *);
 int sqlVdbeMemClearAndResize(struct Mem * pMem, int n);
 
 void sqlValueFree(struct Mem *);
-struct Mem *sqlValueNew(struct sql *);
 
 /*
  * Release an array of N Mem elements
