@@ -792,7 +792,7 @@ fk_constraint_action_trigger(struct Parse *pParse, struct space_def *def,
 			} else {
 				new = sql_expr_new_anon(TK_NULL);
 			}
-			list = sql_expr_list_append(db, list, new);
+			list = sql_expr_list_append(list, new);
 			sqlExprListSetName(pParse, list, &t_from_col, 0);
 		}
 	}
@@ -808,7 +808,7 @@ fk_constraint_action_trigger(struct Parse *pParse, struct space_def *def,
 						    "KEY constraint failed");
 		r->on_conflict_action = ON_CONFLICT_ACTION_ABORT;
 		struct SrcList *src_list = sql_src_list_append(NULL, &err);
-		select = sqlSelectNew(pParse, sql_expr_list_append(db, NULL, r),
+		select = sqlSelectNew(pParse, sql_expr_list_append(NULL, r),
 				      src_list, where, NULL, NULL, NULL, 0,
 				      NULL, NULL);
 		where = NULL;

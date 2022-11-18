@@ -608,14 +608,11 @@ sqlAddPrimaryKey(struct Parse *pParse)
 	}
 	if (nTerm == 1 && iCol != -1 &&
 	    space->def->fields[iCol].type == FIELD_TYPE_INTEGER) {
-		struct sql *db = pParse->db;
 		struct ExprList *list;
 		struct Token token;
 		sqlTokenInit(&token, space->def->fields[iCol].name);
 		struct Expr *expr = sql_expr_new(TK_ID, &token);
-		list = sql_expr_list_append(db, NULL, expr);
-		if (list == NULL)
-			goto primary_key_exit;
+		list = sql_expr_list_append(NULL, expr);
 		pParse->create_index_def.cols = list;
 		sql_create_index(pParse);
 	} else {
@@ -2700,9 +2697,7 @@ sql_create_index(struct Parse *parse) {
 		uint32_t last_field = def->field_count - 1;
 		sqlTokenInit(&prev_col, def->fields[last_field].name);
 		struct Expr *expr = sql_expr_new(TK_ID, &prev_col);
-		col_list = sql_expr_list_append(db, NULL, expr);
-		if (col_list == NULL)
-			goto exit_create_index;
+		col_list = sql_expr_list_append(NULL, expr);
 		assert(col_list->nExpr == 1);
 		sqlExprListSetSortOrder(col_list, create_idx_def->sort_order);
 	} else {

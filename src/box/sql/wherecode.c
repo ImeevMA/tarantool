@@ -421,12 +421,10 @@ codeEqualityTerm(Parse * pParse,	/* The parsing context */
 					Expr *pNewLhs = sqlExprDup(
 						pOrigLhs->a[iField].pExpr, 0);
 
-					pRhs =
-					    sql_expr_list_append(pParse->db,
-								 pRhs, pNewRhs);
-					pLhs =
-					    sql_expr_list_append(pParse->db,
-								 pLhs, pNewLhs);
+					pRhs = sql_expr_list_append(pRhs,
+								    pNewRhs);
+					pLhs = sql_expr_list_append(pLhs,
+								    pNewLhs);
 				}
 			}
 

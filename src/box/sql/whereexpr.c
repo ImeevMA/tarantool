@@ -785,8 +785,7 @@ exprAnalyzeOrTerm(SrcList * pSrc,	/* the FROM clause */
 				assert(pOrTerm->leftCursor == iCursor);
 				assert(pOrTerm->u.leftColumn == iColumn);
 				pDup = sqlExprDup(pOrTerm->pExpr->pRight, 0);
-				pList = sql_expr_list_append(pWInfo->pParse->db,
-							     pList, pDup);
+				pList = sql_expr_list_append(pList, pDup);
 				pLeft = pOrTerm->pExpr->pLeft;
 			}
 			assert(pLeft != 0);

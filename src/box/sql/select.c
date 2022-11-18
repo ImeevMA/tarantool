@@ -372,10 +372,9 @@ sqlSelectNew(Parse * pParse,	/* Parsing context */
 		 Expr * pOffset)	/* OFFSET value.  NULL means no offset */
 {
 	Select standin;
-	sql *db = pParse->db;
 	if (pEList == 0) {
 		struct Expr *expr = sql_expr_new_anon(TK_ASTERISK);
-		pEList = sql_expr_list_append(db, NULL, expr);
+		pEList = sql_expr_list_append(NULL, expr);
 	}
 	standin.pEList = pEList;
 	standin.op = TK_SELECT;
@@ -3506,11 +3505,8 @@ multiSelectOrderBy(Parse * pParse,	/* Parsing context */
 				pNew->flags |= EP_IntValue;
 				pNew->u.iValue = i;
 				pNew->type = FIELD_TYPE_INTEGER;
-				pOrderBy = sql_expr_list_append(pParse->db,
-								pOrderBy, pNew);
-				if (pOrderBy)
-					pOrderBy->a[nOrderBy++].u.x.
-					    iOrderByCol = (u16) i;
+				pOrderBy = sql_expr_list_append(pOrderBy, pNew);
+				pOrderBy->a[nOrderBy++].u.x.iOrderByCol = i;
 			}
 		}
 	}
@@ -4639,7 +4635,7 @@ convertCompoundSelectToSubquery(Walker * pWalker, Select * p)
 	*pNew = *p;
 	p->pSrc = pNewSrc;
 	struct Expr *expr = sql_expr_new_anon(TK_ASTERISK);
-	p->pEList = sql_expr_list_append(pParse->db, NULL, expr);
+	p->pEList = sql_expr_list_append(NULL, expr);
 	p->op = TK_SELECT;
 	p->pWhere = 0;
 	pNew->pGroupBy = 0;
@@ -5066,16 +5062,11 @@ selectExpander(Walker * pWalker, Select * p)
 			    ) {
 				/* This particular expression does not need to be expanded.
 				 */
-				pNew = sql_expr_list_append(pParse->db, pNew,
-							    a[k].pExpr);
-				if (pNew != NULL) {
-					pNew->a[pNew->nExpr - 1].zName =
-					    a[k].zName;
-					pNew->a[pNew->nExpr - 1].zSpan =
-					    a[k].zSpan;
-					a[k].zName = 0;
-					a[k].zSpan = 0;
-				}
+				pNew = sql_expr_list_append(pNew, a[k].pExpr);
+				pNew->a[pNew->nExpr - 1].zName = a[k].zName;
+				pNew->a[pNew->nExpr - 1].zSpan = a[k].zSpan;
+				a[k].zName = 0;
+				a[k].zSpan = 0;
 				a[k].pExpr = 0;
 			} else {
 				/* This expression is a "*" or a "TABLE.*" and needs to be
@@ -5166,16 +5157,14 @@ selectExpander(Walker * pWalker, Select * p)
 							pExpr = pRight;
 						}
 						pNew = sql_expr_list_append(
-							pParse->db, pNew, pExpr);
+							pNew, pExpr);
 						sqlTokenInit(&sColname, zColname);
 						sqlExprListSetName(pParse,
 								       pNew,
 								       &sColname,
 								       0);
-						if (pNew != NULL
-						    && (p->
-							selFlags &
-							SF_NestedFrom) != 0) {
+						if ((p->selFlags &
+						     SF_NestedFrom) != 0) {
 							struct ExprList_item *pX
 							    =
 							    &pNew->a[pNew->

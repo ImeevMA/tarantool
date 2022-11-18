@@ -1749,10 +1749,8 @@ sqlSelectDup(struct Select *p, int flags)
 }
 
 struct ExprList *
-sql_expr_list_append(struct sql *db, struct ExprList *expr_list,
-		     struct Expr *expr)
+sql_expr_list_append(struct ExprList *expr_list, struct Expr *expr)
 {
-	(void)db;
 	if (expr_list == NULL) {
 		expr_list = sqlDbMallocRawNN(sizeof(ExprList));
 		expr_list->nExpr = 0;
@@ -1816,12 +1814,10 @@ sqlExprListAppendVector(Parse * pParse,	/* Parsing context */
 
 	for (i = 0; i < pColumns->nId; i++) {
 		Expr *pSubExpr = sqlExprForVectorField(pParse, pExpr, i);
-		pList = sql_expr_list_append(pParse->db, pList, pSubExpr);
-		if (pList) {
-			assert(pList->nExpr == iFirst + i + 1);
-			pList->a[pList->nExpr - 1].zName = pColumns->a[i].zName;
-			pColumns->a[i].zName = 0;
-		}
+		pList = sql_expr_list_append(pList, pSubExpr);
+		assert(pList->nExpr == iFirst + i + 1);
+		pList->a[pList->nExpr - 1].zName = pColumns->a[i].zName;
+		pColumns->a[i].zName = 0;
 	}
 
 	if (pExpr->op == TK_SELECT) {
@@ -4354,12 +4350,10 @@ sqlExprCodeAtInit(Parse * pParse,	/* Parsing context */
 	assert(ConstFactorOk(pParse));
 	p = pParse->pConstExpr;
 	pExpr = sqlExprDup(pExpr, 0);
-	p = sql_expr_list_append(pParse->db, p, pExpr);
-	if (p) {
-		struct ExprList_item *pItem = &p->a[p->nExpr - 1];
-		pItem->u.iConstExprReg = regDest;
-		pItem->reusable = reusable;
-	}
+	p = sql_expr_list_append(p, pExpr);
+	struct ExprList_item *pItem = &p->a[p->nExpr - 1];
+	pItem->u.iConstExprReg = regDest;
+	pItem->reusable = reusable;
 	pParse->pConstExpr = p;
 }
 

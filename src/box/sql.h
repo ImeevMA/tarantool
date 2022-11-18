@@ -232,15 +232,13 @@ sql_expr_list_delete(struct ExprList *expr_list);
 
 /**
  * Add a new element to the end of an expression list.
- * @param db SQL handle.
+ *
  * @param expr_list List to which to append. Might be NULL.
  * @param expr Expression to be appended. Might be NULL.
- * @retval NULL on memory allocation error. The list is freed.
  * @retval not NULL on success.
  */
 struct ExprList *
-sql_expr_list_append(struct sql *db, struct ExprList *expr_list,
-		     struct Expr *expr);
+sql_expr_list_append(struct ExprList *expr_list, struct Expr *expr);
 
 /**
  * Resolve names in expressions that can only reference a single
