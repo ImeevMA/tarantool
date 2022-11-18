@@ -688,7 +688,7 @@ sqlExprForVectorField(Parse * pParse,	/* Parsing context */
 	} else {
 		if (pVector->op == TK_VECTOR)
 			pVector = pVector->x.pList->a[iField].pExpr;
-		pRet = sqlExprDup(pParse->db, pVector, 0);
+		pRet = sqlExprDup(pVector, 0);
 	}
 	return pRet;
 }
@@ -1475,7 +1475,6 @@ sql_expr_dup(struct sql *db, struct Expr *p, int flags, char **buffer)
 	u32 staticFlag;         /* EP_Static if space not obtained from malloc */
 	char *zAlloc;		/* Memory space from which to build Expr object */
 
-	assert(db != 0);
 	assert(p);
 	assert(flags == 0 || flags == EXPRDUP_REDUCE);
 
@@ -1562,10 +1561,9 @@ sql_expr_dup(struct sql *db, struct Expr *p, int flags, char **buffer)
 					assert(p->pRight == 0
 					       || p->pRight == p->pLeft);
 				} else {
-					pNew->pLeft =
-					    sqlExprDup(db, p->pLeft, 0);
+					pNew->pLeft = sqlExprDup(p->pLeft, 0);
 				}
-				pNew->pRight = sqlExprDup(db, p->pRight, 0);
+				pNew->pRight = sqlExprDup(p->pRight, 0);
 			}
 		}
 	}
@@ -1595,28 +1593,11 @@ withDup(sql * db, With * p)
 	return pRet;
 }
 
-/*
- * The following group of routines make deep copies of expressions,
- * expression lists, ID lists, and select statements.  The copies can
- * be deleted (by being passed to their respective ...Delete() routines)
- * without effecting the originals.
- *
- * The expression list, ID, and source lists return by sql_expr_list_dup(),
- * sqlIdListDup(), and sqlSrcListDup() can not be further expanded
- * by subsequent calls to sql*ListAppend() routines.
- *
- * Any tables that the SrcList might point to are not duplicated.
- *
- * The flags parameter contains a combination of the EXPRDUP_XXX flags.
- * If the EXPRDUP_REDUCE flag is set, then the structure returned is a
- * truncated version of the usual Expr structure that will be stored as
- * part of the in-memory representation of the database schema.
- */
-Expr *
-sqlExprDup(sql * db, Expr * p, int flags)
+struct Expr *
+sqlExprDup(struct Expr *p, int flags)
 {
 	assert(flags == 0 || flags == EXPRDUP_REDUCE);
-	return p ? sql_expr_dup(db, p, flags, 0) : 0;
+	return p != NULL ? sql_expr_dup(sql_get(), p, flags, 0) : NULL;
 }
 
 struct ExprList *
@@ -1638,7 +1619,7 @@ sql_expr_list_dup(struct ExprList *p, int flags)
 	for (i = 0; i < p->nExpr; i++, pItem++, pOldItem++) {
 		Expr *pOldExpr = pOldItem->pExpr;
 		Expr *pNewExpr;
-		pItem->pExpr = sqlExprDup(sql_get(), pOldExpr, flags);
+		pItem->pExpr = sqlExprDup(pOldExpr, flags);
 		if (pOldExpr != NULL && pOldExpr->op == TK_SELECT_COLUMN &&
 		    (pNewExpr = pItem->pExpr) != NULL) {
 			assert(pNewExpr->iColumn == 0 || i > 0);
@@ -1706,7 +1687,7 @@ sqlSrcListDup(sql * db, SrcList * p, int flags)
 		pNewItem->space = pOldItem->space;
 		pNewItem->pSelect =
 		    sqlSelectDup(db, pOldItem->pSelect, flags);
-		pNewItem->pOn = sqlExprDup(db, pOldItem->pOn, flags);
+		pNewItem->pOn = sqlExprDup(pOldItem->pOn, flags);
 		pNewItem->pUsing = sqlIdListDup(db, pOldItem->pUsing);
 		pNewItem->colUsed = pOldItem->colUsed;
 	}
@@ -1749,17 +1730,17 @@ sqlSelectDup(sql * db, Select * p, int flags)
 	pNew = sqlDbMallocRawNN(sizeof(*p));
 	pNew->pEList = sql_expr_list_dup(p->pEList, flags);
 	pNew->pSrc = sqlSrcListDup(db, p->pSrc, flags);
-	pNew->pWhere = sqlExprDup(db, p->pWhere, flags);
+	pNew->pWhere = sqlExprDup(p->pWhere, flags);
 	pNew->pGroupBy = sql_expr_list_dup(p->pGroupBy, flags);
-	pNew->pHaving = sqlExprDup(db, p->pHaving, flags);
+	pNew->pHaving = sqlExprDup(p->pHaving, flags);
 	pNew->pOrderBy = sql_expr_list_dup(p->pOrderBy, flags);
 	pNew->op = p->op;
 	pNew->pPrior = pPrior = sqlSelectDup(db, p->pPrior, flags);
 	if (pPrior)
 		pPrior->pNext = pNew;
 	pNew->pNext = 0;
-	pNew->pLimit = sqlExprDup(db, p->pLimit, flags);
-	pNew->pOffset = sqlExprDup(db, p->pOffset, flags);
+	pNew->pLimit = sqlExprDup(p->pLimit, flags);
+	pNew->pOffset = sqlExprDup(p->pOffset, flags);
 	pNew->iLimit = 0;
 	pNew->iOffset = 0;
 	pNew->selFlags = p->selFlags & ~SF_UsesEphemeral;
@@ -4376,7 +4357,7 @@ sqlExprCodeAtInit(Parse * pParse,	/* Parsing context */
 	ExprList *p;
 	assert(ConstFactorOk(pParse));
 	p = pParse->pConstExpr;
-	pExpr = sqlExprDup(pParse->db, pExpr, 0);
+	pExpr = sqlExprDup(pExpr, 0);
 	p = sql_expr_list_append(pParse->db, p, pExpr);
 	if (p) {
 		struct ExprList_item *pItem = &p->a[p->nExpr - 1];

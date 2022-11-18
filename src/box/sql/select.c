@@ -3767,7 +3767,6 @@ substExpr(Parse * pParse,	/* Report errors here */
 	  int iTable,		/* Table to be substituted */
 	  ExprList * pEList)	/* Substitute expressions */
 {
-	sql *db = pParse->db;
 	if (pExpr == 0)
 		return 0;
 	if (pExpr->op == TK_COLUMN_REF && pExpr->iTable == iTable) {
@@ -3786,7 +3785,7 @@ substExpr(Parse * pParse,	/* Report errors here */
 					 expr_count, 1);
 				pParse->is_aborted = true;
 			} else {
-				pNew = sqlExprDup(db, pCopy, 0);
+				pNew = sqlExprDup(pCopy, 0);
 				if (pNew && (pExpr->flags & EP_FromJoin)) {
 					pNew->iRightJoinTable =
 					    pExpr->iRightJoinTable;
@@ -4342,13 +4341,12 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 			pParent->pOrderBy = pOrderBy;
 			pSub->pOrderBy = 0;
 		}
-		pWhere = sqlExprDup(db, pSub->pWhere, 0);
+		pWhere = sqlExprDup(pSub->pWhere, 0);
 		if (subqueryIsAgg) {
 			assert(pParent->pHaving == 0);
 			pParent->pHaving = pParent->pWhere;
 			pParent->pWhere = pWhere;
-			struct Expr *sub_having =
-				sqlExprDup(db, pSub->pHaving, 0);
+			struct Expr *sub_having = sqlExprDup(pSub->pHaving, 0);
 			if (sub_having != NULL || pParent->pHaving != NULL) {
 				pParent->pHaving =
 					sql_and_expr_new(sub_having,
@@ -4459,7 +4457,7 @@ pushDownWhereTerms(Parse * pParse,	/* Parse context (for malloc() and error repo
 	if (sqlExprIsTableConstant(pWhere, iCursor)) {
 		nChng++;
 		while (pSubq) {
-			pNew = sqlExprDup(pParse->db, pWhere, 0);
+			pNew = sqlExprDup(pWhere, 0);
 			pNew = substExpr(pParse, pNew, iCursor, pSubq->pEList);
 			pSubq->pWhere = sql_and_expr_new(pSubq->pWhere, pNew);
 			pSubq = pSubq->pPrior;

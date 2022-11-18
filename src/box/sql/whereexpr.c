@@ -425,7 +425,6 @@ whereCombineDisjuncts(SrcList * pSrc,	/* the FROM clause */
     )
 {
 	u16 eOp = pOne->eOperator | pTwo->eOperator;
-	sql *db;		/* Database connection (for malloc) */
 	Expr *pNew;		/* New virtual expression */
 	int op;			/* Operator for the combined expression */
 	int idxNew;		/* Index in pWC of the next virtual term */
@@ -452,8 +451,7 @@ whereCombineDisjuncts(SrcList * pSrc,	/* the FROM clause */
 			eOp = WO_GE;
 		}
 	}
-	db = pWC->pWInfo->pParse->db;
-	pNew = sqlExprDup(db, pOne->pExpr, 0);
+	pNew = sqlExprDup(pOne->pExpr, 0);
 	if (pNew == 0)
 		return;
 	for (op = TK_EQ; eOp != (WO_EQ << (op - TK_EQ)); op++) {
@@ -554,7 +552,6 @@ exprAnalyzeOrTerm(SrcList * pSrc,	/* the FROM clause */
 {
 	WhereInfo *pWInfo = pWC->pWInfo;	/* WHERE clause processing context */
 	Parse *pParse = pWInfo->pParse;	/* Parser context */
-	sql *db = pParse->db;	/* Database connection */
 	WhereTerm *pTerm = &pWC->a[idxTerm];	/* The term to be analyzed */
 	Expr *pExpr = pTerm->pExpr;	/* The expression of the term */
 	int i;			/* Loop counters */
@@ -787,15 +784,13 @@ exprAnalyzeOrTerm(SrcList * pSrc,	/* the FROM clause */
 				assert(pOrTerm->eOperator & WO_EQ);
 				assert(pOrTerm->leftCursor == iCursor);
 				assert(pOrTerm->u.leftColumn == iColumn);
-				pDup =
-				    sqlExprDup(db, pOrTerm->pExpr->pRight,
-						   0);
+				pDup = sqlExprDup(pOrTerm->pExpr->pRight, 0);
 				pList = sql_expr_list_append(pWInfo->pParse->db,
 							     pList, pDup);
 				pLeft = pOrTerm->pExpr->pLeft;
 			}
 			assert(pLeft != 0);
-			pDup = sqlExprDup(db, pLeft, 0);
+			pDup = sqlExprDup(pLeft, 0);
 			pNew = sqlPExpr(pParse, TK_IN, pDup, 0);
 			if (pNew) {
 				int idxNew;
@@ -981,8 +976,6 @@ exprAnalyze(SrcList * pSrc,	/* the FROM clause */
 	int op;
 	/* Parsing context. */
 	Parse *pParse = pWInfo->pParse;
-	/* Database connection. */
-	sql *db = pParse->db;
 
 	pTerm = &pWC->a[idxTerm];
 	pMaskSet = &pWInfo->sMaskSet;
@@ -1046,7 +1039,7 @@ exprAnalyze(SrcList * pSrc,	/* the FROM clause */
 			assert(pTerm->iField == 0);
 			if (pTerm->leftCursor >= 0) {
 				int idxNew;
-				pDup = sqlExprDup(db, pExpr, 0);
+				pDup = sqlExprDup(pExpr, 0);
 				idxNew =
 				    whereClauseInsert(pWC, pDup,
 						      TERM_VIRTUAL |
@@ -1101,11 +1094,8 @@ exprAnalyze(SrcList * pSrc,	/* the FROM clause */
 			Expr *pNewExpr;
 			int idxNew;
 			pNewExpr = sqlPExpr(pParse, ops[i],
-						sqlExprDup(db, pExpr->pLeft,
-							       0),
-						sqlExprDup(db,
-							       pList->a[i].
-							       pExpr, 0));
+					    sqlExprDup(pExpr->pLeft, 0),
+					    sqlExprDup(pList->a[i].pExpr, 0));
 			transferJoinMarkings(pNewExpr, pExpr);
 			idxNew =
 			    whereClauseInsert(pWC, pNewExpr,
@@ -1152,18 +1142,18 @@ exprAnalyze(SrcList * pSrc,	/* the FROM clause */
 		const u16 wtFlags = TERM_LIKEOPT | TERM_VIRTUAL | TERM_DYNAMIC;
 
 		pLeft = pExpr->x.pList->a[1].pExpr;
-		pStr2 = sqlExprDup(db, pStr1, 0);
+		pStr2 = sqlExprDup(pStr1, 0);
 
 		u8 c, *pC;	/* Last character before the first wildcard */
 		pC = (u8 *)&pStr2->u.zToken[sqlStrlen30(pStr2->u.zToken) - 1];
 		c = *pC;
 		*pC = c + 1;
-		pNewExpr1 = sqlExprDup(db, pLeft, 0);
+		pNewExpr1 = sqlExprDup(pLeft, 0);
 		pNewExpr1 = sqlPExpr(pParse, TK_GE, pNewExpr1, pStr1);
 		transferJoinMarkings(pNewExpr1, pExpr);
 		idxNew1 = whereClauseInsert(pWC, pNewExpr1, wtFlags);
 		exprAnalyze(pSrc, pWC, idxNew1);
-		pNewExpr2 = sqlExprDup(db, pLeft, 0);
+		pNewExpr2 = sqlExprDup(pLeft, 0);
 		pNewExpr2 = sqlPExpr(pParse, TK_LT, pNewExpr2, pStr2);
 		transferJoinMarkings(pNewExpr2, pExpr);
 		idxNew2 = whereClauseInsert(pWC, pNewExpr2, wtFlags);
@@ -1242,8 +1232,7 @@ exprAnalyze(SrcList * pSrc,	/* the FROM clause */
 		int idxNew;
 		WhereTerm *pNewTerm;
 		struct Expr *expr = sql_expr_new_anon(TK_NULL);
-		pNewExpr = sqlPExpr(pParse, TK_GT, sqlExprDup(db, pLeft, 0),
-				    expr);
+		pNewExpr = sqlPExpr(pParse, TK_GT, sqlExprDup(pLeft, 0), expr);
 
 		idxNew = whereClauseInsert(pWC, pNewExpr,
 					   TERM_VIRTUAL | TERM_DYNAMIC |
@@ -1439,8 +1428,7 @@ sqlWhereTabFuncArgs(Parse * pParse,	/* Parsing context */
 		pColRef->iColumn = k++;
 		pColRef->space_def = space_def;
 		pTerm = sqlPExpr(pParse, TK_EQ, pColRef,
-				     sqlExprDup(pParse->db,
-						    pArgs->a[j].pExpr, 0));
+				 sqlExprDup(pArgs->a[j].pExpr, 0));
 		whereClauseInsert(pWC, pTerm, TERM_DYNAMIC);
 	}
 }

@@ -416,14 +416,10 @@ codeEqualityTerm(Parse * pParse,	/* The parsing context */
 				if (pLoop->aLTerm[i]->pExpr == pX) {
 					int iField =
 					    pLoop->aLTerm[i]->iField - 1;
-					Expr *pNewRhs =
-					    sqlExprDup(db,
-							   pOrigRhs->a[iField].
-							   pExpr, 0);
-					Expr *pNewLhs =
-					    sqlExprDup(db,
-							   pOrigLhs->a[iField].
-							   pExpr, 0);
+					Expr *pNewRhs = sqlExprDup(
+						pOrigRhs->a[iField].pExpr, 0);
+					Expr *pNewLhs = sqlExprDup(
+						pOrigLhs->a[iField].pExpr, 0);
 
 					pRhs =
 					    sql_expr_list_append(pParse->db,
@@ -685,7 +681,6 @@ sqlWhereCodeOneLoopStart(WhereInfo * pWInfo,	/* Complete information about the W
 	WhereClause *pWC;	/* Decomposition of the entire WHERE clause */
 	WhereTerm *pTerm;	/* A WHERE clause term */
 	Parse *pParse;		/* Parsing context */
-	sql *db;		/* Database connection */
 	Vdbe *v;		/* The prepared stmt under constructions */
 	struct SrcList_item *pTabItem;	/* FROM clause term being coded */
 	int addrBrk;		/* Jump here to break out of the loop */
@@ -694,7 +689,6 @@ sqlWhereCodeOneLoopStart(WhereInfo * pWInfo,	/* Complete information about the W
 	pParse = pWInfo->pParse;
 	v = pParse->pVdbe;
 	pWC = &pWInfo->sWC;
-	db = pParse->db;
 	pLevel = &pWInfo->a[iLevel];
 	pLoop = pLevel->pWLoop;
 	pTabItem = &pWInfo->pTabList->a[pLevel->iFrom];
@@ -1120,7 +1114,7 @@ sqlWhereCodeOneLoopStart(WhereInfo * pWInfo,	/* Complete information about the W
 					continue;
 				if ((pWC->a[iTerm].eOperator & WO_ALL) == 0)
 					continue;
-				pExpr = sqlExprDup(db, pExpr, 0);
+				pExpr = sqlExprDup(pExpr, 0);
 				pAndExpr = sql_and_expr_new(pAndExpr, pExpr);
 			}
 			if (pAndExpr) {

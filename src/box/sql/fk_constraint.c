@@ -766,9 +766,8 @@ fk_constraint_action_trigger(struct Parse *pParse, struct space_def *def,
 			new = sql_expr_new_2part_id(pParse, &t_new, &t_to_col);
 			struct Expr *old_is_null =
 				sqlPExpr(pParse, TK_ISNULL,
-					 sqlExprDup(db, old, 0), NULL);
-			eq = sqlPExpr(pParse, TK_EQ, old,
-				      sqlExprDup(db, new, 0));
+					 sqlExprDup(old, 0), NULL);
+			eq = sqlPExpr(pParse, TK_EQ, old, sqlExprDup(new, 0));
 			struct Expr *new_non_null =
 				sqlPExpr(pParse, TK_NOTNULL, new, NULL);
 			struct Expr *non_null_eq =
@@ -789,7 +788,7 @@ fk_constraint_action_trigger(struct Parse *pParse, struct space_def *def,
 							    &t_to_col);
 			} else if (action == FKEY_ACTION_SET_DEFAULT &&
 				   d != NULL) {
-				new = sqlExprDup(db, d, 0);
+				new = sqlExprDup(d, 0);
 			} else {
 				new = sql_expr_new_anon(TK_NULL);
 			}
@@ -822,13 +821,12 @@ fk_constraint_action_trigger(struct Parse *pParse, struct space_def *def,
 	step->zTarget = (char *)&step[1];
 	memcpy((char *)step->zTarget, space_name, name_len);
 
-	step->pWhere = sqlExprDup(db, where, EXPRDUP_REDUCE);
+	step->pWhere = sqlExprDup(where, EXPRDUP_REDUCE);
 	step->pExprList = sql_expr_list_dup(list, EXPRDUP_REDUCE);
 	step->pSelect = sqlSelectDup(db, select, EXPRDUP_REDUCE);
 	if (when != NULL) {
 		when = sqlPExpr(pParse, TK_NOT, when, 0);
-		trigger->pWhen =
-			sqlExprDup(db, when, EXPRDUP_REDUCE);
+		trigger->pWhen = sqlExprDup(when, EXPRDUP_REDUCE);
 	}
 
 	sql_expr_delete(where);

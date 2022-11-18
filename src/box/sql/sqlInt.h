@@ -3248,7 +3248,26 @@ vdbe_emit_insertion_completion(struct Vdbe *v, int space_reg,
 void
 sql_set_multi_write(Parse *, bool);
 
-Expr *sqlExprDup(sql *, Expr *, int);
+/**
+ * The following group of routines make deep copies of expressions,
+ * expression lists, ID lists, and select statements.  The copies can
+ * be deleted (by being passed to their respective ...Delete() routines)
+ * without effecting the originals.
+ *
+ * The expression list, ID, and source lists return by sql_expr_list_dup(),
+ * sqlIdListDup(), and sqlSrcListDup() can not be further expanded
+ * by subsequent calls to sql*ListAppend() routines.
+ *
+ * Any tables that the SrcList might point to are not duplicated.
+ *
+ * The flags parameter contains a combination of the EXPRDUP_XXX flags.
+ * If the EXPRDUP_REDUCE flag is set, then the structure returned is a
+ * truncated version of the usual Expr structure that will be stored as
+ * part of the in-memory representation of the database schema.
+ */
+struct Expr *
+sqlExprDup(struct Expr *p, int flags);
+
 SrcList *sqlSrcListDup(sql *, SrcList *, int);
 IdList *sqlIdListDup(sql *, IdList *);
 Select *sqlSelectDup(sql *, Select *, int);

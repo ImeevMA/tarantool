@@ -120,7 +120,7 @@ sql_trigger_begin(struct Parse *parse)
 	       trigger_def->op== TK_DELETE);
 	trigger->op = (u8) trigger_def->op;
 	trigger->tr_tm = trigger_def->tr_tm;
-	trigger->pWhen = sqlExprDup(db, trigger_def->when, EXPRDUP_REDUCE);
+	trigger->pWhen = sqlExprDup(trigger_def->when, EXPRDUP_REDUCE);
 	trigger->pColumns = sqlIdListDup(db, trigger_def->cols);
 	if ((trigger->pWhen != NULL && trigger->pWhen == NULL) ||
 	    (trigger->pColumns != NULL && trigger->pColumns == NULL))
@@ -285,10 +285,11 @@ sql_trigger_update_step(struct sql *db, struct Token *table_name,
 		        struct ExprList *new_list, struct Expr *where,
 			enum on_conflict_action orconf)
 {
+	(void)db;
 	struct TriggerStep *trigger_step =
 		sql_trigger_step_new(TK_UPDATE, table_name);
 	trigger_step->pExprList = sql_expr_list_dup(new_list, EXPRDUP_REDUCE);
-	trigger_step->pWhere = sqlExprDup(db, where, EXPRDUP_REDUCE);
+	trigger_step->pWhere = sqlExprDup(where, EXPRDUP_REDUCE);
 	trigger_step->orconf = orconf;
 	sql_expr_list_delete(new_list);
 	sql_expr_delete(where);
@@ -299,9 +300,10 @@ struct TriggerStep *
 sql_trigger_delete_step(struct sql *db, struct Token *table_name,
 			struct Expr *where)
 {
+	(void)db;
 	struct TriggerStep *trigger_step =
 		sql_trigger_step_new(TK_DELETE, table_name);
-	trigger_step->pWhere = sqlExprDup(db, where, EXPRDUP_REDUCE);
+	trigger_step->pWhere = sqlExprDup(where, EXPRDUP_REDUCE);
 	trigger_step->orconf = ON_CONFLICT_ACTION_DEFAULT;
 	sql_expr_delete(where);
 	return trigger_step;
@@ -563,7 +565,7 @@ codeTriggerProgram(Parse * pParse,	/* The parser context */
 		case TK_UPDATE:{
 			sqlUpdate(pParse, targetSrcList(pParse, pStep),
 				  sql_expr_list_dup(pStep->pExprList, 0),
-				  sqlExprDup(db, pStep->pWhere, 0),
+				  sqlExprDup(pStep->pWhere, 0),
 				  pParse->eOrconf);
 			break;
 		}
@@ -579,14 +581,11 @@ codeTriggerProgram(Parse * pParse,	/* The parser context */
 				break;
 			}
 		case TK_DELETE:{
-				sql_table_delete_from(pParse,
-						      targetSrcList(pParse, pStep),
-						      sqlExprDup(db,
-								     pStep->pWhere,
-								     0)
-				    );
-				break;
-			}
+			sql_table_delete_from(pParse,
+					      targetSrcList(pParse, pStep),
+					      sqlExprDup(pStep->pWhere, 0));
+			break;
+		}
 		default:
 			assert(pStep->op == TK_SELECT); {
 				SelectDest sDest;
@@ -714,7 +713,7 @@ sql_row_trigger_program(struct Parse *parser, struct sql_trigger *trigger,
 		 * inserted at the end of the program.
 		 */
 		if (trigger->pWhen != NULL) {
-			pWhen = sqlExprDup(db, trigger->pWhen, 0);
+			pWhen = sqlExprDup(trigger->pWhen, 0);
 			if (sqlResolveExprNames(&sNC, pWhen) == 0) {
 				iEndTrigger = sqlVdbeMakeLabel(v);
 				sqlExprIfFalse(pSubParse, pWhen,

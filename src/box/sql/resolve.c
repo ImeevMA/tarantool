@@ -99,13 +99,11 @@ resolveAlias(Parse * pParse,	/* Parsing context */
 {
 	Expr *pOrig;		/* The iCol-th column of the result set */
 	Expr *pDup;		/* Copy of pOrig */
-	sql *db;		/* The database connection */
 
 	assert(iCol >= 0 && iCol < pEList->nExpr);
 	pOrig = pEList->a[iCol].pExpr;
 	assert(pOrig != 0);
-	db = pParse->db;
-	pDup = sqlExprDup(db, pOrig, 0);
+	pDup = sqlExprDup(pOrig, 0);
 	if (pDup == 0)
 		return;
 	if (zType[0] != 'G')
@@ -908,7 +906,7 @@ resolveCompoundOrderBy(Parse * pParse,	/* Parsing context.  Leave error messages
 			} else {
 				iCol = resolveAsName(pParse, pEList, pE);
 				if (iCol == 0) {
-					pDup = sqlExprDup(db, pE, 0);
+					pDup = sqlExprDup(pE, 0);
 					assert(pDup);
 					iCol = resolveOrderByTermToExprList(
 						pParse, pSelect, pDup);

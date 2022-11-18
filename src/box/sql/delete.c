@@ -66,9 +66,8 @@ void
 sql_materialize_view(struct Parse *parse, const char *name, struct Expr *where,
 		     int cursor)
 {
-	struct sql *db = parse->db;
 	struct SrcList *from = sql_src_list_append(NULL, NULL);
-	where = sqlExprDup(db, where, 0);
+	where = sqlExprDup(where, 0);
 	assert(from->nSrc == 1);
 	from->a[0].zName = sqlDbStrDup(name);
 	assert(from->a[0].pOn == NULL);
@@ -78,7 +77,7 @@ sql_materialize_view(struct Parse *parse, const char *name, struct Expr *where,
 	struct SelectDest dest;
 	sqlSelectDestInit(&dest, SRT_EphemTab, cursor, ++parse->nMem);
 	sqlSelect(parse, select, &dest);
-	sql_select_delete(db, select);
+	sql_select_delete(parse->db, select);
 }
 
 void
