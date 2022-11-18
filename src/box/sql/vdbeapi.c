@@ -647,18 +647,6 @@ sqlTransferBindings(sql_stmt * pFromStmt, sql_stmt * pToStmt)
 	return 0;
 }
 
-/*
- * Return the sql* database handle to which the prepared statement given
- * in the argument belongs.  This is the same database handle that was
- * the first argument to the sql_prepare() that was used to create
- * the statement in the first place.
- */
-sql *
-sql_db_handle(sql_stmt * pStmt)
-{
-	return pStmt ? ((Vdbe *) pStmt)->db : 0;
-}
-
 int
 sql_stmt_busy(const struct sql_stmt *stmt)
 {

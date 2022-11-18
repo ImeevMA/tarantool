@@ -1736,8 +1736,9 @@ vdbe_metadata_set_col_span(struct Vdbe *p, int idx, const char *span)
  */
 #ifndef NDEBUG
 static void
-checkActiveVdbeCnt(sql * db)
+checkActiveVdbeCnt()
 {
+	struct sql *db = sql_get();
 	Vdbe *p;
 	int cnt = 0;
 	p = db->pVdbe;
@@ -1750,7 +1751,7 @@ checkActiveVdbeCnt(sql * db)
 	assert(cnt == db->nVdbeActive);
 }
 #else
-#define checkActiveVdbeCnt(x)
+#define checkActiveVdbeCnt()
 #endif
 
 /*
@@ -1827,7 +1828,7 @@ sqlVdbeHalt(Vdbe * p)
 	if (p->magic != VDBE_MAGIC_RUN) {
 		return 0;
 	}
-	checkActiveVdbeCnt(db);
+	checkActiveVdbeCnt();
 
 	/* No commit or rollback needed if the program never started or if the
 	 * SQL statement does not read or write a database file.
@@ -1937,7 +1938,7 @@ sqlVdbeHalt(Vdbe * p)
 		db->nVdbeActive--;
 	}
 	p->magic = VDBE_MAGIC_HALT;
-	checkActiveVdbeCnt(db);
+	checkActiveVdbeCnt();
 
 	assert(db->nVdbeActive > 0 || box_txn() ||
 	       p->anonymous_savepoint == NULL);
