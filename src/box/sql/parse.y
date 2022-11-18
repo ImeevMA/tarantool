@@ -942,8 +942,7 @@ idlist(A) ::= nm(Y). {
   ** new Expr to populate pOut.  Set the span of pOut to be the identifier
   ** that created the expression.
   */
-  static void spanExpr(ExprSpan *pOut, Parse *pParse, int op, Token t){
-    (void)pParse;
+  static void spanExpr(struct ExprSpan *pOut, int op, Token t){
     struct Expr *p = NULL;
     int name_sz = t.n + 1;
     p = sqlDbMallocRawNN(sizeof(Expr) + name_sz);
@@ -997,21 +996,21 @@ idlist(A) ::= nm(Y). {
 expr(A) ::= term(A).
 expr(A) ::= LP(B) expr(X) RP(E).
             {spanSet(&A,&B,&E); /*A-overwrites-B*/  A.pExpr = X.pExpr;}
-term(A) ::= NULL(X).        {spanExpr(&A,pParse,@X,X);/*A-overwrites-X*/}
-expr(A) ::= id(X).          {spanExpr(&A,pParse,TK_ID,X); /*A-overwrites-X*/}
-expr(A) ::= JOIN_KW(X).     {spanExpr(&A,pParse,TK_ID,X); /*A-overwrites-X*/}
+term(A) ::= NULL(X).        {spanExpr(&A, @X, X);/*A-overwrites-X*/}
+expr(A) ::= id(X).          {spanExpr(&A, TK_ID, X); /*A-overwrites-X*/}
+expr(A) ::= JOIN_KW(X).     {spanExpr(&A, TK_ID, X); /*A-overwrites-X*/}
 expr(A) ::= nm(X) DOT nm(Y). {
   struct Expr *temp1 = sql_expr_new_dequoted(TK_ID, &X);
   struct Expr *temp2 = sql_expr_new_dequoted(TK_ID, &Y);
   spanSet(&A,&X,&Y); /*A-overwrites-X*/
   A.pExpr = sqlPExpr(pParse, TK_DOT, temp1, temp2);
 }
-term(A) ::= FLOAT|BLOB(X). {spanExpr(&A,pParse,@X,X);/*A-overwrites-X*/}
-term(A) ::= STRING(X).     {spanExpr(&A,pParse,@X,X);/*A-overwrites-X*/}
-term(A) ::= FALSE(X) . {spanExpr(&A,pParse,@X,X);/*A-overwrites-X*/}
-term(A) ::= TRUE(X) . {spanExpr(&A,pParse,@X,X);/*A-overwrites-X*/}
-term(A) ::= UNKNOWN(X) . {spanExpr(&A,pParse,@X,X);/*A-overwrites-X*/}
-term(A) ::= DECIMAL(X) . {spanExpr(&A,pParse,@X,X);/*A-overwrites-X*/}
+term(A) ::= FLOAT|BLOB(X). {spanExpr(&A, @X, X);/*A-overwrites-X*/}
+term(A) ::= STRING(X).     {spanExpr(&A, @X, X);/*A-overwrites-X*/}
+term(A) ::= FALSE(X) . {spanExpr(&A, @X, X);/*A-overwrites-X*/}
+term(A) ::= TRUE(X) . {spanExpr(&A, @X, X);/*A-overwrites-X*/}
+term(A) ::= UNKNOWN(X) . {spanExpr(&A, @X, X);/*A-overwrites-X*/}
+term(A) ::= DECIMAL(X) . {spanExpr(&A, @X, X);/*A-overwrites-X*/}
 
 term(A) ::= INTEGER(X). {
   A.pExpr = sql_expr_new_dequoted(TK_INTEGER, &X);

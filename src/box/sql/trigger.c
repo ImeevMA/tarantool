@@ -488,7 +488,7 @@ sql_triggers_exist(struct space_def *space_def, int op,
  * to that SrcList.
  */
 static SrcList *
-targetSrcList(struct TriggerStep * pStep)
+targetSrcList(struct TriggerStep *pStep)
 {
 	SrcList *pSrc = sql_src_list_append(NULL, NULL);
 	assert(pSrc->nSrc > 0);
