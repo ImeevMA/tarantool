@@ -211,7 +211,7 @@ create_table_end ::= . { sqlEndTable(pParse); }
  *
  * create_table_args ::= AS select(S). {
  *   sqlEndTable(pParse);
- *   sql_select_delete(pParse->db, S);
+ *   sql_select_delete(S);
  * }
  */
 
@@ -457,15 +457,15 @@ cmd ::= select(X).  {
     return;
   }
   sqlSelect(pParse, X, &dest);
-  sql_select_delete(pParse->db, X);
+  sql_select_delete(X);
 }
 
 %type select {Select*}
-%destructor select {sql_select_delete(pParse->db, $$);}
+%destructor select {sql_select_delete($$);}
 %type selectnowith {Select*}
-%destructor selectnowith {sql_select_delete(pParse->db, $$);}
+%destructor selectnowith {sql_select_delete($$);}
 %type oneselect {Select*}
-%destructor oneselect {sql_select_delete(pParse->db, $$);}
+%destructor oneselect {sql_select_delete($$);}
 
 %include {
   /**
@@ -525,7 +525,7 @@ selectnowith(A) ::= selectnowith(A) multiselect_op(Y) oneselect(Z).  {
     pRhs->selFlags &= ~SF_MultiValue;
     if( Y!=TK_ALL ) pParse->hasCompound = 1;
   }else{
-    sql_select_delete(pParse->db, pLhs);
+    sql_select_delete(pLhs);
   }
   A = pRhs;
 }
@@ -568,7 +568,7 @@ oneselect(A) ::= SELECT(S) distinct(D) selcollist(W) from(X) where_opt(Y)
 oneselect(A) ::= values(A).
 
 %type values {Select*}
-%destructor values {sql_select_delete(pParse->db, $$);}
+%destructor values {sql_select_delete($$);}
 values(A) ::= VALUES LP nexprlist(X) RP. {
   A = sqlSelectNew(pParse,X,0,0,0,0,0,SF_Values,0,0);
 }

@@ -702,7 +702,6 @@ static struct sql_trigger *
 fk_constraint_action_trigger(struct Parse *pParse, struct space_def *def,
 		    struct fk_constraint *fk, bool is_update)
 {
-	struct sql *db = pParse->db;
 	struct fk_constraint_def *fk_def = fk->def;
 	enum fk_constraint_action action = (is_update ? fk_def->on_update :
 					    fk_def->on_delete);
@@ -831,7 +830,7 @@ fk_constraint_action_trigger(struct Parse *pParse, struct space_def *def,
 	sql_expr_delete(where);
 	sql_expr_delete(when);
 	sql_expr_list_delete(list);
-	sql_select_delete(db, select);
+	sql_select_delete(select);
 	assert(step != NULL);
 
 	switch (action) {

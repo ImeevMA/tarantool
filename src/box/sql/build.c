@@ -1449,7 +1449,6 @@ sql_create_view(struct Parse *parse_context)
 	assert(alter_entity_def->entity_type == ENTITY_TYPE_VIEW);
 	assert(alter_entity_def->alter_action == ALTER_ACTION_CREATE);
 	(void) alter_entity_def;
-	struct sql *db = parse_context->db;
 	if (parse_context->nVar > 0) {
 		char *name = sql_name_from_token(&create_entity_def->name);
 		diag_set(ClientError, ER_CREATE_SPACE, name,
@@ -1527,7 +1526,7 @@ sql_create_view(struct Parse *parse_context)
 
  create_view_fail:
 	sql_expr_list_delete(view_def->aliases);
-	sql_select_delete(db, view_def->select);
+	sql_select_delete(view_def->select);
 	return;
 }
 
@@ -1540,7 +1539,7 @@ sql_view_assign_cursors(struct Parse *parse, const char *view_stmt)
 	if (select == NULL)
 		return -1;
 	sqlSrcListAssignCursors(parse, select->pSrc);
-	sql_select_delete(db, select);
+	sql_select_delete(select);
 	return 0;
 }
 
@@ -3084,7 +3083,7 @@ sqlSrcListDelete(struct SrcList *pList)
 		assert(pItem->space == NULL ||
 			!pItem->space->def->opts.is_ephemeral ||
 			pItem->space->index == NULL);
-		sql_select_delete(sql_get(), pItem->pSelect);
+		sql_select_delete(pItem->pSelect);
 		sql_expr_delete(pItem->pOn);
 		sqlIdListDelete(pItem->pUsing);
 	}
@@ -3118,7 +3117,6 @@ sqlSrcListAppendFromTerm(Parse * pParse,	/* Parsing context */
     )
 {
 	struct SrcList_item *pItem;
-	sql *db = pParse->db;
 	if (!p && (pOn || pUsing)) {
 		diag_set(ClientError, ER_SQL_SYNTAX_WITH_POS,
 			 pParse->line_count, pParse->line_pos, "a JOIN clause "\
@@ -3142,7 +3140,7 @@ sqlSrcListAppendFromTerm(Parse * pParse,	/* Parsing context */
 	assert(p == 0);
 	sql_expr_delete(pOn);
 	sqlIdListDelete(pUsing);
-	sql_select_delete(db, pSubquery);
+	sql_select_delete(pSubquery);
 	return 0;
 }
 
@@ -3331,7 +3329,7 @@ sqlWithDelete(struct With *pWith)
 		for (i = 0; i < pWith->nCte; i++) {
 			struct Cte *pCte = &pWith->a[i];
 			sql_expr_list_delete(pCte->pCols);
-			sql_select_delete(sql_get(), pCte->pSelect);
+			sql_select_delete(pCte->pSelect);
 			sqlDbFree(pCte->zName);
 		}
 		sqlDbFree(pWith);

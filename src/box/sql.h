@@ -280,11 +280,10 @@ sql_parser_destroy(struct Parse *parser);
  * Release memory allocated for given SELECT and all of its
  * substructures. It accepts NULL pointers.
  *
- * @param db Database handler.
  * @param select Select to be freed.
  */
 void
-sql_select_delete(struct sql *db, struct Select *select);
+sql_select_delete(struct Select *select);
 
 /**
  * Collect all table names within given select, including

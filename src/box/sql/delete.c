@@ -77,7 +77,7 @@ sql_materialize_view(struct Parse *parse, const char *name, struct Expr *where,
 	struct SelectDest dest;
 	sqlSelectDestInit(&dest, SRT_EphemTab, cursor, ++parse->nMem);
 	sqlSelect(parse, select, &dest);
-	sql_select_delete(parse->db, select);
+	sql_select_delete(select);
 }
 
 void

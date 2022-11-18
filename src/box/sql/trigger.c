@@ -49,13 +49,14 @@ int sqlSubProgramsRemaining;
 void
 sqlDeleteTriggerStep(sql * db, TriggerStep * pTriggerStep)
 {
+	(void)db;
 	while (pTriggerStep) {
 		TriggerStep *pTmp = pTriggerStep;
 		pTriggerStep = pTriggerStep->pNext;
 
 		sql_expr_delete(pTmp->pWhere);
 		sql_expr_list_delete(pTmp->pExprList);
-		sql_select_delete(db, pTmp->pSelect);
+		sql_select_delete(pTmp->pSelect);
 		sqlIdListDelete(pTmp->pIdList);
 
 		sqlDbFree(pTmp);
@@ -268,13 +269,14 @@ sql_trigger_insert_step(struct sql *db, struct Token *table_name,
 			struct IdList *column_list, struct Select *select,
 			enum on_conflict_action orconf)
 {
+	(void)db;
 	assert(select != NULL);
 	struct TriggerStep *trigger_step =
 		sql_trigger_step_new(TK_INSERT, table_name);
 	trigger_step->pSelect = sqlSelectDup(select, EXPRDUP_REDUCE);
 	trigger_step->pIdList = column_list;
 	trigger_step->orconf = orconf;
-	sql_select_delete(db, select);
+	sql_select_delete(select);
 	return trigger_step;
 }
 
@@ -522,7 +524,6 @@ codeTriggerProgram(Parse * pParse,	/* The parser context */
 {
 	TriggerStep *pStep;
 	Vdbe *v = pParse->pVdbe;
-	sql *db = pParse->db;
 
 	assert(pParse->triggered_space != NULL && pParse->pToplevel != NULL);
 	assert(pStepList);
@@ -581,7 +582,7 @@ codeTriggerProgram(Parse * pParse,	/* The parser context */
 				Select *pSelect = sqlSelectDup(pStep->pSelect, 0);
 				sqlSelectDestInit(&sDest, SRT_Discard, 0, -1);
 				sqlSelect(pParse, pSelect, &sDest);
-				sql_select_delete(db, pSelect);
+				sql_select_delete(pSelect);
 				break;
 			}
 		}

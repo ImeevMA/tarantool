@@ -235,7 +235,6 @@ sqlInsert(Parse * pParse,	/* Parser context */
 	      IdList * pColumn,	/* Column names corresponding to IDLIST. */
 	      enum on_conflict_action on_error)
 {
-	sql *db;		/* The main database structure */
 	char *zTab;		/* Name of the table into which we are inserting */
 	int i, j;		/* Loop counters */
 	Vdbe *v;		/* Generate code into this virtual machine */
@@ -259,7 +258,6 @@ sqlInsert(Parse * pParse,	/* Parser context */
 	struct sql_trigger *trigger;
 	int tmask;		/* Mask of trigger times */
 
-	db = pParse->db;
 	memset(&dest, 0, sizeof(dest));
 	if (pParse->is_aborted)
 		goto insert_cleanup;
@@ -272,7 +270,7 @@ sqlInsert(Parse * pParse,	/* Parser context */
 	    && pSelect->pPrior == 0) {
 		pList = pSelect->pEList;
 		pSelect->pEList = 0;
-		sql_select_delete(db, pSelect);
+		sql_select_delete(pSelect);
 		pSelect = 0;
 	}
 
@@ -782,7 +780,7 @@ sqlInsert(Parse * pParse,	/* Parser context */
  insert_cleanup:
 	sqlSrcListDelete(pTabList);
 	sql_expr_list_delete(pList);
-	sql_select_delete(db, pSelect);
+	sql_select_delete(pSelect);
 	sqlIdListDelete(pColumn);
 	sqlDbFree(aRegIdx);
 }

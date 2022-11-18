@@ -1346,7 +1346,7 @@ sqlExprDeleteNN(struct Expr *p)
 			sqlExprDeleteNN(p->pLeft);
 		sql_expr_delete(p->pRight);
 		if (ExprHasProperty(p, EP_xIsSelect)) {
-			sql_select_delete(sql_get(), p->x.pSelect);
+			sql_select_delete(p->x.pSelect);
 		} else {
 			sql_expr_list_delete(p->x.pList);
 		}

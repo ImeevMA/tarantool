@@ -424,9 +424,8 @@ sqlSelectSetName(Select * p, const char *zName)
 #endif
 
 void
-sql_select_delete(sql *db, Select *p)
+sql_select_delete(struct Select *p)
 {
-	(void)db;
 	if (p)
 		clearSelect(p, 1);
 }
@@ -2773,7 +2772,6 @@ multiSelect(Parse * pParse,	/* Parsing context */
 	Vdbe *v;		/* Generate code to this VDBE */
 	SelectDest dest;	/* Alternative data destination */
 	Select *pDelete = 0;	/* Chain of simple selects to delete */
-	sql *db;		/* Database connection */
 	int iSub1 = 0;		/* EQP id of left-hand query */
 	int iSub2 = 0;		/* EQP id of right-hand query */
 
@@ -2783,7 +2781,6 @@ multiSelect(Parse * pParse,	/* Parsing context */
 	assert(p && p->pPrior);	/* Calling function guarantees this much */
 	assert((p->selFlags & SF_Recursive) == 0 || p->op == TK_ALL
 	       || p->op == TK_UNION);
-	db = pParse->db;
 	pPrior = p->pPrior;
 	dest = *pDest;
 	if (pPrior->pOrderBy) {
@@ -3169,7 +3166,7 @@ multiSelect(Parse * pParse,	/* Parsing context */
  multi_select_end:
 	pDest->iSdst = dest.iSdst;
 	pDest->nSdst = dest.nSdst;
-	sql_select_delete(db, pDelete);
+	sql_select_delete(pDelete);
 	return rc;
 }
 
@@ -3456,7 +3453,6 @@ multiSelectOrderBy(Parse * pParse,	/* Parsing context */
 	struct sql_key_info *key_info_dup = NULL;
 	/* Comparison information for merging rows */
 	struct sql_key_info *key_info_merge;
-	sql *db;		/* Database connection */
 	ExprList *pOrderBy;	/* The ORDER BY clause */
 	int nOrderBy;		/* Number of terms in the ORDER BY clause */
 	int *aPermute;		/* Mapping from ORDER BY terms to result set columns */
@@ -3464,7 +3460,6 @@ multiSelectOrderBy(Parse * pParse,	/* Parsing context */
 	int iSub2;		/* EQP id of right-hand query */
 
 	assert(p->pOrderBy != 0);
-	db = pParse->db;
 	v = pParse->pVdbe;
 	assert(v != 0);		/* Already thrown the error if VDBE alloc failed */
 	labelEnd = sqlVdbeMakeLabel(v);
@@ -3722,7 +3717,7 @@ multiSelectOrderBy(Parse * pParse,	/* Parsing context */
 	 * by the calling function
 	 */
 	if (p->pPrior) {
-		sql_select_delete(db, p->pPrior);
+		sql_select_delete(p->pPrior);
 	}
 	p->pPrior = pPrior;
 	pPrior->pNext = p;
@@ -4370,7 +4365,7 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 	/* Finially, delete what is left of the subquery and return
 	 * success.
 	 */
-	sql_select_delete(db, pSub1);
+	sql_select_delete(pSub1);
 
 #ifdef SQL_DEBUG
 	if (sqlSelectTrace & 0x100) {
