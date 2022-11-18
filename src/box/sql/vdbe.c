@@ -376,7 +376,8 @@ int sqlVdbeExec(Vdbe *p)
 	Op *pOrigOp;               /* Value of pOp at the top of the loop */
 #endif
 	int rc = 0;        /* Value to return */
-	sql *db = p->db;       /* The database */
+	/* The database */
+	struct sql *db = sql_get();
 	int iCompare = 0;          /* Result of last comparison */
 	unsigned nVmStep = 0;      /* Number of virtual machine steps */
 	Mem *aMem = p->aMem;       /* Copy of p->aMem */

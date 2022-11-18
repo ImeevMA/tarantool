@@ -239,7 +239,7 @@ sqlCloseSavepoints(Vdbe * pVdbe)
 void
 sqlRollbackAll(Vdbe * pVdbe)
 {
-	sql *db = pVdbe->db;
+	struct sql *db = sql_get();
 
 	/* If one has been configured, invoke the rollback-hook callback */
 	if (db->xRollbackCallback && (!pVdbe->auto_commit)) {

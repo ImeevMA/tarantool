@@ -223,7 +223,6 @@ struct sql_column_metadata {
  * is really a pointer to an instance of this structure.
  */
 struct Vdbe {
-	sql *db;		/* The database connection that owns this statement */
 	Vdbe *pPrev, *pNext;	/* Linked list of VDBEs with the same Vdbe.db */
 	Parse *pParse;		/* Parsing context used to create this Vdbe */
 	ynVar nVar;		/* Number of entries in aVar[] */

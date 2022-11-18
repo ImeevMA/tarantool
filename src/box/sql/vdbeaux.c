@@ -57,7 +57,6 @@ sqlVdbeCreate(Parse * pParse)
 	Vdbe *p;
 	p = sqlDbMallocRawNN(sizeof(Vdbe));
 	memset(p, 0, sizeof(Vdbe));
-	p->db = db;
 	stailq_create(&p->autoinc_id_list);
 	if (db->pVdbe) {
 		db->pVdbe->pPrev = p;
@@ -105,7 +104,6 @@ sqlVdbeSwap(Vdbe * pA, Vdbe * pB)
 {
 	Vdbe tmp, *pTmp;
 	char *zTmp;
-	assert(pA->db == pB->db);
 	tmp = *pA;
 	*pA = *pB;
 	*pB = tmp;
@@ -1534,7 +1532,7 @@ sqlVdbeFrameRestore(VdbeFrame * pFrame)
 	v->apCsr = pFrame->apCsr;
 	v->nCursor = pFrame->nCursor;
 	v->nChange = pFrame->nChange;
-	v->db->nChange = pFrame->nDbChange;
+	sql_get()->nChange = pFrame->nDbChange;
 	return pFrame->pc;
 }
 
@@ -1809,7 +1807,7 @@ int
 sqlVdbeHalt(Vdbe * p)
 {
 	int rc;			/* Used to store transient return codes */
-	sql *db = p->db;
+	sql *db = sql_get();
 
 	/* This function contains the logic that determines if a statement or
 	 * transaction will be committed or rolled back as a result of the
@@ -2041,23 +2039,19 @@ sqlVdbeClearObject(struct Vdbe *p)
 void
 sqlVdbeDelete(Vdbe * p)
 {
-	sql *db;
-
 	if (NEVER(p == 0))
 		return;
-	db = p->db;
 	sqlVdbeClearObject(p);
 	if (p->pPrev) {
 		p->pPrev->pNext = p->pNext;
 	} else {
-		assert(db->pVdbe == p);
-		db->pVdbe = p->pNext;
+		assert(sql_get()->pVdbe == p);
+		sql_get()->pVdbe = p->pNext;
 	}
 	if (p->pNext) {
 		p->pNext->pPrev = p->pPrev;
 	}
 	p->magic = VDBE_MAGIC_DEAD;
-	p->db = 0;
 	free(p->var_pos);
 	/*
 	 * VDBE is responsible for releasing region after txn

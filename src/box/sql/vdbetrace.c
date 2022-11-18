@@ -92,7 +92,6 @@ sqlVdbeExpandSql(Vdbe * p,	/* The prepared statement being evaluated */
 		     const char *zRawSql	/* Raw text of the SQL statement */
     )
 {
-	sql *db;		/* The database connection */
 	int idx = 0;		/* Index of a host parameter */
 	int nextIndex = 1;	/* Index of next ? host parameter */
 	int n;			/* Length of a token prefix */
@@ -100,9 +99,8 @@ sqlVdbeExpandSql(Vdbe * p,	/* The prepared statement being evaluated */
 	StrAccum out;		/* Accumulate the output here */
 	char zBase[100];	/* Initial working space */
 
-	db = p->db;
 	sqlStrAccumInit(&out, zBase, sizeof(zBase), SQL_MAX_LENGTH);
-	if (db->nVdbeExec > 1) {
+	if (sql_get()->nVdbeExec > 1) {
 		while (*zRawSql) {
 			const char *zStart = zRawSql;
 			while (*(zRawSql++) != '\n' && *zRawSql) ;
