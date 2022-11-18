@@ -2121,11 +2121,9 @@ sqlVdbeCountChanges(Vdbe * v)
 void
 sqlExpirePreparedStatements()
 {
-	struct sql *db = sql_get();
 	Vdbe *p;
-	for (p = db->pVdbe; p; p = p->pNext) {
+	for (p = sql_get()->pVdbe; p; p = p->pNext)
 		p->expired = 1;
-	}
 }
 
 const struct Mem *

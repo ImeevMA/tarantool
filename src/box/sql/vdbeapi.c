@@ -655,24 +655,6 @@ sql_stmt_busy(const struct sql_stmt *stmt)
 }
 
 /*
- * Return a pointer to the next prepared statement after pStmt associated
- * with database connection pDb.  If pStmt is NULL, return the first
- * prepared statement for the database connection.  Return NULL if there
- * are no more.
- */
-sql_stmt *
-sql_next_stmt(sql * pDb, sql_stmt * pStmt)
-{
-	sql_stmt *pNext;
-	if (pStmt == 0) {
-		pNext = (sql_stmt *) pDb->pVdbe;
-	} else {
-		pNext = (sql_stmt *) ((Vdbe *) pStmt)->pNext;
-	}
-	return pNext;
-}
-
-/*
  * Return the value of a status counter for a prepared statement
  */
 int
