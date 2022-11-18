@@ -1636,7 +1636,7 @@ tridxby ::= NOT INDEXED. {
 // UPDATE 
 trigger_cmd(A) ::=
    UPDATE orconf(R) trnm(X) tridxby SET setlist(Y) where_opt(Z). {
-     A = sql_trigger_update_step(pParse->db, &X, Y, Z, R);
+     A = sql_trigger_update_step(&X, Y, Z, R);
      if (A == NULL) {
         pParse->is_aborted = true;
         return;

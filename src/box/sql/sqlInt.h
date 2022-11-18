@@ -3478,19 +3478,16 @@ sql_trigger_insert_step(struct sql *db, struct Token *table_name,
  * The parser calls this routine when it sees an UPDATE statement
  * inside the body of a CREATE TRIGGER.
  *
- * @param db The database connection.
  * @param table_name Name of the table to be updated.
  * @param new_list The SET clause: list of column and new values.
  *        Is deleted anyway.
  * @param where The WHERE clause. Is deleted anyway.
  * @param orconf A conflict processing algorithm.
  * @retval Not NULL TriggerStep object on success.
- * @retval NULL Error. The diag message is set.
  */
 struct TriggerStep *
-sql_trigger_update_step(struct sql *db, struct Token *table_name,
-		        struct ExprList *new_list, struct Expr *where,
-			enum on_conflict_action orconf);
+sql_trigger_update_step(struct Token *table_name, struct ExprList *new_list,
+			struct Expr *where, enum on_conflict_action orconf);
 
 /**
  * Construct a trigger step that implements a DELETE statement.

@@ -280,11 +280,9 @@ sql_trigger_insert_step(struct sql *db, struct Token *table_name,
 }
 
 struct TriggerStep *
-sql_trigger_update_step(struct sql *db, struct Token *table_name,
-		        struct ExprList *new_list, struct Expr *where,
-			enum on_conflict_action orconf)
+sql_trigger_update_step(struct Token *table_name, struct ExprList *new_list,
+			struct Expr *where, enum on_conflict_action orconf)
 {
-	(void)db;
 	struct TriggerStep *trigger_step =
 		sql_trigger_step_new(TK_UPDATE, table_name);
 	trigger_step->pExprList = sql_expr_list_dup(new_list, EXPRDUP_REDUCE);
