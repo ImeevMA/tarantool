@@ -97,6 +97,7 @@ resolveAlias(Parse * pParse,	/* Parsing context */
 	     int nSubquery	/* Number of subqueries that the label is moving */
     )
 {
+	(void)pParse;
 	Expr *pOrig;		/* The iCol-th column of the result set */
 	Expr *pDup;		/* Copy of pOrig */
 
@@ -108,10 +109,8 @@ resolveAlias(Parse * pParse,	/* Parsing context */
 		return;
 	if (zType[0] != 'G')
 		incrAggFunctionDepth(pDup, nSubquery);
-	if (pExpr->op == TK_COLLATE) {
-		pDup =
-		    sqlExprAddCollateString(pParse, pDup, pExpr->u.zToken);
-	}
+	if (pExpr->op == TK_COLLATE)
+		pDup = sqlExprAddCollateString(pDup, pExpr->u.zToken);
 	ExprSetProperty(pDup, EP_Alias);
 
 	/* Before calling sql_expr_delete(), set the EP_Static flag. This

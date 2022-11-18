@@ -202,12 +202,7 @@ field_type_sequence_dup(enum field_type *types, uint32_t len)
 	return ret_types;
 }
 
-/*
- * Set the collating sequence for expression pExpr to be the collating
- * sequence named by pToken.   Return a pointer to a new Expr node that
- * implements the COLLATE operator.
- */
-Expr *
+struct Expr *
 sqlExprAddCollateToken(struct Expr *pExpr, const Token *pCollName, int dequote)
 {
 	if (pCollName->n == 0)
@@ -222,10 +217,9 @@ sqlExprAddCollateToken(struct Expr *pExpr, const Token *pCollName, int dequote)
 	return new_expr;
 }
 
-Expr *
-sqlExprAddCollateString(Parse * pParse, Expr * pExpr, const char *zC)
+struct Expr *
+sqlExprAddCollateString(struct Expr *pExpr, const char *zC)
 {
-	(void)pParse;
 	Token s;
 	assert(zC != 0);
 	sqlTokenInit(&s, (char *)zC);

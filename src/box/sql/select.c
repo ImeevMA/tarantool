@@ -186,7 +186,7 @@ sql_space_info_new_from_order_by(struct Parse *parser, struct Select *select,
 		if (info->coll_ids[i] != COLL_NONE) {
 			const char *name = coll_by_id(info->coll_ids[i])->name;
 			order_by->a[i].pExpr =
-				sqlExprAddCollateString(parser, expr, name);
+				sqlExprAddCollateString(expr, name);
 		}
 	}
 	info->types[order_by->nExpr] = FIELD_TYPE_INTEGER;
@@ -2477,8 +2477,7 @@ sql_multiselect_orderby_to_key_info(struct Parse *parse, struct Select *s,
 			if (id != COLL_NONE) {
 				const char *name = coll_by_id(id)->name;
 				order_by->a[i].pExpr =
-					sqlExprAddCollateString(parse, term,
-								    name);
+					sqlExprAddCollateString(term, name);
 			}
 		}
 		part->coll_id = id;

@@ -3834,10 +3834,17 @@ sql_expr_coll(Parse *parse, Expr *p, bool *is_explicit_coll, uint32_t *coll_id,
  * named by pCollName. Return a pointer to a new Expr node that implements the
  * COLLATE operator.
  */
-Expr *
+struct Expr *
 sqlExprAddCollateToken(struct Expr *pExpr, const Token *pCollName, int dequote);
 
-Expr *sqlExprAddCollateString(Parse *, Expr *, const char *);
+/**
+ * Set the collating sequence for expression pExpr to be the collating sequence
+ * named by zC. Return a pointer to a new Expr node that implements the COLLATE
+ * operator.
+ */
+struct Expr *
+sqlExprAddCollateString(struct Expr *pExpr, const char *zC);
+
 Expr *sqlExprSkipCollate(Expr *);
 int sqlCheckIdentifierName(Parse *, char *);
 
