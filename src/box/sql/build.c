@@ -206,7 +206,6 @@ struct space *
 sqlStartTable(Parse *pParse, Token *pName)
 {
 	char *zName = 0;	/* The name of the new table */
-	sql *db = pParse->db;
 	struct space *new_space = NULL;
 	struct Vdbe *v = sqlGetVdbe(pParse);
 	if (v == NULL)
@@ -225,7 +224,7 @@ sqlStartTable(Parse *pParse, Token *pName)
 		sql_storage_engine_strs[current_session()->sql_default_engine],
 		ENGINE_NAME_MAX + 1);
 
-	if (!db->init.busy && (v = sqlGetVdbe(pParse)) != 0)
+	if (!sql_get()->init.busy && (v = sqlGetVdbe(pParse)) != 0)
 		sql_set_multi_write(pParse, true);
 
  cleanup:
@@ -339,7 +338,6 @@ sql_create_column_start(struct Parse *parse)
 	assert(alter_entity_def->alter_action == ALTER_ACTION_CREATE);
 	struct space *space = parse->create_table_def.new_space;
 	bool is_alter = space == NULL;
-	struct sql *db = parse->db;
 	if (is_alter) {
 		const char *space_name =
 			alter_entity_def->entity_name->a[0].zName;
@@ -357,9 +355,9 @@ sql_create_column_start(struct Parse *parse)
 	assert(def->opts.is_ephemeral);
 
 #if SQL_MAX_COLUMN
-	if ((int)def->field_count + 1 > db->aLimit[SQL_LIMIT_COLUMN]) {
+	if ((int)def->field_count + 1 > SQL_MAX_COLUMN) {
 		diag_set(ClientError, ER_SQL_COLUMN_COUNT_MAX, def->name,
-			 def->field_count + 1, db->aLimit[SQL_LIMIT_COLUMN]);
+			 def->field_count + 1, SQL_MAX_COLUMN);
 		goto tnt_error;
 	}
 #endif
@@ -501,13 +499,12 @@ sql_column_add_nullable_action(struct Parse *parser,
 void
 sqlAddDefaultValue(Parse * pParse, ExprSpan * pSpan)
 {
-	sql *db = pParse->db;
 	struct space *p = pParse->create_column_def.space;
 	if (p != NULL) {
 		assert(p->def->opts.is_ephemeral);
 		struct space_def *def = p->def;
 		if (!sqlExprIsConstantOrFunction
-		    (pSpan->pExpr, db->init.busy)) {
+		    (pSpan->pExpr, sql_get()->init.busy)) {
 			const char *column_name =
 				def->fields[def->field_count - 1].name;
 			diag_set(ClientError, ER_CREATE_SPACE, def->name,
@@ -1967,7 +1964,6 @@ columnno_by_name(struct Parse *parse_context, const struct space *space,
 void
 sql_create_foreign_key(struct Parse *parse_context)
 {
-	struct sql *db = parse_context->db;
 	struct create_fk_def *create_fk_def = &parse_context->create_fk_def;
 	struct create_constraint_def *create_constr_def = &create_fk_def->base;
 	struct create_entity_def *create_def = &create_constr_def->base;
@@ -1979,7 +1975,7 @@ sql_create_foreign_key(struct Parse *parse_context)
 	 * <CREATE TABLE ...> statement (i.e. at VDBE runtime),
 	 * don't even try to do something.
 	 */
-	if (db->init.busy)
+	if (sql_get()->init.busy)
 		return;
 	/*
 	 * Beforehand initialization for correct clean-up
@@ -2547,8 +2543,7 @@ sql_create_index(struct Parse *parse) {
 	struct index *index = NULL;
 	/* Name of the index. */
 	char *name = NULL;
-	struct sql *db = parse->db;
-	assert(!db->init.busy);
+	assert(!sql_get()->init.busy);
 	struct create_index_def *create_idx_def = &parse->create_index_def;
 	struct create_entity_def *create_entity_def = &create_idx_def->base.base;
 	struct alter_entity_def *alter_entity_def = &create_entity_def->base;
@@ -2698,10 +2693,10 @@ sql_create_index(struct Parse *parse) {
 		assert(col_list->nExpr == 1);
 		sqlExprListSetSortOrder(col_list, create_idx_def->sort_order);
 	} else {
-		if (col_list->nExpr > db->aLimit[SQL_LIMIT_COLUMN]) {
+		if (col_list->nExpr > SQL_MAX_COLUMN) {
 			diag_set(ClientError, ER_SQL_PARSER_LIMIT,
 				 "The number of columns in index",
-				 col_list->nExpr, db->aLimit[SQL_LIMIT_COLUMN]);
+				 col_list->nExpr, SQL_MAX_COLUMN);
 			parse->is_aborted = true;
 		}
 	}
