@@ -287,8 +287,7 @@ sql_trigger_update_step(struct sql *db, struct Token *table_name,
 {
 	struct TriggerStep *trigger_step =
 		sql_trigger_step_new(TK_UPDATE, table_name);
-	trigger_step->pExprList =
-	    sql_expr_list_dup(db, new_list, EXPRDUP_REDUCE);
+	trigger_step->pExprList = sql_expr_list_dup(new_list, EXPRDUP_REDUCE);
 	trigger_step->pWhere = sqlExprDup(db, where, EXPRDUP_REDUCE);
 	trigger_step->orconf = orconf;
 	sql_expr_list_delete(new_list);
@@ -562,16 +561,12 @@ codeTriggerProgram(Parse * pParse,	/* The parser context */
 
 		switch (pStep->op) {
 		case TK_UPDATE:{
-				sqlUpdate(pParse,
-					      targetSrcList(pParse, pStep),
-					      sql_expr_list_dup(db,
-								pStep->pExprList,
-								0),
-					      sqlExprDup(db, pStep->pWhere,
-							     0),
-					      pParse->eOrconf);
-				break;
-			}
+			sqlUpdate(pParse, targetSrcList(pParse, pStep),
+				  sql_expr_list_dup(pStep->pExprList, 0),
+				  sqlExprDup(db, pStep->pWhere, 0),
+				  pParse->eOrconf);
+			break;
+		}
 		case TK_INSERT:{
 				sqlInsert(pParse,
 					      targetSrcList(pParse, pStep),

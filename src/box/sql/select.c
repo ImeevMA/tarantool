@@ -3535,7 +3535,7 @@ multiSelectOrderBy(Parse * pParse,	/* Parsing context */
 	/* Reattach the ORDER BY clause to the query.
 	 */
 	p->pOrderBy = pOrderBy;
-	pPrior->pOrderBy = sql_expr_list_dup(pParse->db, pOrderBy, 0);
+	pPrior->pOrderBy = sql_expr_list_dup(pOrderBy, 0);
 
 	/* Allocate a range of temporary registers and the key_info needed
 	 * for the logic that removes duplicate result rows when the
@@ -4356,7 +4356,7 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 			}
 			assert(pParent->pGroupBy == 0);
 			pParent->pGroupBy =
-			    sql_expr_list_dup(db, pSub->pGroupBy, 0);
+				sql_expr_list_dup(pSub->pGroupBy, 0);
 		} else if (pWhere != NULL || pParent->pWhere != NULL) {
 			pParent->pWhere =
 				sql_and_expr_new(pWhere, pParent->pWhere);
@@ -5915,7 +5915,8 @@ sqlSelect(Parse * pParse,		/* The parser context */
 	if ((p->selFlags & (SF_Distinct | SF_Aggregate)) == SF_Distinct
 	    && sqlExprListCompare(sSort.pOrderBy, pEList, -1) == 0) {
 		p->selFlags &= ~SF_Distinct;
-		pGroupBy = p->pGroupBy = sql_expr_list_dup(db, pEList, 0);
+		pGroupBy = sql_expr_list_dup(pEList, 0);
+		p->pGroupBy = pGroupBy;
 		/* Notice that even thought SF_Distinct has been cleared from p->selFlags,
 		 * the sDistinct.isTnct is still set.  Hence, isTnct represents the
 		 * original setting of the SF_Distinct flag, not the current setting
@@ -6506,8 +6507,7 @@ sqlSelect(Parse * pParse,		/* The parser context */
 					   && pMinMax->nExpr == 1));
 
 				if (flag) {
-					pMinMax =
-					    sql_expr_list_dup(db, pMinMax, 0);
+					pMinMax = sql_expr_list_dup(pMinMax, 0);
 					pDel = pMinMax;
 					assert(pMinMax != 0);
 					pMinMax->a[0].sort_order =

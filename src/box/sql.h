@@ -228,14 +228,14 @@ sql_template_space_new(struct Parse *parser, const char *name);
  * returned is a truncated version of the usual Expr structure
  * that will be stored as part of the in-memory representation of
  * the database schema.
- * @param db The database connection.
+ *
  * @param p The ExprList to duplicate.
  * @param flags EXPRDUP_XXX flags.
- * @retval NULL on memory allocation error.
+ * @retval NULL if original expr list is NULL.
  * @retval not NULL on success.
  */
 struct ExprList *
-sql_expr_list_dup(struct sql *db, struct ExprList *p, int flags);
+sql_expr_list_dup(struct ExprList *p, int flags);
 
 /**
  * Free AST pointed by expr list.

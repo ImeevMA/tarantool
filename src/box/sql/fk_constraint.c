@@ -823,7 +823,7 @@ fk_constraint_action_trigger(struct Parse *pParse, struct space_def *def,
 	memcpy((char *)step->zTarget, space_name, name_len);
 
 	step->pWhere = sqlExprDup(db, where, EXPRDUP_REDUCE);
-	step->pExprList = sql_expr_list_dup(db, list, EXPRDUP_REDUCE);
+	step->pExprList = sql_expr_list_dup(list, EXPRDUP_REDUCE);
 	step->pSelect = sqlSelectDup(db, select, EXPRDUP_REDUCE);
 	if (when != NULL) {
 		when = sqlPExpr(pParse, TK_NOT, when, 0);

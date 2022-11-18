@@ -1535,7 +1535,7 @@ sql_expr_dup(struct sql *db, struct Expr *p, int flags, char **buffer)
 						     flags);
 			} else {
 				pNew->x.pList =
-					sql_expr_list_dup(db, p->x.pList, flags);
+					sql_expr_list_dup(p->x.pList, flags);
 			}
 		}
 
@@ -1588,7 +1588,7 @@ withDup(sql * db, With * p)
 			pRet->a[i].pSelect =
 				sqlSelectDup(db, p->a[i].pSelect, 0);
 			pRet->a[i].pCols =
-				sql_expr_list_dup(db, p->a[i].pCols, 0);
+				sql_expr_list_dup(p->a[i].pCols, 0);
 			pRet->a[i].zName = sqlDbStrDup(p->a[i].zName);
 		}
 	}
@@ -1620,12 +1620,11 @@ sqlExprDup(sql * db, Expr * p, int flags)
 }
 
 struct ExprList *
-sql_expr_list_dup(struct sql *db, struct ExprList *p, int flags)
+sql_expr_list_dup(struct ExprList *p, int flags)
 {
 	struct ExprList_item *pItem, *pOldItem;
 	int i;
 	Expr *pPriorSelectCol = NULL;
-	assert(db != NULL);
 	if (p == NULL)
 		return NULL;
 	ExprList *pNew = sqlDbMallocRawNN(sizeof(*pNew));
@@ -1639,7 +1638,7 @@ sql_expr_list_dup(struct sql *db, struct ExprList *p, int flags)
 	for (i = 0; i < p->nExpr; i++, pItem++, pOldItem++) {
 		Expr *pOldExpr = pOldItem->pExpr;
 		Expr *pNewExpr;
-		pItem->pExpr = sqlExprDup(db, pOldExpr, flags);
+		pItem->pExpr = sqlExprDup(sql_get(), pOldExpr, flags);
 		if (pOldExpr != NULL && pOldExpr->op == TK_SELECT_COLUMN &&
 		    (pNewExpr = pItem->pExpr) != NULL) {
 			assert(pNewExpr->iColumn == 0 || i > 0);
@@ -1702,7 +1701,7 @@ sqlSrcListDup(sql * db, SrcList * p, int flags)
 		pNewItem->pIBIndex = pOldItem->pIBIndex;
 		if (pNewItem->fg.isTabFunc) {
 			pNewItem->u1.pFuncArg =
-			    sql_expr_list_dup(db, pOldItem->u1.pFuncArg, flags);
+				sql_expr_list_dup(pOldItem->u1.pFuncArg, flags);
 		}
 		pNewItem->space = pOldItem->space;
 		pNewItem->pSelect =
@@ -1748,12 +1747,12 @@ sqlSelectDup(sql * db, Select * p, int flags)
 	if (p == 0)
 		return 0;
 	pNew = sqlDbMallocRawNN(sizeof(*p));
-	pNew->pEList = sql_expr_list_dup(db, p->pEList, flags);
+	pNew->pEList = sql_expr_list_dup(p->pEList, flags);
 	pNew->pSrc = sqlSrcListDup(db, p->pSrc, flags);
 	pNew->pWhere = sqlExprDup(db, p->pWhere, flags);
-	pNew->pGroupBy = sql_expr_list_dup(db, p->pGroupBy, flags);
+	pNew->pGroupBy = sql_expr_list_dup(p->pGroupBy, flags);
 	pNew->pHaving = sqlExprDup(db, p->pHaving, flags);
-	pNew->pOrderBy = sql_expr_list_dup(db, p->pOrderBy, flags);
+	pNew->pOrderBy = sql_expr_list_dup(p->pOrderBy, flags);
 	pNew->op = p->op;
 	pNew->pPrior = pPrior = sqlSelectDup(db, p->pPrior, flags);
 	if (pPrior)
