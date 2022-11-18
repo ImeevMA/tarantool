@@ -2122,19 +2122,19 @@ sqlVdbeCountChanges(Vdbe * v)
 	v->changeCntOn = 1;
 }
 
-/*
- * Mark every prepared statement associated with a database connection
- * as expired.
+/**
+ * Mark every prepared statement as expired.
  *
- * An expired statement means that recompilation of the statement is
- * recommend.  Statements expire when things happen that make their
- * programs obsolete.  Removing user-defined functions or collating
- * sequences, or changing an authorization function are the types of
- * things that make prepared statements obsolete.
+ * An expired statement means that recompilation of the statement is recommend.
+ * Statements expire when things happen that make their programs obsolete.
+ * Removing user-defined functions or collating sequences, or changing an
+ * authorization function are the types of things that make prepared statements
+ * obsolete.
  */
 void
-sqlExpirePreparedStatements(sql * db)
+sqlExpirePreparedStatements()
 {
+	struct sql *db = sql_get();
 	Vdbe *p;
 	for (p = db->pVdbe; p; p = p->pNext) {
 		p->expired = 1;

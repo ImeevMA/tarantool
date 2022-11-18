@@ -4213,7 +4213,7 @@ case OP_AggFinal: {
  */
 case OP_Expire: {
 	if (!pOp->p1) {
-		sqlExpirePreparedStatements(db);
+		sqlExpirePreparedStatements();
 	} else {
 		p->expired = 1;
 	}

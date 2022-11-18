@@ -3860,9 +3860,6 @@ int
 sql_rem_int(int64_t lhs, bool is_lhs_neg, int64_t rhs, bool is_rhs_neg,
 	    int64_t *res, bool *is_res_neg);
 
-int sqlValueFromExpr(sql *, Expr *, enum field_type type,
-			 sql_value **);
-
 extern const unsigned char sqlOpcodeProperty[];
 extern const unsigned char sqlUpperToLower[];
 extern const unsigned char sqlCtypeMap[];
@@ -3899,7 +3896,18 @@ sql_alter_ck_constraint_enable(struct Parse *parse);
 int
 sql_token(const char *z, int *type, bool *is_reserved);
 
-void sqlExpirePreparedStatements(sql *);
+/**
+ * Mark every prepared statement as expired.
+ *
+ * An expired statement means that recompilation of the statement is
+ * recommend.  Statements expire when things happen that make their
+ * programs obsolete.  Removing user-defined functions or collating
+ * sequences, or changing an authorization function are the types of
+ * things that make prepared statements obsolete.
+ */
+void
+sqlExpirePreparedStatements();
+
 int sqlCodeSubselect(Parse *, Expr *, int);
 void sqlSelectPrep(Parse *, Select *, NameContext *);
 
