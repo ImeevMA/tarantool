@@ -1044,6 +1044,9 @@ struct sql {
 					 * (nullability, autoincrement, alias)
 					 * in metadata.
 					 */
+enum {
+	SQL_SeqScan = 0x00000008,
+};
 
 /* Bits of the sql.dbOptFlags field. */
 #define SQL_QueryFlattener 0x0001	/* Query flattening */
@@ -1650,6 +1653,7 @@ struct SrcList {
 			ExprList *pFuncArg;	/* Arguments to table-valued-function */
 		} u1;
 		struct index_def *pIBIndex;
+		bool allow_seq_scan;
 	} a[1];			/* One entry for each identifier on the list */
 };
 
@@ -2860,8 +2864,24 @@ struct SrcList *
 sql_src_list_append(struct sql *db, struct SrcList *list,
 		    struct Token *name_token);
 
-SrcList *sqlSrcListAppendFromTerm(Parse *, SrcList *, Token *,
-				      Token *, Select *, Expr *, IdList *);
+/**
+ * This routine is called by the parser to add a new term to the end of a
+ * growing FROM clause. The "p" parameter is the part of the FROM clause that
+ * has already been constructed. "p" is NULL if this is the first term of the
+ * FROM clause. "pTable" is the name of the table in the FROM clause term. If
+ * the term has an alias, then "pAlias" points to the alias token. If the term
+ * is a subquery, then "pSubquery" is the SELECT statement that the subquery
+ * encodes. The "pTable" is NULL for subqueries. The "pOn" and "pUsing"
+ * parameters are the content of the ON and USING clauses.
+ *
+ * Return a new SrcList that encodes FROM with the new term added.
+ */
+struct SrcList *
+sqlSrcListAppendFromTerm(struct Parse *pParse, struct SrcList *p,
+			 struct Token *pTable, struct Token *pAlias,
+			 struct Select *pSubquery, struct Expr *pOn,
+			 struct IdList *pUsing, bool allow_seq_scan);
+
 void sqlSrcListIndexedBy(Parse *, SrcList *, Token *);
 void sqlSrcListFuncArgs(Parse *, SrcList *, ExprList *);
 int sqlIndexedByLookup(Parse *, struct SrcList_item *);
