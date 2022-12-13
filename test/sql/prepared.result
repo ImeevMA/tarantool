@@ -63,6 +63,10 @@ test_run:cmd("setopt delimiter ''");
  | ---
  | - true
  | ...
+execute([[SET SESSION "sql_seq_scan" = true;]])
+ | ---
+ | - row_count: 1
+ | ...
 
 -- Check default cache statistics.
 --
@@ -759,6 +763,7 @@ box.cfg{sql_cache_size = 3000};
  | ---
  | ...
 
+execute([[SET SESSION "sql_seq_scan" = true;]])
 -- Make sure that if prepared statement is busy (is executed
 -- right now), prepared statement is not used, i.e. statement
 -- is compiled from scratch, executed and finilized.

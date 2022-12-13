@@ -3,6 +3,7 @@ env = require('test_run')
 test_run = env.new()
 engine = test_run:get_cfg('engine')
 _ = box.space._session_settings:update('sql_default_engine', {{'=', 2, engine}})
+box.execute([[SET SESSION "sql_seq_scan" = true;]])
 
 -- Create a table and insert a datum
 box.execute([[CREATE TABLE t1(a INT PRIMARY KEY, b INT, UNIQUE(b));]])
