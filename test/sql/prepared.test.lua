@@ -256,6 +256,7 @@ test_run:cmd("setopt delimiter ';'");
 ok = nil
 res = nil
 _ = fiber.create(function()
+    execute([[SET SESSION "sql_seq_scan" = true;]])
     for i = 1, 5 do
         pcall(prepare, string.format("SELECT * FROM test WHERE a = %d;", i))
     end
@@ -275,7 +276,6 @@ end;
 box.cfg{sql_cache_size = 0};
 box.cfg{sql_cache_size = 3000};
 
-execute([[SET SESSION "sql_seq_scan" = true;]])
 -- Make sure that if prepared statement is busy (is executed
 -- right now), prepared statement is not used, i.e. statement
 -- is compiled from scratch, executed and finilized.
@@ -283,6 +283,7 @@ execute([[SET SESSION "sql_seq_scan" = true;]])
 box.schema.func.create('SLEEP', {language = 'Lua',
     body = 'function () fiber.sleep(0.3) return 1 end',
     exports = {'LUA', 'SQL'}});
+execute([[SET SESSION "sql_seq_scan" = true;]])
 
 s = prepare("SELECT id, SLEEP() FROM test;");
 assert(s ~= nil);
