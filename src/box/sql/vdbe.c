@@ -4398,6 +4398,27 @@ case OP_SetSession: {
 	break;
 }
 
+/**
+ * Opcode: ShowCreateTable P1 P2 * * *
+ * Synopsis: r[P2, P2 + 1]=description of a space with ID == r[P1]
+ *
+ * Set the space description with the identifier from register P1 to register
+ * P2. All errors detected during the construction of the description are set to
+ * register P2 + 1.
+ */
+case OP_ShowCreateTable: {
+	char *ret = NULL;
+	char *err = NULL;
+	sql_show_create_table(aMem[pOp->p1].u.i, &ret, &err);
+	assert(ret != NULL);
+	mem_set_str0_allocated(&aMem[pOp->p2], ret);
+	if (err != NULL)
+		mem_set_str0_allocated(&aMem[pOp->p2 + 1], err);
+	else
+		mem_set_null(&aMem[pOp->p2 + 1]);
+	break;
+}
+
 /* Opcode: Noop * * * * *
  *
  * Do nothing.  This instruction is often useful as a jump
