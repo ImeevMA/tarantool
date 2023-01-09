@@ -282,6 +282,12 @@ enum sql_ret_code {
 	SQL_DONE = 2,
 };
 
+enum sql_show_type {
+	SQL_SHOW_THROW = 0,
+	SQL_SHOW_IGNORE,
+	SQL_SHOW_INCLUDE,
+};
+
 int
 sql_stricmp(const char *, const char *);
 
@@ -2504,6 +2510,13 @@ sql_normalized_name_new(const char *name, int len);
 char *
 sql_normalized_name_region_new(struct region *r, const char *name, int len);
 
+/**
+ * Return an escaped version of the original name in memory allocated with
+ * sql_xmalloc().
+ */
+char *
+sql_escaped_name_new(const char *name);
+
 int sqlKeywordCode(const unsigned char *, int);
 int sqlRunParser(Parse *, const char *);
 
@@ -2650,6 +2663,33 @@ u32 sqlExprListFlags(const ExprList *);
 void
 sqlPragma(struct Parse *pParse, struct Token *pragma, struct Token *table,
 	  struct Token *index);
+
+/** Emit VDBE instructions for "SHOW CREATE TABLE table_name;" statement. */
+void
+sql_emit_show_create_table_throw(struct Parse *parse, struct Token *name);
+
+/**
+ * Emit VDBE instructions for "SHOW CREATE TABLE table_name INCLUDING ERRORS;"
+ * statement.
+ */
+void
+sql_emit_show_create_table_include(struct Parse *parse, struct Token *name);
+
+/** Emit VDBE instructions for "SHOW CREATE TABLE;" statement. */
+void
+sql_emit_show_create_tables_ignore(struct Parse *parse);
+
+/**
+ * Emit VDBE instructions for "SHOW CREATE TABLE INCLUDING ERRORS;" statement.
+ */
+void
+sql_emit_show_create_tables_include(struct Parse *parse);
+
+/**
+ * Generate a CREATE TABLE statement for the space with the given identifier.
+ */
+int
+sql_show_create_table(uint32_t space_id, enum sql_show_type type, char **res);
 
 /**
  * Return true if given column is part of primary key.

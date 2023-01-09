@@ -257,6 +257,9 @@ static Keyword aKeywordTable[] = {
   { "BOTH",                   "TK_BOTH",        true  },
   { "INTERVAL",               "TK_INTERVAL",    true  },
   { "SEQSCAN",                "TK_SEQSCAN",     false },
+  { "SHOW",                   "TK_SHOW",        false },
+  { "INCLUDING",              "TK_INCLUDING",   false },
+  { "ERRORS",                 "TK_ERRORS",      false },
 };
 
 /* Number of keywords */

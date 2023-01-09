@@ -4398,6 +4398,20 @@ case OP_SetSession: {
 	break;
 }
 
+/* Opcode: ShowCreateTable P1 P2 P3 * P5
+ */
+case OP_ShowCreateTable: {
+	assert(pOp->p5 == SQL_SHOW_THROW || pOp->p5 == SQL_SHOW_IGNORE ||
+	       pOp->p5 == SQL_SHOW_INCLUDE);
+	char *str = NULL;
+	if (sql_show_create_table(aMem[pOp->p1].u.i, pOp->p5, &str) != 0)
+		goto abort_due_to_error;
+	if (str == NULL)
+		goto jump_to_p2;
+	mem_set_str0_allocated(&aMem[pOp->p3], str);
+	break;
+}
+
 /* Opcode: Noop * * * * *
  *
  * Do nothing.  This instruction is often useful as a jump

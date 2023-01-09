@@ -3389,3 +3389,100 @@ sql_setting_set(struct Parse *parse_context, struct Token *name,
 	sqlVdbeAddOp4(vdbe, OP_SetSession, target, 0, 0, key, P4_DYNAMIC);
 	return;
 }
+
+/**
+ * Emit VDBE instructions for "SHOW CREATE TABLE table_name INCLUDING ERRORS;"
+ * and "SHOW CREATE TABLE table_name;" statements.
+ */
+static void
+sql_emit_show_create_table_one(struct Parse *parse, struct Token *name,
+			       enum sql_show_type type)
+{
+	struct Vdbe *v = sqlGetVdbe(parse);
+	char *space_name = sql_name_from_token(name);
+	sqlVdbeSetNumCols(v, 1);
+	vdbe_metadata_set_col_name(v, 0, "statement");
+	vdbe_metadata_set_col_type(v, 0, "string");
+
+	int cursor = parse->nTab++;
+	int space_reg = ++parse->nMem;
+	int name_reg = ++parse->nMem;
+	sqlVdbeAddOp2(v, OP_OpenSpace, space_reg, BOX_VSPACE_ID);
+	sqlVdbeAddOp3(v, OP_IteratorOpen, cursor, 2, space_reg);
+	sqlVdbeChangeP5(v, OPFLAG_SEEKEQ);
+	sqlVdbeAddOp4(v, OP_String8, 0, name_reg, 0, space_name, P4_DYNAMIC);
+	int addr1 = sqlVdbeAddOp4Int(v, OP_SeekGE, cursor, 0, name_reg, 1);
+	int addr2 = sqlVdbeAddOp4Int(v, OP_IdxGT, cursor, 0, name_reg, 1);
+	int space_id_reg = ++parse->nMem;
+	sqlVdbeAddOp3(v, OP_Column, cursor, BOX_SPACE_FIELD_ID, space_id_reg);
+	int result_reg = ++parse->nMem;
+	int addr3 = sqlVdbeAddOp3(v, OP_ShowCreateTable, space_id_reg, 0,
+				  result_reg);
+	sqlVdbeChangeP5(v, type);
+	sqlVdbeAddOp2(v, OP_ResultRow, result_reg, 1);
+	int addr4 = sqlVdbeAddOp0(v, OP_Goto);
+	sqlVdbeJumpHere(v, addr1);
+	sqlVdbeJumpHere(v, addr2);
+
+	char *err = sqlMPrintf(tnt_errcode_desc(ER_NO_SUCH_SPACE), space_name);
+	sqlVdbeAddOp4(v, OP_SetDiag, ER_NO_SUCH_SPACE, 0, 0, err, P4_DYNAMIC);
+	sqlVdbeAddOp2(v, OP_Halt, -1, ON_CONFLICT_ACTION_ABORT);
+	sqlVdbeJumpHere(v, addr3);
+	sqlVdbeJumpHere(v, addr4);
+}
+
+void
+sql_emit_show_create_table_throw(struct Parse *parse, struct Token *name)
+{
+	return sql_emit_show_create_table_one(parse, name, SQL_SHOW_THROW);
+}
+
+void
+sql_emit_show_create_table_include(struct Parse *parse, struct Token *name)
+{
+	return sql_emit_show_create_table_one(parse, name, SQL_SHOW_INCLUDE);
+}
+
+/**
+ * Emit VDBE instructions for "SHOW CREATE TABLE INCLUDING ERRORS;" and
+ * "SHOW CREATE TABLE;" statements.
+ */
+static void
+sql_emit_show_create_table_all(struct Parse *parse, enum sql_show_type type)
+{
+	struct Vdbe *v = sqlGetVdbe(parse);
+	sqlVdbeSetNumCols(v, 1);
+	vdbe_metadata_set_col_name(v, 0, "statement");
+	vdbe_metadata_set_col_type(v, 0, "string");
+
+	int cursor = parse->nTab++;
+	int space_reg = ++parse->nMem;
+	int key_reg = ++parse->nMem;
+	sqlVdbeAddOp2(v, OP_OpenSpace, space_reg, BOX_VSPACE_ID);
+	sqlVdbeAddOp3(v, OP_IteratorOpen, cursor, 0, space_reg);
+	sqlVdbeAddOp2(v, OP_Integer, BOX_SYSTEM_ID_MAX, key_reg);
+	int addr1 = sqlVdbeAddOp4Int(v, OP_SeekGT, cursor, 0, key_reg, 1);
+	int space_id_reg = ++parse->nMem;
+	int addr2 = sqlVdbeAddOp3(v, OP_Column, cursor, BOX_SPACE_FIELD_ID,
+				  space_id_reg);
+	int result_reg = ++parse->nMem;
+	int addr3 = sqlVdbeAddOp3(v, OP_ShowCreateTable, space_id_reg, 0,
+				  result_reg);
+	sqlVdbeChangeP5(v, type);
+	sqlVdbeAddOp2(v, OP_ResultRow, result_reg, 1);
+	sqlVdbeJumpHere(v, addr3);
+	sqlVdbeAddOp2(v, OP_Next, cursor, addr2);
+	sqlVdbeJumpHere(v, addr1);
+}
+
+void
+sql_emit_show_create_tables_ignore(struct Parse *parse)
+{
+	return sql_emit_show_create_table_all(parse, SQL_SHOW_IGNORE);
+}
+
+void
+sql_emit_show_create_tables_include(struct Parse *parse)
+{
+	return sql_emit_show_create_table_all(parse, SQL_SHOW_INCLUDE);
+}
