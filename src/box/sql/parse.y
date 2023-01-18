@@ -167,7 +167,7 @@ cmd ::= ROLLBACK TO savepoint_opt nm(X). {
 
 ///////////////////// The CREATE TABLE statement ////////////////////////////
 //
-cmd ::= create_table create_table_args with_opts create_table_end.
+cmd ::= create_table LP columnlist RP create_table_end.
 create_table ::= createkw TABLE ifnotexists(E) nm(Y). {
   create_table_def_init(&pParse->create_table_def, &Y, E);
   create_ck_constraint_parse_def_init(&pParse->create_ck_constraint_parse_def);
@@ -181,12 +181,7 @@ createkw(A) ::= CREATE(A).  {disableLookaside(pParse);}
 ifnotexists(A) ::= .              {A = 0;}
 ifnotexists(A) ::= IF NOT EXISTS. {A = 1;}
 
-create_table_args ::= LP columnlist RP.
-
-with_opts ::= WITH engine_opts.
-with_opts ::= .
-
-engine_opts ::= ENGINE EQ STRING(A). {
+create_table_end ::= WITH ENGINE EQ STRING(A). {
   /* Note that specifying engine clause overwrites default engine. */
   if (A.n > ENGINE_NAME_MAX) {
     diag_set(ClientError, ER_CREATE_SPACE,
@@ -200,6 +195,7 @@ engine_opts ::= ENGINE EQ STRING(A). {
   memcpy(pParse->create_table_def.new_space->def->engine_name, normalized_name,
          strlen(normalized_name) + 1);
   sql_xfree(normalized_name);
+  sqlEndTable(pParse);
 }
 
 create_table_end ::= . { sqlEndTable(pParse); }
