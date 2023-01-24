@@ -474,6 +474,161 @@ new_xmalloc(size_t n)
 	return xmalloc(n);
 }
 
+static int
+sql_prepare_field_ct(struct Parse *parse, struct parse_field_constraint *ct)
+{
+	switch (ct->type) {
+	case 0:
+		sql_column_add_nullable_action(parse, ON_CONFLICT_ACTION_NONE);
+		if (ct->onconf != ON_CONFLICT_ACTION_ABORT)
+			sql_column_add_nullable_action(parse, ct->onconf);
+		return 0;
+	case 1:
+		sql_column_add_nullable_action(parse, ct->onconf);
+		return 0;
+	case 2:
+		create_index_def_init(&parse->create_index_def, NULL, &ct->name,
+				      NULL, SQL_INDEX_TYPE_CONSTRAINT_PK,
+				      ct->sort_order, false);
+		sqlAddPrimaryKey(parse);
+		return 0;
+	case 3:
+		create_index_def_init(&parse->create_index_def, NULL, &ct->name,
+				      NULL, SQL_INDEX_TYPE_CONSTRAINT_UNIQUE,
+				      SORT_ORDER_ASC, false);
+		sql_create_index(parse);
+		return 0;
+	case 4:
+		create_ck_def_init(&parse->create_ck_def, NULL, &ct->name,
+				   &ct->expr);
+		sql_create_check_contraint(parse, true);
+		return 0;
+	case 5:
+		create_fk_def_init(&parse->create_fk_def, NULL, &ct->name, NULL,
+				   &ct->fk.table_name, ct->fk.foreign_fields);
+		sql_create_foreign_key(parse);
+		return 0;
+	case 6:
+		sqlAddCollateType(parse, &ct->token);
+		return 0;
+	case 7:
+		sqlAddDefaultValue(parse, &ct->expr);
+		return 0;
+	default:
+		unreachable();
+	}
+	return 0;
+}
+
+static int
+sql_prepare_field(struct Parse *parse, struct SrcList *table_name,
+		  struct parse_table_field *field)
+{
+	struct type_def type_def = {.type = field->type};
+	create_column_def_init(&parse->create_column_def, table_name,
+			       &field->name, &type_def);
+	sql_create_column_start(parse);
+	for (uint32_t i = 0; i < field->constraint_count; ++i)
+		sql_prepare_field_ct(parse, &field->constraints[i]);
+	return 0;
+}
+
+static int
+sql_prepare_table_ct(struct Parse *parse, struct parse_table_constraint *ct)
+{
+	switch (ct->type) {
+	case 2:
+		create_index_def_init(&parse->create_index_def, NULL, &ct->name,
+				      ct->cols, SQL_INDEX_TYPE_CONSTRAINT_PK,
+				      SORT_ORDER_ASC, false);
+		sqlAddPrimaryKey(parse);
+		return 0;
+	case 3:
+		create_index_def_init(&parse->create_index_def, NULL, &ct->name,
+				      ct->cols,
+				      SQL_INDEX_TYPE_CONSTRAINT_UNIQUE,
+				      SORT_ORDER_ASC, false);
+		sql_create_index(parse);
+		return 0;
+	case 4:
+		create_ck_def_init(&parse->create_ck_def, NULL, &ct->name,
+				   &ct->expr);
+		sql_create_check_contraint(parse, false);
+		return 0;
+	case 5:
+		create_fk_def_init(&parse->create_fk_def, NULL, &ct->name,
+				   ct->fk.local_fields, &ct->fk.table_name,
+				   ct->fk.foreign_fields);
+		sql_create_foreign_key(parse);
+		return 0;
+	default:
+		unreachable();
+	}
+	return 0;
+}
+
+static int
+sql_create_table(struct Parse *parse)
+{
+	struct parse_create_table *stmt = &parse->parse_create_table;
+	bool if_not_exists = stmt->if_not_exist;
+	struct Token *table_name = &stmt->name;
+	create_table_def_init(&parse->create_table_def, table_name, if_not_exists);
+	create_ck_constraint_parse_def_init(&parse->create_ck_constraint_parse_def);
+	create_fk_constraint_parse_def_init(&parse->create_fk_constraint_parse_def);
+	parse->create_table_def.new_space = sqlStartTable(parse, table_name);
+
+	for (uint32_t i = 0; i < stmt->field_count && !parse->is_aborted; ++i) {
+		struct parse_table_field *field = &stmt->fields[i];
+		sql_prepare_field(parse, NULL, field);
+		if (field->has_autoincrement)
+			sql_add_autoincrement(parse, i);
+	}
+	if (parse->is_aborted)
+		return -1;
+	for (uint32_t i = 0; i < stmt->constraint_count && !parse->is_aborted;
+	     ++i)
+		sql_prepare_table_ct(parse, &stmt->constraints[i]);
+	if (parse->is_aborted)
+		return -1;
+	if (stmt->engine_name.n > 0) {
+		if (stmt->engine_name.n > ENGINE_NAME_MAX) {
+			diag_set(ClientError, ER_CREATE_SPACE,
+				 parse->create_table_def.new_space->def->name,
+				 "space engine name is too long");
+			parse->is_aborted = true;
+			return -1;
+		}
+		char *normalized_name = sql_name_from_token(&stmt->engine_name);
+		memcpy(parse->create_table_def.new_space->def->engine_name,
+		       normalized_name, strlen(normalized_name) + 1);
+		sql_xfree(normalized_name);
+	}
+
+	sqlEndTable(parse);
+	sql_finish_coding(parse);
+	return 0;
+}
+
+static int
+sql_add_column(struct Parse *parse)
+{
+	parse->initiateTTrans = true;
+	create_ck_constraint_parse_def_init(&parse->create_ck_constraint_parse_def);
+	create_fk_constraint_parse_def_init(&parse->create_fk_constraint_parse_def);
+	struct parse_add_column *stmt = &parse->parse_add_column;
+	sql_prepare_field(parse, stmt->table, &stmt->field);
+	if (parse->is_aborted)
+		return -1;
+	sql_create_column_end(parse);
+	if (parse->is_aborted)
+		return -1;
+	sql_finish_coding(parse);
+	if (parse->is_aborted)
+		return -1;
+	return 0;
+}
+
 /**
  * Run the parser on the given SQL string.
  *
@@ -549,6 +704,12 @@ sqlRunParser(Parse * pParse, const char *zSql)
 				break;
 		}
 		pParse->line_pos += pParse->sLastToken.n;
+	}
+	if (!pParse->is_aborted) {
+		if (pParse->parse_type == 1)
+			sql_create_table(pParse);
+		else if (pParse->parse_type == 2)
+			sql_add_column(pParse);
 	}
 	pParse->zTail = &zSql[i];
 	sqlParserFree(pEngine, free);

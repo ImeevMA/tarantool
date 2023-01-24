@@ -74,6 +74,8 @@
  * parsing context (struct Parse).
  */
 
+struct Expr;
+
 /**
  * Each token coming out of the lexer is an instance of
  * this structure. Tokens are also used as part of an expression.
@@ -84,6 +86,164 @@ struct Token {
 	/** Number of characters in this token. */
 	unsigned int n;
 	bool isReserved;
+};
+
+/*
+ * An instance of this structure is used by the parser to record both
+ * the parse tree for an expression and the span of input text for an
+ * expression.
+ */
+struct ExprSpan {
+	struct Expr *pExpr;		/* The expression parse tree */
+	const char *zStart;	/* First character of input text */
+	const char *zEnd;	/* One character past the end of input text */
+};
+
+/** Type of column or table constraint. */
+enum sql_constraint_type {
+	/** CHECK constraint. */
+	SQL_CONSTRAINT_CK,
+	/** FOREIGN KEY constraint. */
+	SQL_CONSTRAINT_FK,
+	/** PRIMARY KEY constraint. */
+	SQL_CONSTRAINT_PK,
+	/** UNIQUE constraint. */
+	SQL_CONSTRAINT_UQ,
+	/** Column can contain NULL. */
+	SQL_CONSTRAINT_NULL,
+	/** Column cannot contain NULL. */
+	SQL_CONSTRAINT_NNULL,
+	/** Default value, that is trated as a column constraint. */
+	SQL_CONSTRAINT_DEF,
+	/** COLLATION, that is trated as a column constraint. */
+	SQL_CONSTRAINT_COLL,
+};
+
+/** A span from an existing string. */
+struct sql_parse_span {
+	/** Start of the span. */
+	const char *str;
+	/** Size of the span. */
+	uint32_t size;
+};
+
+/** Span list element. */
+struct sql_parse_slist {
+	/** A link to the previous and next items in the list. */
+	struct rlist link;
+	/* Value. */
+	struct sql_parse_span span;
+};
+
+/** Description of the column being created. */
+struct sql_parse_col {
+	/* List of column constraint descriptions. */
+	struct rlist ccons;
+	/** A link to the previous and next items in the list. */
+	struct rlist link;
+	/** Column name. */
+	struct sql_parse_span name;
+	/** Column data type. */
+	enum field_type type;
+	/** Flag to show if column can be autoincremented. */
+	bool is_autoinc;
+};
+
+/** Description of the constraint being created. */
+struct sql_parse_con {
+	union {
+		/** Value for CHECK и DEFAULT. */
+		struct ExprSpan expr;
+		/** Value for UNIQUE and PRIMARY KEY table constraints. */
+		struct rlist cols;
+		/** Value for COLLATE. */
+		struct sql_parse_span span;
+		/** Value for PRIMARY KEY column constraint. */
+		int sort_order;
+		/** Value for NULL and NOT NULL column constraints. */
+		int onconf;
+		/** Value for FOREIGN KEY constraint. */
+		struct {
+			/** List child columns. */
+			struct rlist ccols;
+			/** List parent columns. */
+			struct rlist pcols;
+			/** Name of the parent table. */
+			struct sql_parse_span pname;
+		} fk;
+	};
+	/** A link to the previous and next items in the list. */
+	struct rlist link;
+	/** Constraint name. */
+	struct sql_parse_span name;
+	/** Constraint type. */
+	enum sql_constraint_type type;
+};
+
+/** Description of the table being created. */
+struct sql_parse_tab {
+	/** List of table column descriptions. */
+	struct rlist cols;
+	/** List of table constraint descriptions. */
+	struct rlist tcons;
+	/** Table name. */
+	struct sql_parse_span name;
+	/** Engine name for the table. */
+	struct sql_parse_span engine;
+	/** IF NOT EXISTS flag. */
+	bool if_not_exist;
+};
+
+struct parse_field_constraint {
+	struct Token name;
+	int type;
+	union {
+		struct ExprSpan expr;
+		int sort_order;
+		struct Token token;
+		int onconf;
+		struct {
+			struct Token table_name;
+			struct ExprList *foreign_fields;
+		} fk;
+	};
+};
+
+struct parse_table_field {
+	struct Token name;
+	enum field_type type;
+	uint32_t constraint_count;
+	struct parse_field_constraint *constraints;
+	bool has_autoincrement;
+};
+
+struct parse_table_constraint {
+	struct Token name;
+	int type;
+	union {
+		struct ExprSpan expr;
+		struct ExprList *cols;
+		struct {
+			struct Token table_name;
+			struct ExprList *local_fields;
+			struct ExprList *foreign_fields;
+		} fk;
+	};
+};
+
+struct parse_create_table {
+	bool if_not_exist;
+	struct Token name;
+	struct Token engine_name;
+	uint32_t field_count;
+	struct parse_table_field *fields;
+	uint32_t constraint_count;
+	struct parse_table_constraint *constraints;
+};
+
+struct parse_add_column {
+	struct SrcList *table;
+	struct parse_table_field field;
 };
 
 /** Constant tokens for integer values. */
@@ -522,5 +682,53 @@ create_fk_constraint_parse_def_destroy(struct create_fk_constraint_parse_def *d)
 	rlist_foreach_entry(fk, &d->fkeys, link)
 		sql_expr_list_delete(fk->selfref_cols);
 }
+
+void
+sql_parse_field_new(struct Parse *parse, const struct Token *name,
+		    enum field_type type);
+
+void
+sql_parse_field_null(struct Parse *parse, int onconf);
+
+void
+sql_parse_field_not_null(struct Parse *parse, int onconf);
+
+void
+sql_parse_field_pk(struct Parse *parse, const struct Token *name,
+		   int sortorder);
+
+void
+sql_parse_field_uq(struct Parse *parse, const struct Token *name);
+
+void
+sql_parse_field_ck(struct Parse *parse, const struct Token *name,
+		   const struct ExprSpan *expr);
+
+void
+sql_parse_field_fk(struct Parse *parse, const struct Token *name,
+		   struct ExprList *cols, const struct Token *parent);
+
+void
+sql_parse_field_coll(struct Parse *parse, const struct Token *collate);
+
+void
+sql_parse_field_default(struct Parse *parse, const struct ExprSpan *expr);
+
+void
+sql_parse_table_pk(struct Parse *parse, const struct Token *name,
+		   struct ExprList *cols);
+
+void
+sql_parse_table_uq(struct Parse *parse, const struct Token *name,
+		   struct ExprList *cols);
+
+void
+sql_parse_table_ck(struct Parse *parse, const struct Token *name,
+		   const struct ExprSpan *expr);
+
+void
+sql_parse_table_fk(struct Parse *parse, const struct Token *name,
+		   const struct Token *parent, struct ExprList *parent_cols,
+		   struct ExprList *child_cols);
 
 #endif /* TARANTOOL_BOX_SQL_PARSE_DEF_H_INCLUDED */
