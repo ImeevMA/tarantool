@@ -20,7 +20,8 @@ test:plan(4)
 test:do_execsql_test(
     "tkt2391.1",
     [[
-        CREATE TABLE folders(folderid INT , parentid INT , foldername TEXT COLLATE "binary" primary key);
+        CREATE TABLE folders(folderid INT, parentid INT,
+                             foldername TEXT primary key COLLATE "binary");
         INSERT INTO folders VALUES(1, 3, 'FolderA');
         INSERT INTO folders VALUES(1, 3, 'folderB');
         INSERT INTO folders VALUES(4, 0, 'FolderC');

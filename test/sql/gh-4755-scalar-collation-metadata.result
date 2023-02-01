@@ -18,7 +18,7 @@ box.execute([[SET SESSION "sql_full_metadata" = true;]]);
  | ---
  | - row_count: 1
  | ...
-box.execute([[CREATE TABLE test (a SCALAR COLLATE "unicode_ci" PRIMARY KEY,
+box.execute([[CREATE TABLE test (a SCALAR PRIMARY KEY COLLATE "unicode_ci",
                                  b STRING COLLATE "unicode_ci");]]);
  | ---
  | - row_count: 1

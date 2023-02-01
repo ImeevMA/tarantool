@@ -381,7 +381,8 @@ for _, test_entry in ipairs(collation_entries) do
 
     test:do_execsql_test(
             ext_prefix.."create_table",
-            string.format("create table t1(a varchar(5) collate \"%s\" primary key);", test_entry[1]),
+            string.format([[create table t1(a varchar(5) primary key
+                            collate "%s");]], test_entry[1]),
             {})
     test:do_test(
             ext_prefix.."insert_values",

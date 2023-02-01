@@ -225,7 +225,7 @@ column_name_and_type ::= nm(A) typedef(Y). {
   sql_create_column_start(pParse);
 }
 
-create_column_end ::= autoinc(I). {
+create_column_end ::= collate autoinc(I). {
   uint32_t fieldno = pParse->create_column_def.space->def->field_count - 1;
   if (I == 1 && sql_add_autoincrement(pParse, fieldno) != 0)
     return;
@@ -236,6 +236,11 @@ columnlist ::= tcons.
 // keywords.  Any non-standard keyword can also be an identifier.
 //
 %token_class id  ID|INDEXED.
+
+collate ::= COLLATE id(C). {
+  sqlAddCollateType(pParse, &C);
+}
+collate ::= .
 
 // The following directive causes tokens ABORT, AFTER, ASC, etc. to
 // fallback to ID if they will not parse as their original value.
@@ -325,7 +330,6 @@ ccons ::= cconsname(N) REFERENCES nm(T) eidlist_opt(TA). {
   create_fk_def_init(&pParse->create_fk_def, NULL, &N, NULL, &T, TA);
   sql_create_foreign_key(pParse);
 }
-ccons ::= COLLATE id(C).        {sqlAddCollateType(pParse, &C);}
 
 // The optional AUTOINCREMENT keyword
 %type autoinc {int}

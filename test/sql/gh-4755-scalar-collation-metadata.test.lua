@@ -7,7 +7,7 @@ test_run = env.new()
 --
 test_run:cmd("setopt delimiter ';'");
 box.execute([[SET SESSION "sql_full_metadata" = true;]]);
-box.execute([[CREATE TABLE test (a SCALAR COLLATE "unicode_ci" PRIMARY KEY,
+box.execute([[CREATE TABLE test (a SCALAR PRIMARY KEY COLLATE "unicode_ci",
                                  b STRING COLLATE "unicode_ci");]]);
 box.execute("SELECT * FROM SEQSCAN test;");
 

@@ -1605,7 +1605,8 @@ test:drop_all_tables()
 test:do_execsql_test(
     "e_select-7.10.0",
     [[
-        CREATE TABLE y1(a  TEXT COLLATE "unicode_ci" PRIMARY KEY, b  TEXT COLLATE "binary", c TEXT );
+        CREATE TABLE y1(a TEXT PRIMARY KEY COLLATE "unicode_ci",
+                        b TEXT COLLATE "binary", c TEXT);
         INSERT INTO y1 VALUES('Abc', 'abc', 'aBC');
     ]], {
         -- <e_select-7.10.0>
@@ -2077,8 +2078,8 @@ test:do_execsql_test(
         INSERT INTO d6 VALUES(5, 'b');
         INSERT INTO d7 VALUES(6, 'a');
 
-        CREATE TABLE d8(x  TEXT COLLATE "unicode_ci" PRIMARY KEY);
-        CREATE TABLE d9(y  TEXT COLLATE "unicode_ci" PRIMARY KEY);
+        CREATE TABLE d8(x TEXT PRIMARY KEY COLLATE "unicode_ci");
+        CREATE TABLE d9(y TEXT PRIMARY KEY COLLATE "unicode_ci");
 
         INSERT INTO d8 VALUES('a');
         INSERT INTO d9 VALUES('B');

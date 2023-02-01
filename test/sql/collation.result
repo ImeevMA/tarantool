@@ -380,11 +380,11 @@ box.schema.user.drop('tmp')
 ...
 -- gh-3644 Foreign key update fails with "unicode_ci".
 -- Check that foreign key update doesn't fail with "unicode_ci".
-box.execute('CREATE TABLE t0 (s1 VARCHAR(5) COLLATE "unicode_ci" UNIQUE, id INT PRIMARY KEY AUTOINCREMENT);')
+box.execute('CREATE TABLE t0 (s1 VARCHAR(5) UNIQUE COLLATE "unicode_ci", id INT PRIMARY KEY AUTOINCREMENT);')
 ---
 - row_count: 1
 ...
-box.execute('CREATE TABLE t1 (s1 INT PRIMARY KEY, s0 VARCHAR(5) COLLATE "unicode_ci" REFERENCES t0(s1));')
+box.execute('CREATE TABLE t1 (s1 INT PRIMARY KEY, s0 VARCHAR(5) REFERENCES t0(s1) COLLATE "unicode_ci");')
 ---
 - row_count: 1
 ...
@@ -657,7 +657,7 @@ box.execute("DROP TABLE t3;")
 - row_count: 1
 ...
 -- pk - binary, sc - unicode
-box.execute('CREATE TABLE t3b (s1 VARCHAR(5) collate "binary" PRIMARY KEY);')
+box.execute('CREATE TABLE t3b (s1 VARCHAR(5) PRIMARY KEY collate "binary");')
 ---
 - row_count: 1
 ...
@@ -687,7 +687,7 @@ box.execute("DROP TABLE t3b;")
 - row_count: 1
 ...
 -- pk - binary, sc - unicode (make dup)
-box.execute('CREATE TABLE t3b (s1 VARCHAR(5) collate "binary" PRIMARY KEY);')
+box.execute('CREATE TABLE t3b (s1 VARCHAR(5) PRIMARY KEY collate "binary");')
 ---
 - row_count: 1
 ...
@@ -723,7 +723,7 @@ box.execute("DROP TABLE t3b;")
 - row_count: 1
 ...
 -- pk - unicode, sc - binary
-box.execute('CREATE TABLE t3c (s1 VARCHAR(5) collate "unicode" PRIMARY KEY);')
+box.execute('CREATE TABLE t3c (s1 VARCHAR(5) PRIMARY KEY collate "unicode");')
 ---
 - row_count: 1
 ...
@@ -753,7 +753,7 @@ box.execute("DROP TABLE t3c;")
 - row_count: 1
 ...
 -- pk - unicode, sc - binary (make dup)
-box.execute('CREATE TABLE t3c (s1 VARCHAR(5) collate "unicode" PRIMARY KEY);')
+box.execute('CREATE TABLE t3c (s1 VARCHAR(5) PRIMARY KEY collate "unicode");')
 ---
 - row_count: 1
 ...
@@ -789,7 +789,7 @@ box.execute("DROP TABLE t3c;")
 - row_count: 1
 ...
 -- pk - binary, sc - unicode_ci
-box.execute('CREATE TABLE t3d (s1 VARCHAR(5) collate "binary" PRIMARY KEY);')
+box.execute('CREATE TABLE t3d (s1 VARCHAR(5) PRIMARY KEY collate "binary");')
 ---
 - row_count: 1
 ...
@@ -819,7 +819,7 @@ box.execute("DROP TABLE t3d;")
 - row_count: 1
 ...
 -- pk - binary, sc - unicode_ci (make dup)
-box.execute('CREATE TABLE t3d (s1 VARCHAR(5) collate "binary" PRIMARY KEY);')
+box.execute('CREATE TABLE t3d (s1 VARCHAR(5) PRIMARY KEY collate "binary");')
 ---
 - row_count: 1
 ...
@@ -855,7 +855,7 @@ box.execute("DROP TABLE t3d;")
 - row_count: 1
 ...
 -- pk - unicode_ci, sc - binary (should fail)
-box.execute('CREATE TABLE t3e (s1 VARCHAR(5) collate "unicode_ci" PRIMARY KEY);')
+box.execute('CREATE TABLE t3e (s1 VARCHAR(5) PRIMARY KEY collate "unicode_ci");')
 ---
 - row_count: 1
 ...
@@ -886,7 +886,7 @@ box.execute("DROP TABLE t3e;")
 - row_count: 1
 ...
 -- pk - unicode, sc - unicode_ci
-box.execute('CREATE TABLE t3f (s1 VARCHAR(5) collate "unicode" PRIMARY KEY);')
+box.execute('CREATE TABLE t3f (s1 VARCHAR(5) PRIMARY KEY collate "unicode");')
 ---
 - row_count: 1
 ...
@@ -916,7 +916,7 @@ box.execute("DROP TABLE t3f;")
 - row_count: 1
 ...
 -- pk - unicode, sc - unicode_ci (make dup)
-box.execute('CREATE TABLE t3f (s1 VARCHAR(5) collate "unicode" PRIMARY KEY);')
+box.execute('CREATE TABLE t3f (s1 VARCHAR(5) PRIMARY KEY collate "unicode");')
 ---
 - row_count: 1
 ...
@@ -952,7 +952,7 @@ box.execute("DROP TABLE t3f;")
 - row_count: 1
 ...
 -- pk - unicode_ci, sc - unicode (should fail)
-box.execute('CREATE TABLE t3g (s1 VARCHAR(5) collate "unicode_ci" PRIMARY KEY);')
+box.execute('CREATE TABLE t3g (s1 VARCHAR(5) PRIMARY KEY collate "unicode_ci");')
 ---
 - row_count: 1
 ...
