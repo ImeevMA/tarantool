@@ -215,10 +215,10 @@ create_table_end ::= . { sqlEndTable(pParse); }
  */
 
 columnlist ::= columnlist COMMA tcons.
-columnlist ::= columnlist COMMA column_def create_column_end.
-columnlist ::= column_def create_column_end.
+columnlist ::= columnlist COMMA column_def.
+columnlist ::= column_def.
 
-column_def ::= column_name_and_type carglist.
+column_def ::= column_name_and_type carglist create_column_end.
 
 column_name_and_type ::= nm(A) typedef(Y). {
   create_column_def_init(&pParse->create_column_def, NULL, &A, &Y);
@@ -229,8 +229,6 @@ create_column_end ::= autoinc(I). {
   uint32_t fieldno = pParse->create_column_def.space->def->field_count - 1;
   if (I == 1 && sql_add_autoincrement(pParse, fieldno) != 0)
     return;
-  if (pParse->create_table_def.new_space == NULL)
-    sql_create_column_end(pParse);
 }
 columnlist ::= tcons.
 
@@ -1674,7 +1672,10 @@ alter_add_column(A) ::= alter_table_start(T) ADD column_name(N). {
 column_name(N) ::= COLUMN nm(A). { N = A; }
 column_name(N) ::= nm(A). { N = A; }
 
-cmd ::= alter_column_def carglist create_column_end.
+cmd ::= alter_column_def carglist create_column_end. {
+  assert(pParse->create_table_def.new_space == NULL);
+  sql_create_column_end(pParse);
+}
 
 alter_column_def ::= alter_add_column(N) typedef(Y). {
   create_column_def_init(&pParse->create_column_def, N.table_name, &N.name, &Y);
