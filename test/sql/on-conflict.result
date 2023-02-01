@@ -91,7 +91,7 @@ box.execute("CREATE TABLE test (a int, b int NULL, c int, PRIMARY KEY(a, b, c))"
 ...
 -- Several NOT NULL REPLACE constraints work
 --
-box.execute("CREATE TABLE a (id INT PRIMARY KEY, a INT NOT NULL ON CONFLICT REPLACE DEFAULT 1, b INT NOT NULL ON CONFLICT REPLACE DEFAULT 2);")
+box.execute("CREATE TABLE a (id INT PRIMARY KEY, a INT DEFAULT 1 NOT NULL ON CONFLICT REPLACE, b INT DEFAULT 2 NOT NULL ON CONFLICT REPLACE);")
 ---
 - row_count: 1
 ...

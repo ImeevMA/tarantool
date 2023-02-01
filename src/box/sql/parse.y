@@ -218,7 +218,7 @@ columnlist ::= columnlist COMMA tcons.
 columnlist ::= columnlist COMMA column_def.
 columnlist ::= column_def.
 
-column_def ::= column_name_and_type carglist create_column_end.
+column_def ::= column_name_and_type default carglist create_column_end.
 
 column_name_and_type ::= nm(A) typedef(Y). {
   create_column_def_init(&pParse->create_column_def, NULL, &A, &Y);
@@ -231,6 +231,18 @@ create_column_end ::= collate autoinc(I). {
     return;
 }
 columnlist ::= tcons.
+
+default ::= DEFAULT term(X).            {sqlAddDefaultValue(pParse,&X);}
+default ::= DEFAULT LP expr(X) RP.      {sqlAddDefaultValue(pParse,&X);}
+default ::= DEFAULT PLUS term(X).       {sqlAddDefaultValue(pParse,&X);}
+default ::= DEFAULT MINUS(A) term(X).   {
+  ExprSpan v;
+  v.pExpr = sqlPExpr(pParse, TK_UMINUS, X.pExpr, 0);
+  v.zStart = A.z;
+  v.zEnd = X.zEnd;
+  sqlAddDefaultValue(pParse,&v);
+}
+default ::= .
 
 // An IDENTIFIER can be a generic identifier, or one of several
 // keywords.  Any non-standard keyword can also be an identifier.
@@ -288,16 +300,6 @@ carglist ::= .
 %type cconsname { struct Token }
 cconsname(N) ::= CONSTRAINT nm(X). { N = X; }
 cconsname(N) ::= . { N = Token_nil; }
-ccons ::= DEFAULT term(X).            {sqlAddDefaultValue(pParse,&X);}
-ccons ::= DEFAULT LP expr(X) RP.      {sqlAddDefaultValue(pParse,&X);}
-ccons ::= DEFAULT PLUS term(X).       {sqlAddDefaultValue(pParse,&X);}
-ccons ::= DEFAULT MINUS(A) term(X).      {
-  ExprSpan v;
-  v.pExpr = sqlPExpr(pParse, TK_UMINUS, X.pExpr, 0);
-  v.zStart = A.z;
-  v.zEnd = X.zEnd;
-  sqlAddDefaultValue(pParse,&v);
-}
 
 // In addition to the type name, we also care about the primary key and
 // UNIQUE constraints.
@@ -1676,7 +1678,7 @@ alter_add_column(A) ::= alter_table_start(T) ADD column_name(N). {
 column_name(N) ::= COLUMN nm(A). { N = A; }
 column_name(N) ::= nm(A). { N = A; }
 
-cmd ::= alter_column_def carglist create_column_end. {
+cmd ::= alter_column_def default carglist create_column_end. {
   assert(pParse->create_table_def.new_space == NULL);
   sql_create_column_end(pParse);
 }

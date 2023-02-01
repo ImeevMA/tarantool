@@ -41,7 +41,7 @@ test:do_execsql_test(
                     subrelease TEXT NOT NULL,
                     archive TEXT NOT NULL,
                     version TEXT NOT NULL,
-                    version_id INTEGER NOT NULL DEFAULT 0,
+                    version_id INTEGER DEFAULT 0 NOT NULL,
                     PRIMARY KEY (name, release_t, subrelease, archive));
 
         CREATE TABLE bugs
@@ -61,11 +61,11 @@ test:do_execsql_test(
                  package TEXT NOT NULL,
                  fixed_version TEXT
                      CHECK (fixed_version IS NULL OR fixed_version <> ''),
-                 fixed_version_id INTEGER NOT NULL DEFAULT 0,
+                 fixed_version_id INTEGER DEFAULT 0 NOT NULL,
                  release_t TEXT NOT NULL,
-                 package_kind TEXT NOT NULL DEFAULT 'unknown',
+                 package_kind TEXT DEFAULT 'unknown' NOT NULL,
                  urgency TEXT NOT NULL,
-                 bug_origin TEXT NOT NULL DEFAULT '');
+                 bug_origin TEXT DEFAULT '' NOT NULL);
         CREATE INDEX package_notes_package
                     ON package_notes(package);
         CREATE UNIQUE INDEX package_notes_bug

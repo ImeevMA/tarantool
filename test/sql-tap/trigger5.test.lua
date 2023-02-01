@@ -22,7 +22,7 @@ test:do_execsql_test(
         CREATE TABLE Item(
            a integer PRIMARY KEY NOT NULL ,
            b NUMBER NULL ,
-           c int NOT NULL DEFAULT 0
+           c int DEFAULT 0 NOT NULL
         );
         CREATE TABLE Undo(id INTEGER PRIMARY KEY, UndoAction TEXT);
         INSERT INTO Item VALUES (1,38205.60865,340);

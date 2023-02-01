@@ -90,9 +90,9 @@ if (1 > 0)
             CREATE TABLE InventoryControl (
               InventoryControlId INTEGER,
               SKU INTEGER NOT NULL PRIMARY KEY,
-              Variant INTEGER NOT NULL DEFAULT 0,
+              Variant INTEGER DEFAULT 0 NOT NULL,
               ControlDate TEXT NOT NULL,
-              ControlState INTEGER NOT NULL DEFAULT -1,
+              ControlState INTEGER DEFAULT -1 NOT NULL,
               DeliveredQty TEXT
             );
 
@@ -141,7 +141,7 @@ if (1 > 0)
 
             CREATE TABLE InventoryItem (
               SKU INTEGER NOT NULL,
-              Variant INTEGER NOT NULL DEFAULT 0,
+              Variant INTEGER DEFAULT 0 NOT NULL,
               DeptCode INTEGER NOT NULL,
               GroupCode INTEGER NOT NULL,
               ItemDescription VARCHAR(120) NOT NULL,
@@ -154,7 +154,7 @@ if (1 > 0)
             CREATE TABLE TransactionDetail (
               TransactionId INTEGER NOT NULL,
               SKU INTEGER NOT NULL,
-              Variant INTEGER NOT NULL DEFAULT 0,
+              Variant INTEGER DEFAULT 0 NOT NULL,
               PRIMARY KEY(TransactionId, SKU, Variant)
             );
             INSERT INTO TransactionDetail(TransactionId, SKU, Variant) VALUES(44, 31, 0);

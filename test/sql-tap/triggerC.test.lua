@@ -742,7 +742,7 @@ test:do_test(
 -- MUST_WORK_TEST
 local
 tests11 = {-- {"CREATE TABLE t1(a PRIMARY KEY, b)",                         {{}, {}}},
-           {"CREATE TABLE t1(a INT PRIMARY KEY DEFAULT 1, b TEXT DEFAULT 'abc')", {1, "abc"}}}
+           {"CREATE TABLE t1(a INT DEFAULT 1 PRIMARY KEY, b TEXT DEFAULT 'abc')", {1, "abc"}}}
 
 --for _ in X(0, "X!foreach", [=[["testno tbl defaults","\n  1 \"CREATE TABLE t1(a PRIMARY KEY, b)\"                          {{} {}}\n  2 \"CREATE TABLE t1(a PRIMARY KEY DEFAULT 1, b DEFAULT 'abc')\"  {1 abc}\n  3 \"CREATE TABLE t1(a PRIMARY KEY, b DEFAULT 4.5)\"              {{} 4.5}\n"]]=]) do
 for testno, v in ipairs(tests11) do
@@ -921,7 +921,7 @@ test:do_execsql_test(
         UPDATE "_session_settings" SET "value" = true WHERE "name" = 'sql_recursive_triggers';
         CREATE TABLE node(
             id int not null primary key,
-            pid int not null default 0,
+            pid int default 0 not null,
             key TEXT not null,
             path TEXT default '',
             unique(pid, key)
