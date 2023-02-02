@@ -359,7 +359,8 @@ test:do_catchsql_test(
         );
     ]], {
         -- <misc1-7.1>
-        1, [[Failed to create space 'ERROR1': primary key has been already declared]]
+        1, [[Syntax error at line 4 at or near position 9: primary key ]]..
+           [[has been already declared]]
         -- </misc1-7.1>
     })
 
@@ -372,7 +373,8 @@ test:do_catchsql_test(
         );
     ]], {
         -- <misc1-7.2>
-        1, [[Failed to create space 'ERROR1': primary key has been already declared]]
+        1, [[Syntax error at line 4 at or near position 9: primary key ]]..
+           [[has been already declared]]
         -- </misc1-7.2>
     })
 
@@ -912,7 +914,8 @@ test:do_catchsql_test(
         CREATE TABLE test2(a text primary key, b text, primary key(a,b));
     ]], {
         -- <misc1-16.3>
-        1, [[Failed to create space 'TEST2': primary key has been already declared]]
+        1, [[Syntax error at line 1 at or near position 72: primary key ]]..
+           [[has been already declared]]
         -- </misc1-16.3>
     })
 

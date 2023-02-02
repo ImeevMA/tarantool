@@ -31,7 +31,8 @@ test:do_catchsql_test(
         );
     ]], {
         -- <unique-1.1>
-        1, [[Failed to create space 'T1': primary key has been already declared]]
+        1, [[Syntax error at line 3 at or near position 29: primary key ]]..
+           [[has been already declared]]
         -- </unique-1.1>
     })
 

@@ -53,7 +53,8 @@ test:do_catchsql_test(
 		CREATE TABLE t4 (i INT PRIMARY KEY, a INT PRIMARY KEY);
 	]], {
 		-- <sql-errors-1.4>
-		1,"Failed to create space 'T4': primary key has been already declared"
+                1,"Syntax error at line 1 at or near position 56: primary "..
+                  "key has been already declared"
 		-- </sql-errors-1.4>
 	})
 

@@ -1515,17 +1515,6 @@ struct ExprList {
 };
 
 /*
- * An instance of this structure is used by the parser to record both
- * the parse tree for an expression and the span of input text for an
- * expression.
- */
-struct ExprSpan {
-	Expr *pExpr;		/* The expression parse tree */
-	const char *zStart;	/* First character of input text */
-	const char *zEnd;	/* One character past the end of input text */
-};
-
-/*
  * An instance of this structure can hold a simple list of identifiers,
  * such as the list "a,b,c" in the following statements:
  *
@@ -2056,6 +2045,14 @@ struct Parse {
 		struct drop_trigger_def drop_trigger_def;
 		struct drop_view_def drop_view_def;
 		struct enable_entity_def enable_entity_def;
+	};
+	/** Type of the parsed statement. */
+	enum parse_type type;
+	union {
+		/** Parsed CREATE TABLE statement. */
+		struct sql_parse_table create_table;
+		/** Parsed ALTER TABLE ADD COLUMN statement. */
+		struct sql_parse_alter add_column;
 	};
 	/**
 	 * Table def or column def is not part of union since
