@@ -1515,17 +1515,6 @@ struct ExprList {
 };
 
 /*
- * An instance of this structure is used by the parser to record both
- * the parse tree for an expression and the span of input text for an
- * expression.
- */
-struct ExprSpan {
-	Expr *pExpr;		/* The expression parse tree */
-	const char *zStart;	/* First character of input text */
-	const char *zEnd;	/* One character past the end of input text */
-};
-
-/*
  * An instance of this structure can hold a simple list of identifiers,
  * such as the list "a,b,c" in the following statements:
  *

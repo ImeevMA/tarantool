@@ -74,6 +74,25 @@
  * parsing context (struct Parse).
  */
 
+/** Type of parsed statement. */
+enum parse_type {
+	/** Type of the statement is unknown. */
+	PARSE_TYPE_UNKNOWN = 0,
+	/** CREATE TABLE statement. */
+	PARSE_TYPE_CREATE_TABLE,
+	/** ALTER TABLE ADD COLUMN statement. */
+	PARSE_TYPE_ADD_COLUMN,
+};
+
+enum parse_nullable_action {
+	PARSE_NULLABLE_ACTION_UNKNOWN = 0,
+	PARSE_NULLABLE_ACTION_FAIL,
+	PARSE_NULLABLE_ACTION_ABORT,
+	PARSE_NULLABLE_ACTION_IGNORE,
+	PARSE_NULLABLE_ACTION_REPLACE,
+	PARSE_NULLABLE_ACTION_ROLLBACK,
+};
+
 /**
  * Each token coming out of the lexer is an instance of
  * this structure. Tokens are also used as part of an expression.
@@ -84,6 +103,146 @@ struct Token {
 	/** Number of characters in this token. */
 	unsigned int n;
 	bool isReserved;
+};
+
+/**
+ * An instance of this structure is used by the parser to record both the parse
+ * tree for an expression and the span of input text for an expression.
+ */
+struct ExprSpan {
+	/* The expression parse tree. */
+	struct Expr *pExpr;
+	/* First character of input text. */
+	const char *zStart;
+	/* One character past the end of input text. */
+	const char *zEnd;
+};
+
+/** Description of the column being created. */
+struct sql_parse_column {
+	/** Column name. */
+	struct Token name;
+	/** Collation name. */
+	struct Token coll_name;
+	/** Expression for DEFAULT. */
+	struct Token default_expr;
+	/** Column data type. */
+	enum field_type type;
+	/** NULL and NOT NULL constraints. */
+	enum parse_nullable_action nullable_action;
+};
+
+/** Description of the UNIQUE constraint being created. */
+struct sql_parse_unique {
+	/** List of columns. */
+	struct ExprList *cols;
+	/** Constraint name. */
+	struct Token name;
+};
+
+/** Description of the CHECK constraint being created. */
+struct sql_parse_check {
+	/** Expression. */
+	struct ExprSpan expr;
+	/** Constraint name. */
+	struct Token name;
+	/**
+	 * Flag indicating whether the constraint is a column constraint or a
+	 * table constraint.
+	 */
+	bool is_column_constraint;
+};
+
+/** Description of the FOREIGN KEY constraint being created. */
+struct sql_parse_foreign_key {
+	/** List child columns. */
+	struct ExprList *child_cols;
+	/** List parent columns. */
+	struct ExprList *parent_cols;
+	/** Name of the parent table. */
+	struct Token parent_name;
+	/** Constraint name. */
+	struct Token name;
+	/**
+	 * Flag indicating whether the constraint is a column constraint or a
+	 * table constraint.
+	 */
+	bool is_column_constraint;
+};
+
+struct sql_parse_constraints {
+	/** List of unique constraint descriptions. */
+	struct sql_parse_unique *unique;
+	/** List of check constraint descriptions. */
+	struct sql_parse_check *check;
+	/** List of foreign key constraint descriptions. */
+	struct sql_parse_foreign_key *fk;
+	/** List of table primary key columns. */
+	struct ExprList *pk_columns;
+	/** Table primary key name. */
+	struct Token pk_name;
+	/** Number of table column descriptions. */
+	uint32_t unique_count;
+	/** Number of check constraint descriptions. */
+	uint32_t check_count;
+	/** Number of foreign key constraint descriptions. */
+	uint32_t fk_count;
+};
+
+/** Description of the table being created. */
+struct sql_parse_table {
+	/** List of table column descriptions. */
+	struct sql_parse_column *columns;
+	/** List of unique constraint descriptions. */
+	struct sql_parse_unique *unique;
+	/** List of check constraint descriptions. */
+	struct sql_parse_check *check;
+	/** List of foreign key constraint descriptions. */
+	struct sql_parse_foreign_key *fk;
+	/** Number of table column descriptions. */
+	uint32_t column_count;
+	/** Number of unique constraint descriptions. */
+	uint32_t unique_count;
+	/** Number of check constraint descriptions. */
+	uint32_t check_count;
+	/** Number of foreign key constraint descriptions. */
+	uint32_t fk_count;
+	/** List of table primary key columns. */
+	struct ExprList *pk_columns;
+	/** Table primary key name. */
+	struct Token pk_name;
+	/** Table name. */
+	struct Token name;
+	/** Space engine name. */
+	struct Token engine_name;
+	/** Name of the column with autoincrement. */
+	struct Token autoinc_col_name;
+	/** IF NOT EXISTS flag. */
+	bool if_not_exist;
+};
+
+/** Description of the column being added. */
+struct sql_parse_add_column {
+	/** Description of the column being created. */
+	struct sql_parse_column column;
+	/** Table primary key name. */
+	struct Token pk_name;
+	/** Table, where a new column will be created. */
+	struct SrcList *table_name;
+	/** List of unique constraint descriptions. */
+	struct sql_parse_unique *unique;
+	/** List of check constraint descriptions. */
+	struct sql_parse_check *check;
+	/** List of foreign key constraint descriptions. */
+	struct sql_parse_foreign_key *fk;
+	/** Number of table column descriptions. */
+	uint32_t unique_count;
+	/** Number of check constraint descriptions. */
+	uint32_t check_count;
+	/** Number of foreign key constraint descriptions. */
+	uint32_t fk_count;
+	/** Flag to show is column PK constraint is set. */
+	bool is_pk;
 };
 
 /** Constant tokens for integer values. */
