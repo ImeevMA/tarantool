@@ -86,6 +86,7 @@ enum parse_type {
 
 enum parse_nullable_action {
 	PARSE_NULLABLE_ACTION_UNKNOWN = 0,
+	PARSE_NULLABLE_ACTION_NONE,
 	PARSE_NULLABLE_ACTION_FAIL,
 	PARSE_NULLABLE_ACTION_ABORT,
 	PARSE_NULLABLE_ACTION_IGNORE,
@@ -216,7 +217,7 @@ struct sql_parse_table {
 	/** Space engine name. */
 	struct Token engine_name;
 	/** Name of the column with autoincrement. */
-	struct Token autoinc_col_name;
+	struct Expr *autoinc_col_name;
 	/** IF NOT EXISTS flag. */
 	bool if_not_exist;
 };
@@ -681,5 +682,70 @@ create_fk_constraint_parse_def_destroy(struct create_fk_constraint_parse_def *d)
 	rlist_foreach_entry(fk, &d->fkeys, link)
 		sql_expr_list_delete(fk->selfref_cols);
 }
+
+void
+sql_parse_table_create(struct Parse *parse, struct Token *name,
+		       bool if_not_exist);
+
+void
+sql_parse_table_engine(struct Parse *parse, struct Token *name);
+
+void
+sql_parse_table_primary_key(struct Parse *parse, struct Token *name,
+			    struct ExprList *cols);
+
+void
+sql_parse_table_unique(struct Parse *parse, struct Token *name,
+		       struct ExprList *cols);
+
+void
+sql_parse_table_check(struct Parse *parse, struct Token *name,
+		      struct ExprSpan *expr);
+
+void
+sql_parse_table_foreign_key(struct Parse *parse, struct Token *name,
+			    struct ExprList *child_cols,
+			    struct Token *parent_name,
+			    struct ExprList *parent_cols);
+
+void
+sql_parse_table_autoinc(struct Parse *parse, struct Expr *expr);
+
+void
+sql_parse_column_add(struct Parse *parse, struct SrcList *table_name,
+		     struct Token *name, enum field_type type);
+
+void
+sql_parse_column_new(struct Parse *parse, struct Token *name,
+		     enum field_type type);
+
+void
+sql_parse_column_autoinc(struct Parse *parse);
+
+void
+sql_parse_column_default(struct Parse *parse, struct ExprSpan *expr);
+
+void
+sql_parse_column_collation(struct Parse *parse, struct Token *coll_name);
+
+void
+sql_parse_column_foreign_key(struct Parse *parse, struct Token *name,
+			     struct Token *parent_name,
+			     struct ExprList *parent_cols);
+
+void
+sql_parse_column_check(struct Parse *parse, struct Token *name,
+		       struct ExprSpan *expr);
+
+void
+sql_parse_column_unique(struct Parse *parse, struct Token *name);
+
+void
+sql_parse_column_primary_key(struct Parse *parse, struct Token *name,
+			     int sort_order);
+
+void
+sql_parse_column_nullable_action(struct Parse *parse, int action,
+				 int on_conflict);
 
 #endif /* TARANTOOL_BOX_SQL_PARSE_DEF_H_INCLUDED */

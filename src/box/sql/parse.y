@@ -169,11 +169,7 @@ cmd ::= ROLLBACK TO savepoint_opt nm(X). {
 //
 cmd ::= create_table create_table_args with_opts create_table_end.
 create_table ::= createkw TABLE ifnotexists(E) nm(Y). {
-  create_table_def_init(&pParse->create_table_def, &Y, E);
-  create_ck_constraint_parse_def_init(&pParse->create_ck_constraint_parse_def);
-  create_fk_constraint_parse_def_init(&pParse->create_fk_constraint_parse_def);
-  pParse->create_table_def.new_space = sqlStartTable(pParse, &Y);
-  pParse->initiateTTrans = true;
+	sql_parse_table_create(pParse, &Y, E);
 }
 createkw(A) ::= CREATE(A).  {disableLookaside(pParse);}
 
@@ -187,19 +183,7 @@ with_opts ::= WITH engine_opts.
 with_opts ::= .
 
 engine_opts ::= ENGINE EQ STRING(A). {
-  /* Note that specifying engine clause overwrites default engine. */
-  if (A.n > ENGINE_NAME_MAX) {
-    diag_set(ClientError, ER_CREATE_SPACE,
-             pParse->create_table_def.new_space->def->name,
-             "space engine name is too long");
-    pParse->is_aborted = true;
-    return;
-  }
-  /* Need to dequote name. */
-  char *normalized_name = sql_name_from_token(&A);
-  memcpy(pParse->create_table_def.new_space->def->engine_name, normalized_name,
-         strlen(normalized_name) + 1);
-  sql_xfree(normalized_name);
+	sql_parse_table_engine(pParse, &A);
 }
 
 create_table_end ::= . { sqlEndTable(pParse); }
@@ -221,16 +205,12 @@ columnlist ::= column_def create_column_end.
 column_def ::= column_name_and_type carglist.
 
 column_name_and_type ::= nm(A) typedef(Y). {
-  create_column_def_init(&pParse->create_column_def, NULL, &A, &Y);
-  sql_create_column_start(pParse);
+	sql_parse_column_new(pParse, &A, Y.type);
 }
 
 create_column_end ::= autoinc(I). {
-  uint32_t fieldno = pParse->create_column_def.space->def->field_count - 1;
-  if (I == 1 && sql_add_autoincrement(pParse, fieldno) != 0)
-    return;
-  if (pParse->create_table_def.new_space == NULL)
-    sql_create_column_end(pParse);
+	if (I == 1)
+		sql_parse_column_autoinc(pParse);
 }
 columnlist ::= tcons.
 
@@ -285,49 +265,49 @@ carglist ::= .
 %type cconsname { struct Token }
 cconsname(N) ::= CONSTRAINT nm(X). { N = X; }
 cconsname(N) ::= . { N = Token_nil; }
-ccons ::= DEFAULT term(X).            {sqlAddDefaultValue(pParse,&X);}
-ccons ::= DEFAULT LP expr(X) RP.      {sqlAddDefaultValue(pParse,&X);}
-ccons ::= DEFAULT PLUS term(X).       {sqlAddDefaultValue(pParse,&X);}
+ccons ::= DEFAULT term(X). {
+	sql_parse_column_default(pParse, &X);
+}
+ccons ::= DEFAULT LP expr(X) RP. {
+	sql_parse_column_default(pParse, &X);
+}
+ccons ::= DEFAULT PLUS term(X). {
+	sql_parse_column_default(pParse, &X);
+}
 ccons ::= DEFAULT MINUS(A) term(X).      {
   ExprSpan v;
   v.pExpr = sqlPExpr(pParse, TK_UMINUS, X.pExpr, 0);
   v.zStart = A.z;
   v.zEnd = X.zEnd;
-  sqlAddDefaultValue(pParse,&v);
+	sql_parse_column_default(pParse, &v);
 }
 
 // In addition to the type name, we also care about the primary key and
 // UNIQUE constraints.
 //
-ccons ::= NULL onconf(R).        {
-    sql_column_add_nullable_action(pParse, ON_CONFLICT_ACTION_NONE);
-    /* Trigger nullability mismatch error if required. */
-    if (R != ON_CONFLICT_ACTION_ABORT)
-        sql_column_add_nullable_action(pParse, R);
+ccons ::= NULL onconf(R). {
+	sql_parse_column_nullable_action(pParse, PARSE_NULLABLE_ACTION_NONE, R);
 }
-ccons ::= NOT NULL onconf(R).    {sql_column_add_nullable_action(pParse, R);}
+ccons ::= NOT NULL onconf(R). {
+	sql_parse_column_nullable_action(pParse, R, R);
+}
 ccons ::= cconsname(N) PRIMARY KEY sortorder(Z). {
-  create_index_def_init(&pParse->create_index_def, NULL, &N, NULL,
-                        SQL_INDEX_TYPE_CONSTRAINT_PK, Z, false);
-  sqlAddPrimaryKey(pParse);
+	sql_parse_column_primary_key(pParse, &N, Z);
 }
 ccons ::= cconsname(N) UNIQUE. {
-  create_index_def_init(&pParse->create_index_def, NULL, &N, NULL,
-                        SQL_INDEX_TYPE_CONSTRAINT_UNIQUE, SORT_ORDER_ASC,
-                        false);
-  sql_create_index(pParse);
+	sql_parse_column_unique(pParse, &N);
 }
 
 ccons ::= cconsname(N) CHECK LP expr(X) RP. {
-  create_ck_def_init(&pParse->create_ck_def, NULL, &N, &X);
-  sql_create_check_contraint(pParse, true);
+	sql_parse_column_check(pParse, &N, &X);
 }
 
 ccons ::= cconsname(N) REFERENCES nm(T) eidlist_opt(TA). {
-  create_fk_def_init(&pParse->create_fk_def, NULL, &N, NULL, &T, TA);
-  sql_create_foreign_key(pParse);
+	sql_parse_column_foreign_key(pParse, &N, &T, TA);
 }
-ccons ::= COLLATE id(C).        {sqlAddCollateType(pParse, &C);}
+ccons ::= COLLATE id(C). {
+	sql_parse_column_collation(pParse, &C);
+}
 
 // The optional AUTOINCREMENT keyword
 %type autoinc {int}
@@ -336,24 +316,17 @@ autoinc(X) ::= AUTOINCR.  {X = 1;}
 
 // The next group of rules parses the arguments to a REFERENCES clause.
 tcons ::= cconsname(N) PRIMARY KEY LP col_list_with_autoinc(X) RP. {
-  create_index_def_init(&pParse->create_index_def, NULL, &N, X,
-                        SQL_INDEX_TYPE_CONSTRAINT_PK, SORT_ORDER_ASC, false);
-  sqlAddPrimaryKey(pParse);
+	sql_parse_table_primary_key(pParse, &N, X);
 }
 tcons ::= cconsname(N) UNIQUE LP sortlist(X) RP. {
-  create_index_def_init(&pParse->create_index_def, NULL, &N, X,
-                        SQL_INDEX_TYPE_CONSTRAINT_UNIQUE, SORT_ORDER_ASC,
-                        false);
-  sql_create_index(pParse);
+	sql_parse_table_unique(pParse, &N, X);
 }
 tcons ::= cconsname(N) CHECK LP expr(X) RP. {
-  create_ck_def_init(&pParse->create_ck_def, NULL, &N, &X);
-  sql_create_check_contraint(pParse, false);
+	sql_parse_table_check(pParse, &N, &X);
 }
 tcons ::= cconsname(N) FOREIGN KEY LP eidlist(FA) RP
           REFERENCES nm(T) eidlist_opt(TA). {
-  create_fk_def_init(&pParse->create_fk_def, NULL, &N, FA, &T, TA);
-  sql_create_foreign_key(pParse);
+	sql_parse_table_foreign_key(pParse, &N, FA, &T, TA);
 }
 
 // The following is a non-standard extension that allows us to declare the
@@ -724,24 +697,14 @@ sortlist(A) ::= expr(Y) sortorder(Z). {
 
 col_list_with_autoinc(A) ::= col_list_with_autoinc(A) COMMA expr(Y)
                              autoinc(I). {
-  uint32_t fieldno;
-  if (I == 1) {
-    if (sql_fieldno_by_name(pParse, Y.pExpr, &fieldno) != 0)
-      return;
-    if (sql_add_autoincrement(pParse, fieldno) != 0)
-      return;
-  }
+	if (I == 1)
+		sql_parse_table_autoinc(pParse, Y.pExpr);
   A = sql_expr_list_append(A, Y.pExpr);
 }
 
 col_list_with_autoinc(A) ::= expr(Y) autoinc(I). {
-  if (I == 1) {
-    uint32_t fieldno = 0;
-    if (sql_fieldno_by_name(pParse, Y.pExpr, &fieldno) != 0)
-      return;
-    if (sql_add_autoincrement(pParse, fieldno) != 0)
-      return;
-  }
+	if (I == 1)
+		sql_parse_table_autoinc(pParse, Y.pExpr);
   /* A-overwrites-Y. */
   A = sql_expr_list_append(NULL, Y.pExpr);
 }
@@ -1677,10 +1640,7 @@ column_name(N) ::= nm(A). { N = A; }
 cmd ::= alter_column_def carglist create_column_end.
 
 alter_column_def ::= alter_add_column(N) typedef(Y). {
-  create_column_def_init(&pParse->create_column_def, N.table_name, &N.name, &Y);
-  create_ck_constraint_parse_def_init(&pParse->create_ck_constraint_parse_def);
-  create_fk_constraint_parse_def_init(&pParse->create_fk_constraint_parse_def);
-  sql_create_column_start(pParse);
+	sql_parse_column_add(pParse, N.table_name, &N.name, Y.type);
 }
 
 cmd ::= alter_add_constraint(N) FOREIGN KEY LP eidlist(FA) RP REFERENCES
