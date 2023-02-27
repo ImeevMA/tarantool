@@ -144,7 +144,7 @@ struct sql_parse_unique {
 /** Description of the CHECK constraint being created. */
 struct sql_parse_check {
 	/** Expression. */
-	struct ExprSpan expr;
+	struct ExprSpan *expr;
 	/** Constraint name. */
 	struct Token name;
 	/**
@@ -171,25 +171,6 @@ struct sql_parse_foreign_key {
 	bool is_column_constraint;
 };
 
-struct sql_parse_constraints {
-	/** List of unique constraint descriptions. */
-	struct sql_parse_unique *unique;
-	/** List of check constraint descriptions. */
-	struct sql_parse_check *check;
-	/** List of foreign key constraint descriptions. */
-	struct sql_parse_foreign_key *fk;
-	/** List of table primary key columns. */
-	struct ExprList *pk_columns;
-	/** Table primary key name. */
-	struct Token pk_name;
-	/** Number of table column descriptions. */
-	uint32_t unique_count;
-	/** Number of check constraint descriptions. */
-	uint32_t check_count;
-	/** Number of foreign key constraint descriptions. */
-	uint32_t fk_count;
-};
-
 /** Description of the table being created. */
 struct sql_parse_table {
 	/** List of table column descriptions. */
@@ -199,7 +180,7 @@ struct sql_parse_table {
 	/** List of check constraint descriptions. */
 	struct sql_parse_check *check;
 	/** List of foreign key constraint descriptions. */
-	struct sql_parse_foreign_key *fk;
+	struct sql_parse_foreign_key *foreign_key;
 	/** Number of table column descriptions. */
 	uint32_t column_count;
 	/** Number of unique constraint descriptions. */
@@ -207,7 +188,7 @@ struct sql_parse_table {
 	/** Number of check constraint descriptions. */
 	uint32_t check_count;
 	/** Number of foreign key constraint descriptions. */
-	uint32_t fk_count;
+	uint32_t foreign_key_count;
 	/** List of table primary key columns. */
 	struct ExprList *pk_columns;
 	/** Table primary key name. */
@@ -235,14 +216,18 @@ struct sql_parse_add_column {
 	/** List of check constraint descriptions. */
 	struct sql_parse_check *check;
 	/** List of foreign key constraint descriptions. */
-	struct sql_parse_foreign_key *fk;
+	struct sql_parse_foreign_key *foreign_key;
 	/** Number of table column descriptions. */
 	uint32_t unique_count;
 	/** Number of check constraint descriptions. */
 	uint32_t check_count;
 	/** Number of foreign key constraint descriptions. */
-	uint32_t fk_count;
-	/** Flag to show is column PK constraint is set. */
+	uint32_t foreign_key_count;
+	/** Sort order for PRIMARY KEY column. */
+	enum sort_order pk_sort_order;
+	/** Flag to show if column has autoincrement. */
+	bool is_autoinc;
+	/** Flag to show if column PK constraint is set. */
 	bool is_pk;
 };
 
@@ -745,7 +730,8 @@ sql_parse_column_primary_key(struct Parse *parse, struct Token *name,
 			     int sort_order);
 
 void
-sql_parse_column_nullable_action(struct Parse *parse, int action,
-				 int on_conflict);
+sql_parse_column_nullable_action(struct Parse *parse,
+				 enum parse_nullable_action action,
+				 enum parse_nullable_action on_conflict);
 
 #endif /* TARANTOOL_BOX_SQL_PARSE_DEF_H_INCLUDED */

@@ -2046,6 +2046,14 @@ struct Parse {
 		struct drop_view_def drop_view_def;
 		struct enable_entity_def enable_entity_def;
 	};
+	/** Type of the parsed statement. */
+	enum parse_type type;
+	union {
+		/** Parsed CREATE TABLE statement. */
+		struct sql_parse_table create_table;
+		/** Parsed ALTER TABLE ADD COLUMN statement. */
+		struct sql_parse_add_column add_column;
+	};
 	/**
 	 * Table def or column def is not part of union since
 	 * information being held must survive till the end of

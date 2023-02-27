@@ -332,17 +332,21 @@ tcons ::= cconsname(N) FOREIGN KEY LP eidlist(FA) RP
 // The following is a non-standard extension that allows us to declare the
 // default behavior when there is a constraint conflict.
 //
-%type onconf {int}
+%type onconf {enum parse_nullable_action}
 %type index_onconf {int}
 %type orconf {int}
-%type resolvetype {int}
-onconf(A) ::= .                              {A = ON_CONFLICT_ACTION_ABORT;}
+%type resolvetype {enum parse_nullable_action}
+onconf(A) ::= .                              {A = PARSE_NULLABLE_ACTION_ABORT;}
 onconf(A) ::= ON CONFLICT resolvetype(X).    {A = X;}
 orconf(A) ::= .                              {A = ON_CONFLICT_ACTION_DEFAULT;}
 orconf(A) ::= OR resolvetype(X).             {A = X;}
 resolvetype(A) ::= raisetype(A).
-resolvetype(A) ::= IGNORE.                   {A = ON_CONFLICT_ACTION_IGNORE;}
-resolvetype(A) ::= REPLACE.                  {A = ON_CONFLICT_ACTION_REPLACE;}
+resolvetype(A) ::= IGNORE. {
+	A = PARSE_NULLABLE_ACTION_IGNORE;
+}
+resolvetype(A) ::= REPLACE. {
+	A = PARSE_NULLABLE_ACTION_IGNORE;
+}
 
 ////////////////////////// The DROP TABLE /////////////////////////////////////
 //
@@ -1591,13 +1595,20 @@ expr(A) ::= RAISE(X) LP IGNORE RP(Y).  {
 expr(A) ::= RAISE(X) LP raisetype(T) COMMA STRING(Z) RP(Y).  {
   spanSet(&A,&X,&Y);  /*A-overwrites-X*/
   A.pExpr = sql_expr_new_dequoted(TK_RAISE, &Z);
-  A.pExpr->on_conflict_action = (enum on_conflict_action) T;
+  enum on_conflict_action action;
+	if (T == PARSE_NULLABLE_ACTION_ROLLBACK)
+		action = (enum on_conflict_action)ON_CONFLICT_ACTION_ROLLBACK;
+	else if (T == PARSE_NULLABLE_ACTION_ABORT)
+		action = (enum on_conflict_action)ON_CONFLICT_ACTION_ABORT;
+	else
+		action = (enum on_conflict_action)ON_CONFLICT_ACTION_FAIL;
+	A.pExpr->on_conflict_action = action;
 }
 
-%type raisetype {int}
-raisetype(A) ::= ROLLBACK.  {A = ON_CONFLICT_ACTION_ROLLBACK;}
-raisetype(A) ::= ABORT.     {A = ON_CONFLICT_ACTION_ABORT;}
-raisetype(A) ::= FAIL.      {A = ON_CONFLICT_ACTION_FAIL;}
+%type raisetype {enum parse_nullable_action}
+raisetype(A) ::= ROLLBACK.  {A = PARSE_NULLABLE_ACTION_ROLLBACK;}
+raisetype(A) ::= ABORT.     {A = PARSE_NULLABLE_ACTION_ABORT;}
+raisetype(A) ::= FAIL.      {A = PARSE_NULLABLE_ACTION_FAIL;}
 
 
 ////////////////////////  DROP TRIGGER statement //////////////////////////////
