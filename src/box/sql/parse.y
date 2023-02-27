@@ -109,7 +109,7 @@ static void disableLookaside(Parse *pParse){
 // Input is a single SQL command
 input ::= ecmd.
 ecmd ::= explain cmdx SEMI. {
-	if (!pParse->parse_only)
+	if (!pParse->parse_only && pParse->type == PARSE_TYPE_UNKNOWN)
 		sql_finish_coding(pParse);
 }
 ecmd ::= SEMI. {
@@ -167,7 +167,7 @@ cmd ::= ROLLBACK TO savepoint_opt nm(X). {
 
 ///////////////////// The CREATE TABLE statement ////////////////////////////
 //
-cmd ::= create_table create_table_args with_opts create_table_end.
+cmd ::= create_table create_table_args with_opts.
 create_table ::= createkw TABLE ifnotexists(E) nm(Y). {
 	sql_parse_table_create(pParse, &Y, E);
 }
@@ -185,8 +185,6 @@ with_opts ::= .
 engine_opts ::= ENGINE EQ STRING(A). {
 	sql_parse_table_engine(pParse, &A);
 }
-
-create_table_end ::= . { sqlEndTable(pParse); }
 
 /*
  * CREATE TABLE AS SELECT is broken. To be re-implemented
@@ -345,7 +343,7 @@ resolvetype(A) ::= IGNORE. {
 	A = PARSE_NULLABLE_ACTION_IGNORE;
 }
 resolvetype(A) ::= REPLACE. {
-	A = PARSE_NULLABLE_ACTION_IGNORE;
+	A = PARSE_NULLABLE_ACTION_REPLACE;
 }
 
 ////////////////////////// The DROP TABLE /////////////////////////////////////
@@ -1656,7 +1654,8 @@ alter_column_def ::= alter_add_column(N) typedef(Y). {
 
 cmd ::= alter_add_constraint(N) FOREIGN KEY LP eidlist(FA) RP REFERENCES
         nm(T) eidlist_opt(TA). {
-  create_fk_def_init(&pParse->create_fk_def, N.table_name, &N.name, FA, &T, TA);
+  create_fk_def_init(&pParse->create_fk_def, N.table_name, &N.name, FA, &T, TA,
+                     false);
   sql_create_foreign_key(pParse);
 }
 

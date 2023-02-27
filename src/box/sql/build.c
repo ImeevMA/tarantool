@@ -1871,7 +1871,7 @@ sql_fk_unique_name_new(struct Parse *parse)
 	struct fk_constraint_parse *fk;
 	struct rlist *fkeys = &parse->create_fk_constraint_parse_def.fkeys;
 	uint32_t n = 1;
-	if (parse->create_fk_def.child_cols != NULL) {
+	if (!parse->create_fk_def.is_field_fk) {
 		rlist_foreach_entry(fk, fkeys, link) {
 			if (!fk->fk_def->is_field_fk)
 				++n;
@@ -2056,7 +2056,7 @@ sql_create_foreign_key(struct Parse *parse_context)
 			 "fk_def");
 		goto tnt_error;
 	}
-	fk_def->is_field_fk = child_cols == NULL;
+	fk_def->is_field_fk = create_fk_def->is_field_fk;
 	fk_def->field_count = child_cols_count;
 	fk_def->child_id = child_space != NULL ? child_space->def->id : 0;
 	fk_def->parent_id = parent_space != NULL ? parent_space->def->id : 0;

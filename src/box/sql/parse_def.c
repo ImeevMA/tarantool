@@ -65,7 +65,7 @@ sql_parse_table_engine(struct Parse *parse, struct Token *name)
 
 void
 sql_parse_table_primary_key(struct Parse *parse, struct Token *name,
-		   struct ExprList *cols)
+			    struct ExprList *cols)
 {
 	assert(parse->type == PARSE_TYPE_CREATE_TABLE);
 	if (parse->create_table.pk_columns == NULL) {
@@ -105,7 +105,7 @@ sql_parse_table_check(struct Parse *parse, struct Token *name,
 	stmt->check = sql_xrealloc(stmt->check, size);
 	struct sql_parse_check *c = &stmt->check[id];
 	c->name = *name;
-	c->expr = expr;
+	c->expr = *expr;
 	c->is_column_constraint = false;
 }
 
@@ -206,9 +206,7 @@ sql_parse_column_default(struct Parse *parse, struct ExprSpan *expr)
 {
 	struct sql_parse_column *column = sql_parse_last_column(parse);
 	if (sqlExprIsConstantOrFunction(expr->pExpr, sql_get()->init.busy)) {
-		column->default_expr.z = expr->zStart;
-		column->default_expr.n = expr->zEnd - expr->zStart;
-		assert(!column->default_expr.isReserved);
+		column->default_expr = *expr;
 		return;
 	}
 	diag_set(ClientError, ER_SQL_SYNTAX_WITH_POS, parse->line_count,
@@ -229,13 +227,23 @@ sql_parse_column_foreign_key(struct Parse *parse, struct Token *name,
 			     struct ExprList *parent_cols)
 {
 	struct sql_parse_column *column = sql_parse_last_column(parse);
-	struct Expr *expr = sql_expr_new_dequoted(TK_ID, &column->name);
-	struct ExprList *child_cols = sql_expr_list_append(NULL, expr);
+	struct ExprList *child_cols = sql_expr_list_append(NULL, NULL);
+	sqlExprListSetName(parse, child_cols, &column->name, 1);
 	if (parse->type == PARSE_TYPE_CREATE_TABLE) {
-		return sql_parse_table_foreign_key(parse, name, child_cols,
-						   parent_name, parent_cols);
+		struct sql_parse_table *stmt = &parse->create_table;
+		uint32_t id = stmt->foreign_key_count;
+		++stmt->foreign_key_count;
+		uint32_t size = stmt->foreign_key_count *
+				sizeof(*stmt->foreign_key);
+		stmt->foreign_key = sql_xrealloc(stmt->foreign_key, size);
+		struct sql_parse_foreign_key *c = &stmt->foreign_key[id];
+		c->name = *name;
+		c->child_cols = child_cols;
+		c->parent_cols = parent_cols;
+		c->parent_name = *parent_name;
+		c->is_column_constraint = true;
+		return;
 	}
-
 	assert(parse->type == PARSE_TYPE_ADD_COLUMN);
 	struct sql_parse_add_column *stmt = &parse->add_column;
 	uint32_t id = stmt->foreign_key_count;
@@ -247,7 +255,7 @@ sql_parse_column_foreign_key(struct Parse *parse, struct Token *name,
 	c->child_cols = child_cols;
 	c->parent_cols = parent_cols;
 	c->parent_name = *parent_name;
-	c->is_column_constraint = false;
+	c->is_column_constraint = true;
 }
 
 void
@@ -271,7 +279,7 @@ sql_parse_column_check(struct Parse *parse, struct Token *name,
 		c = &stmt->check[id];
 	}
 	c->name = *name;
-	c->expr = expr;
+	c->expr = *expr;
 	c->is_column_constraint = true;
 }
 
@@ -314,7 +322,7 @@ sql_parse_column_primary_key(struct Parse *parse, struct Token *name,
 	assert(parse->type == PARSE_TYPE_CREATE_TABLE);
 	if (parse->create_table.pk_columns == NULL) {
 		struct sql_parse_column *column = sql_parse_last_column(parse);
-		struct Expr *expr = sql_expr_new(TK_ID, &column->name);
+		struct Expr *expr = sql_expr_new_dequoted(TK_ID, &column->name);
 		struct ExprList *cols = sql_expr_list_append(NULL, expr);
 		sqlExprListSetSortOrder(cols, sort_order);
 		parse->create_table.pk_columns = cols;
