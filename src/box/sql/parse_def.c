@@ -46,6 +46,13 @@ sqlTokenInit(struct Token *p, char *z)
 	p->n = z == NULL ? 0 : strlen(z);
 }
 
+/** Return the name of the last created column. */
+static struct Token *
+last_column_name(struct Parse *parse)
+{
+	return &parse->create_column_def.base.name;
+}
+
 void
 sql_ast_init_start_transaction(struct Parse *parse)
 {
@@ -152,4 +159,81 @@ sql_ast_init_table_drop(struct Parse *parse, const struct Token *name,
 	parse->ast.type = SQL_AST_TYPE_DROP_TABLE;
 	parse->ast.drop_table.name = *name;
 	parse->ast.drop_table.if_exists = if_exists;
+}
+
+void
+sql_ast_init_create_table(struct Parse *parse)
+{
+	parse->ast.type = SQL_AST_TYPE_CREATE_TABLE;
+}
+
+void
+sql_ast_init_add_column(struct Parse *parse)
+{
+	parse->ast.type = SQL_AST_TYPE_ADD_COLUMN;
+}
+
+void
+sql_ast_init_add_foreign_key(struct Parse *parse, struct SrcList *table_name,
+			     const struct Token *name,
+			     struct ExprList *child_cols,
+			     const struct Token *parent_name,
+			     struct ExprList *parent_cols)
+{
+	parse->ast.type = SQL_AST_TYPE_ADD_FOREIGN_KEY;
+	parse->ast.add_foreign_key.src_list = table_name;
+	struct sql_ast_foreign_key *c = &parse->ast.add_foreign_key.foreign_key;
+	c->name = *name;
+	c->child_cols = child_cols;
+	c->parent_cols = parent_cols;
+	c->parent_name = *parent_name;
+	c->is_column_constraint = false;
+}
+
+/** Append a new FOREIGN KEY to FOREIGN KEY list. */
+static void
+foreign_key_list_append(struct sql_ast_foreign_key_list *list,
+			const struct Token *name, struct ExprList *child_cols,
+			const struct Token *parent_name,
+			struct ExprList *parent_cols, bool is_column_constraint)
+{
+	uint32_t id = list->n;
+	++list->n;
+	uint32_t size = list->n * sizeof(*list->a);
+	list->a = sql_xrealloc(list->a, size);
+	struct sql_ast_foreign_key *c = &list->a[id];
+	c->name = *name;
+	c->child_cols = child_cols;
+	c->parent_cols = parent_cols;
+	c->parent_name = *parent_name;
+	c->is_column_constraint = is_column_constraint;
+}
+
+void
+sql_ast_save_column_foreign_key(struct Parse *parse, const struct Token *name,
+				const struct Token *parent_name,
+				struct ExprList *parent_cols)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE ||
+	       parse->ast.type == SQL_AST_TYPE_ADD_COLUMN);
+	struct sql_ast_foreign_key_list *list;
+	if (parse->ast.type == SQL_AST_TYPE_CREATE_TABLE)
+		list = &parse->ast.create_table.foreign_key_list;
+	else
+		list = &parse->ast.add_column.foreign_key_list;
+	struct ExprList *child_cols = sql_expr_list_append(NULL, NULL);
+	sqlExprListSetName(parse, child_cols, last_column_name(parse), 1);
+	foreign_key_list_append(list, name, child_cols, parent_name,
+				parent_cols, true);
+}
+
+void
+sql_ast_save_table_foreign_key(struct Parse *parse, const struct Token *name,
+			       struct ExprList *child_cols,
+			       const struct Token *parent_name,
+			       struct ExprList *parent_cols)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE);
+	foreign_key_list_append(&parse->ast.create_table.foreign_key_list, name,
+				child_cols, parent_name, parent_cols, false);
 }

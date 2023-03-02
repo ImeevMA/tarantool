@@ -102,6 +102,12 @@ enum sql_ast_type {
 	SQL_AST_TYPE_DROP_VIEW,
 	/** DROP TABLE statement. */
 	SQL_AST_TYPE_DROP_TABLE,
+	/** CREATE TABLE statement. */
+	SQL_AST_TYPE_CREATE_TABLE,
+	/** ALTER TABLE ADD COLUMN statement. */
+	SQL_AST_TYPE_ADD_COLUMN,
+	/** ALTER TABLE ADD CONSTAINT FOREIGN KEY statement. */
+	SQL_AST_TYPE_ADD_FOREIGN_KEY,
 };
 
 /**
@@ -172,6 +178,53 @@ struct sql_ast_drop_table {
 	bool if_exists;
 };
 
+/** Description of the FOREIGN KEY constraint being created. */
+struct sql_ast_foreign_key {
+	/** List child columns. */
+	struct ExprList *child_cols;
+	/** List parent columns. */
+	struct ExprList *parent_cols;
+	/** Name of the parent table. */
+	struct Token parent_name;
+	/** Constraint name. */
+	struct Token name;
+	/**
+	 * Flag indicating whether the constraint is a column constraint or a
+	 * table constraint.
+	 */
+	bool is_column_constraint;
+};
+
+/** FOREIGN KEY descriptions list. */
+struct sql_ast_foreign_key_list {
+	/** Array containing all FOREIGN KEY descriptions from the list. */
+	struct sql_ast_foreign_key *a;
+	/** Number of FOREIGN KEY descriptions in the list. */
+	uint32_t n;
+};
+
+/** Description of CREATE TABLE statement. */
+struct sql_ast_create_table {
+	/** Description of FOREIGN KEY constraints. */
+	struct sql_ast_foreign_key_list foreign_key_list;
+};
+
+/** Description of ALTER TABLE ADD COLUMN statement. */
+struct sql_ast_add_column {
+	/** Description of FOREIGN KEY constraints. */
+	struct sql_ast_foreign_key_list foreign_key_list;
+	/** Source list for the statement. */
+	struct SrcList *src_list;
+};
+
+/** Description of ALTER TABLE ADD CONSTRAINT FOREIGN KEY statement. */
+struct sql_ast_add_foreign_key {
+	/** Description of FOREIGN KEY constraint. */
+	struct sql_ast_foreign_key foreign_key;
+	/** Source list for the statement. */
+	struct SrcList *src_list;
+};
+
 /** A structure describing the AST of the parsed SQL statement. */
 struct sql_ast {
 	/** Parsed statement type. */
@@ -191,6 +244,15 @@ struct sql_ast {
 		struct sql_ast_drop_view drop_view;
 		/** Description of DROP TABLE statement. */
 		struct sql_ast_drop_table drop_table;
+		/** Description of CREATE TABLE statement. */
+		struct sql_ast_create_table create_table;
+		/** Description of ALTER TABLE ADD COLUMN statement. */
+		struct sql_ast_add_column add_column;
+		/**
+		 * Description of ALTER TABLE ADD CONSTRAINT FOREIGN KEY
+		 * statement.
+		 */
+		struct sql_ast_add_foreign_key add_foreign_key;
 	};
 };
 
@@ -369,13 +431,6 @@ struct create_ck_def {
 	struct ExprSpan *expr;
 };
 
-struct create_fk_def {
-	struct create_constraint_def base;
-	struct ExprList *child_cols;
-	struct Token *parent_name;
-	struct ExprList *parent_cols;
-};
-
 struct create_index_def {
 	struct create_constraint_def base;
 	/** List of indexed columns. */
@@ -461,18 +516,6 @@ create_index_def_init(struct create_index_def *index_def,
 	index_def->cols = cols;
 	index_def->idx_type = idx_type;
 	index_def->sort_order = sort_order;
-}
-
-static inline void
-create_fk_def_init(struct create_fk_def *fk_def, struct SrcList *table_name,
-		   struct Token *name, struct ExprList *child_cols,
-		   struct Token *parent_name, struct ExprList *parent_cols)
-{
-	create_constraint_def_init(&fk_def->base, table_name, name,
-				   false, ENTITY_TYPE_FK);
-	fk_def->child_cols = child_cols;
-	fk_def->parent_name = parent_name;
-	fk_def->parent_cols = parent_cols;
 }
 
 static inline void
@@ -583,5 +626,34 @@ sql_ast_init_view_drop(struct Parse *parse, const struct Token *name,
 void
 sql_ast_init_table_drop(struct Parse *parse, const struct Token *name,
 			bool if_exists);
+
+/** Save parsed CREATE TABLE statement. */
+void
+sql_ast_init_create_table(struct Parse *parse);
+
+/** Save parsed ADD COLUMN statement. */
+void
+sql_ast_init_add_column(struct Parse *parse);
+
+/** Save parsed table FOREIGN KEY from ALTER TABLE ADD CONSTRAINT statement. */
+void
+sql_ast_init_add_foreign_key(struct Parse *parse, struct SrcList *src_list,
+			     const struct Token *name,
+			     struct ExprList *child_cols,
+			     const struct Token *parent_name,
+			     struct ExprList *parent_cols);
+
+/** Save parsed column FOREIGN KEY. */
+void
+sql_ast_save_column_foreign_key(struct Parse *parse, const struct Token *name,
+				const struct Token *parent_name,
+				struct ExprList *parent_cols);
+
+/** Save parsed table FOREIGN KEY from CREATE TABLE statement. */
+void
+sql_ast_save_table_foreign_key(struct Parse *parse, const struct Token *name,
+			       struct ExprList *child_cols,
+			       const struct Token *parent_name,
+			       struct ExprList *parent_cols);
 
 #endif /* TARANTOOL_BOX_SQL_PARSE_DEF_H_INCLUDED */

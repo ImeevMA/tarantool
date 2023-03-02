@@ -197,11 +197,34 @@ sql_parser_create(struct Parse *parser, uint32_t sql_flags)
 	region_create(&parser->region, &cord()->slabc);
 }
 
+/** Destroy given AST. */
+static void
+sql_ast_destroy(struct sql_ast *ast)
+{
+	switch (ast->type) {
+	case SQL_AST_TYPE_CREATE_TABLE:
+		if (ast->create_table.foreign_key_list.n != 0)
+			sql_xfree(ast->create_table.foreign_key_list.a);
+		return;
+	case SQL_AST_TYPE_ADD_COLUMN:
+		if (ast->add_column.foreign_key_list.n != 0)
+			sql_xfree(ast->add_column.foreign_key_list.a);
+		sqlSrcListDelete(ast->add_column.src_list);
+		return;
+	case SQL_AST_TYPE_ADD_FOREIGN_KEY:
+		sqlSrcListDelete(ast->add_foreign_key.src_list);
+		return;
+	default:
+		return;
+	}
+}
+
 void
 sql_parser_destroy(Parse *parser)
 {
 	assert(parser != NULL);
 	assert(!parser->parse_only || parser->pVdbe == NULL);
+	sql_ast_destroy(&parser->ast);
 	sql_xfree(parser->aLabel);
 	sql_expr_list_delete(parser->pConstExpr);
 	struct create_fk_constraint_parse_def *create_fk_constraint_parse_def =

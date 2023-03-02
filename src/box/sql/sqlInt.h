@@ -2041,7 +2041,6 @@ struct Parse {
 	 */
 	union {
 		struct create_ck_def create_ck_def;
-		struct create_fk_def create_fk_def;
 		struct create_index_def create_index_def;
 		struct create_trigger_def create_trigger_def;
 		struct create_view_def create_view_def;
@@ -3593,7 +3592,8 @@ int sqlJoinType(Parse *, Token *, Token *, Token *);
  * @param parse_context Parsing context.
  */
 void
-sql_create_foreign_key(struct Parse *parse_context);
+sql_create_foreign_key(struct Parse *parse_context,
+		       struct sql_ast_foreign_key *cdef);
 
 /**
  * Emit code to drop the entry from _index or drop FOREIGN KEY or CHECK
