@@ -603,6 +603,12 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast)
 	}
 	case SQL_AST_TYPE_CREATE_TABLE: {
 		struct sql_ast_create_table *stmt = &ast->create_table;
+		if (stmt->autoinc_name != NULL) {
+			if (sql_fieldno_by_name(parse, stmt->autoinc_name,
+						&parse->autoinc_fieldno) != 0)
+				return;
+			parse->has_autoinc = true;
+		}
 		if (sql_code_pk(parse, &stmt->primary_key, NULL) != 0)
 			return;
 		if (sql_code_unique_list(parse, &stmt->unique_list) != 0)
@@ -626,6 +632,12 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast)
 	}
 	case SQL_AST_TYPE_ADD_COLUMN: {
 		struct sql_ast_add_column *stmt = &ast->add_column;
+		if (stmt->autoinc_name != NULL) {
+			if (sql_fieldno_by_name(parse, stmt->autoinc_name,
+						&parse->autoinc_fieldno) != 0)
+				return;
+			parse->has_autoinc = true;
+		}
 		if (sql_code_pk(parse, &stmt->primary_key, stmt->src_list) != 0)
 			return;
 		if (sql_code_unique_list(parse, &stmt->unique_list) != 0)

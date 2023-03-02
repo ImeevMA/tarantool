@@ -268,6 +268,8 @@ struct sql_ast_create_table {
 	struct sql_ast_unique_list unique_list;
 	/** Description of created PRIMARY KEY constraint. */
 	struct sql_ast_unique primary_key;
+	/** Name of the column with AUTOINCREMENT. */
+	struct Expr *autoinc_name;
 };
 
 /** Description of the CREATE INDEX statement. */
@@ -297,6 +299,8 @@ struct sql_ast_add_column {
 	struct sql_ast_unique_list unique_list;
 	/** Description of created PRIMARY KEY constraint. */
 	struct sql_ast_unique primary_key;
+	/** Name of the column with AUTOINCREMENT. */
+	struct Expr *autoinc_name;
 	/** Source list for the statement. */
 	struct SrcList *src_list;
 };
@@ -778,5 +782,13 @@ sql_ast_save_column_primary_key(struct Parse *parse, const struct Token *name,
 void
 sql_ast_save_table_primary_key(struct Parse *parse, const struct Token *name,
 			       struct ExprList *cols);
+
+/** Save parsed column AUTOINCREMENT clause. */
+void
+sql_ast_save_column_autoincrement(struct Parse *parse);
+
+/** Save parsed AUTOINCREMENT clause from table PRIMARY KEY clause. */
+void
+sql_ast_save_table_autoincrement(struct Parse *parse, struct Expr *column_name);
 
 #endif /* TARANTOOL_BOX_SQL_PARSE_DEF_H_INCLUDED */

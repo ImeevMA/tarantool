@@ -203,6 +203,8 @@ sql_ast_destroy(struct sql_ast *ast)
 {
 	switch (ast->type) {
 	case SQL_AST_TYPE_CREATE_TABLE:
+		if (ast->create_table.autoinc_name != NULL)
+			sql_expr_delete(ast->create_table.autoinc_name);
 		if (ast->create_table.foreign_key_list.n != 0)
 			sql_xfree(ast->create_table.foreign_key_list.a);
 		if (ast->create_table.check_list.n != 0)
@@ -214,6 +216,8 @@ sql_ast_destroy(struct sql_ast *ast)
 		sqlSrcListDelete(ast->create_index.src_list);
 		return;
 	case SQL_AST_TYPE_ADD_COLUMN:
+		if (ast->add_column.autoinc_name != NULL)
+			sql_expr_delete(ast->add_column.autoinc_name);
 		if (ast->add_column.foreign_key_list.n != 0)
 			sql_xfree(ast->add_column.foreign_key_list.a);
 		if (ast->add_column.check_list.n != 0)

@@ -57,12 +57,10 @@ last_column_name(struct Parse *parse)
 static const char *
 column_table_name(struct Parse *parse)
 {
-	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE ||
-	       parse->ast.type == SQL_AST_TYPE_ADD_COLUMN);
-	if (parse->ast.type == SQL_AST_TYPE_CREATE_TABLE)
-		return parse->create_table_def.new_space->def->name;
-	else
+	if (parse->ast.type == SQL_AST_TYPE_ADD_COLUMN)
 		return parse->ast.add_column.src_list->a[0].zName;
+	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE);
+	return parse->create_table_def.new_space->def->name;
 }
 
 void
@@ -417,4 +415,38 @@ sql_ast_save_table_primary_key(struct Parse *parse, const struct Token *name,
 	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE);
 	struct sql_ast_unique *pk = &parse->ast.create_table.primary_key;
 	primary_key_fill(parse, pk, name, cols);
+}
+
+/** Set the AUTOINCREMENT column name. */
+static void
+autoincrement_add(struct Parse *parse, struct Expr *column_name)
+{
+	if (parse->ast.type == SQL_AST_TYPE_ADD_COLUMN) {
+		parse->ast.add_column.autoinc_name = column_name;
+		return;
+	}
+	if (parse->ast.create_table.autoinc_name != NULL) {
+		diag_set(ClientError, ER_SQL_SYNTAX_WITH_POS, parse->line_count,
+			 parse->line_pos,
+			 "table must feature at most one AUTOINCREMENT field");
+		parse->is_aborted = true;
+		return;
+	}
+	parse->ast.create_table.autoinc_name = column_name;
+}
+
+void
+sql_ast_save_column_autoincrement(struct Parse *parse)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE ||
+	       parse->ast.type == SQL_AST_TYPE_ADD_COLUMN);
+	struct Token *column_name = last_column_name(parse);
+	autoincrement_add(parse, sql_expr_new_dequoted(TK_ID, column_name));
+}
+
+void
+sql_ast_save_table_autoincrement(struct Parse *parse, struct Expr *column_name)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE);
+	autoincrement_add(parse, column_name);
 }
