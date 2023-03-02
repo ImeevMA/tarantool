@@ -2029,7 +2029,6 @@ struct Parse {
 	 * from parse.y
 	 */
 	union {
-		struct create_index_def create_index_def;
 		struct create_trigger_def create_trigger_def;
 		struct create_view_def create_view_def;
 		struct enable_entity_def enable_entity_def;
@@ -2718,8 +2717,9 @@ void
 sql_column_add_nullable_action(struct Parse *parser,
 			       enum on_conflict_action nullable_action);
 
+/** Create primary key for an SQL table. */
 void
-sqlAddPrimaryKey(struct Parse *parse);
+sqlAddPrimaryKey(struct Parse *parse, struct SrcList *src_list);
 
 /**
  * Add a new CHECK constraint to the table currently under
@@ -2930,11 +2930,11 @@ sqlIdListDelete(struct IdList *pList);
  * name are NULL, use parse->new_space as the table to be indexed.
  * parse->create_tale_def->new_space is a space that is currently
  * being constructed by a CREATE TABLE statement.
- *
- * @param parse All information about this parse.
  */
 void
-sql_create_index(struct Parse *parse);
+sql_create_index(struct Parse *parse, struct Token *index_name,
+		 struct ExprList *col_list, enum sql_index_type idx_type,
+		 struct SrcList *tbl_name, bool if_not_exists);
 
 /**
  * This routine will drop an existing named index.  This routine

@@ -210,6 +210,9 @@ sql_ast_destroy(struct sql_ast *ast)
 		if (ast->create_table.unique_list.n != 0)
 			sql_xfree(ast->create_table.unique_list.a);
 		return;
+	case SQL_AST_TYPE_CREATE_INDEX:
+		sqlSrcListDelete(ast->create_index.src_list);
+		return;
 	case SQL_AST_TYPE_ADD_COLUMN:
 		if (ast->add_column.foreign_key_list.n != 0)
 			sql_xfree(ast->add_column.foreign_key_list.a);

@@ -180,6 +180,20 @@ sql_ast_init_create_table(struct Parse *parse)
 }
 
 void
+sql_ast_init_create_index(struct Parse *parse, struct Token *table_name,
+			  const struct Token *index_name, struct ExprList *cols,
+			  bool is_unique, bool if_not_exists)
+{
+	parse->ast.type = SQL_AST_TYPE_CREATE_INDEX;
+	struct sql_ast_create_index *stmt = &parse->ast.create_index;
+	stmt->src_list = sql_src_list_append(NULL, table_name);
+	stmt->name = *index_name;
+	stmt->cols = cols;
+	stmt->is_unique = is_unique;
+	stmt->if_not_exists = if_not_exists;
+}
+
+void
 sql_ast_init_add_column(struct Parse *parse)
 {
 	parse->ast.type = SQL_AST_TYPE_ADD_COLUMN;
