@@ -190,6 +190,18 @@ sql_ast_init_add_foreign_key(struct Parse *parse, struct SrcList *table_name,
 	c->is_column_constraint = false;
 }
 
+void
+sql_ast_init_add_check(struct Parse *parse, struct SrcList *table_name,
+		       const struct Token *name, struct ExprSpan *expr)
+{
+	parse->ast.type = SQL_AST_TYPE_ADD_CHECK;
+	parse->ast.add_check.src_list = table_name;
+	struct sql_ast_check *c = &parse->ast.add_check.check;
+	c->name = *name;
+	c->expr = *expr;
+	c->column_name = Token_nil;
+}
+
 /** Append a new FOREIGN KEY to FOREIGN KEY list. */
 static void
 foreign_key_list_append(struct sql_ast_foreign_key_list *list,
@@ -236,4 +248,42 @@ sql_ast_save_table_foreign_key(struct Parse *parse, const struct Token *name,
 	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE);
 	foreign_key_list_append(&parse->ast.create_table.foreign_key_list, name,
 				child_cols, parent_name, parent_cols, false);
+}
+
+/** Append a new CHECK to CHECK list. */
+static void
+check_list_append(struct sql_ast_check_list *list, const struct Token *name,
+		  struct ExprSpan *expr, const struct Token *column_name)
+{
+	uint32_t id = list->n;
+	++list->n;
+	uint32_t size = list->n * sizeof(*list->a);
+	list->a = sql_xrealloc(list->a, size);
+	struct sql_ast_check *c = &list->a[id];
+	c->name = *name;
+	c->expr = *expr;
+	c->column_name = *column_name;
+}
+
+void
+sql_ast_save_column_check(struct Parse *parse, const struct Token *name,
+			  struct ExprSpan *expr)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE ||
+	       parse->ast.type == SQL_AST_TYPE_ADD_COLUMN);
+	struct sql_ast_check_list *list;
+	if (parse->ast.type == SQL_AST_TYPE_CREATE_TABLE)
+		list = &parse->ast.create_table.check_list;
+	else
+		list = &parse->ast.add_column.check_list;
+	check_list_append(list, name, expr, last_column_name(parse));
+}
+
+void
+sql_ast_save_table_check(struct Parse *parse, const struct Token *name,
+			 struct ExprSpan *expr)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE);
+	check_list_append(&parse->ast.create_table.check_list, name, expr,
+			  &Token_nil);
 }

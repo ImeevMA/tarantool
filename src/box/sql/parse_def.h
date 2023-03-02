@@ -108,6 +108,8 @@ enum sql_ast_type {
 	SQL_AST_TYPE_ADD_COLUMN,
 	/** ALTER TABLE ADD CONSTAINT FOREIGN KEY statement. */
 	SQL_AST_TYPE_ADD_FOREIGN_KEY,
+	/** ALTER TABLE ADD CONSTAINT CHECK statement. */
+	SQL_AST_TYPE_ADD_CHECK,
 };
 
 /**
@@ -120,6 +122,19 @@ struct Token {
 	/** Number of characters in this token. */
 	unsigned int n;
 	bool isReserved;
+};
+
+/**
+ * An instance of this structure is used by the parser to record both the parse
+ * tree for an expression and the span of input text for an expression.
+ */
+struct ExprSpan {
+	/* The expression parse tree. */
+	struct Expr *pExpr;
+	/* First character of input text. */
+	const char *zStart;
+	/* One character past the end of input text. */
+	const char *zEnd;
 };
 
 /** Description of a SAVEPOINT. */
@@ -203,16 +218,38 @@ struct sql_ast_foreign_key_list {
 	uint32_t n;
 };
 
+/** Description of the CHECK constraint being created. */
+struct sql_ast_check {
+	/** Expression. */
+	struct ExprSpan expr;
+	/** Constraint name. */
+	struct Token name;
+	/** Column name for column constraint, empty for table constraint. */
+	struct Token column_name;
+};
+
+/** CHECK descriptions list. */
+struct sql_ast_check_list {
+	/** Array containing all CHECK descriptions from the list. */
+	struct sql_ast_check *a;
+	/** Number of CHECK descriptions in the list. */
+	uint32_t n;
+};
+
 /** Description of CREATE TABLE statement. */
 struct sql_ast_create_table {
 	/** Description of FOREIGN KEY constraints. */
 	struct sql_ast_foreign_key_list foreign_key_list;
+	/** Description of CHECK constraints. */
+	struct sql_ast_check_list check_list;
 };
 
 /** Description of ALTER TABLE ADD COLUMN statement. */
 struct sql_ast_add_column {
 	/** Description of FOREIGN KEY constraints. */
 	struct sql_ast_foreign_key_list foreign_key_list;
+	/** Description of CHECK constraints. */
+	struct sql_ast_check_list check_list;
 	/** Source list for the statement. */
 	struct SrcList *src_list;
 };
@@ -221,6 +258,14 @@ struct sql_ast_add_column {
 struct sql_ast_add_foreign_key {
 	/** Description of FOREIGN KEY constraint. */
 	struct sql_ast_foreign_key foreign_key;
+	/** Source list for the statement. */
+	struct SrcList *src_list;
+};
+
+/** Description of ALTER TABLE ADD CONSTRAINT CHECK statement. */
+struct sql_ast_add_check {
+	/** Description of CHECK constraint. */
+	struct sql_ast_check check;
 	/** Source list for the statement. */
 	struct SrcList *src_list;
 };
@@ -253,6 +298,10 @@ struct sql_ast {
 		 * statement.
 		 */
 		struct sql_ast_add_foreign_key add_foreign_key;
+		/**
+		 * Description of ALTER TABLE ADD CONSTRAINT CHECK statement.
+		 */
+		struct sql_ast_add_check add_check;
 	};
 };
 
@@ -425,12 +474,6 @@ struct create_constraint_def {
 	struct create_entity_def base;
 };
 
-struct create_ck_def {
-	struct create_constraint_def base;
-	/** AST representing check expression. */
-	struct ExprSpan *expr;
-};
-
 struct create_index_def {
 	struct create_constraint_def base;
 	/** List of indexed columns. */
@@ -494,15 +537,6 @@ create_trigger_def_init(struct create_trigger_def *trigger_def,
 	trigger_def->op = op;
 	trigger_def->cols = cols;
 	trigger_def->when = when;
-}
-
-static inline void
-create_ck_def_init(struct create_ck_def *ck_def, struct SrcList *table_name,
-		   struct Token *name, struct ExprSpan *expr)
-{
-	create_constraint_def_init(&ck_def->base, table_name, name, false,
-				   ENTITY_TYPE_CK);
-	ck_def->expr = expr;
 }
 
 static inline void
@@ -643,6 +677,11 @@ sql_ast_init_add_foreign_key(struct Parse *parse, struct SrcList *src_list,
 			     const struct Token *parent_name,
 			     struct ExprList *parent_cols);
 
+/** Save parsed table CHECK from ALTER TABLE ADD CONSTRAINT statement. */
+void
+sql_ast_init_add_check(struct Parse *parse, struct SrcList *table_name,
+		       const struct Token *name, struct ExprSpan *expr);
+
 /** Save parsed column FOREIGN KEY. */
 void
 sql_ast_save_column_foreign_key(struct Parse *parse, const struct Token *name,
@@ -655,5 +694,15 @@ sql_ast_save_table_foreign_key(struct Parse *parse, const struct Token *name,
 			       struct ExprList *child_cols,
 			       const struct Token *parent_name,
 			       struct ExprList *parent_cols);
+
+/** Save parsed column CHECK. */
+void
+sql_ast_save_column_check(struct Parse *parse, const struct Token *name,
+			  struct ExprSpan *expr);
+
+/** Save parsed table CHECK from CREATE TABLE statement. */
+void
+sql_ast_save_table_check(struct Parse *parse, const struct Token *name,
+			 struct ExprSpan *expr);
 
 #endif /* TARANTOOL_BOX_SQL_PARSE_DEF_H_INCLUDED */

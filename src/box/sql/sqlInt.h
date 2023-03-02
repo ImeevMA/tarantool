@@ -1511,17 +1511,6 @@ struct ExprList {
 };
 
 /*
- * An instance of this structure is used by the parser to record both
- * the parse tree for an expression and the span of input text for an
- * expression.
- */
-struct ExprSpan {
-	Expr *pExpr;		/* The expression parse tree */
-	const char *zStart;	/* First character of input text */
-	const char *zEnd;	/* One character past the end of input text */
-};
-
-/*
  * An instance of this structure can hold a simple list of identifiers,
  * such as the list "a,b,c" in the following statements:
  *
@@ -2040,7 +2029,6 @@ struct Parse {
 	 * from parse.y
 	 */
 	union {
-		struct create_ck_def create_ck_def;
 		struct create_index_def create_index_def;
 		struct create_trigger_def create_trigger_def;
 		struct create_view_def create_view_def;
@@ -2740,7 +2728,7 @@ sqlAddPrimaryKey(struct Parse *parse);
  * @param is_field_ck True if this is a field constraint, false otherwise.
  */
 void
-sql_create_check_contraint(struct Parse *parser, bool is_field_ck);
+sql_create_check_contraint(struct Parse *parser, struct sql_ast_check *cdef);
 
 void sqlAddDefaultValue(Parse *, ExprSpan *);
 void sqlAddCollateType(Parse *, Token *);

@@ -486,6 +486,18 @@ sql_code_fk_list(struct Parse *parse, struct sql_ast_foreign_key_list *list)
 	return 0;
 }
 
+/** Code CHECK constraints from the given list. */
+static int
+sql_code_ck_list(struct Parse *parse, struct sql_ast_check_list *list)
+{
+	for (uint32_t i = 0; i < list->n; ++i) {
+		sql_create_check_contraint(parse, &list->a[i]);
+		if (parse->is_aborted)
+			return -1;
+	}
+	return 0;
+}
+
 /** Code given AST. */
 static void
 sql_code_ast(struct Parse *parse, struct sql_ast *ast)
@@ -562,6 +574,8 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast)
 	}
 	case SQL_AST_TYPE_CREATE_TABLE: {
 		struct sql_ast_create_table *stmt = &ast->create_table;
+		if (sql_code_ck_list(parse, &stmt->check_list) != 0)
+			return;
 		if (sql_code_fk_list(parse, &stmt->foreign_key_list) != 0)
 			return;
 		sqlEndTable(parse);
@@ -569,6 +583,8 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast)
 	}
 	case SQL_AST_TYPE_ADD_COLUMN: {
 		struct sql_ast_add_column *stmt = &ast->add_column;
+		if (sql_code_ck_list(parse, &stmt->check_list) != 0)
+			return;
 		if (sql_code_fk_list(parse, &stmt->foreign_key_list) != 0)
 			return;
 		sql_create_column_end(parse);
@@ -577,6 +593,11 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast)
 	case SQL_AST_TYPE_ADD_FOREIGN_KEY: {
 		struct sql_ast_add_foreign_key *stmt = &ast->add_foreign_key;
 		sql_create_foreign_key(parse, &stmt->foreign_key);
+		break;
+	}
+	case SQL_AST_TYPE_ADD_CHECK: {
+		struct sql_ast_add_check *stmt = &ast->add_check;
+		sql_create_check_contraint(parse, &stmt->check);
 		break;
 	}
 	default:
