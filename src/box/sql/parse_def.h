@@ -110,6 +110,8 @@ enum sql_ast_type {
 	SQL_AST_TYPE_ADD_FOREIGN_KEY,
 	/** ALTER TABLE ADD CONSTAINT CHECK statement. */
 	SQL_AST_TYPE_ADD_CHECK,
+	/** ALTER TABLE ADD CONSTAINT UNIQUE statement. */
+	SQL_AST_TYPE_ADD_UNIQUE,
 };
 
 /**
@@ -236,12 +238,30 @@ struct sql_ast_check_list {
 	uint32_t n;
 };
 
+/** Description of the UNIQUE constraint being created. */
+struct sql_ast_unique {
+	/** Constraint name. */
+	struct Token name;
+	/** Unique columns. */
+	struct ExprList *cols;
+};
+
+/** UNIQUE descriptions list. */
+struct sql_ast_unique_list {
+	/** Array containing all UNIQUE descriptions from the list. */
+	struct sql_ast_unique *a;
+	/** Number of UNIQUE descriptions in the list. */
+	uint32_t n;
+};
+
 /** Description of CREATE TABLE statement. */
 struct sql_ast_create_table {
 	/** Description of FOREIGN KEY constraints. */
 	struct sql_ast_foreign_key_list foreign_key_list;
 	/** Description of CHECK constraints. */
 	struct sql_ast_check_list check_list;
+	/** Description of UNIQUE constraints. */
+	struct sql_ast_unique_list unique_list;
 };
 
 /** Description of ALTER TABLE ADD COLUMN statement. */
@@ -250,6 +270,8 @@ struct sql_ast_add_column {
 	struct sql_ast_foreign_key_list foreign_key_list;
 	/** Description of CHECK constraints. */
 	struct sql_ast_check_list check_list;
+	/** Description of UNIQUE constraints. */
+	struct sql_ast_unique_list unique_list;
 	/** Source list for the statement. */
 	struct SrcList *src_list;
 };
@@ -266,6 +288,14 @@ struct sql_ast_add_foreign_key {
 struct sql_ast_add_check {
 	/** Description of CHECK constraint. */
 	struct sql_ast_check check;
+	/** Source list for the statement. */
+	struct SrcList *src_list;
+};
+
+/** Description of ALTER TABLE ADD CONSTRAINT CHECK statement. */
+struct sql_ast_add_unique {
+	/** Description of UNIQUE constraints. */
+	struct sql_ast_unique unique;
 	/** Source list for the statement. */
 	struct SrcList *src_list;
 };
@@ -302,6 +332,10 @@ struct sql_ast {
 		 * Description of ALTER TABLE ADD CONSTRAINT CHECK statement.
 		 */
 		struct sql_ast_add_check add_check;
+		/**
+		 * Description of ALTER TABLE ADD CONSTRAINT UNIQUE statement.
+		 */
+		struct sql_ast_add_unique add_unique;
 	};
 };
 
@@ -682,6 +716,11 @@ void
 sql_ast_init_add_check(struct Parse *parse, struct SrcList *table_name,
 		       const struct Token *name, struct ExprSpan *expr);
 
+/** Save parsed table UNIQUE from ALTER TABLE ADD CONSTRAINT statement. */
+void
+sql_ast_init_add_unique(struct Parse *parse, struct SrcList *table_name,
+			const struct Token *name, struct ExprList *cols);
+
 /** Save parsed column FOREIGN KEY. */
 void
 sql_ast_save_column_foreign_key(struct Parse *parse, const struct Token *name,
@@ -704,5 +743,14 @@ sql_ast_save_column_check(struct Parse *parse, const struct Token *name,
 void
 sql_ast_save_table_check(struct Parse *parse, const struct Token *name,
 			 struct ExprSpan *expr);
+
+/** Save parsed column UNIQUE. */
+void
+sql_ast_save_column_unique(struct Parse *parse, const struct Token *name);
+
+/** Save parsed table UNIQUE from CREATE TABLE statement. */
+void
+sql_ast_save_table_unique(struct Parse *parse, const struct Token *name,
+			  struct ExprList *cols);
 
 #endif /* TARANTOOL_BOX_SQL_PARSE_DEF_H_INCLUDED */

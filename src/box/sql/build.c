@@ -2624,7 +2624,8 @@ sql_create_index(struct Parse *parse) {
 	if (index != NULL && index->def != NULL)
 		index_def_delete(index->def);
 	sql_expr_list_delete(col_list);
-	sqlSrcListDelete(tbl_name);
+	if (parse->ast.type != SQL_AST_TYPE_ADD_UNIQUE)
+		sqlSrcListDelete(tbl_name);
 	sql_xfree(name);
 }
 

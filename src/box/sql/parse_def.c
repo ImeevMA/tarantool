@@ -202,6 +202,17 @@ sql_ast_init_add_check(struct Parse *parse, struct SrcList *table_name,
 	c->column_name = Token_nil;
 }
 
+void
+sql_ast_init_add_unique(struct Parse *parse, struct SrcList *table_name,
+			const struct Token *name, struct ExprList *cols)
+{
+	parse->ast.type = SQL_AST_TYPE_ADD_UNIQUE;
+	parse->ast.add_unique.src_list = table_name;
+	struct sql_ast_unique *c = &parse->ast.add_unique.unique;
+	c->name = *name;
+	c->cols = cols;
+}
+
 /** Append a new FOREIGN KEY to FOREIGN KEY list. */
 static void
 foreign_key_list_append(struct sql_ast_foreign_key_list *list,
@@ -286,4 +297,42 @@ sql_ast_save_table_check(struct Parse *parse, const struct Token *name,
 	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE);
 	check_list_append(&parse->ast.create_table.check_list, name, expr,
 			  &Token_nil);
+}
+
+/** Append a new UNIQUE to UNIQUE list. */
+static void
+unique_list_append(struct sql_ast_unique_list *list, const struct Token *name,
+		   struct ExprList *cols)
+{
+	uint32_t id = list->n;
+	++list->n;
+	uint32_t size = list->n * sizeof(*list->a);
+	list->a = sql_xrealloc(list->a, size);
+	struct sql_ast_unique *c = &list->a[id];
+	c->name = *name;
+	c->cols = cols;
+}
+
+void
+sql_ast_save_column_unique(struct Parse *parse, const struct Token *name)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE ||
+	       parse->ast.type == SQL_AST_TYPE_ADD_COLUMN);
+	struct sql_ast_unique_list *list;
+	if (parse->ast.type == SQL_AST_TYPE_CREATE_TABLE)
+		list = &parse->ast.create_table.unique_list;
+	else
+		list = &parse->ast.add_column.unique_list;
+	struct Token *column_name = last_column_name(parse);
+	struct Expr *expr = sql_expr_new_dequoted(TK_ID, column_name);
+	struct ExprList *cols = sql_expr_list_append(NULL, expr);
+	unique_list_append(list, name, cols);
+}
+
+void
+sql_ast_save_table_unique(struct Parse *parse, const struct Token *name,
+			  struct ExprList *cols)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE);
+	unique_list_append(&parse->ast.create_table.unique_list, name, cols);
 }
