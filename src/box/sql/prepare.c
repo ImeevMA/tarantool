@@ -207,12 +207,16 @@ sql_ast_destroy(struct sql_ast *ast)
 			sql_xfree(ast->create_table.foreign_key_list.a);
 		if (ast->create_table.check_list.n != 0)
 			sql_xfree(ast->create_table.check_list.a);
+		if (ast->create_table.unique_list.n != 0)
+			sql_xfree(ast->create_table.unique_list.a);
 		return;
 	case SQL_AST_TYPE_ADD_COLUMN:
 		if (ast->add_column.foreign_key_list.n != 0)
 			sql_xfree(ast->add_column.foreign_key_list.a);
 		if (ast->add_column.check_list.n != 0)
 			sql_xfree(ast->add_column.check_list.a);
+		if (ast->add_column.unique_list.n != 0)
+			sql_xfree(ast->add_column.unique_list.a);
 		sqlSrcListDelete(ast->add_column.src_list);
 		return;
 	case SQL_AST_TYPE_ADD_FOREIGN_KEY:
@@ -220,6 +224,9 @@ sql_ast_destroy(struct sql_ast *ast)
 		return;
 	case SQL_AST_TYPE_ADD_CHECK:
 		sqlSrcListDelete(ast->add_check.src_list);
+		return;
+	case SQL_AST_TYPE_ADD_UNIQUE:
+		sqlSrcListDelete(ast->add_unique.src_list);
 		return;
 	default:
 		return;

@@ -498,6 +498,26 @@ sql_code_ck_list(struct Parse *parse, struct sql_ast_check_list *list)
 	return 0;
 }
 
+/** Code UNIQUE constraints from the given list. */
+static int
+sql_code_unique_list(struct Parse *parse, struct sql_ast_unique_list *list)
+{
+	for (uint32_t i = 0; i < list->n; ++i) {
+		struct sql_ast_unique *c = &list->a[i];
+		struct SrcList *src_list =
+			parse->ast.type == SQL_AST_TYPE_CREATE_TABLE ?
+			NULL : parse->ast.add_column.src_list;
+		create_index_def_init(&parse->create_index_def,
+				      src_list, &c->name, c->cols,
+				      SQL_INDEX_TYPE_CONSTRAINT_UNIQUE,
+				      SORT_ORDER_ASC, false);
+		sql_create_index(parse);
+		if (parse->is_aborted)
+			return -1;
+	}
+	return 0;
+}
+
 /** Code given AST. */
 static void
 sql_code_ast(struct Parse *parse, struct sql_ast *ast)
@@ -574,6 +594,8 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast)
 	}
 	case SQL_AST_TYPE_CREATE_TABLE: {
 		struct sql_ast_create_table *stmt = &ast->create_table;
+		if (sql_code_unique_list(parse, &stmt->unique_list) != 0)
+			return;
 		if (sql_code_ck_list(parse, &stmt->check_list) != 0)
 			return;
 		if (sql_code_fk_list(parse, &stmt->foreign_key_list) != 0)
@@ -583,6 +605,8 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast)
 	}
 	case SQL_AST_TYPE_ADD_COLUMN: {
 		struct sql_ast_add_column *stmt = &ast->add_column;
+		if (sql_code_unique_list(parse, &stmt->unique_list) != 0)
+			return;
 		if (sql_code_ck_list(parse, &stmt->check_list) != 0)
 			return;
 		if (sql_code_fk_list(parse, &stmt->foreign_key_list) != 0)
@@ -598,6 +622,16 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast)
 	case SQL_AST_TYPE_ADD_CHECK: {
 		struct sql_ast_add_check *stmt = &ast->add_check;
 		sql_create_check_contraint(parse, &stmt->check);
+		break;
+	}
+	case SQL_AST_TYPE_ADD_UNIQUE: {
+		struct sql_ast_add_unique *stmt = &ast->add_unique;
+		struct sql_ast_unique *c = &stmt->unique;
+		create_index_def_init(&parse->create_index_def,
+				      parse->ast.add_unique.src_list, &c->name,
+				      c->cols, SQL_INDEX_TYPE_CONSTRAINT_UNIQUE,
+				      SORT_ORDER_ASC, false);
+		sql_create_index(parse);
 		break;
 	}
 	default:
