@@ -2029,7 +2029,6 @@ struct Parse {
 	 * from parse.y
 	 */
 	union {
-		struct create_index_def create_index_def;
 		struct create_trigger_def create_trigger_def;
 		struct create_view_def create_view_def;
 		struct rename_entity_def rename_entity_def;
@@ -2060,6 +2059,8 @@ struct Parse {
 	struct sql_parse_unique_list unique_list;
 	/** Description of created PRIMARY KEY constraint. */
 	struct sql_parse_unique primary_key;
+	/** Description of created index. */
+	struct sql_parse_index create_index;
 	/** Source list for the statement. */
 	struct SrcList *src_list;
 	/*
@@ -2927,7 +2928,9 @@ sqlIdListDelete(struct IdList *pList);
  * @param parse All information about this parse.
  */
 void
-sql_create_index(struct Parse *parse);
+sql_create_index(struct Parse *parse, struct Token *index_name,
+		 struct ExprList *col_list, enum sql_index_type idx_type,
+		 bool if_not_exist);
 
 /**
  * This routine will drop an existing named index.  This routine
