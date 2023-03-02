@@ -507,11 +507,9 @@ sql_code_unique_list(struct Parse *parse, struct sql_ast_unique_list *list)
 		struct SrcList *src_list =
 			parse->ast.type == SQL_AST_TYPE_CREATE_TABLE ?
 			NULL : parse->ast.add_column.src_list;
-		create_index_def_init(&parse->create_index_def,
-				      src_list, &c->name, c->cols,
-				      SQL_INDEX_TYPE_CONSTRAINT_UNIQUE,
-				      SORT_ORDER_ASC, false);
-		sql_create_index(parse);
+		sql_create_index(parse, &c->name, c->cols,
+				 SQL_INDEX_TYPE_CONSTRAINT_UNIQUE, src_list,
+				 false);
 		if (parse->is_aborted)
 			return -1;
 	}
@@ -525,10 +523,7 @@ sql_code_pk(struct Parse *parse, struct sql_ast_unique *pk,
 {
 	if (pk->cols == NULL)
 		return 0;
-	create_index_def_init(&parse->create_index_def, src_list, &pk->name,
-			      pk->cols, SQL_INDEX_TYPE_CONSTRAINT_PK,
-			      SORT_ORDER_ASC, false);
-	sqlAddPrimaryKey(parse);
+	sqlAddPrimaryKey(parse, src_list);
 	return parse->is_aborted ? -1 : 0;
 }
 
@@ -619,6 +614,16 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast)
 		sqlEndTable(parse);
 		break;
 	}
+	case SQL_AST_TYPE_CREATE_INDEX: {
+		parse->initiateTTrans = true;
+		struct sql_ast_create_index *stmt = &parse->ast.create_index;
+		enum sql_index_type type = stmt->is_unique ?
+					   SQL_INDEX_TYPE_UNIQUE :
+					   SQL_INDEX_TYPE_NON_UNIQUE;
+		sql_create_index(parse, &stmt->name, stmt->cols, type,
+				 stmt->src_list, stmt->if_not_exists);
+		break;
+	}
 	case SQL_AST_TYPE_ADD_COLUMN: {
 		struct sql_ast_add_column *stmt = &ast->add_column;
 		if (sql_code_pk(parse, &stmt->primary_key, stmt->src_list) != 0)
@@ -644,12 +649,9 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast)
 	}
 	case SQL_AST_TYPE_ADD_UNIQUE: {
 		struct sql_ast_add_unique *stmt = &ast->add_unique;
-		struct sql_ast_unique *c = &stmt->unique;
-		create_index_def_init(&parse->create_index_def,
-				      parse->ast.add_unique.src_list, &c->name,
-				      c->cols, SQL_INDEX_TYPE_CONSTRAINT_UNIQUE,
-				      SORT_ORDER_ASC, false);
-		sql_create_index(parse);
+		sql_create_index(parse, &stmt->unique.name, stmt->unique.cols,
+				 SQL_INDEX_TYPE_CONSTRAINT_UNIQUE,
+				 stmt->src_list, false);
 		break;
 	}
 	case SQL_AST_TYPE_ADD_PRIMARY_KEY: {

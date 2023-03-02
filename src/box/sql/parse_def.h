@@ -104,6 +104,8 @@ enum sql_ast_type {
 	SQL_AST_TYPE_DROP_TABLE,
 	/** CREATE TABLE statement. */
 	SQL_AST_TYPE_CREATE_TABLE,
+	/** CREATE INDEX statement. */
+	SQL_AST_TYPE_CREATE_INDEX,
 	/** ALTER TABLE ADD COLUMN statement. */
 	SQL_AST_TYPE_ADD_COLUMN,
 	/** ALTER TABLE ADD CONSTAINT FOREIGN KEY statement. */
@@ -268,6 +270,23 @@ struct sql_ast_create_table {
 	struct sql_ast_unique primary_key;
 };
 
+/** Description of the CREATE INDEX statement. */
+struct sql_ast_create_index {
+	/** Index name. */
+	struct Token name;
+	/** Index columns. */
+	struct ExprList *cols;
+	/** Source list for the statement. */
+	struct SrcList *src_list;
+	/** Flag to show if the index is unique. */
+	bool is_unique;
+	/**
+	 * Flag indicating whether to throw an error if an index with the same
+	 * name exists.
+	 */
+	bool if_not_exists;
+};
+
 /** Description of ALTER TABLE ADD COLUMN statement. */
 struct sql_ast_add_column {
 	/** Description of FOREIGN KEY constraints. */
@@ -335,6 +354,8 @@ struct sql_ast {
 		struct sql_ast_drop_table drop_table;
 		/** Description of CREATE TABLE statement. */
 		struct sql_ast_create_table create_table;
+		/** Description of CREATE INDEX statement. */
+		struct sql_ast_create_index create_index;
 		/** Description of ALTER TABLE ADD COLUMN statement. */
 		struct sql_ast_add_column add_column;
 		/**
@@ -523,19 +544,6 @@ struct create_trigger_def {
 	struct Expr *when;
 };
 
-struct create_constraint_def {
-	struct create_entity_def base;
-};
-
-struct create_index_def {
-	struct create_constraint_def base;
-	/** List of indexed columns. */
-	struct ExprList *cols;
-	/** One of _PRIMARY_KEY, _UNIQUE, _NON_UNIQUE. */
-	enum sql_index_type idx_type;
-	enum sort_order sort_order;
-};
-
 /** Basic initialisers of parse structures.*/
 static inline void
 alter_entity_def_init(struct alter_entity_def *alter_def,
@@ -570,15 +578,6 @@ create_entity_def_init(struct create_entity_def *create_def,
 }
 
 static inline void
-create_constraint_def_init(struct create_constraint_def *constr_def,
-			   struct SrcList *parent_name, struct Token *name,
-			   bool if_not_exists, enum entity_type entity_type)
-{
-	create_entity_def_init(&constr_def->base, entity_type,
-			       parent_name, name, if_not_exists);
-}
-
-static inline void
 create_trigger_def_init(struct create_trigger_def *trigger_def,
 			struct SrcList *table_name, struct Token *name,
 			int tr_tm, int op, struct IdList *cols,
@@ -590,19 +589,6 @@ create_trigger_def_init(struct create_trigger_def *trigger_def,
 	trigger_def->op = op;
 	trigger_def->cols = cols;
 	trigger_def->when = when;
-}
-
-static inline void
-create_index_def_init(struct create_index_def *index_def,
-		      struct SrcList *table_name,  struct Token *name,
-		      struct ExprList *cols, enum sql_index_type idx_type,
-		      enum sort_order sort_order, bool if_not_exists)
-{
-	create_constraint_def_init(&index_def->base, table_name, name,
-				   if_not_exists, ENTITY_TYPE_INDEX);
-	index_def->cols = cols;
-	index_def->idx_type = idx_type;
-	index_def->sort_order = sort_order;
 }
 
 static inline void
@@ -717,6 +703,12 @@ sql_ast_init_table_drop(struct Parse *parse, const struct Token *name,
 /** Save parsed CREATE TABLE statement. */
 void
 sql_ast_init_create_table(struct Parse *parse);
+
+/** Save parsed CREATE INDEX statement. */
+void
+sql_ast_init_create_index(struct Parse *parse, struct Token *table_name,
+			  const struct Token *index_name, struct ExprList *cols,
+			  bool is_unique, bool if_not_exists);
 
 /** Save parsed ADD COLUMN statement. */
 void
