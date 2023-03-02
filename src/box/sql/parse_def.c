@@ -53,6 +53,18 @@ last_column_name(struct Parse *parse)
 	return &parse->create_column_def.base.name;
 }
 
+/** Returns the name of the table for which the column is being created. */
+static const char *
+column_table_name(struct Parse *parse)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE ||
+	       parse->ast.type == SQL_AST_TYPE_ADD_COLUMN);
+	if (parse->ast.type == SQL_AST_TYPE_CREATE_TABLE)
+		return parse->create_table_def.new_space->def->name;
+	else
+		return parse->ast.add_column.src_list->a[0].zName;
+}
+
 void
 sql_ast_init_start_transaction(struct Parse *parse)
 {
@@ -213,6 +225,16 @@ sql_ast_init_add_unique(struct Parse *parse, struct SrcList *table_name,
 	c->cols = cols;
 }
 
+void
+sql_ast_init_add_primary_key(struct Parse *parse, struct SrcList *table_name,
+			     const struct Token *name, struct ExprList *cols)
+{
+	parse->ast.type = SQL_AST_TYPE_ADD_PRIMARY_KEY;
+	parse->ast.add_primary_key.src_list = table_name;
+	parse->ast.add_primary_key.primary_key.cols = cols;
+	parse->ast.add_primary_key.primary_key.name = *name;
+}
+
 /** Append a new FOREIGN KEY to FOREIGN KEY list. */
 static void
 foreign_key_list_append(struct sql_ast_foreign_key_list *list,
@@ -335,4 +357,50 @@ sql_ast_save_table_unique(struct Parse *parse, const struct Token *name,
 {
 	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE);
 	unique_list_append(&parse->ast.create_table.unique_list, name, cols);
+}
+
+/** Fill in the description of the PRIMARY KEY. */
+static void
+primary_key_fill(struct Parse *parse, struct sql_ast_unique *pk,
+		 const struct Token *name, struct ExprList *cols)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE ||
+	       parse->ast.type == SQL_AST_TYPE_ADD_COLUMN);
+	if (pk->cols != NULL) {
+		diag_set(ClientError, ER_CREATE_SPACE, column_table_name(parse),
+			 "primary key has been already declared");
+		parse->is_aborted = true;
+		sql_expr_list_delete(cols);
+		sql_expr_list_delete(pk->cols);
+		return;
+	}
+	pk->cols = cols;
+	pk->name = *name;
+}
+
+void
+sql_ast_save_column_primary_key(struct Parse *parse, const struct Token *name,
+				enum sort_order sort_order)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE ||
+	       parse->ast.type == SQL_AST_TYPE_ADD_COLUMN);
+	struct sql_ast_unique *pk;
+	if (parse->ast.type == SQL_AST_TYPE_CREATE_TABLE)
+		pk = &parse->ast.create_table.primary_key;
+	else
+		pk = &parse->ast.add_column.primary_key;
+	struct Token *column_name = last_column_name(parse);
+	struct Expr *expr = sql_expr_new_dequoted(TK_ID, column_name);
+	struct ExprList *cols = sql_expr_list_append(NULL, expr);
+	sqlExprListSetSortOrder(cols, sort_order);
+	primary_key_fill(parse, pk, name, cols);
+}
+
+void
+sql_ast_save_table_primary_key(struct Parse *parse, const struct Token *name,
+			       struct ExprList *cols)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE);
+	struct sql_ast_unique *pk = &parse->ast.create_table.primary_key;
+	primary_key_fill(parse, pk, name, cols);
 }

@@ -112,6 +112,8 @@ enum sql_ast_type {
 	SQL_AST_TYPE_ADD_CHECK,
 	/** ALTER TABLE ADD CONSTAINT UNIQUE statement. */
 	SQL_AST_TYPE_ADD_UNIQUE,
+	/** ALTER TABLE ADD CONSTAINT PRIMARY KEY statement. */
+	SQL_AST_TYPE_ADD_PRIMARY_KEY,
 };
 
 /**
@@ -262,6 +264,8 @@ struct sql_ast_create_table {
 	struct sql_ast_check_list check_list;
 	/** Description of UNIQUE constraints. */
 	struct sql_ast_unique_list unique_list;
+	/** Description of created PRIMARY KEY constraint. */
+	struct sql_ast_unique primary_key;
 };
 
 /** Description of ALTER TABLE ADD COLUMN statement. */
@@ -272,6 +276,8 @@ struct sql_ast_add_column {
 	struct sql_ast_check_list check_list;
 	/** Description of UNIQUE constraints. */
 	struct sql_ast_unique_list unique_list;
+	/** Description of created PRIMARY KEY constraint. */
+	struct sql_ast_unique primary_key;
 	/** Source list for the statement. */
 	struct SrcList *src_list;
 };
@@ -296,6 +302,14 @@ struct sql_ast_add_check {
 struct sql_ast_add_unique {
 	/** Description of UNIQUE constraints. */
 	struct sql_ast_unique unique;
+	/** Source list for the statement. */
+	struct SrcList *src_list;
+};
+
+/** Description of ALTER TABLE ADD CONSTRAINT CHECK statement. */
+struct sql_ast_add_primary_key {
+	/** Description of created PRIMARY KEY constraint. */
+	struct sql_ast_unique primary_key;
 	/** Source list for the statement. */
 	struct SrcList *src_list;
 };
@@ -336,6 +350,11 @@ struct sql_ast {
 		 * Description of ALTER TABLE ADD CONSTRAINT UNIQUE statement.
 		 */
 		struct sql_ast_add_unique add_unique;
+		/**
+		 * Description of ALTER TABLE ADD CONSTRAINT PRIMARY KEY
+		 * statement.
+		 */
+		struct sql_ast_add_primary_key add_primary_key;
 	};
 };
 
@@ -721,6 +740,11 @@ void
 sql_ast_init_add_unique(struct Parse *parse, struct SrcList *table_name,
 			const struct Token *name, struct ExprList *cols);
 
+/** Save parsed table PRIMARY KEY from ALTER TABLE ADD CONSTRAINT statement. */
+void
+sql_ast_init_add_primary_key(struct Parse *parse, struct SrcList *table_name,
+			     const struct Token *name, struct ExprList *cols);
+
 /** Save parsed column FOREIGN KEY. */
 void
 sql_ast_save_column_foreign_key(struct Parse *parse, const struct Token *name,
@@ -752,5 +776,15 @@ sql_ast_save_column_unique(struct Parse *parse, const struct Token *name);
 void
 sql_ast_save_table_unique(struct Parse *parse, const struct Token *name,
 			  struct ExprList *cols);
+
+/** Save parsed column PRIMARY KEY. */
+void
+sql_ast_save_column_primary_key(struct Parse *parse, const struct Token *name,
+				enum sort_order sort_order);
+
+/** Save parsed table PRIMARY KEY from CREATE TABLE statement. */
+void
+sql_ast_save_table_primary_key(struct Parse *parse, const struct Token *name,
+			       struct ExprList *cols);
 
 #endif /* TARANTOOL_BOX_SQL_PARSE_DEF_H_INCLUDED */
