@@ -228,6 +228,9 @@ sql_ast_destroy(struct sql_ast *ast)
 	case SQL_AST_TYPE_ADD_UNIQUE:
 		sqlSrcListDelete(ast->add_unique.src_list);
 		return;
+	case SQL_AST_TYPE_ADD_PRIMARY_KEY:
+		sqlSrcListDelete(ast->add_primary_key.src_list);
+		return;
 	default:
 		return;
 	}

@@ -518,6 +518,20 @@ sql_code_unique_list(struct Parse *parse, struct sql_ast_unique_list *list)
 	return 0;
 }
 
+/** Code PRIMARY KEY constraint. */
+static int
+sql_code_pk(struct Parse *parse, struct sql_ast_unique *pk,
+	    struct SrcList *src_list)
+{
+	if (pk->cols == NULL)
+		return 0;
+	create_index_def_init(&parse->create_index_def, src_list, &pk->name,
+			      pk->cols, SQL_INDEX_TYPE_CONSTRAINT_PK,
+			      SORT_ORDER_ASC, false);
+	sqlAddPrimaryKey(parse);
+	return parse->is_aborted ? -1 : 0;
+}
+
 /** Code given AST. */
 static void
 sql_code_ast(struct Parse *parse, struct sql_ast *ast)
@@ -594,6 +608,8 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast)
 	}
 	case SQL_AST_TYPE_CREATE_TABLE: {
 		struct sql_ast_create_table *stmt = &ast->create_table;
+		if (sql_code_pk(parse, &stmt->primary_key, NULL) != 0)
+			return;
 		if (sql_code_unique_list(parse, &stmt->unique_list) != 0)
 			return;
 		if (sql_code_ck_list(parse, &stmt->check_list) != 0)
@@ -605,6 +621,8 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast)
 	}
 	case SQL_AST_TYPE_ADD_COLUMN: {
 		struct sql_ast_add_column *stmt = &ast->add_column;
+		if (sql_code_pk(parse, &stmt->primary_key, stmt->src_list) != 0)
+			return;
 		if (sql_code_unique_list(parse, &stmt->unique_list) != 0)
 			return;
 		if (sql_code_ck_list(parse, &stmt->check_list) != 0)
@@ -632,6 +650,12 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast)
 				      c->cols, SQL_INDEX_TYPE_CONSTRAINT_UNIQUE,
 				      SORT_ORDER_ASC, false);
 		sql_create_index(parse);
+		break;
+	}
+	case SQL_AST_TYPE_ADD_PRIMARY_KEY: {
+		struct sql_ast_add_primary_key *stmt = &ast->add_primary_key;
+		if (sql_code_pk(parse, &stmt->primary_key, stmt->src_list) != 0)
+			return;
 		break;
 	}
 	default:
