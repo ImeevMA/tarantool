@@ -624,6 +624,15 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast)
 	}
 	case SQL_AST_TYPE_CREATE_TABLE: {
 		struct sql_ast_create_table *stmt = &ast->create_table;
+		parse->initiateTTrans = true;
+		create_ck_constraint_parse_def_init(
+			&parse->create_ck_constraint_parse_def);
+		create_fk_constraint_parse_def_init(
+			&parse->create_fk_constraint_parse_def);
+		parse->space = sqlStartTable(parse, &stmt->name,
+					     &stmt->engine_name);
+		if (parse->is_aborted)
+			return;
 		for (uint32_t i = 0; i < stmt->column_list.n; ++i) {
 			struct sql_ast_column *c = &stmt->column_list.a[i];
 			if (sql_code_column(parse, c) != 0)
@@ -733,7 +742,7 @@ sqlRunParser(Parse * pParse, const char *zSql)
 	i = 0;
 	/* sqlParserTrace(stdout, "parser: "); */
 	pEngine = sqlParserAlloc(new_xmalloc);
-	assert(pParse->create_table_def.new_space == NULL);
+	assert(pParse->space == NULL);
 	assert(pParse->parsed_ast.trigger == NULL);
 	assert(pParse->nVar == 0);
 	assert(pParse->pVList == 0);

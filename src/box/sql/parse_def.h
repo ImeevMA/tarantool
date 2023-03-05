@@ -296,6 +296,12 @@ struct sql_ast_create_table {
 	struct sql_ast_unique primary_key;
 	/** Name of the column with AUTOINCREMENT. */
 	struct Expr *autoinc_name;
+	/** Table name. */
+	struct Token name;
+	/** Table engine name. */
+	struct Token engine_name;
+	/** IF NOT EXISTS flag. */
+	bool if_not_exists;
 };
 
 /** Description of the CREATE INDEX statement. */
@@ -523,11 +529,6 @@ struct create_entity_def {
 	bool if_not_exist;
 };
 
-struct create_table_def {
-	struct create_entity_def base;
-	struct space *new_space;
-};
-
 struct create_ck_constraint_parse_def {
 	/** List of ck_constraint_parse_def objects. */
 	struct rlist checks;
@@ -613,14 +614,6 @@ create_trigger_def_init(struct create_trigger_def *trigger_def,
 	trigger_def->op = op;
 	trigger_def->cols = cols;
 	trigger_def->when = when;
-}
-
-static inline void
-create_table_def_init(struct create_table_def *table_def, struct Token *name,
-		      bool if_not_exists)
-{
-	create_entity_def_init(&table_def->base, ENTITY_TYPE_TABLE, NULL, name,
-			       if_not_exists);
 }
 
 static inline void
@@ -716,7 +709,8 @@ sql_ast_init_table_drop(struct Parse *parse, const struct Token *name,
 
 /** Save parsed CREATE TABLE statement. */
 void
-sql_ast_init_create_table(struct Parse *parse);
+sql_ast_init_create_table(struct Parse *parse, struct Token *name,
+			  bool if_not_exists);
 
 /** Save parsed CREATE INDEX statement. */
 void
@@ -820,5 +814,9 @@ void
 sql_ast_save_column_null_action(struct Parse *parse,
 				enum on_conflict_action null_action,
 				enum on_conflict_action on_conflict);
+
+/** Save parsed table engine clause. */
+void
+sql_ast_save_table_engine(struct Parse *parse, struct Token *engine_name);
 
 #endif /* TARANTOOL_BOX_SQL_PARSE_DEF_H_INCLUDED */

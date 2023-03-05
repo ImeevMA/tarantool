@@ -65,7 +65,8 @@ column_table_name(struct Parse *parse)
 	if (parse->ast.type == SQL_AST_TYPE_ADD_COLUMN)
 		return parse->ast.add_column.src_list->a[0].zName;
 	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE);
-	return parse->create_table_def.new_space->def->name;
+	struct Token *name = &parse->ast.create_table.name;
+	return sql_normalized_name_region_new(&parse->region, name->z, name->n);
 }
 
 void
@@ -177,9 +178,13 @@ sql_ast_init_table_drop(struct Parse *parse, const struct Token *name,
 }
 
 void
-sql_ast_init_create_table(struct Parse *parse)
+sql_ast_init_create_table(struct Parse *parse, struct Token *name,
+			  bool if_not_exists)
 {
 	parse->ast.type = SQL_AST_TYPE_CREATE_TABLE;
+	struct sql_ast_create_table *stmt = &parse->ast.create_table;
+	stmt->name = *name;
+	stmt->if_not_exists = if_not_exists;
 }
 
 void
@@ -528,4 +533,10 @@ sql_ast_save_column_null_action(struct Parse *parse,
 	diag_set(ClientError, ER_SQL_EXECUTE, err);
 	parse->is_aborted = true;
 	sql_xfree(column_name);
+}
+
+void
+sql_ast_save_table_engine(struct Parse *parse, struct Token *engine_name)
+{
+	parse->ast.create_table.engine_name = *engine_name;
 }

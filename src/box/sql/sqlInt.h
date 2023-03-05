@@ -2033,14 +2033,6 @@ struct Parse {
 		struct create_view_def create_view_def;
 		struct enable_entity_def enable_entity_def;
 	};
-	/**
-	 * Table def or column def is not part of union since
-	 * information being held must survive till the end of
-	 * parsing of whole <CREATE TABLE> or
-	 * <ALTER TABLE ADD COLUMN> statement (to pass it to
-	 * sqlEndTable() sql_create_column_end() function).
-	 */
-	struct create_table_def create_table_def;
 	/** AST of parsed SQL statement. */
 	struct sql_ast ast;
 	/** Descriptions of the space used in column creation. */
@@ -2681,8 +2673,25 @@ void
 sqlSelectAddColumnTypeAndCollation(Parse *, struct space_def *, Select *);
 struct space *sqlResultSetOfSelect(Parse *, Select *);
 
+/*
+ * Begin constructing a new table representation in memory.  This is
+ * the first of several action routines that get called in response
+ * to a CREATE TABLE statement.  In particular, this routine is called
+ * after seeing tokens "CREATE" and "TABLE" and the table name. The isTemp
+ * flag is true if the table should be stored in the auxiliary database
+ * file instead of in the main database file.  This is normally the case
+ * when the "TEMP" or "TEMPORARY" keyword occurs in between
+ * CREATE and TABLE.
+ *
+ * The new table record is initialized and put in pParse->space.
+ * As more of the CREATE TABLE statement is parsed, additional action
+ * routines will be called to add more information to this record.
+ * At the end of the CREATE TABLE statement, the sqlEndTable() routine
+ * is called to complete the construction of the new table record.
+ */
 struct space *
-sqlStartTable(Parse *, Token *);
+sqlStartTable(struct Parse *parse, struct Token *name,
+	      struct Token *engine_name);
 
 /**
  * Add new field to the format of ephemeral space. If it is <ALTER TABLE> create
