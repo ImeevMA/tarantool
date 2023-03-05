@@ -527,6 +527,27 @@ sql_code_pk(struct Parse *parse, struct sql_ast_unique *pk,
 	return parse->is_aborted ? -1 : 0;
 }
 
+/** Code new column. */
+static int
+sql_code_column(struct Parse *parse, struct sql_ast_column *column)
+{
+	assert(!parse->is_aborted);
+	sql_create_column_start(parse, &column->name, column->type);
+	if (parse->is_aborted)
+		return -1;
+	if (column->is_null_action_set)
+		sql_column_add_nullable_action(parse, column->null_action);
+	if (parse->is_aborted)
+		return -1;
+	if (column->collate_name.n != 0)
+		sqlAddCollateType(parse, &column->collate_name);
+	if (parse->is_aborted)
+		return -1;
+	if (column->default_expr.pExpr != NULL)
+		sqlAddDefaultValue(parse, &column->default_expr);
+	return parse->is_aborted ? -1 : 0;
+}
+
 /** Code given AST. */
 static void
 sql_code_ast(struct Parse *parse, struct sql_ast *ast)
@@ -603,6 +624,11 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast)
 	}
 	case SQL_AST_TYPE_CREATE_TABLE: {
 		struct sql_ast_create_table *stmt = &ast->create_table;
+		for (uint32_t i = 0; i < stmt->column_list.n; ++i) {
+			struct sql_ast_column *c = &stmt->column_list.a[i];
+			if (sql_code_column(parse, c) != 0)
+				return;
+		}
 		if (stmt->autoinc_name != NULL) {
 			if (sql_fieldno_by_name(parse, stmt->autoinc_name,
 						&parse->autoinc_fieldno) != 0)
@@ -632,6 +658,13 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast)
 	}
 	case SQL_AST_TYPE_ADD_COLUMN: {
 		struct sql_ast_add_column *stmt = &ast->add_column;
+		parse->initiateTTrans = true;
+		create_ck_constraint_parse_def_init(
+			&parse->create_ck_constraint_parse_def);
+		create_fk_constraint_parse_def_init(
+			&parse->create_fk_constraint_parse_def);
+		if (sql_code_column(parse, &stmt->column) != 0)
+			return;
 		if (stmt->autoinc_name != NULL) {
 			if (sql_fieldno_by_name(parse, stmt->autoinc_name,
 						&parse->autoinc_fieldno) != 0)
@@ -762,7 +795,7 @@ sqlRunParser(Parse * pParse, const char *zSql)
 		sqlVdbeDelete(pParse->pVdbe);
 		pParse->pVdbe = 0;
 	}
-	parser_space_delete(pParse->create_column_def.space);
+	parser_space_delete(pParse->space);
 
 	if (pParse->pWithToFree)
 		sqlWithDelete(pParse->pWithToFree);

@@ -50,7 +50,12 @@ sqlTokenInit(struct Token *p, char *z)
 static struct Token *
 last_column_name(struct Parse *parse)
 {
-	return &parse->create_column_def.base.name;
+	if (parse->ast.type == SQL_AST_TYPE_ADD_COLUMN)
+		return &parse->ast.add_column.column.name;
+	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE);
+	assert(parse->ast.create_table.column_list.n > 0);
+	uint32_t id = parse->ast.create_table.column_list.n - 1;
+	return &parse->ast.create_table.column_list.a[id].name;
 }
 
 /** Returns the name of the table for which the column is being created. */
@@ -192,9 +197,14 @@ sql_ast_init_create_index(struct Parse *parse, struct Token *table_name,
 }
 
 void
-sql_ast_init_add_column(struct Parse *parse)
+sql_ast_init_add_column(struct Parse *parse, struct SrcList *table_name,
+			struct Token *name, enum field_type type)
 {
 	parse->ast.type = SQL_AST_TYPE_ADD_COLUMN;
+	struct sql_ast_add_column *stmt = &parse->ast.add_column;
+	stmt->src_list = table_name;
+	stmt->column.name = *name;
+	stmt->column.type = type;
 }
 
 void
@@ -417,6 +427,20 @@ sql_ast_save_table_primary_key(struct Parse *parse, const struct Token *name,
 	primary_key_fill(parse, pk, name, cols);
 }
 
+void
+sql_ast_save_table_column(struct Parse *parse, struct Token *name,
+			  enum field_type type)
+{
+	struct sql_ast_column_list *list = &parse->ast.create_table.column_list;
+	uint32_t id = list->n;
+	++list->n;
+	list->a = sql_xrealloc(list->a, list->n * sizeof(*list->a));
+	struct sql_ast_column *c = &list->a[id];
+	memset(c, 0, sizeof(*c));
+	c->name = *name;
+	c->type = type;
+}
+
 /** Set the AUTOINCREMENT column name. */
 static void
 autoincrement_add(struct Parse *parse, struct Expr *column_name)
@@ -449,4 +473,59 @@ sql_ast_save_table_autoincrement(struct Parse *parse, struct Expr *column_name)
 {
 	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE);
 	autoincrement_add(parse, column_name);
+}
+
+/**
+ * Returns the created column for ALTER TABLE ADD COLUMN and the last created
+ * column for CREATE TABLE.
+ */
+static struct sql_ast_column *
+last_column(struct Parse *parse)
+{
+	if (parse->ast.type == SQL_AST_TYPE_ADD_COLUMN)
+		return &parse->ast.add_column.column;
+	assert(parse->ast.type == SQL_AST_TYPE_CREATE_TABLE);
+	assert(parse->ast.create_table.column_list.n > 0);
+	uint32_t id = parse->ast.create_table.column_list.n - 1;
+	return &parse->ast.create_table.column_list.a[id];
+}
+
+void
+sql_ast_save_column_collate(struct Parse *parse, struct Token *collate_name)
+{
+	last_column(parse)->collate_name = *collate_name;
+}
+
+void
+sql_ast_save_column_default(struct Parse *parse, struct ExprSpan *expr)
+{
+	last_column(parse)->default_expr = *expr;
+}
+
+void
+sql_ast_save_column_null_action(struct Parse *parse,
+				enum on_conflict_action null_action,
+				enum on_conflict_action on_conflict)
+{
+	struct sql_ast_column *c = last_column(parse);
+	const char *action_str = NULL;
+	if (c->is_null_action_set && c->null_action != null_action) {
+		action_str = on_conflict_action_strs[c->null_action];
+	} else if ((on_conflict != ON_CONFLICT_ACTION_ABORT ||
+		    null_action != ON_CONFLICT_ACTION_NONE) &&
+		   null_action != on_conflict) {
+		action_str = on_conflict_action_strs[ON_CONFLICT_ACTION_NONE];
+	} else {
+		c->null_action = null_action;
+		c->is_null_action_set = true;
+		return;
+	}
+	const char *fmt = "NULL declaration for column '%s' of table '%s' has "
+			  "been already set to '%s'";
+	const char *table_name = column_table_name(parse);
+	char *column_name = sql_name_from_token(&c->name);
+	const char *err = tt_sprintf(fmt, column_name, table_name, action_str);
+	diag_set(ClientError, ER_SQL_EXECUTE, err);
+	parse->is_aborted = true;
+	sql_xfree(column_name);
 }

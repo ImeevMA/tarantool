@@ -2041,9 +2041,10 @@ struct Parse {
 	 * sqlEndTable() sql_create_column_end() function).
 	 */
 	struct create_table_def create_table_def;
-	struct create_column_def create_column_def;
 	/** AST of parsed SQL statement. */
 	struct sql_ast ast;
+	/** Descriptions of the space used in column creation. */
+	struct space *space;
 	/*
 	 * FK and CK constraints appeared in a <CREATE TABLE> or
 	 * an <ALTER TABLE ADD COLUMN> statement.
@@ -2687,12 +2688,12 @@ struct space *
 sqlStartTable(Parse *, Token *);
 
 /**
- * Add new field to the format of ephemeral space in
- * create_column_def. If it is <ALTER TABLE> create shallow copy
- * of the existing space and add field to its format.
+ * Add new field to the format of ephemeral space. If it is <ALTER TABLE> create
+ * shallow copy of the existing space and add field to its format.
  */
 void
-sql_create_column_start(struct Parse *parse);
+sql_create_column_start(struct Parse *parse, struct Token *name,
+			enum field_type type);
 
 /**
  * Emit code to update entry in _space and code to create
