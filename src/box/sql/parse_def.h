@@ -258,6 +258,30 @@ struct sql_ast_unique_list {
 	uint32_t n;
 };
 
+/** Description of the column being created. */
+struct sql_ast_column {
+	/** Column name. */
+	struct Token name;
+	/** Collation name. */
+	struct Token collate_name;
+	/** Expression for DEFAULT. */
+	struct ExprSpan default_expr;
+	/** Column data type. */
+	enum field_type type;
+	/** NULL and NOT NULL constraints. */
+	enum on_conflict_action null_action;
+	/** Flag to show if nullable action is set. */
+	bool is_null_action_set;
+};
+
+/** Column descriptions list. */
+struct sql_ast_column_list {
+	/** Array containing all column descriptions from the list. */
+	struct sql_ast_column *a;
+	/** Number of column descriptions in the list. */
+	uint32_t n;
+};
+
 /** Description of CREATE TABLE statement. */
 struct sql_ast_create_table {
 	/** Description of FOREIGN KEY constraints. */
@@ -266,6 +290,8 @@ struct sql_ast_create_table {
 	struct sql_ast_check_list check_list;
 	/** Description of UNIQUE constraints. */
 	struct sql_ast_unique_list unique_list;
+	/** Description of table columns. */
+	struct sql_ast_column_list column_list;
 	/** Description of created PRIMARY KEY constraint. */
 	struct sql_ast_unique primary_key;
 	/** Name of the column with AUTOINCREMENT. */
@@ -297,6 +323,8 @@ struct sql_ast_add_column {
 	struct sql_ast_check_list check_list;
 	/** Description of UNIQUE constraints. */
 	struct sql_ast_unique_list unique_list;
+	/** Description of created column. */
+	struct sql_ast_column column;
 	/** Description of created PRIMARY KEY constraint. */
 	struct sql_ast_unique primary_key;
 	/** Name of the column with AUTOINCREMENT. */
@@ -500,14 +528,6 @@ struct create_table_def {
 	struct space *new_space;
 };
 
-struct create_column_def {
-	struct create_entity_def base;
-	/** Shallow space copy. */
-	struct space *space;
-	/** Column type. */
-	struct type_def *type_def;
-};
-
 struct create_ck_constraint_parse_def {
 	/** List of ck_constraint_parse_def objects. */
 	struct rlist checks;
@@ -601,16 +621,6 @@ create_table_def_init(struct create_table_def *table_def, struct Token *name,
 {
 	create_entity_def_init(&table_def->base, ENTITY_TYPE_TABLE, NULL, name,
 			       if_not_exists);
-}
-
-static inline void
-create_column_def_init(struct create_column_def *column_def,
-		       struct SrcList *table_name, struct Token *name,
-		       struct type_def *type_def)
-{
-	create_entity_def_init(&column_def->base, ENTITY_TYPE_COLUMN,
-			       table_name, name, false);
-	column_def->type_def = type_def;
 }
 
 static inline void
@@ -716,7 +726,8 @@ sql_ast_init_create_index(struct Parse *parse, struct Token *table_name,
 
 /** Save parsed ADD COLUMN statement. */
 void
-sql_ast_init_add_column(struct Parse *parse);
+sql_ast_init_add_column(struct Parse *parse, struct SrcList *table_name,
+			struct Token *name, enum field_type type);
 
 /** Save parsed table FOREIGN KEY from ALTER TABLE ADD CONSTRAINT statement. */
 void
@@ -783,6 +794,11 @@ void
 sql_ast_save_table_primary_key(struct Parse *parse, const struct Token *name,
 			       struct ExprList *cols);
 
+/** Save parsed column from CREATE TABLE statement. */
+void
+sql_ast_save_table_column(struct Parse *parse, struct Token *name,
+			  enum field_type type);
+
 /** Save parsed column AUTOINCREMENT clause. */
 void
 sql_ast_save_column_autoincrement(struct Parse *parse);
@@ -790,5 +806,19 @@ sql_ast_save_column_autoincrement(struct Parse *parse);
 /** Save parsed AUTOINCREMENT clause from table PRIMARY KEY clause. */
 void
 sql_ast_save_table_autoincrement(struct Parse *parse, struct Expr *column_name);
+
+/** Save parsed column COLLATE clause. */
+void
+sql_ast_save_column_collate(struct Parse *parse, struct Token *collate_name);
+
+/** Save parsed column DEFAULT clause. */
+void
+sql_ast_save_column_default(struct Parse *parse, struct ExprSpan *expr);
+
+/** Save parsed column NULL or NOT NULL constraint. */
+void
+sql_ast_save_column_null_action(struct Parse *parse,
+				enum on_conflict_action null_action,
+				enum on_conflict_action on_conflict);
 
 #endif /* TARANTOOL_BOX_SQL_PARSE_DEF_H_INCLUDED */

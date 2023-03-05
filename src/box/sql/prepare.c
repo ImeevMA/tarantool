@@ -203,6 +203,7 @@ sql_ast_destroy(struct sql_ast *ast)
 {
 	switch (ast->type) {
 	case SQL_AST_TYPE_CREATE_TABLE:
+		sql_xfree(ast->create_table.column_list.a);
 		if (ast->create_table.autoinc_name != NULL)
 			sql_expr_delete(ast->create_table.autoinc_name);
 		if (ast->create_table.foreign_key_list.n != 0)
