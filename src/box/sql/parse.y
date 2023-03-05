@@ -365,9 +365,7 @@ ifexists(A) ::= .            {A = 0;}
 cmd ::= createkw(X) VIEW ifnotexists(E) nm(Y) eidlist_opt(C)
           AS select(S). {
   if (!pParse->parse_only) {
-    create_view_def_init(&pParse->create_view_def, &Y, &X, C, S, E);
-    pParse->initiateTTrans = true;
-    sql_create_view(pParse);
+    sql_ast_init_create_view(pParse, &Y, &X, C, S, E);
   } else {
     sql_store_select(pParse, S);
   }

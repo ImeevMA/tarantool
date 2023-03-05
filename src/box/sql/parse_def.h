@@ -104,6 +104,8 @@ enum sql_ast_type {
 	SQL_AST_TYPE_DROP_TABLE,
 	/** CREATE TABLE statement. */
 	SQL_AST_TYPE_CREATE_TABLE,
+	/** CREATE VIEW statement. */
+	SQL_AST_TYPE_CREATE_VIEW,
 	/** CREATE INDEX statement. */
 	SQL_AST_TYPE_CREATE_INDEX,
 	/** ALTER TABLE ADD COLUMN statement. */
@@ -304,6 +306,20 @@ struct sql_ast_create_table {
 	bool if_not_exists;
 };
 
+/** Description of the view being created. */
+struct sql_ast_create_view {
+	/** View name. */
+	struct Token name;
+	/** The query that defines the view. */
+	struct Token str;
+	/** List of aliases. */
+	struct ExprList *aliases;
+	/** Select of the view. */
+	struct Select *select;
+	/** IF NOT EXISTS flag. */
+	bool if_not_exists;
+};
+
 /** Description of the CREATE INDEX statement. */
 struct sql_ast_create_index {
 	/** Index name. */
@@ -392,6 +408,8 @@ struct sql_ast {
 		struct sql_ast_drop_table drop_table;
 		/** Description of CREATE TABLE statement. */
 		struct sql_ast_create_table create_table;
+		/** Description of CREATE VIEW statement. */
+		struct sql_ast_create_view create_view;
 		/** Description of CREATE INDEX statement. */
 		struct sql_ast_create_index create_index;
 		/** Description of ALTER TABLE ADD COLUMN statement. */
@@ -544,19 +562,6 @@ struct create_fk_constraint_parse_def {
 	bool is_used;
 };
 
-struct create_view_def {
-	struct create_entity_def base;
-	/**
-	 * Starting position of CREATE VIEW ... statement.
-	 * It is used to fetch whole statement, which is
-	 * saved as raw string to space options.
-	 */
-	struct Token *create_start;
-	/** List of column aliases (SELECT x AS y ...). */
-	struct ExprList *aliases;
-	struct Select *select;
-};
-
 struct create_trigger_def {
 	struct create_entity_def base;
 	/** One of TK_BEFORE, TK_AFTER, TK_INSTEAD. */
@@ -630,18 +635,6 @@ create_fk_constraint_parse_def_init(struct create_fk_constraint_parse_def *def)
 }
 
 static inline void
-create_view_def_init(struct create_view_def *view_def, struct Token *name,
-		     struct Token *create, struct ExprList *aliases,
-		     struct Select *select, bool if_not_exists)
-{
-	create_entity_def_init(&view_def->base, ENTITY_TYPE_VIEW, NULL, name,
-			       if_not_exists);
-	view_def->create_start = create;
-	view_def->select = select;
-	view_def->aliases = aliases;
-}
-
-static inline void
 create_fk_constraint_parse_def_destroy(struct create_fk_constraint_parse_def *d)
 {
 	if (!d->is_used)
@@ -711,6 +704,12 @@ sql_ast_init_table_drop(struct Parse *parse, const struct Token *name,
 void
 sql_ast_init_create_table(struct Parse *parse, struct Token *name,
 			  bool if_not_exists);
+
+/** Save parsed CREATE VIEW statement. */
+void
+sql_ast_init_create_view(struct Parse *parse, struct Token *name,
+			 struct Token *create_start, struct ExprList *aliases,
+			 struct Select *select, bool if_not_exists);
 
 /** Save parsed CREATE INDEX statement. */
 void
