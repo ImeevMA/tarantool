@@ -655,6 +655,12 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast)
 		sqlEndTable(parse);
 		break;
 	}
+	case SQL_AST_TYPE_CREATE_VIEW:
+		parse->initiateTTrans = true;
+		sql_create_view(parse);
+		if (parse->is_aborted)
+			return;
+		break;
 	case SQL_AST_TYPE_CREATE_INDEX: {
 		parse->initiateTTrans = true;
 		struct sql_ast_create_index *stmt = &parse->ast.create_index;

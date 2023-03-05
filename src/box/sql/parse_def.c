@@ -188,6 +188,31 @@ sql_ast_init_create_table(struct Parse *parse, struct Token *name,
 }
 
 void
+sql_ast_init_create_view(struct Parse *parse, struct Token *name,
+			 struct Token *create_start, struct ExprList *aliases,
+			 struct Select *select, bool if_not_exists)
+{
+	parse->ast.type = SQL_AST_TYPE_CREATE_VIEW;
+	struct sql_ast_create_view *stmt = &parse->ast.create_view;
+	stmt->name = *name;
+	stmt->aliases = aliases;
+	stmt->select = select;
+	stmt->if_not_exists = if_not_exists;
+
+	struct Token end = parse->sLastToken;
+	assert(end.z[0] != '\0');
+	if (end.z[0] != ';')
+		end.z += end.n;
+	struct Token *begin = create_start;
+	int len = end.z - begin->z;
+	assert(len > 0);
+	while (sqlIsspace(begin->z[len - 1]))
+		len--;
+	stmt->str.z = begin->z;
+	stmt->str.n = len;
+}
+
+void
 sql_ast_init_create_index(struct Parse *parse, struct Token *table_name,
 			  const struct Token *index_name, struct ExprList *cols,
 			  bool is_unique, bool if_not_exists)

@@ -2030,7 +2030,6 @@ struct Parse {
 	 */
 	union {
 		struct create_trigger_def create_trigger_def;
-		struct create_view_def create_view_def;
 		struct enable_entity_def enable_entity_def;
 	};
 	/** AST of parsed SQL statement. */
