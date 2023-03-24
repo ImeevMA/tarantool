@@ -108,7 +108,6 @@ struct Mem {
 /** MEM is of ANY meta-type. */
 #define MEM_Any       0x0004
 #define MEM_Cleared   0x0200	/* NULL set by OP_Null, not from data */
-#define MEM_Static    0x1000	/* Mem.z points to a static string */
 #define MEM_Ephem     0x2000	/* Mem.z points to an ephemeral string */
 
 static inline bool
@@ -235,17 +234,9 @@ mem_is_invalid(const struct Mem *mem)
 }
 
 static inline bool
-mem_is_static(const struct Mem *mem)
-{
-	assert(mem_is_bytes(mem));
-	return (mem->flags & MEM_Static) != 0;
-}
-
-static inline bool
 mem_is_ephemeral(const struct Mem *mem)
 {
-	assert(mem_is_bytes(mem));
-	return (mem->flags & MEM_Ephem) != 0;
+	return mem_is_bytes(mem) && (mem->flags & MEM_Ephem) != 0;
 }
 
 static inline bool
@@ -376,10 +367,6 @@ mem_set_datetime(struct Mem *mem, const struct datetime *dt);
 void
 mem_set_interval(struct Mem *mem, const struct interval *itv);
 
-/** Clear MEM and set it to STRING. The string belongs to another object. */
-void
-mem_set_str_ephemeral(struct Mem *mem, char *value, size_t len);
-
 /** Clear MEM and set it to STRING. The string is static. */
 void
 mem_set_str_static(struct Mem *mem, char *value, size_t len);
@@ -390,19 +377,30 @@ mem_set_str_static(struct Mem *mem, char *value, size_t len);
  * on destruction. Also, the memory may be reallocated if MEM is set to a
  * different value of this allocation type.
  */
+static inline void
+mem_set_str_allocated(struct Mem *mem, char *value, size_t len)
+{
+	mem_set_str_static(mem, value, len);
+	sql_xfree(mem->zMalloc);
+	mem->zMalloc = mem->z;
+	mem->szMalloc = mem->n;
+}
+
+/** Clear MEM and set it to NULL-terminated STRING. The string is static. */
 void
-mem_set_str_allocated(struct Mem *mem, char *value, size_t len);
+mem_set_str0_static(struct Mem *mem, char *value);
 
 /**
  * Clear MEM and set it to NULL-terminated STRING. The string belongs to
  * another object.
  */
-void
-mem_set_str0_ephemeral(struct Mem *mem, char *value);
-
-/** Clear MEM and set it to NULL-terminated STRING. The string is static. */
-void
-mem_set_str0_static(struct Mem *mem, char *value);
+static inline void
+mem_set_str0_ephemeral(struct Mem *mem, char *value)
+{
+	mem_set_str0_static(mem, value);
+	assert(mem->flags == 0);
+	mem->flags = MEM_Ephem;
+}
 
 /**
  * Clear MEM and set it to NULL-terminated STRING. The string was allocated by
@@ -410,8 +408,11 @@ mem_set_str0_static(struct Mem *mem, char *value);
  * deallocate the string on destruction. Also, the memory may be reallocated if
  * MEM is set to a different value of this allocation type.
  */
-void
-mem_set_str0_allocated(struct Mem *mem, char *value);
+static inline void
+mem_set_str0_allocated(struct Mem *mem, char *value)
+{
+	mem_set_str_allocated(mem, value, strlen(value));
+}
 
 /** Copy string to a newly allocated memory. The MEM type becomes STRING. */
 int
@@ -424,16 +425,21 @@ mem_copy_str(struct Mem *mem, const char *value, size_t len);
 int
 mem_copy_str0(struct Mem *mem, const char *value);
 
+/** Clear MEM and set it to VARBINARY. The binary value is static. */
+void
+mem_set_bin_static(struct Mem *mem, char *value, size_t size);
+
 /**
  * Clear MEM and set it to VARBINARY. The binary value belongs to another
  * object.
  */
-void
-mem_set_bin_ephemeral(struct Mem *mem, char *value, size_t size);
-
-/** Clear MEM and set it to VARBINARY. The binary value is static. */
-void
-mem_set_bin_static(struct Mem *mem, char *value, size_t size);
+static inline void
+mem_set_bin_ephemeral(struct Mem *mem, char *value, size_t size)
+{
+	mem_set_bin_static(mem, value, size);
+	assert(mem->flags == 0);
+	mem->flags = MEM_Ephem;
+}
 
 /**
  * Clear MEM and set it to VARBINARY. The binary value was allocated by another
@@ -441,8 +447,14 @@ mem_set_bin_static(struct Mem *mem, char *value, size_t size);
  * string on destruction. Also, the memory may be reallocated if MEM is set to a
  * different value of this allocation type.
  */
-void
-mem_set_bin_allocated(struct Mem *mem, char *value, size_t size);
+static inline void
+mem_set_bin_allocated(struct Mem *mem, char *value, size_t size)
+{
+	mem_set_bin_static(mem, value, size);
+	sql_xfree(mem->zMalloc);
+	mem->zMalloc = mem->z;
+	mem->szMalloc = mem->n;
+}
 
 /**
  * Copy binary value to a newly allocated memory. The MEM type becomes
@@ -452,39 +464,15 @@ int
 mem_copy_bin(struct Mem *mem, const char *value, size_t size);
 
 /**
- * Clear MEM and set it to MAP. The binary value belongs to another object. The
- * binary value must be msgpack of MAP type.
- */
-void
-mem_set_map_ephemeral(struct Mem *mem, char *value, size_t size);
-
-/**
  * Clear MEM and set it to MAP. The binary value is static. The binary value
  * must be msgpack of MAP type.
  */
 void
 mem_set_map_static(struct Mem *mem, char *value, size_t size);
 
-/**
- * Clear MEM and set it to MAP. The binary value was allocated by another object
- * and passed to MEM. The binary value must be msgpack of MAP type. MEMs with
- * this allocation type only deallocate the string on destruction. Also, the
- * memory may be reallocated if MEM is set to a different value of this
- * allocation type.
- */
-void
-mem_set_map_allocated(struct Mem *mem, char *value, size_t size);
-
 /** Copy MAP value to a newly allocated memory. The MEM type becomes MAP. */
 int
 mem_copy_map(struct Mem *mem, const char *value, size_t size);
-
-/**
- * Clear MEM and set it to ARRAY. The binary value belongs to another object.
- * The binary value must be msgpack of ARRAY type.
- */
-void
-mem_set_array_ephemeral(struct Mem *mem, char *value, size_t size);
 
 /**
  * Clear MEM and set it to ARRAY. The binary value is static. The binary value
@@ -500,8 +488,14 @@ mem_set_array_static(struct Mem *mem, char *value, size_t size);
  * Also, the memory may be reallocated if MEM is set to a different value of
  * this allocation type.
  */
-void
-mem_set_array_allocated(struct Mem *mem, char *value, size_t size);
+static inline void
+mem_set_array_allocated(struct Mem *mem, char *value, size_t size)
+{
+	mem_set_array_static(mem, value, size);
+	sql_xfree(mem->zMalloc);
+	mem->zMalloc = mem->z;
+	mem->szMalloc = mem->n;
+}
 
 /** Copy ARRAY value to a newly allocated memory. The MEM type becomes ARRAY. */
 int
@@ -847,8 +841,6 @@ enum mp_type
 mem_mp_type(const struct Mem *mem);
 
 #ifdef SQL_DEBUG
-int sqlVdbeCheckMemInvariants(struct Mem *);
-
 /*
  * Return true if a memory cell is not marked as invalid.  This macro
  * is for use inside assert() statements only.
