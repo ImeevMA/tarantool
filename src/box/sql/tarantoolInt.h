@@ -76,7 +76,8 @@ int
 tarantoolsqlDelete(struct BtCursor *pCur);
 
 int
-sql_cursor_seek(struct BtCursor *cur, struct Mem *mems, uint32_t len, int *res);
+sql_cursor_seek(struct BtCursor *cur, struct sql_mem *mems, uint32_t len,
+		int *res);
 
 /**
  * Delete entry from space by its key.

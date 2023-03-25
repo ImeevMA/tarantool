@@ -60,7 +60,7 @@
  * in pMem->u.z is discarded.
  */
 static void
-sqlVdbeMemGrow(struct Mem *pMem, size_t n, int bPreserve);
+sqlVdbeMemGrow(struct sql_mem *pMem, size_t n, int bPreserve);
 
 enum {
 	BUF_SIZE = 32,
@@ -83,7 +83,7 @@ enum mem_class {
 };
 
 static inline enum mem_class
-mem_type_class(enum mem_type type)
+mem_type_class(enum sql_mem_type type)
 {
 	switch (type) {
 	case MEM_TYPE_NULL:
@@ -110,7 +110,7 @@ mem_type_class(enum mem_type type)
 }
 
 bool
-mem_is_field_compatible(const struct Mem *mem, enum field_type type)
+mem_is_field_compatible(const struct sql_mem *mem, enum field_type type)
 {
 	if (mem->type == MEM_TYPE_UUID)
 		return (field_ext_type[type] & (1U << MP_UUID)) != 0;
@@ -126,7 +126,7 @@ mem_is_field_compatible(const struct Mem *mem, enum field_type type)
 }
 
 int
-mem_snprintf(char *buf, uint32_t size, const struct Mem *mem)
+mem_snprintf(char *buf, uint32_t size, const struct sql_mem *mem)
 {
 	int res = -1;
 	switch (mem->type) {
@@ -138,7 +138,7 @@ mem_snprintf(char *buf, uint32_t size, const struct Mem *mem)
 		res = snprintf(buf, size, "%.*s", (int)mem->u.n, mem->u.z);
 		break;
 	case MEM_TYPE_INT:
-		res = snprintf(buf, size, "%lld", mem->u.i);
+		res = snprintf(buf, size, "%" PRIi64, mem->u.i);
 		break;
 	case MEM_TYPE_UINT:
 		res = snprintf(buf, size, "%llu", (unsigned long long)mem->u.u);
@@ -179,7 +179,7 @@ mem_snprintf(char *buf, uint32_t size, const struct Mem *mem)
 }
 
 char *
-mem_strdup(const struct Mem *mem)
+mem_strdup(const struct sql_mem *mem)
 {
 	int size = mem_snprintf(NULL, 0, mem);
 	assert(size >= 0);
@@ -189,7 +189,7 @@ mem_strdup(const struct Mem *mem)
 }
 
 const char *
-mem_str(const struct Mem *mem)
+mem_str(const struct sql_mem *mem)
 {
 	if (mem->type == MEM_TYPE_NULL)
 		return "NULL";
@@ -221,7 +221,7 @@ mem_str(const struct Mem *mem)
 }
 
 static const char *
-mem_type_class_to_str(const struct Mem *mem)
+mem_type_class_to_str(const struct sql_mem *mem)
 {
 	switch (mem->type) {
 	case MEM_TYPE_NULL:
@@ -253,11 +253,12 @@ mem_type_class_to_str(const struct Mem *mem)
 	return "unknown";
 }
 
+/** Clear MEM. This function does not release the memory managed by the MEM. */
 static inline void
-mem_clear(struct Mem *mem)
+mem_clear(struct sql_mem *mem)
 {
 	if (mem->type == MEM_TYPE_FRAME) {
-		struct VdbeFrame *frame = mem->u.pFrame;
+		struct VdbeFrame *frame = mem->u.frame;
 		frame->pParent = frame->v->pDelFrame;
 		frame->v->pDelFrame = frame;
 	}
@@ -266,7 +267,7 @@ mem_clear(struct Mem *mem)
 }
 
 void
-mem_destroy(struct Mem *mem)
+mem_destroy(struct sql_mem *mem)
 {
 	mem_clear(mem);
 	if (mem->size > 0) {
@@ -279,7 +280,7 @@ mem_destroy(struct Mem *mem)
 }
 
 void
-mem_delete(struct Mem *v)
+mem_delete(struct sql_mem *v)
 {
 	if (v == NULL)
 		return;
@@ -288,13 +289,13 @@ mem_delete(struct Mem *v)
 }
 
 void
-mem_set_null(struct Mem *mem)
+mem_set_null(struct sql_mem *mem)
 {
 	mem_clear(mem);
 }
 
 void
-mem_set_int(struct Mem *mem, int64_t value, bool is_neg)
+mem_set_int(struct sql_mem *mem, int64_t value, bool is_neg)
 {
 	mem_clear(mem);
 	mem->u.i = value;
@@ -303,7 +304,7 @@ mem_set_int(struct Mem *mem, int64_t value, bool is_neg)
 }
 
 void
-mem_set_uint(struct Mem *mem, uint64_t value)
+mem_set_uint(struct sql_mem *mem, uint64_t value)
 {
 	mem_clear(mem);
 	mem->u.u = value;
@@ -312,7 +313,7 @@ mem_set_uint(struct Mem *mem, uint64_t value)
 }
 
 void
-mem_set_nint(struct Mem *mem, int64_t value)
+mem_set_nint(struct sql_mem *mem, int64_t value)
 {
 	assert(value < 0);
 	mem_clear(mem);
@@ -322,7 +323,7 @@ mem_set_nint(struct Mem *mem, int64_t value)
 }
 
 void
-mem_set_bool(struct Mem *mem, bool value)
+mem_set_bool(struct sql_mem *mem, bool value)
 {
 	mem_clear(mem);
 	mem->u.b = value;
@@ -331,7 +332,7 @@ mem_set_bool(struct Mem *mem, bool value)
 }
 
 void
-mem_set_double(struct Mem *mem, double value)
+mem_set_double(struct sql_mem *mem, double value)
 {
 	mem_clear(mem);
 	assert(mem->group == MEM_GROUP_DATA);
@@ -342,7 +343,7 @@ mem_set_double(struct Mem *mem, double value)
 }
 
 void
-mem_set_dec(struct Mem *mem, const decimal_t *d)
+mem_set_dec(struct sql_mem *mem, const decimal_t *d)
 {
 	mem_clear(mem);
 	mem->u.d = *d;
@@ -351,7 +352,7 @@ mem_set_dec(struct Mem *mem, const decimal_t *d)
 }
 
 void
-mem_set_uuid(struct Mem *mem, const struct tt_uuid *uuid)
+mem_set_uuid(struct sql_mem *mem, const struct tt_uuid *uuid)
 {
 	mem_clear(mem);
 	mem->u.uuid = *uuid;
@@ -360,7 +361,7 @@ mem_set_uuid(struct Mem *mem, const struct tt_uuid *uuid)
 }
 
 void
-mem_set_datetime(struct Mem *mem, const struct datetime *dt)
+mem_set_datetime(struct sql_mem *mem, const struct datetime *dt)
 {
 	mem_clear(mem);
 	mem->u.dt = *dt;
@@ -369,7 +370,7 @@ mem_set_datetime(struct Mem *mem, const struct datetime *dt)
 }
 
 void
-mem_set_interval(struct Mem *mem, const struct interval *itv)
+mem_set_interval(struct sql_mem *mem, const struct interval *itv)
 {
 	mem_clear(mem);
 	mem->u.itv = *itv;
@@ -378,7 +379,7 @@ mem_set_interval(struct Mem *mem, const struct interval *itv)
 }
 
 void
-mem_set_str(struct Mem *mem, char *value, uint32_t len)
+mem_set_str(struct sql_mem *mem, char *value, uint32_t len)
 {
 	mem_clear(mem);
 	mem->u.z = value;
@@ -388,7 +389,7 @@ mem_set_str(struct Mem *mem, char *value, uint32_t len)
 }
 
 void
-mem_set_str0(struct Mem *mem, char *value)
+mem_set_str0(struct sql_mem *mem, char *value)
 {
 	mem_clear(mem);
 	mem->u.z = value;
@@ -398,8 +399,8 @@ mem_set_str0(struct Mem *mem, char *value)
 }
 
 static int
-mem_copy_bytes(struct Mem *mem, const char *value, uint32_t size,
-	       enum mem_type type)
+mem_copy_bytes(struct sql_mem *mem, const char *value, uint32_t size,
+	       enum sql_mem_type type)
 {
 	if (mem_is_bytes(mem) && mem->u.z == value) {
 		/* Own value, but might be ephemeral. Make it own if so. */
@@ -418,13 +419,13 @@ mem_copy_bytes(struct Mem *mem, const char *value, uint32_t size,
 }
 
 int
-mem_copy_str(struct Mem *mem, const char *value, uint32_t len)
+mem_copy_str(struct sql_mem *mem, const char *value, uint32_t len)
 {
 	return mem_copy_bytes(mem, value, len, MEM_TYPE_STR);
 }
 
 int
-mem_copy_str0(struct Mem *mem, const char *value)
+mem_copy_str0(struct sql_mem *mem, const char *value)
 {
 	uint32_t len = strlen(value);
 	if (mem_copy_str(mem, value, len + 1) != 0)
@@ -434,7 +435,7 @@ mem_copy_str0(struct Mem *mem, const char *value)
 }
 
 void
-mem_set_bin(struct Mem *mem, char *value, uint32_t size)
+mem_set_bin(struct sql_mem *mem, char *value, uint32_t size)
 {
 	mem_clear(mem);
 	mem->u.z = value;
@@ -444,13 +445,13 @@ mem_set_bin(struct Mem *mem, char *value, uint32_t size)
 }
 
 int
-mem_copy_bin(struct Mem *mem, const char *value, uint32_t size)
+mem_copy_bin(struct sql_mem *mem, const char *value, uint32_t size)
 {
 	return mem_copy_bytes(mem, value, size, MEM_TYPE_BIN);
 }
 
 void
-mem_set_map(struct Mem *mem, char *value, uint32_t size)
+mem_set_map(struct sql_mem *mem, char *value, uint32_t size)
 {
 	assert(mp_typeof(*value) == MP_MAP);
 	mem_clear(mem);
@@ -461,13 +462,13 @@ mem_set_map(struct Mem *mem, char *value, uint32_t size)
 }
 
 int
-mem_copy_map(struct Mem *mem, const char *value, uint32_t size)
+mem_copy_map(struct sql_mem *mem, const char *value, uint32_t size)
 {
 	return mem_copy_bytes(mem, value, size, MEM_TYPE_MAP);
 }
 
 void
-mem_set_array(struct Mem *mem, char *value, uint32_t size)
+mem_set_array(struct sql_mem *mem, char *value, uint32_t size)
 {
 	assert(mp_typeof(*value) == MP_ARRAY);
 	mem_clear(mem);
@@ -478,13 +479,13 @@ mem_set_array(struct Mem *mem, char *value, uint32_t size)
 }
 
 int
-mem_copy_array(struct Mem *mem, const char *value, uint32_t size)
+mem_copy_array(struct sql_mem *mem, const char *value, uint32_t size)
 {
 	return mem_copy_bytes(mem, value, size, MEM_TYPE_ARRAY);
 }
 
 void
-mem_set_invalid(struct Mem *mem)
+mem_set_invalid(struct sql_mem *mem)
 {
 	mem_clear(mem);
 	mem->type = MEM_TYPE_INVALID;
@@ -492,7 +493,7 @@ mem_set_invalid(struct Mem *mem)
 }
 
 void
-mem_set_ptr(struct Mem *mem, void *ptr)
+mem_set_ptr(struct sql_mem *mem, void *ptr)
 {
 	mem_clear(mem);
 	mem->type = MEM_TYPE_PTR;
@@ -501,23 +502,23 @@ mem_set_ptr(struct Mem *mem, void *ptr)
 }
 
 void
-mem_set_frame(struct Mem *mem, struct VdbeFrame *frame)
+mem_set_frame(struct sql_mem *mem, struct VdbeFrame *frame)
 {
 	mem_clear(mem);
 	mem->type = MEM_TYPE_FRAME;
 	assert(mem->group == MEM_GROUP_DATA);
-	mem->u.pFrame = frame;
+	mem->u.frame = frame;
 }
 
 void
-mem_set_null_clear(struct Mem *mem)
+mem_set_null_clear(struct sql_mem *mem)
 {
 	mem_clear(mem);
 	mem->is_cleared = true;
 }
 
 static inline int
-int_to_double(struct Mem *mem)
+int_to_double(struct sql_mem *mem)
 {
 	assert((mem->type & (MEM_TYPE_INT | MEM_TYPE_UINT)) != 0);
 	double d;
@@ -532,7 +533,7 @@ int_to_double(struct Mem *mem)
 }
 
 static inline int
-int_to_double_precise(struct Mem *mem)
+int_to_double_precise(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_INT);
 	double d;
@@ -551,7 +552,7 @@ int_to_double_precise(struct Mem *mem)
  * value is greater than the result, and 0 if the cast is precise.
  */
 static inline int
-int_to_double_forced(struct Mem *mem)
+int_to_double_forced(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_INT);
 	int64_t i = mem->u.i;
@@ -563,7 +564,7 @@ int_to_double_forced(struct Mem *mem)
 }
 
 static inline int
-int_to_dec(struct Mem *mem)
+int_to_dec(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_INT);
 	int64_t i = mem->u.i;
@@ -574,7 +575,7 @@ int_to_dec(struct Mem *mem)
 }
 
 static inline int
-uint_to_double_precise(struct Mem *mem)
+uint_to_double_precise(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_UINT);
 	double d;
@@ -593,7 +594,7 @@ uint_to_double_precise(struct Mem *mem)
  * value is greater than the result, and 0 if the cast is precise.
  */
 static inline int
-uint_to_double_forced(struct Mem *mem)
+uint_to_double_forced(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_UINT);
 	uint64_t u = mem->u.u;
@@ -605,7 +606,7 @@ uint_to_double_forced(struct Mem *mem)
 }
 
 static inline int
-uint_to_dec(struct Mem *mem)
+uint_to_dec(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_UINT);
 	int64_t u = mem->u.u;
@@ -616,7 +617,7 @@ uint_to_dec(struct Mem *mem)
 }
 
 static inline int
-int_to_str0(struct Mem *mem)
+int_to_str0(struct sql_mem *mem)
 {
 	assert((mem->type & (MEM_TYPE_INT | MEM_TYPE_UINT)) != 0);
 	const char *str;
@@ -628,7 +629,7 @@ int_to_str0(struct Mem *mem)
 }
 
 static inline int
-str_to_bin(struct Mem *mem)
+str_to_bin(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_STR);
 	mem->type = MEM_TYPE_BIN;
@@ -637,7 +638,7 @@ str_to_bin(struct Mem *mem)
 }
 
 static inline int
-str_to_uuid(struct Mem *mem)
+str_to_uuid(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_STR);
 	struct tt_uuid uuid;
@@ -648,7 +649,7 @@ str_to_uuid(struct Mem *mem)
 }
 
 static inline int
-str_to_bool(struct Mem *mem)
+str_to_bool(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_STR);
 	char *str = mem->u.z;
@@ -675,7 +676,7 @@ str_to_bool(struct Mem *mem)
 }
 
 static inline int
-bin_to_str(struct Mem *mem)
+bin_to_str(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_BIN);
 	mem->type = MEM_TYPE_STR;
@@ -684,7 +685,7 @@ bin_to_str(struct Mem *mem)
 }
 
 static inline int
-bin_to_uuid(struct Mem *mem)
+bin_to_uuid(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_BIN);
 	if (mem->u.n != UUID_LEN ||
@@ -695,7 +696,7 @@ bin_to_uuid(struct Mem *mem)
 }
 
 static inline int
-str_to_int(struct Mem *mem)
+str_to_int(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_STR);
 	bool is_neg;
@@ -707,7 +708,7 @@ str_to_int(struct Mem *mem)
 }
 
 static inline int
-str_to_uint(struct Mem *mem)
+str_to_uint(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_STR);
 	bool is_neg;
@@ -721,7 +722,7 @@ str_to_uint(struct Mem *mem)
 }
 
 static inline int
-str_to_double(struct Mem *mem)
+str_to_double(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_STR);
 	double d;
@@ -732,7 +733,7 @@ str_to_double(struct Mem *mem)
 }
 
 static inline int
-str_to_dec(struct Mem *mem)
+str_to_dec(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_STR);
 	decimal_t dec;
@@ -746,7 +747,7 @@ str_to_dec(struct Mem *mem)
 
 /** Convert MEM from STRING to DATETIME. */
 static inline int
-str_to_datetime(struct Mem *mem)
+str_to_datetime(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_STR);
 	struct datetime dt;
@@ -757,7 +758,7 @@ str_to_datetime(struct Mem *mem)
 }
 
 static inline int
-double_to_int(struct Mem *mem)
+double_to_int(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DOUBLE);
 	double d = mem->u.r;
@@ -777,7 +778,7 @@ double_to_int(struct Mem *mem)
 }
 
 static inline int
-double_to_int_precise(struct Mem *mem)
+double_to_int_precise(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DOUBLE);
 	double d = mem->u.r;
@@ -802,12 +803,12 @@ double_to_int_precise(struct Mem *mem)
  * than the result, and 0 if the cast is precise.
  */
 static inline int
-double_to_int_forced(struct Mem *mem)
+double_to_int_forced(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DOUBLE);
 	double d = mem->u.r;
 	int64_t i;
-	enum mem_type type;
+	enum sql_mem_type type;
 	int res;
 	if (d < (double)INT64_MIN) {
 		i = INT64_MIN;
@@ -834,7 +835,7 @@ double_to_int_forced(struct Mem *mem)
 }
 
 static inline int
-double_to_uint(struct Mem *mem)
+double_to_uint(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DOUBLE);
 	double d = mem->u.r;
@@ -848,7 +849,7 @@ double_to_uint(struct Mem *mem)
 }
 
 static inline int
-double_to_uint_precise(struct Mem *mem)
+double_to_uint_precise(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DOUBLE);
 	double d = mem->u.r;
@@ -867,7 +868,7 @@ double_to_uint_precise(struct Mem *mem)
  * greater than the result, and 0 if the cast is precise.
  */
 static inline int
-double_to_uint_forced(struct Mem *mem)
+double_to_uint_forced(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DOUBLE);
 	double d = mem->u.r;
@@ -890,7 +891,7 @@ double_to_uint_forced(struct Mem *mem)
 }
 
 static inline int
-double_to_dec(struct Mem *mem)
+double_to_dec(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DOUBLE);
 	double d = mem->u.r;
@@ -904,7 +905,7 @@ double_to_dec(struct Mem *mem)
 }
 
 static inline int
-double_to_dec_precise(struct Mem *mem)
+double_to_dec_precise(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DOUBLE);
 	double d = mem->u.r;
@@ -924,7 +925,7 @@ double_to_dec_precise(struct Mem *mem)
  * greater than the result, and 0 if the cast is precise.
  */
 static inline int
-double_to_dec_forced(struct Mem *mem)
+double_to_dec_forced(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DOUBLE);
 	double d = mem->u.r;
@@ -952,7 +953,7 @@ double_to_dec_forced(struct Mem *mem)
 }
 
 static inline int
-double_to_str0(struct Mem *mem)
+double_to_str0(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DOUBLE);
 	double r = mem->u.r;
@@ -965,7 +966,7 @@ double_to_str0(struct Mem *mem)
 }
 
 static inline int
-dec_to_int(struct Mem *mem)
+dec_to_int(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DEC);
 	if (decimal_is_neg(&mem->u.d)) {
@@ -988,7 +989,7 @@ dec_to_int(struct Mem *mem)
 }
 
 static inline int
-dec_to_int_precise(struct Mem *mem)
+dec_to_int_precise(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DEC);
 	if (!decimal_is_int(&mem->u.d))
@@ -997,7 +998,7 @@ dec_to_int_precise(struct Mem *mem)
 }
 
 static inline int
-dec_to_int_forced(struct Mem *mem)
+dec_to_int_forced(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DEC);
 	bool is_dec_int = decimal_is_int(&mem->u.d);
@@ -1034,7 +1035,7 @@ dec_to_int_forced(struct Mem *mem)
 }
 
 static inline int
-dec_to_uint(struct Mem *mem)
+dec_to_uint(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DEC);
 	uint64_t u;
@@ -1047,7 +1048,7 @@ dec_to_uint(struct Mem *mem)
 }
 
 static inline int
-dec_to_uint_precise(struct Mem *mem)
+dec_to_uint_precise(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DEC);
 	if (!decimal_is_int(&mem->u.d))
@@ -1056,7 +1057,7 @@ dec_to_uint_precise(struct Mem *mem)
 }
 
 static inline int
-dec_to_uint_forced(struct Mem *mem)
+dec_to_uint_forced(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DEC);
 	uint64_t u;
@@ -1083,7 +1084,7 @@ dec_to_uint_forced(struct Mem *mem)
 }
 
 static inline int
-dec_to_double(struct Mem *mem)
+dec_to_double(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DEC);
 	double r = atof(decimal_str(&mem->u.d));
@@ -1094,7 +1095,7 @@ dec_to_double(struct Mem *mem)
 }
 
 static inline int
-dec_to_double_precise(struct Mem *mem)
+dec_to_double_precise(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DEC);
 	double r = atof(decimal_str(&mem->u.d));
@@ -1109,7 +1110,7 @@ dec_to_double_precise(struct Mem *mem)
 }
 
 static inline int
-dec_to_double_forced(struct Mem *mem)
+dec_to_double_forced(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DEC);
 	mem->type = MEM_TYPE_DOUBLE;
@@ -1128,14 +1129,14 @@ dec_to_double_forced(struct Mem *mem)
 }
 
 static inline int
-dec_to_str0(struct Mem *mem)
+dec_to_str0(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DEC);
 	return mem_copy_str0(mem, decimal_str(&mem->u.d));
 }
 
 static inline int
-bool_to_str0(struct Mem *mem)
+bool_to_str0(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_BOOL);
 	const char *str = mem->u.b ? "TRUE" : "FALSE";
@@ -1143,7 +1144,7 @@ bool_to_str0(struct Mem *mem)
 }
 
 static inline int
-uuid_to_str0(struct Mem *mem)
+uuid_to_str0(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_UUID);
 	char buf[UUID_STR_LEN + 1];
@@ -1153,7 +1154,7 @@ uuid_to_str0(struct Mem *mem)
 
 /** Convert MEM from DATETIME to STRING. */
 static inline int
-datetime_to_str0(struct Mem *mem)
+datetime_to_str0(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DATETIME);
 	char buf[DT_TO_STRING_BUFSIZE];
@@ -1165,7 +1166,7 @@ datetime_to_str0(struct Mem *mem)
 
 /** Convert MEM from INTERVAL to STRING. */
 static inline int
-interval_to_str0(struct Mem *mem)
+interval_to_str0(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_INTERVAL);
 	char buf[DT_IVAL_TO_STRING_BUFSIZE];
@@ -1176,7 +1177,7 @@ interval_to_str0(struct Mem *mem)
 }
 
 static inline int
-uuid_to_bin(struct Mem *mem)
+uuid_to_bin(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_UUID);
 	struct tt_uuid value = mem->u.uuid;
@@ -1185,7 +1186,7 @@ uuid_to_bin(struct Mem *mem)
 
 /** Convert MEM from MAP to DATETIME. */
 static inline int
-map_to_datetime(struct Mem *mem)
+map_to_datetime(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_MAP);
 	struct datetime dt;
@@ -1197,7 +1198,7 @@ map_to_datetime(struct Mem *mem)
 
 /** Convert MEM from MAP to INTERVAL. */
 static inline int
-map_to_interval(struct Mem *mem)
+map_to_interval(struct sql_mem *mem)
 {
 	assert(mem->type == MEM_TYPE_MAP);
 	struct interval itv;
@@ -1208,7 +1209,7 @@ map_to_interval(struct Mem *mem)
 }
 
 int
-mem_to_int(struct Mem *mem)
+mem_to_int(struct sql_mem *mem)
 {
 	assert(mem->type < MEM_TYPE_INVALID);
 	if ((mem->type & (MEM_TYPE_INT | MEM_TYPE_UINT)) != 0) {
@@ -1225,7 +1226,7 @@ mem_to_int(struct Mem *mem)
 }
 
 int
-mem_to_int_precise(struct Mem *mem)
+mem_to_int_precise(struct sql_mem *mem)
 {
 	assert(mem->type < MEM_TYPE_INVALID);
 	if ((mem->type & (MEM_TYPE_INT | MEM_TYPE_UINT)) != 0) {
@@ -1242,7 +1243,7 @@ mem_to_int_precise(struct Mem *mem)
 }
 
 int
-mem_to_double(struct Mem *mem)
+mem_to_double(struct sql_mem *mem)
 {
 	assert(mem->type < MEM_TYPE_INVALID);
 	if (mem->type == MEM_TYPE_DOUBLE) {
@@ -1259,7 +1260,7 @@ mem_to_double(struct Mem *mem)
 }
 
 int
-mem_to_number(struct Mem *mem)
+mem_to_number(struct sql_mem *mem)
 {
 	assert(mem->type < MEM_TYPE_INVALID);
 	if (mem_is_num(mem)) {
@@ -1276,7 +1277,7 @@ mem_to_number(struct Mem *mem)
 }
 
 int
-mem_to_str(struct Mem *mem)
+mem_to_str(struct sql_mem *mem)
 {
 	assert(mem->type < MEM_TYPE_INVALID);
 	switch (mem->type) {
@@ -1306,7 +1307,7 @@ mem_to_str(struct Mem *mem)
 }
 
 int
-mem_cast_explicit(struct Mem *mem, enum field_type type)
+mem_cast_explicit(struct sql_mem *mem, enum field_type type)
 {
 	if (mem->type == MEM_TYPE_NULL)
 		return 0;
@@ -1421,7 +1422,7 @@ mem_cast_explicit(struct Mem *mem, enum field_type type)
 }
 
 int
-mem_cast_implicit(struct Mem *mem, enum field_type type)
+mem_cast_implicit(struct sql_mem *mem, enum field_type type)
 {
 	if (mem->type == MEM_TYPE_NULL || type == field_type_MAX)
 		return 0;
@@ -1549,7 +1550,7 @@ mem_cast_implicit(struct Mem *mem, enum field_type type)
 }
 
 int
-mem_cast_implicit_number(struct Mem *mem, enum field_type type)
+mem_cast_implicit_number(struct sql_mem *mem, enum field_type type)
 {
 	assert(mem_is_num(mem) && sql_type_is_numeric(type));
 	switch (type) {
@@ -1622,7 +1623,7 @@ mem_cast_implicit_number(struct Mem *mem, enum field_type type)
 }
 
 int
-mem_get_int(const struct Mem *mem, int64_t *i, bool *is_neg)
+mem_get_int(const struct sql_mem *mem, int64_t *i, bool *is_neg)
 {
 	if (mem->type == MEM_TYPE_INT) {
 		*i = mem->u.i;
@@ -1666,7 +1667,7 @@ mem_get_int(const struct Mem *mem, int64_t *i, bool *is_neg)
 }
 
 int
-mem_get_uint(const struct Mem *mem, uint64_t *u)
+mem_get_uint(const struct sql_mem *mem, uint64_t *u)
 {
 	if (mem->type == MEM_TYPE_INT)
 		return -1;
@@ -1706,7 +1707,7 @@ mem_get_uint(const struct Mem *mem, uint64_t *u)
 }
 
 int
-mem_get_double(const struct Mem *mem, double *d)
+mem_get_double(const struct sql_mem *mem, double *d)
 {
 	if (mem->type == MEM_TYPE_DOUBLE) {
 		*d = mem->u.r;
@@ -1733,7 +1734,7 @@ mem_get_double(const struct Mem *mem, double *d)
 }
 
 int
-mem_get_dec(const struct Mem *mem, decimal_t *d)
+mem_get_dec(const struct sql_mem *mem, decimal_t *d)
 {
 	if (mem->type == MEM_TYPE_DOUBLE) {
 		if (decimal_from_double(d, mem->u.r) == NULL)
@@ -1761,7 +1762,7 @@ mem_get_dec(const struct Mem *mem, decimal_t *d)
 }
 
 int
-mem_get_bool(const struct Mem *mem, bool *b)
+mem_get_bool(const struct sql_mem *mem, bool *b)
 {
 	if (mem->type == MEM_TYPE_BOOL) {
 		*b = mem->u.b;
@@ -1771,7 +1772,7 @@ mem_get_bool(const struct Mem *mem, bool *b)
 }
 
 int
-mem_get_bin(const struct Mem *mem, const char **s)
+mem_get_bin(const struct sql_mem *mem, const char **s)
 {
 	if (mem->type == MEM_TYPE_STR) {
 		*s = mem->u.n > 0 ? mem->u.z : NULL;
@@ -1784,7 +1785,7 @@ mem_get_bin(const struct Mem *mem, const char **s)
 }
 
 int
-mem_len(const struct Mem *mem, uint32_t *len)
+mem_len(const struct sql_mem *mem, uint32_t *len)
 {
 	if (!mem_is_bytes(mem))
 		return -1;
@@ -1793,7 +1794,7 @@ mem_len(const struct Mem *mem, uint32_t *len)
 }
 
 int
-mem_copy(struct Mem *to, const struct Mem *from)
+mem_copy(struct sql_mem *to, const struct sql_mem *from)
 {
 	mem_clear(to);
 	to->u = from->u;
@@ -1813,7 +1814,7 @@ mem_copy(struct Mem *to, const struct Mem *from)
 }
 
 void
-mem_copy_as_ephemeral(struct Mem *to, const struct Mem *from)
+mem_copy_as_ephemeral(struct sql_mem *to, const struct sql_mem *from)
 {
 	mem_clear(to);
 	to->u = from->u;
@@ -1828,7 +1829,7 @@ mem_copy_as_ephemeral(struct Mem *to, const struct Mem *from)
 }
 
 void
-mem_move(struct Mem *to, struct Mem *from)
+mem_move(struct sql_mem *to, struct sql_mem *from)
 {
 	mem_destroy(to);
 	memcpy(to, from, sizeof(*to));
@@ -1839,12 +1840,12 @@ mem_move(struct Mem *to, struct Mem *from)
 }
 
 int
-mem_append(struct Mem *mem, const char *value, uint32_t len)
+mem_append(struct sql_mem *mem, const char *value, uint32_t len)
 {
 	assert((mem->type & (MEM_TYPE_BIN | MEM_TYPE_STR)) != 0);
 	if (len == 0)
 		return 0;
-	int new_size = mem->u.n + len;
+	size_t new_size = mem->u.n + len;
 	if (!mem_is_dynamic(mem) || mem->size < new_size) {
 		/*
 		 * Force exponential buffer size growth to avoid having to call
@@ -1858,7 +1859,7 @@ mem_append(struct Mem *mem, const char *value, uint32_t len)
 }
 
 int
-mem_concat(const struct Mem *a, const struct Mem *b, struct Mem *result)
+mem_concat(const struct sql_mem *a, const struct sql_mem *b, struct sql_mem *result)
 {
 	if (mem_is_any_null(a, b)) {
 		mem_set_null(result);
@@ -1902,7 +1903,7 @@ mem_concat(const struct Mem *a, const struct Mem *b, struct Mem *result)
 }
 
 static inline int
-check_types_numeric_arithmetic(const struct Mem *a, const struct Mem *b)
+check_types_numeric_arithmetic(const struct sql_mem *a, const struct sql_mem *b)
 {
 	if (!mem_is_num(a) || mem_is_metatype(a)) {
 		diag_set(ClientError, ER_SQL_TYPE_MISMATCH, mem_str(a),
@@ -1923,7 +1924,7 @@ check_types_numeric_arithmetic(const struct Mem *a, const struct Mem *b)
  * numeric type.
  */
 static int
-mem_add_num(const struct Mem *left, const struct Mem *right, struct Mem *result)
+mem_add_num(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
 	assert(mem_is_num(left) && !mem_is_metatype(left));
 	if (!mem_is_num(right) || mem_is_metatype(right)) {
@@ -1970,7 +1971,7 @@ mem_add_num(const struct Mem *left, const struct Mem *right, struct Mem *result)
  * INTERVAL type. The result is of DATETIME type.
  */
 static int
-mem_add_dt(const struct Mem *left, const struct Mem *right, struct Mem *result)
+mem_add_dt(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
 	assert(mem_is_datetime(left) && !mem_is_metatype(left));
 	if (!mem_is_interval(right) || mem_is_metatype(right)) {
@@ -1989,7 +1990,7 @@ mem_add_dt(const struct Mem *left, const struct Mem *right, struct Mem *result)
  * argument.
  */
 static int
-mem_add_itv(const struct Mem *left, const struct Mem *right, struct Mem *result)
+mem_add_itv(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
 	assert(mem_is_interval(left) && !mem_is_metatype(left));
 	if (mem_is_datetime(right) && !mem_is_metatype(right))
@@ -2004,7 +2005,7 @@ mem_add_itv(const struct Mem *left, const struct Mem *right, struct Mem *result)
 }
 
 int
-mem_add(const struct Mem *left, const struct Mem *right, struct Mem *result)
+mem_add(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
 	if (mem_is_any_null(left, right)) {
 		mem_set_null(result);
@@ -2029,7 +2030,7 @@ mem_add(const struct Mem *left, const struct Mem *right, struct Mem *result)
  * of numeric type.
  */
 static int
-mem_sub_num(const struct Mem *left, const struct Mem *right, struct Mem *result)
+mem_sub_num(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
 	assert(mem_is_num(left) && !mem_is_metatype(left));
 	if (!mem_is_num(right) || mem_is_metatype(right)) {
@@ -2078,7 +2079,7 @@ mem_sub_num(const struct Mem *left, const struct Mem *right, struct Mem *result)
  * argument if of INTERVAL type.
  */
 static int
-mem_sub_dt(const struct Mem *left, const struct Mem *right, struct Mem *result)
+mem_sub_dt(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
 	assert(mem_is_datetime(left) && !mem_is_metatype(left));
 	if (mem_is_datetime(right) && !mem_is_metatype(right)) {
@@ -2104,7 +2105,7 @@ mem_sub_dt(const struct Mem *left, const struct Mem *right, struct Mem *result)
  * of INTERVAL type.
  */
 static int
-mem_sub_itv(const struct Mem *left, const struct Mem *right, struct Mem *result)
+mem_sub_itv(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
 	assert(mem_is_interval(left) && !mem_is_metatype(left));
 	if (!mem_is_interval(right) || mem_is_metatype(right)) {
@@ -2117,7 +2118,7 @@ mem_sub_itv(const struct Mem *left, const struct Mem *right, struct Mem *result)
 }
 
 int
-mem_sub(const struct Mem *left, const struct Mem *right, struct Mem *result)
+mem_sub(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
 	if (mem_is_any_null(left, right)) {
 		mem_set_null(result);
@@ -2137,7 +2138,7 @@ mem_sub(const struct Mem *left, const struct Mem *right, struct Mem *result)
 }
 
 int
-mem_mul(const struct Mem *left, const struct Mem *right, struct Mem *result)
+mem_mul(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
 	if (mem_is_any_null(left, right)) {
 		mem_set_null(result);
@@ -2179,7 +2180,7 @@ mem_mul(const struct Mem *left, const struct Mem *right, struct Mem *result)
 }
 
 int
-mem_div(const struct Mem *left, const struct Mem *right, struct Mem *result)
+mem_div(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
 	if (mem_is_any_null(left, right)) {
 		mem_set_null(result);
@@ -2237,7 +2238,7 @@ mem_div(const struct Mem *left, const struct Mem *right, struct Mem *result)
 }
 
 int
-mem_rem(const struct Mem *left, const struct Mem *right, struct Mem *result)
+mem_rem(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
 	if (mem_is_any_null(left, right)) {
 		mem_set_null(result);
@@ -2269,7 +2270,7 @@ mem_rem(const struct Mem *left, const struct Mem *right, struct Mem *result)
 }
 
 static inline int
-check_types_unsigned_bitwise(const struct Mem *a, const struct Mem *b)
+check_types_unsigned_bitwise(const struct sql_mem *a, const struct sql_mem *b)
 {
 	if (a->type != MEM_TYPE_UINT || mem_is_metatype(a)) {
 		diag_set(ClientError, ER_SQL_TYPE_MISMATCH, mem_str(a),
@@ -2285,7 +2286,7 @@ check_types_unsigned_bitwise(const struct Mem *a, const struct Mem *b)
 }
 
 int
-mem_bit_and(const struct Mem *left, const struct Mem *right, struct Mem *result)
+mem_bit_and(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
 	if (mem_is_any_null(left, right)) {
 		mem_set_null(result);
@@ -2298,7 +2299,7 @@ mem_bit_and(const struct Mem *left, const struct Mem *right, struct Mem *result)
 }
 
 int
-mem_bit_or(const struct Mem *left, const struct Mem *right, struct Mem *result)
+mem_bit_or(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
 	if (mem_is_any_null(left, right)) {
 		mem_set_null(result);
@@ -2311,8 +2312,8 @@ mem_bit_or(const struct Mem *left, const struct Mem *right, struct Mem *result)
 }
 
 int
-mem_shift_left(const struct Mem *left, const struct Mem *right,
-	       struct Mem *result)
+mem_shift_left(const struct sql_mem *left, const struct sql_mem *right,
+	       struct sql_mem *result)
 {
 	if (mem_is_any_null(left, right)) {
 		mem_set_null(result);
@@ -2325,8 +2326,8 @@ mem_shift_left(const struct Mem *left, const struct Mem *right,
 }
 
 int
-mem_shift_right(const struct Mem *left, const struct Mem *right,
-		struct Mem *result)
+mem_shift_right(const struct sql_mem *left, const struct sql_mem *right,
+		struct sql_mem *result)
 {
 	if (mem_is_any_null(left, right)) {
 		mem_set_null(result);
@@ -2339,7 +2340,7 @@ mem_shift_right(const struct Mem *left, const struct Mem *right,
 }
 
 int
-mem_bit_not(const struct Mem *mem, struct Mem *result)
+mem_bit_not(const struct sql_mem *mem, struct sql_mem *result)
 {
 	if (mem_is_null(mem)) {
 		mem_set_null(result);
@@ -2355,14 +2356,14 @@ mem_bit_not(const struct Mem *mem, struct Mem *result)
 }
 
 static int
-mem_cmp_bool(const struct Mem *a, const struct Mem *b)
+mem_cmp_bool(const struct sql_mem *a, const struct sql_mem *b)
 {
 	assert((a->type & b->type & MEM_TYPE_BOOL) != 0);
 	return a->u.b - b->u.b;
 }
 
 static int
-mem_cmp_bin(const struct Mem *a, const struct Mem *b)
+mem_cmp_bin(const struct sql_mem *a, const struct sql_mem *b)
 {
 	assert((a->type & b->type & MEM_TYPE_BIN) != 0);
 	int res = memcmp(a->u.z, b->u.z, MIN(a->u.n, b->u.n));
@@ -2370,7 +2371,7 @@ mem_cmp_bin(const struct Mem *a, const struct Mem *b)
 }
 
 static int
-mem_cmp_num(const struct Mem *a, const struct Mem *b)
+mem_cmp_num(const struct sql_mem *a, const struct sql_mem *b)
 {
 	assert(mem_is_num(a) && mem_is_num(b));
 	if ((a->type & b->type & MEM_TYPE_DOUBLE) != 0) {
@@ -2476,7 +2477,7 @@ mem_cmp_num(const struct Mem *a, const struct Mem *b)
 }
 
 static int
-mem_cmp_str(const struct Mem *a, const struct Mem *b, const struct coll *coll)
+mem_cmp_str(const struct sql_mem *a, const struct sql_mem *b, const struct coll *coll)
 {
 	assert((a->type & b->type & MEM_TYPE_STR) != 0);
 	if (coll != NULL)
@@ -2486,7 +2487,7 @@ mem_cmp_str(const struct Mem *a, const struct Mem *b, const struct coll *coll)
 }
 
 static int
-mem_cmp_uuid(const struct Mem *a, const struct Mem *b)
+mem_cmp_uuid(const struct sql_mem *a, const struct sql_mem *b)
 {
 	assert((a->type & b->type & MEM_TYPE_UUID) != 0);
 	return memcmp(&a->u.uuid, &b->u.uuid, UUID_LEN);
@@ -2494,14 +2495,14 @@ mem_cmp_uuid(const struct Mem *a, const struct Mem *b)
 
 /** Compare two MEMs with DATETIME. */
 static int
-mem_cmp_datetime(const struct Mem *a, const struct Mem *b)
+mem_cmp_datetime(const struct sql_mem *a, const struct sql_mem *b)
 {
 	assert((a->type & b->type & MEM_TYPE_DATETIME) != 0);
 	return datetime_compare(&a->u.dt, &b->u.dt);
 }
 
 int
-mem_cmp_scalar(const struct Mem *a, const struct Mem *b,
+mem_cmp_scalar(const struct sql_mem *a, const struct sql_mem *b,
 	       const struct coll *coll)
 {
 	enum mem_class class_a = mem_type_class(a->type);
@@ -2530,10 +2531,10 @@ mem_cmp_scalar(const struct Mem *a, const struct Mem *b,
 }
 
 int
-mem_cmp_msgpack(const struct Mem *a, const char **b, int *result,
+mem_cmp_msgpack(const struct sql_mem *a, const char **b, int *result,
 		const struct coll *coll)
 {
-	struct Mem mem;
+	struct sql_mem mem;
 	mem_create(&mem);
 	switch (mp_typeof(**b)) {
 	case MP_NIL:
@@ -2619,7 +2620,7 @@ mem_cmp_msgpack(const struct Mem *a, const char **b, int *result,
 }
 
 int
-mem_cmp(const struct Mem *a, const struct Mem *b, int *result,
+mem_cmp(const struct sql_mem *a, const struct sql_mem *b, int *result,
 	const struct coll *coll)
 {
 	enum mem_class class_a = mem_type_class(a->type);
@@ -2676,7 +2677,7 @@ mem_cmp(const struct Mem *a, const struct Mem *b, int *result,
 }
 
 char *
-mem_type_to_str(const struct Mem *p)
+mem_type_to_str(const struct sql_mem *p)
 {
 	assert(p != NULL);
 	switch (p->group) {
@@ -2721,7 +2722,7 @@ mem_type_to_str(const struct Mem *p)
 }
 
 enum mp_type
-mem_mp_type(const struct Mem *mem)
+mem_mp_type(const struct sql_mem *mem)
 {
 	assert(mem->type < MEM_TYPE_INVALID);
 	switch (mem->type) {
@@ -2755,14 +2756,14 @@ mem_mp_type(const struct Mem *mem)
 }
 
 static void
-sqlVdbeMemGrow(struct Mem *pMem, size_t n, int bPreserve)
+sqlVdbeMemGrow(struct sql_mem *pMem, size_t n, int bPreserve)
 {
 	/* If the bPreserve flag is set to true, then the memory cell must already
 	 * contain a valid string or blob value.
 	 */
 	assert(bPreserve == 0 || mem_is_bytes(pMem));
 
-	if ((size_t)pMem->size < n) {
+	if (pMem->size < n) {
 		if (n < 32)
 			n = 32;
 		if (bPreserve && pMem->size > 0 && pMem->u.z == pMem->buf) {
@@ -2786,20 +2787,20 @@ sqlVdbeMemGrow(struct Mem *pMem, size_t n, int bPreserve)
 }
 
 void
-sqlVdbeMemClearAndResize(struct Mem *pMem, size_t szNew)
+sqlVdbeMemClearAndResize(struct sql_mem *pMem, size_t szNew)
 {
 	assert(szNew > 0);
-	if ((size_t)pMem->size < szNew) {
+	if (pMem->size < szNew) {
 		return sqlVdbeMemGrow(pMem, szNew, 0);
 	}
 	pMem->u.z = pMem->buf;
 }
 
 void
-releaseMemArray(struct Mem *p, int N)
+releaseMemArray(struct sql_mem *p, int N)
 {
 	if (p && N) {
-		struct Mem *pEnd = &p[N];
+		struct sql_mem *pEnd = &p[N];
 		do {
 			mem_destroy(p);
 			p->type = MEM_TYPE_INVALID;
@@ -2819,7 +2820,7 @@ sqlVdbeRecordCompareMsgpack(const void *key1,
 
 	for (i = 0; i != n; i++) {
 		struct key_part *part = &key2->key_def->parts[i];
-		struct Mem *mem = key2->aMem + i;
+		struct sql_mem *mem = key2->aMem + i;
 		struct coll *coll = part->coll;
 		if (mem_cmp_msgpack(mem, (const char **)&key1, &rc, coll) != 0)
 			rc = 0;
@@ -2833,7 +2834,7 @@ sqlVdbeRecordCompareMsgpack(const void *key1,
 }
 
 int
-mem_from_mp_ephemeral(struct Mem *mem, const char *buf, uint32_t *len)
+mem_from_mp_ephemeral(struct sql_mem *mem, const char *buf, uint32_t *len)
 {
 	const char *start_buf = buf;
 	switch (mp_typeof(*buf)) {
@@ -2966,7 +2967,7 @@ install_blob:
 }
 
 int
-mem_from_mp(struct Mem *mem, const char *buf, uint32_t *len)
+mem_from_mp(struct sql_mem *mem, const char *buf, uint32_t *len)
 {
 	if (mem_from_mp_ephemeral(mem, buf, len) != 0)
 		return -1;
@@ -2976,7 +2977,7 @@ mem_from_mp(struct Mem *mem, const char *buf, uint32_t *len)
 }
 
 void
-mem_to_mpstream(const struct Mem *var, struct mpstream *stream)
+mem_to_mpstream(const struct sql_mem *var, struct mpstream *stream)
 {
 	assert(memIsValid(var));
 	switch (var->type) {
@@ -3024,7 +3025,7 @@ mem_to_mpstream(const struct Mem *var, struct mpstream *stream)
 }
 
 char *
-mem_to_mp(const struct Mem *mem, uint32_t *size, struct region *region)
+mem_to_mp(const struct sql_mem *mem, uint32_t *size, struct region *region)
 {
 	size_t used = region_used(region);
 	bool is_error = false;
@@ -3050,7 +3051,7 @@ mem_to_mp(const struct Mem *mem, uint32_t *size, struct region *region)
 }
 
 char *
-mem_encode_array(const struct Mem *mems, uint32_t count, uint32_t *size,
+mem_encode_array(const struct sql_mem *mems, uint32_t count, uint32_t *size,
 		 struct region *region)
 {
 	size_t used = region_used(region);
@@ -3059,7 +3060,7 @@ mem_encode_array(const struct Mem *mems, uint32_t count, uint32_t *size,
 	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
 		      set_encode_error, &is_error);
 	mpstream_encode_array(&stream, count);
-	for (const struct Mem *mem = mems; mem < mems + count; mem++)
+	for (const struct sql_mem *mem = mems; mem < mems + count; mem++)
 		mem_to_mpstream(mem, &stream);
 	mpstream_flush(&stream);
 	if (is_error) {
@@ -3080,7 +3081,7 @@ mem_encode_array(const struct Mem *mems, uint32_t count, uint32_t *size,
 }
 
 char *
-mem_encode_map(const struct Mem *mems, uint32_t count, uint32_t *size,
+mem_encode_map(const struct sql_mem *mems, uint32_t count, uint32_t *size,
 	       struct region *region)
 {
 	size_t used = region_used(region);
@@ -3090,8 +3091,8 @@ mem_encode_map(const struct Mem *mems, uint32_t count, uint32_t *size,
 		      set_encode_error, &is_error);
 	mpstream_encode_map(&stream, count);
 	for (uint32_t i = 0; i < count; ++i) {
-		const struct Mem *key = &mems[2 * i];
-		const struct Mem *value = &mems[2 * i + 1];
+		const struct sql_mem *key = &mems[2 * i];
+		const struct sql_mem *value = &mems[2 * i + 1];
 		if (mem_is_metatype(key) ||
 		    (key->type & (MEM_TYPE_UINT | MEM_TYPE_INT | MEM_TYPE_UUID |
 				  MEM_TYPE_STR)) == 0) {
@@ -3120,7 +3121,7 @@ error:
 
 /* Locate an element in a MAP or ARRAY using the given key.*/
 static int
-mp_getitem(const char **data, const struct Mem *key)
+mp_getitem(const char **data, const struct sql_mem *key)
 {
 	if (mp_typeof(**data) != MP_ARRAY && mp_typeof(**data) != MP_MAP) {
 		*data = NULL;
@@ -3136,7 +3137,7 @@ mp_getitem(const char **data, const struct Mem *key)
 			mp_next(data);
 		return 0;
 	}
-	struct Mem mem;
+	struct sql_mem mem;
 	mem_create(&mem);
 	uint32_t size = mp_decode_map(data);
 	for (uint32_t i = 0; i < size; ++i) {
@@ -3155,8 +3156,8 @@ mp_getitem(const char **data, const struct Mem *key)
 }
 
 int
-mem_getitem(const struct Mem *mem, const struct Mem *keys, int count,
-	    struct Mem *res)
+mem_getitem(const struct sql_mem *mem, const struct sql_mem *keys, int count,
+	    struct sql_mem *res)
 {
 	assert(count > 0);
 	assert(mem_is_map(mem) || mem_is_array(mem));
@@ -3180,13 +3181,13 @@ mem_getitem(const struct Mem *mem, const struct Mem *keys, int count,
  * Allocate a sequence of initialized vdbe memory registers
  * on region.
  */
-static struct Mem *
+static struct sql_mem *
 vdbemem_alloc_on_region(uint32_t count)
 {
 	struct region *region = &fiber()->gc;
 	size_t size;
-	struct Mem *ret = region_alloc_array(region, typeof(*ret), count,
-					     &size);
+	struct sql_mem *ret = region_alloc_array(region, typeof(*ret), count,
+						 &size);
 	if (ret == NULL) {
 		diag_set(OutOfMemory, size, "region_alloc_array", "ret");
 		return NULL;
@@ -3206,7 +3207,7 @@ port_vdbemem_dump_lua(struct port *base, struct lua_State *L, bool is_flat)
 	struct port_vdbemem *port = (struct port_vdbemem *) base;
 	assert(is_flat == true);
 	for (uint32_t i = 0; i < port->mem_count; i++) {
-		struct Mem *mem = (struct Mem *)port->mem + i;
+		struct sql_mem *mem = (struct sql_mem *)port->mem + i;
 		switch (mem->type) {
 		case MEM_TYPE_INT:
 			luaL_pushint64(L, mem->u.i);
@@ -3262,7 +3263,7 @@ port_vdbemem_get_msgpack(struct port *base, uint32_t *size)
 		      set_encode_error, &is_error);
 	mpstream_encode_array(&stream, port->mem_count);
 	for (uint32_t i = 0; i < port->mem_count && !is_error; i++)
-		mem_to_mpstream((struct Mem *)port->mem + i, &stream);
+		mem_to_mpstream((struct sql_mem *)port->mem + i, &stream);
 	mpstream_flush(&stream);
 	*size = region_used(region) - region_svp;
 	if (is_error)
@@ -3279,7 +3280,7 @@ error:
 static const struct port_vtab port_vdbemem_vtab;
 
 void
-port_vdbemem_create(struct port *base, struct Mem *mem,
+port_vdbemem_create(struct port *base, struct sql_mem *mem,
 		    uint32_t mem_count)
 {
 	struct port_vdbemem *port = (struct port_vdbemem *) base;
@@ -3288,7 +3289,7 @@ port_vdbemem_create(struct port *base, struct Mem *mem,
 	port->mem_count = mem_count;
 }
 
-static struct Mem *
+static struct sql_mem *
 port_vdbemem_get_vdbemem(struct port *base, uint32_t *mem_count)
 {
 	struct port_vdbemem *port = (struct port_vdbemem *) base;
@@ -3307,7 +3308,7 @@ static const struct port_vtab port_vdbemem_vtab = {
 	.destroy = NULL,
 };
 
-struct Mem *
+struct sql_mem *
 port_lua_get_vdbemem(struct port *base, uint32_t *size)
 {
 	struct port_lua *port = (struct port_lua *) base;
@@ -3322,7 +3323,7 @@ port_lua_get_vdbemem(struct port *base, uint32_t *size)
 	assert(*size == 1);
 	struct region *region = &fiber()->gc;
 	size_t region_svp = region_used(region);
-	struct Mem *val = vdbemem_alloc_on_region(argc);
+	struct sql_mem *val = vdbemem_alloc_on_region(argc);
 	if (val == NULL)
 		return NULL;
 	for (int i = 0; i < argc; i++) {
@@ -3435,7 +3436,7 @@ error:
 	return NULL;
 }
 
-struct Mem *
+struct sql_mem *
 port_c_get_vdbemem(struct port *base, uint32_t *size)
 {
 	struct port_c *port = (struct port_c *)base;
@@ -3448,7 +3449,7 @@ port_c_get_vdbemem(struct port *base, uint32_t *size)
 	assert(*size == 1);
 	struct region *region = &fiber()->gc;
 	size_t region_svp = region_used(region);
-	struct Mem *val = vdbemem_alloc_on_region(port->size);
+	struct sql_mem *val = vdbemem_alloc_on_region(port->size);
 	if (val == NULL)
 		return NULL;
 	int i = 0;
