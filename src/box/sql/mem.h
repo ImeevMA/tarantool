@@ -120,56 +120,50 @@ struct sql_mem {
 };
 
 static inline bool
-mem_is_null(const struct sql_mem *mem)
+sql_mem_is_null(const struct sql_mem *mem)
 {
 	return mem->type == MEM_TYPE_NULL;
 }
 
 static inline bool
-mem_is_uint(const struct sql_mem *mem)
+sql_mem_is_uint(const struct sql_mem *mem)
 {
 	return mem->type == MEM_TYPE_UINT;
 }
 
 static inline bool
-mem_is_nint(const struct sql_mem *mem)
-{
-	return mem->type == MEM_TYPE_INT;
-}
-
-static inline bool
-mem_is_str(const struct sql_mem *mem)
+sql_mem_is_str(const struct sql_mem *mem)
 {
 	return mem->type == MEM_TYPE_STR;
 }
 
 static inline bool
-mem_is_num(const struct sql_mem *mem)
+sql_mem_is_num(const struct sql_mem *mem)
 {
 	return (mem->type & (MEM_TYPE_UINT | MEM_TYPE_INT | MEM_TYPE_DOUBLE |
 			     MEM_TYPE_DEC)) != 0;
 }
 
 static inline bool
-mem_is_any(const struct sql_mem *mem)
+sql_mem_is_any(const struct sql_mem *mem)
 {
 	return mem->group == MEM_GROUP_ANY;
 }
 
 static inline bool
-mem_is_container(const struct sql_mem *mem)
+sql_mem_is_container(const struct sql_mem *mem)
 {
 	return (mem->type & (MEM_TYPE_MAP | MEM_TYPE_ARRAY)) != 0;
 }
 
 static inline bool
-mem_is_metatype(const struct sql_mem *mem)
+sql_mem_is_metatype(const struct sql_mem *mem)
 {
 	return mem->group != MEM_GROUP_DATA;
 }
 
 static inline bool
-mem_is_double(const struct sql_mem *mem)
+sql_mem_is_double(const struct sql_mem *mem)
 {
 	return mem->type == MEM_TYPE_DOUBLE;
 }

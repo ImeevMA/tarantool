@@ -564,7 +564,7 @@ case OP_Gosub: {            /* jump */
  */
 case OP_Return: {           /* in1 */
 	pIn1 = &aMem[pOp->p1];
-	assert(mem_is_uint(pIn1));
+	assert(sql_mem_is_uint(pIn1));
 	pOp = &aOp[pIn1->u.u];
 	mem_set_invalid(pIn1);
 	break;
@@ -603,7 +603,7 @@ case OP_InitCoroutine: {     /* jump */
 case OP_EndCoroutine: {           /* in1 */
 	VdbeOp *pCaller;
 	pIn1 = &aMem[pOp->p1];
-	assert(mem_is_uint(pIn1));
+	assert(sql_mem_is_uint(pIn1));
 	assert(pIn1->u.u < (uint64_t) p->nOp);
 	pCaller = &aOp[pIn1->u.u];
 	assert(pCaller->opcode==OP_Yield);
@@ -1208,7 +1208,7 @@ case OP_FunctionByName: {
 	}
 	assert(size == 1);
 	mem_move(pOut, &mem[0]);
-	assert(mem_is_null(&mem[0]) && mem_is_trivial(&mem[0]));
+	assert(sql_mem_is_null(&mem[0]) && mem_is_trivial(&mem[0]));
 	region_truncate(region, region_svp);
 	if (!mem_is_field_compatible(pOut, returns)) {
 		diag_set(ClientError, ER_FUNC_INVALID_RETURN_TYPE, pOp->p4.z,
@@ -1309,7 +1309,7 @@ case OP_ShiftRight: {           /* same as TK_RSHIFT, in1, in2, out3 */
 case OP_AddImm: {            /* in1 */
 	pIn1 = &aMem[pOp->p1];
 	memAboutToChange(p, pIn1);
-	assert(mem_is_uint(pIn1) && pOp->p2 >= 0);
+	assert(sql_mem_is_uint(pIn1) && pOp->p2 >= 0);
 	pIn1->u.u += pOp->p2;
 	break;
 }
@@ -1411,12 +1411,12 @@ case OP_Getitem: {
 	int count = pOp->p1;
 	assert(count > 0);
 	struct sql_mem *value = &aMem[pOp->p3 + count];
-	if (mem_is_null(value)) {
+	if (sql_mem_is_null(value)) {
 		diag_set(ClientError, ER_SQL_EXECUTE, "Selecting is not "
 			 "possible from NULL");
 		goto abort_due_to_error;
 	}
-	if (mem_is_any(value) || !mem_is_container(value)) {
+	if (sql_mem_is_any(value) || !sql_mem_is_container(value)) {
 		diag_set(ClientError, ER_SQL_TYPE_MISMATCH, mem_str(value),
 			 "map or array");
 		goto abort_due_to_error;
@@ -1720,7 +1720,7 @@ case OP_Or: {             /* same as TK_OR, in1, in2, out3 */
 	int v2;    /* Right operand: 0==FALSE, 1==TRUE, 2==UNKNOWN or NULL */
 
 	pIn1 = &aMem[pOp->p1];
-	if (mem_is_null(pIn1)) {
+	if (sql_mem_is_null(pIn1)) {
 		v1 = 2;
 	} else if (mem_is_bool(pIn1)) {
 		v1 = pIn1->u.b;
@@ -1730,7 +1730,7 @@ case OP_Or: {             /* same as TK_OR, in1, in2, out3 */
 		goto abort_due_to_error;
 	}
 	pIn2 = &aMem[pOp->p2];
-	if (mem_is_null(pIn2)) {
+	if (sql_mem_is_null(pIn2)) {
 		v2 = 2;
 	} else if (mem_is_bool(pIn2)) {
 		v2 = pIn2->u.b;
@@ -1762,7 +1762,7 @@ case OP_Or: {             /* same as TK_OR, in1, in2, out3 */
 case OP_Not: {                /* same as TK_NOT, in1, out2 */
 	pIn1 = &aMem[pOp->p1];
 	pOut = vdbe_prepare_null_out(p, pOp->p2);
-	if (!mem_is_null(pIn1)) {
+	if (!sql_mem_is_null(pIn1)) {
 		if (!mem_is_bool(pIn1)) {
 			diag_set(ClientError, ER_SQL_TYPE_MISMATCH,
 				 mem_str(pIn1), "boolean");
@@ -1819,7 +1819,7 @@ case OP_If:                 /* jump, in1 */
 case OP_IfNot: {            /* jump, in1 */
 	int c;
 	pIn1 = &aMem[pOp->p1];
-	if (mem_is_null(pIn1)) {
+	if (sql_mem_is_null(pIn1)) {
 		c = pOp->p3;
 	} else if (mem_is_bool(pIn1)) {
 		c = pOp->opcode == OP_IfNot ? ! pIn1->u.b : pIn1->u.b;
@@ -1841,7 +1841,7 @@ case OP_IfNot: {            /* jump, in1 */
  */
 case OP_IsNull: {            /* same as TK_ISNULL, jump, in1 */
 	pIn1 = &aMem[pOp->p1];
-	if (mem_is_null(pIn1)) {
+	if (sql_mem_is_null(pIn1)) {
 		goto jump_to_p2;
 	}
 	break;
@@ -1854,7 +1854,7 @@ case OP_IsNull: {            /* same as TK_ISNULL, jump, in1 */
  */
 case OP_NotNull: {            /* same as TK_NOTNULL, jump, in1 */
 	pIn1 = &aMem[pOp->p1];
-	if (!mem_is_null(pIn1)) {
+	if (!sql_mem_is_null(pIn1)) {
 		goto jump_to_p2;
 	}
 	break;
@@ -1935,7 +1935,7 @@ case OP_Column: {
 	if (vdbe_field_ref_fetch(&pC->field_ref, p2, pDest) != 0)
 		goto abort_due_to_error;
 
-	if (mem_is_null(pDest) &&
+	if (sql_mem_is_null(pDest) &&
 	    (uint32_t) p2  >= pC->field_ref.field_count &&
 	    default_val_mem != NULL) {
 		mem_copy_as_ephemeral(pDest, default_val_mem);
@@ -2153,15 +2153,15 @@ case OP_Count: {         /* out2 */
 case OP_CreateForeignKey: {
 	assert(pOp->p1 >= 0);
 	struct sql_mem *mems = &aMem[pOp->p1];
-	assert(mem_is_uint(&mems[0]) && mem_is_uint(&mems[1]));
+	assert(sql_mem_is_uint(&mems[0]) && sql_mem_is_uint(&mems[1]));
 	uint32_t child_id = mems[0].u.u;
 	uint32_t parent_id = mems[1].u.u;
 	const char *name = pOp->p4.z;
 	const char *mapping = NULL;
 	uint32_t child_fieldno = 0;
 	uint32_t parent_fieldno = 0;
-	if (mem_is_uint(&mems[2])) {
-		assert(mem_is_uint(&mems[3]));
+	if (sql_mem_is_uint(&mems[2])) {
+		assert(sql_mem_is_uint(&mems[3]));
 		child_fieldno = mems[2].u.u;
 		parent_fieldno = mems[3].u.u;
 	} else {
@@ -2590,7 +2590,7 @@ case OP_SeekGT: {       /* jump, in3 */
 		struct sql_mem *mem = &mems[i];
 		if (mem_is_field_compatible(mem, type))
 			continue;
-		if (!sql_type_is_numeric(type) || !mem_is_num(mem)) {
+		if (!sql_type_is_numeric(type) || !sql_mem_is_num(mem)) {
 			diag_set(ClientError, ER_SQL_TYPE_MISMATCH,
 				 mem_str(mem), field_type_strs[type]);
 			goto abort_due_to_error;
@@ -2693,7 +2693,7 @@ case OP_SeekGE: {       /* jump, in3 */
 		struct sql_mem *mem = &mems[i];
 		if (mem_is_field_compatible(mem, type))
 			continue;
-		if (!sql_type_is_numeric(type) || !mem_is_num(mem)) {
+		if (!sql_type_is_numeric(type) || !sql_mem_is_num(mem)) {
 			diag_set(ClientError, ER_SQL_TYPE_MISMATCH,
 				 mem_str(mem), field_type_strs[type]);
 			goto abort_due_to_error;
@@ -2845,7 +2845,7 @@ case OP_Found: {        /* jump, in3 */
 		 * conflict
 		 */
 		for(ii=0; ii<pIdxKey->nField; ii++) {
-			if (mem_is_null(&pIdxKey->aMem[ii])) {
+			if (sql_mem_is_null(&pIdxKey->aMem[ii])) {
 				takeJump = 1;
 				break;
 			}
@@ -2970,7 +2970,7 @@ case OP_FCopy: {     /* out2 */
 		pIn1 = &aMem[pOp->p1];
 	}
 
-	if ((pOp->p3 & OPFLAG_NOOP_IF_NULL) != 0 && mem_is_null(pIn1)) {
+	if ((pOp->p3 & OPFLAG_NOOP_IF_NULL) != 0 && sql_mem_is_null(pIn1)) {
 		pOut = vdbe_prepare_null_out(p, pOp->p2);
 	} else {
 		assert(memIsValid(pIn1));
@@ -3527,7 +3527,7 @@ case OP_IdxInsert: {
 	}
 	if ((pOp->p5 & OPFLAG_NCHANGE) != 0)
 		p->nChange++;
-	if (pOp->p3 > 0 && mem_is_null(&aMem[pOp->p3])) {
+	if (pOp->p3 > 0 && sql_mem_is_null(&aMem[pOp->p3])) {
 		assert(space->sequence != NULL);
 		int64_t value;
 		if (sequence_get_value(space->sequence, &value) != 0)
@@ -4099,7 +4099,7 @@ case OP_Param: {           /* out2 */
 case OP_IfPos: {        /* jump, in1 */
 	pIn1 = &aMem[pOp->p1];
 	assert(mem_is_int(pIn1));
-	if (mem_is_uint(pIn1) && pIn1->u.u != 0) {
+	if (sql_mem_is_uint(pIn1) && pIn1->u.u != 0) {
 		assert(pOp->p3 >= 0);
 		uint64_t res = pIn1->u.u - (uint64_t) pOp->p3;
 		/*
@@ -4133,8 +4133,8 @@ case OP_OffsetLimit: {    /* in1, out2, in3 */
 	pIn3 = &aMem[pOp->p3];
 	pOut = vdbe_prepare_null_out(p, pOp->p2);
 
-	assert(mem_is_uint(pIn1));
-	assert(mem_is_uint(pIn3));
+	assert(sql_mem_is_uint(pIn1));
+	assert(sql_mem_is_uint(pIn3));
 	uint64_t x = pIn1->u.u;
 	uint64_t rhs = pIn3->u.u;
 	bool unused;
@@ -4157,7 +4157,7 @@ case OP_OffsetLimit: {    /* in1, out2, in3 */
  */
 case OP_IfNotZero: {        /* jump, in1 */
 	pIn1 = &aMem[pOp->p1];
-	assert(mem_is_uint(pIn1));
+	assert(sql_mem_is_uint(pIn1));
 	if (pIn1->u.u > 0) {
 		pIn1->u.u--;
 		goto jump_to_p2;
@@ -4173,7 +4173,7 @@ case OP_IfNotZero: {        /* jump, in1 */
  */
 case OP_DecrJumpZero: {      /* jump, in1 */
 	pIn1 = &aMem[pOp->p1];
-	assert(mem_is_uint(pIn1));
+	assert(sql_mem_is_uint(pIn1));
 	if (pIn1->u.u > 0)
 		pIn1->u.u--;
 	if (pIn1->u.u == 0) goto jump_to_p2;
@@ -4373,7 +4373,7 @@ case OP_SetSession: {
 		break;
 	}
 	case FIELD_TYPE_STRING: {
-		if (!mem_is_str(pIn1))
+		if (!sql_mem_is_str(pIn1))
 			goto invalid_type;
 		const char *str = pIn1->u.z;
 		uint32_t size = mp_sizeof_str(pIn1->u.n);

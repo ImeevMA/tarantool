@@ -2107,7 +2107,7 @@ sqlVdbeSorterCompare(const struct VdbeCursor *pCsr, struct sql_mem *pVal,
 	pKey = vdbeSorterRowkey(pSorter, &nKey);
 	sqlVdbeRecordUnpackMsgpack(pCsr->key_def, pKey, r2);
 	for (i = 0; i < nKeyCol; i++) {
-		if (mem_is_null(&r2->aMem[i])) {
+		if (sql_mem_is_null(&r2->aMem[i])) {
 			*pRes = -1;
 			return 0;
 		}

@@ -1263,7 +1263,7 @@ int
 mem_to_number(struct sql_mem *mem)
 {
 	assert(mem->type < MEM_TYPE_INVALID);
-	if (mem_is_num(mem)) {
+	if (sql_mem_is_num(mem)) {
 		mem->group = MEM_GROUP_NUMBER;
 		return 0;
 	}
@@ -1496,7 +1496,7 @@ mem_cast_implicit(struct sql_mem *mem, enum field_type type)
 		}
 		return -1;
 	case FIELD_TYPE_NUMBER:
-		if (!mem_is_num(mem))
+		if (!sql_mem_is_num(mem))
 			return -1;
 		mem->group = MEM_GROUP_NUMBER;
 		return 0;
@@ -1552,7 +1552,7 @@ mem_cast_implicit(struct sql_mem *mem, enum field_type type)
 int
 mem_cast_implicit_number(struct sql_mem *mem, enum field_type type)
 {
-	assert(mem_is_num(mem) && sql_type_is_numeric(type));
+	assert(sql_mem_is_num(mem) && sql_type_is_numeric(type));
 	switch (type) {
 	case FIELD_TYPE_UNSIGNED:
 		switch (mem->type) {
@@ -1867,13 +1867,13 @@ mem_concat(const struct sql_mem *a, const struct sql_mem *b, struct sql_mem *res
 	}
 	/* Concatenation operation can be applied only to strings and blobs. */
 	if (((b->type & (MEM_TYPE_STR | MEM_TYPE_BIN)) == 0) ||
-	    mem_is_metatype(b)) {
+	    sql_mem_is_metatype(b)) {
 		diag_set(ClientError, ER_INCONSISTENT_TYPES,
 			 "string or varbinary", mem_str(b));
 		return -1;
 	}
 	if (((a->type & (MEM_TYPE_STR | MEM_TYPE_BIN)) == 0) ||
-	    mem_is_metatype(a)) {
+	    sql_mem_is_metatype(a)) {
 		diag_set(ClientError, ER_INCONSISTENT_TYPES,
 			 "string or varbinary", mem_str(a));
 		return -1;
@@ -1905,12 +1905,12 @@ mem_concat(const struct sql_mem *a, const struct sql_mem *b, struct sql_mem *res
 static inline int
 check_types_numeric_arithmetic(const struct sql_mem *a, const struct sql_mem *b)
 {
-	if (!mem_is_num(a) || mem_is_metatype(a)) {
+	if (!sql_mem_is_num(a) || sql_mem_is_metatype(a)) {
 		diag_set(ClientError, ER_SQL_TYPE_MISMATCH, mem_str(a),
 			 "integer, decimal or double");
 		return -1;
 	}
-	if (!mem_is_num(b) || mem_is_metatype(b)) {
+	if (!sql_mem_is_num(b) || sql_mem_is_metatype(b)) {
 		diag_set(ClientError, ER_SQL_TYPE_MISMATCH, mem_str(b),
 			 "integer, decimal or double");
 		return -1;
@@ -1926,8 +1926,8 @@ check_types_numeric_arithmetic(const struct sql_mem *a, const struct sql_mem *b)
 static int
 mem_add_num(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
-	assert(mem_is_num(left) && !mem_is_metatype(left));
-	if (!mem_is_num(right) || mem_is_metatype(right)) {
+	assert(sql_mem_is_num(left) && !sql_mem_is_metatype(left));
+	if (!sql_mem_is_num(right) || sql_mem_is_metatype(right)) {
 		diag_set(ClientError, ER_SQL_TYPE_MISMATCH, mem_str(right),
 			 "integer, decimal or double");
 		return -1;
@@ -1973,8 +1973,8 @@ mem_add_num(const struct sql_mem *left, const struct sql_mem *right, struct sql_
 static int
 mem_add_dt(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
-	assert(mem_is_datetime(left) && !mem_is_metatype(left));
-	if (!mem_is_interval(right) || mem_is_metatype(right)) {
+	assert(mem_is_datetime(left) && !sql_mem_is_metatype(left));
+	if (!mem_is_interval(right) || sql_mem_is_metatype(right)) {
 		diag_set(ClientError, ER_SQL_TYPE_MISMATCH, mem_str(right),
 			 "interval");
 		return -1;
@@ -1992,10 +1992,10 @@ mem_add_dt(const struct sql_mem *left, const struct sql_mem *right, struct sql_m
 static int
 mem_add_itv(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
-	assert(mem_is_interval(left) && !mem_is_metatype(left));
-	if (mem_is_datetime(right) && !mem_is_metatype(right))
+	assert(mem_is_interval(left) && !sql_mem_is_metatype(left));
+	if (mem_is_datetime(right) && !sql_mem_is_metatype(right))
 		return mem_add_dt(right, left, result);
-	if (!mem_is_interval(right) || mem_is_metatype(right)) {
+	if (!mem_is_interval(right) || sql_mem_is_metatype(right)) {
 		diag_set(ClientError, ER_SQL_TYPE_MISMATCH, mem_str(right),
 			 "datetime or interval");
 		return -1;
@@ -2011,8 +2011,8 @@ mem_add(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem 
 		mem_set_null(result);
 		return 0;
 	}
-	if (!mem_is_metatype(left)) {
-		if (mem_is_num(left))
+	if (!sql_mem_is_metatype(left)) {
+		if (sql_mem_is_num(left))
 			return mem_add_num(left, right, result);
 		if (mem_is_datetime(left))
 			return mem_add_dt(left, right, result);
@@ -2032,8 +2032,8 @@ mem_add(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem 
 static int
 mem_sub_num(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
-	assert(mem_is_num(left) && !mem_is_metatype(left));
-	if (!mem_is_num(right) || mem_is_metatype(right)) {
+	assert(sql_mem_is_num(left) && !sql_mem_is_metatype(left));
+	if (!sql_mem_is_num(right) || sql_mem_is_metatype(right)) {
 		diag_set(ClientError, ER_SQL_TYPE_MISMATCH, mem_str(right),
 			 "integer, decimal or double");
 		return -1;
@@ -2081,8 +2081,8 @@ mem_sub_num(const struct sql_mem *left, const struct sql_mem *right, struct sql_
 static int
 mem_sub_dt(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
-	assert(mem_is_datetime(left) && !mem_is_metatype(left));
-	if (mem_is_datetime(right) && !mem_is_metatype(right)) {
+	assert(mem_is_datetime(left) && !sql_mem_is_metatype(left));
+	if (mem_is_datetime(right) && !sql_mem_is_metatype(right)) {
 		struct interval res;
 		memset(&res, 0, sizeof(res));
 		mem_set_interval(result, &res);
@@ -2090,7 +2090,7 @@ mem_sub_dt(const struct sql_mem *left, const struct sql_mem *right, struct sql_m
 					     &right->u.dt);
 	}
 
-	if (!mem_is_interval(right) || mem_is_metatype(right)) {
+	if (!mem_is_interval(right) || sql_mem_is_metatype(right)) {
 		diag_set(ClientError, ER_SQL_TYPE_MISMATCH, mem_str(right),
 			 "datetime or interval");
 		return -1;
@@ -2107,8 +2107,8 @@ mem_sub_dt(const struct sql_mem *left, const struct sql_mem *right, struct sql_m
 static int
 mem_sub_itv(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem *result)
 {
-	assert(mem_is_interval(left) && !mem_is_metatype(left));
-	if (!mem_is_interval(right) || mem_is_metatype(right)) {
+	assert(mem_is_interval(left) && !sql_mem_is_metatype(left));
+	if (!mem_is_interval(right) || sql_mem_is_metatype(right)) {
 		diag_set(ClientError, ER_SQL_TYPE_MISMATCH, mem_str(right),
 			 "interval");
 		return -1;
@@ -2124,8 +2124,8 @@ mem_sub(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem 
 		mem_set_null(result);
 		return 0;
 	}
-	if (!mem_is_metatype(left)) {
-		if (mem_is_num(left))
+	if (!sql_mem_is_metatype(left)) {
+		if (sql_mem_is_num(left))
 			return mem_sub_num(left, right, result);
 		if (mem_is_datetime(left))
 			return mem_sub_dt(left, right, result);
@@ -2244,12 +2244,12 @@ mem_rem(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem 
 		mem_set_null(result);
 		return 0;
 	}
-	if (!mem_is_int(left) || mem_is_metatype(left)) {
+	if (!mem_is_int(left) || sql_mem_is_metatype(left)) {
 		diag_set(ClientError, ER_SQL_TYPE_MISMATCH, mem_str(left),
 			 "integer");
 		return -1;
 	}
-	if (!mem_is_int(right) || mem_is_metatype(right)) {
+	if (!mem_is_int(right) || sql_mem_is_metatype(right)) {
 		diag_set(ClientError, ER_SQL_TYPE_MISMATCH, mem_str(right),
 			 "integer");
 		return -1;
@@ -2272,12 +2272,12 @@ mem_rem(const struct sql_mem *left, const struct sql_mem *right, struct sql_mem 
 static inline int
 check_types_unsigned_bitwise(const struct sql_mem *a, const struct sql_mem *b)
 {
-	if (a->type != MEM_TYPE_UINT || mem_is_metatype(a)) {
+	if (a->type != MEM_TYPE_UINT || sql_mem_is_metatype(a)) {
 		diag_set(ClientError, ER_SQL_TYPE_MISMATCH, mem_str(a),
 			 "unsigned");
 		return -1;
 	}
-	if (b->type != MEM_TYPE_UINT || mem_is_metatype(b)) {
+	if (b->type != MEM_TYPE_UINT || sql_mem_is_metatype(b)) {
 		diag_set(ClientError, ER_SQL_TYPE_MISMATCH, mem_str(b),
 			 "unsigned");
 		return -1;
@@ -2342,11 +2342,11 @@ mem_shift_right(const struct sql_mem *left, const struct sql_mem *right,
 int
 mem_bit_not(const struct sql_mem *mem, struct sql_mem *result)
 {
-	if (mem_is_null(mem)) {
+	if (sql_mem_is_null(mem)) {
 		mem_set_null(result);
 		return 0;
 	}
-	if (mem->type != MEM_TYPE_UINT || mem_is_metatype(mem)) {
+	if (mem->type != MEM_TYPE_UINT || sql_mem_is_metatype(mem)) {
 		diag_set(ClientError, ER_SQL_TYPE_MISMATCH, mem_str(mem),
 			 "unsigned");
 		return -1;
@@ -2373,7 +2373,7 @@ mem_cmp_bin(const struct sql_mem *a, const struct sql_mem *b)
 static int
 mem_cmp_num(const struct sql_mem *a, const struct sql_mem *b)
 {
-	assert(mem_is_num(a) && mem_is_num(b));
+	assert(sql_mem_is_num(a) && sql_mem_is_num(b));
 	if ((a->type & b->type & MEM_TYPE_DOUBLE) != 0) {
 		if (a->u.r > b->u.r)
 			return 1;
@@ -3093,7 +3093,7 @@ mem_encode_map(const struct sql_mem *mems, uint32_t count, uint32_t *size,
 	for (uint32_t i = 0; i < count; ++i) {
 		const struct sql_mem *key = &mems[2 * i];
 		const struct sql_mem *value = &mems[2 * i + 1];
-		if (mem_is_metatype(key) ||
+		if (sql_mem_is_metatype(key) ||
 		    (key->type & (MEM_TYPE_UINT | MEM_TYPE_INT | MEM_TYPE_UUID |
 				  MEM_TYPE_STR)) == 0) {
 			diag_set(ClientError, ER_SQL_TYPE_MISMATCH,
@@ -3129,7 +3129,7 @@ mp_getitem(const char **data, const struct sql_mem *key)
 	}
 	if (mp_typeof(**data) == MP_ARRAY) {
 		uint32_t size = mp_decode_array(data);
-		if (!mem_is_uint(key) || key->u.u == 0 || key->u.u > size) {
+		if (!sql_mem_is_uint(key) || key->u.u == 0 || key->u.u > size) {
 			*data = NULL;
 			return 0;
 		}
@@ -3144,7 +3144,7 @@ mp_getitem(const char **data, const struct sql_mem *key)
 		uint32_t len;
 		if (mem_from_mp_ephemeral(&mem, *data, &len) != 0)
 			return -1;
-		assert(mem_is_trivial(&mem) && !mem_is_metatype(&mem));
+		assert(mem_is_trivial(&mem) && !sql_mem_is_metatype(&mem));
 		*data += len;
 		if (mem_is_comparable(&mem) &&
 		    mem_cmp_scalar(&mem, key, NULL) == 0)
