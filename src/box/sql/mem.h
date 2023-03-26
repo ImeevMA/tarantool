@@ -798,7 +798,12 @@ mem_mp_type(const struct Mem *mem);
 #define memIsValid(M)  ((M)->type != MEM_TYPE_INVALID)
 #endif
 
-int sqlVdbeMemClearAndResize(struct Mem * pMem, int n);
+/**
+ * Change the mem->buf allocation to be at least n bytes. If mem->buf already
+ * meets or exceeds the requested size, this routine is a no-op.
+ */
+void
+sqlVdbeMemClearAndResize(struct Mem *mem, size_t n);
 
 /*
  * Release an array of N Mem elements

@@ -59,8 +59,8 @@
  * blob if bPreserve is true.  If bPreserve is false, any prior content
  * in pMem->u.z is discarded.
  */
-static int
-sqlVdbeMemGrow(struct Mem *pMem, int n, int preserve);
+static void
+sqlVdbeMemGrow(struct Mem *pMem, size_t n, int bPreserve);
 
 enum {
 	BUF_SIZE = 32,
@@ -403,15 +403,13 @@ mem_copy_bytes(struct Mem *mem, const char *value, uint32_t size,
 {
 	if (mem_is_bytes(mem) && mem->u.z == value) {
 		/* Own value, but might be ephemeral. Make it own if so. */
-		if (sqlVdbeMemGrow(mem, size, 1) != 0)
-			return -1;
+		sqlVdbeMemGrow(mem, size, 1);
 		mem->type = type;
 		mem->group = MEM_GROUP_DATA;
 		return 0;
 	}
 	mem_clear(mem);
-	if (sqlVdbeMemGrow(mem, size, 0) != 0)
-		return -1;
+	sqlVdbeMemGrow(mem, size, 0);
 	memcpy(mem->u.z, value, size);
 	mem->u.n = size;
 	mem->type = type;
@@ -958,8 +956,7 @@ double_to_str0(struct Mem *mem)
 {
 	assert(mem->type == MEM_TYPE_DOUBLE);
 	double r = mem->u.r;
-	if (sqlVdbeMemGrow(mem, BUF_SIZE, 0) != 0)
-		return -1;
+	sqlVdbeMemGrow(mem, BUF_SIZE, 0);
 	sql_snprintf(BUF_SIZE, mem->u.z, "%!.15g", r);
 	mem->u.n = strlen(mem->u.z);
 	mem->type = MEM_TYPE_STR;
@@ -1853,8 +1850,7 @@ mem_append(struct Mem *mem, const char *value, uint32_t len)
 		 * Force exponential buffer size growth to avoid having to call
 		 * this routine too often.
 		 */
-		if (sqlVdbeMemGrow(mem, new_size + mem->u.n, 1) != 0)
-			return -1;
+		sqlVdbeMemGrow(mem, new_size + mem->u.n, 1);
 	}
 	memcpy(&mem->u.z[mem->u.n], value, len);
 	mem->u.n = new_size;
@@ -1894,8 +1890,7 @@ mem_concat(const struct Mem *a, const struct Mem *b, struct Mem *result)
 		diag_set(ClientError, ER_SQL_EXECUTE, "string or blob too big");
 		return -1;
 	}
-	if (sqlVdbeMemGrow(result, size, result == a) != 0)
-		return -1;
+	sqlVdbeMemGrow(result, size, result == a);
 
 	result->type = a->type;
 	result->group = MEM_GROUP_DATA;
@@ -2759,15 +2754,15 @@ mem_mp_type(const struct Mem *mem)
 	return MP_NIL;
 }
 
-static int
-sqlVdbeMemGrow(struct Mem *pMem, int n, int bPreserve)
+static void
+sqlVdbeMemGrow(struct Mem *pMem, size_t n, int bPreserve)
 {
 	/* If the bPreserve flag is set to true, then the memory cell must already
 	 * contain a valid string or blob value.
 	 */
 	assert(bPreserve == 0 || mem_is_bytes(pMem));
 
-	if (pMem->size < n) {
+	if ((size_t)pMem->size < n) {
 		if (n < 32)
 			n = 32;
 		if (bPreserve && pMem->size > 0 && pMem->u.z == pMem->buf) {
@@ -2788,29 +2783,16 @@ sqlVdbeMemGrow(struct Mem *pMem, int n, int bPreserve)
 
 	pMem->u.z = pMem->buf;
 	pMem->is_ephemeral = false;
-	return 0;
 }
 
-/*
- * Change the pMem->buf allocation to be at least szNew bytes.
- * If pMem->buf already meets or exceeds the requested size, this
- * routine is a no-op.
- *
- * Any prior string or blob content in the pMem object may be discarded.
- * The pMem->xDel destructor is called, if it exists. Though STRING, VARBINARY,
- * MAP and ARRAY values may be discarded, all other values are preserved.
- *
- * Return 0 on success or -1 if unable to complete the resizing.
- */
-int
-sqlVdbeMemClearAndResize(struct Mem *pMem, int szNew)
+void
+sqlVdbeMemClearAndResize(struct Mem *pMem, size_t szNew)
 {
 	assert(szNew > 0);
-	if (pMem->size < szNew) {
+	if ((size_t)pMem->size < szNew) {
 		return sqlVdbeMemGrow(pMem, szNew, 0);
 	}
 	pMem->u.z = pMem->buf;
-	return 0;
 }
 
 void
@@ -2988,8 +2970,8 @@ mem_from_mp(struct Mem *mem, const char *buf, uint32_t *len)
 {
 	if (mem_from_mp_ephemeral(mem, buf, len) != 0)
 		return -1;
-	if (mem_is_bytes(mem) && sqlVdbeMemGrow(mem, mem->u.n, 1) != 0)
-		return -1;
+	if (mem_is_bytes(mem))
+		sqlVdbeMemGrow(mem, mem->u.n, 1);
 	return 0;
 }
 

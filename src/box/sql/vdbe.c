@@ -196,18 +196,16 @@ allocateCursor(
 		sqlVdbeFreeCursor(p->apCsr[iCur]);
 		p->apCsr[iCur] = 0;
 	}
-	if (sqlVdbeMemClearAndResize(pMem, nByte) == 0) {
-		pCx = (VdbeCursor *)pMem->u.z;
-		p->apCsr[iCur] = pCx;
-		memset(pCx, 0, offsetof(VdbeCursor,uc));
-		pCx->eCurType = eCurType;
-		pCx->nField = nField;
-		vdbe_field_ref_create(&pCx->field_ref, nField);
-		if (eCurType==CURTYPE_TARANTOOL) {
-			pCx->uc.pCursor =
-				(struct BtCursor *)&pMem->u.z[bt_offset];
-			sqlCursorZero(pCx->uc.pCursor);
-		}
+	sqlVdbeMemClearAndResize(pMem, nByte);
+	pCx = (struct VdbeCursor *)pMem->u.z;
+	p->apCsr[iCur] = pCx;
+	memset(pCx, 0, offsetof(struct VdbeCursor, uc));
+	pCx->eCurType = eCurType;
+	pCx->nField = nField;
+	vdbe_field_ref_create(&pCx->field_ref, nField);
+	if (eCurType == CURTYPE_TARANTOOL) {
+		pCx->uc.pCursor = (struct BtCursor *)&pMem->u.z[bt_offset];
+		sqlCursorZero(pCx->uc.pCursor);
 	}
 	return pCx;
 }
