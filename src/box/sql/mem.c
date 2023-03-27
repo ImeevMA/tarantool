@@ -381,6 +381,7 @@ mem_set_interval(struct sql_mem *mem, const struct interval *itv)
 void
 mem_set_str(struct sql_mem *mem, char *value, uint32_t len)
 {
+	assert(len <= SQL_MAX_SQL_LENGTH);
 	mem_clear(mem);
 	mem->u.z = value;
 	mem->u.n = len;
@@ -391,9 +392,11 @@ mem_set_str(struct sql_mem *mem, char *value, uint32_t len)
 void
 mem_set_str0(struct sql_mem *mem, char *value)
 {
+	size_t len = strlen(value);
+	assert(len <= SQL_MAX_SQL_LENGTH);
 	mem_clear(mem);
 	mem->u.z = value;
-	mem->u.n = strlen(value);
+	mem->u.n = len;
 	mem->type = MEM_TYPE_STR;
 	assert(mem->group == MEM_GROUP_DATA);
 }
@@ -402,6 +405,7 @@ static int
 mem_copy_bytes(struct sql_mem *mem, const char *value, uint32_t size,
 	       enum sql_mem_type type)
 {
+	assert(len <= SQL_MAX_SQL_LENGTH);
 	if (mem_is_bytes(mem) && mem->u.z == value) {
 		/* Own value, but might be ephemeral. Make it own if so. */
 		if (sqlVdbeMemGrow(mem, size, 1) != 0)
@@ -423,6 +427,7 @@ mem_copy_bytes(struct sql_mem *mem, const char *value, uint32_t size,
 int
 mem_copy_str(struct sql_mem *mem, const char *value, uint32_t len)
 {
+	assert(len <= SQL_MAX_SQL_LENGTH);
 	return mem_copy_bytes(mem, value, len, MEM_TYPE_STR);
 }
 
@@ -430,6 +435,7 @@ int
 mem_copy_str0(struct sql_mem *mem, const char *value)
 {
 	uint32_t len = strlen(value);
+	assert(len <= SQL_MAX_SQL_LENGTH);
 	if (mem_copy_str(mem, value, len + 1) != 0)
 		return -1;
 	mem->u.n = len;
@@ -439,6 +445,7 @@ mem_copy_str0(struct sql_mem *mem, const char *value)
 void
 mem_set_bin(struct sql_mem *mem, char *value, uint32_t size)
 {
+	assert(size <= SQL_MAX_SQL_LENGTH);
 	mem_clear(mem);
 	mem->u.z = value;
 	mem->u.n = size;
@@ -449,12 +456,14 @@ mem_set_bin(struct sql_mem *mem, char *value, uint32_t size)
 int
 mem_copy_bin(struct sql_mem *mem, const char *value, uint32_t size)
 {
+	assert(size <= SQL_MAX_SQL_LENGTH);
 	return mem_copy_bytes(mem, value, size, MEM_TYPE_BIN);
 }
 
 void
 mem_set_map(struct sql_mem *mem, char *value, uint32_t size)
 {
+	assert(size <= SQL_MAX_SQL_LENGTH);
 	assert(mp_typeof(*value) == MP_MAP);
 	mem_clear(mem);
 	mem->u.z = value;
@@ -466,12 +475,14 @@ mem_set_map(struct sql_mem *mem, char *value, uint32_t size)
 int
 mem_copy_map(struct sql_mem *mem, const char *value, uint32_t size)
 {
+	assert(size <= SQL_MAX_SQL_LENGTH);
 	return mem_copy_bytes(mem, value, size, MEM_TYPE_MAP);
 }
 
 void
 mem_set_array(struct sql_mem *mem, char *value, uint32_t size)
 {
+	assert(size <= SQL_MAX_SQL_LENGTH);
 	assert(mp_typeof(*value) == MP_ARRAY);
 	mem_clear(mem);
 	mem->u.z = value;
@@ -483,6 +494,7 @@ mem_set_array(struct sql_mem *mem, char *value, uint32_t size)
 int
 mem_copy_array(struct sql_mem *mem, const char *value, uint32_t size)
 {
+	assert(size <= SQL_MAX_SQL_LENGTH);
 	return mem_copy_bytes(mem, value, size, MEM_TYPE_ARRAY);
 }
 
@@ -2778,6 +2790,7 @@ mem_mp_type(const struct sql_mem *mem)
 static int
 sqlVdbeMemGrow(struct sql_mem *pMem, int n, int bPreserve)
 {
+	assert(n <= SQL_MAX_SQL_LENGTH);
 	/* If the bPreserve flag is set to true, then the memory cell must already
 	 * contain a valid string or blob value.
 	 */
