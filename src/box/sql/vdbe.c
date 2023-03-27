@@ -792,7 +792,8 @@ case OP_String: {          /* out2 */
 	assert(pOp->p4.z!=0);
 	pOut = vdbe_prepare_null_out(p, pOp->p2);
 	assert(strlen(pOp->p4.z) == (size_t)pOp->p1);
-	mem_set_str0(pOut, pOp->p4.z);
+	if (mem_set_str0(pOut, pOp->p4.z) != 0)
+		goto abort_due_to_error;
 	UPDATE_MAX_BLOBSIZE(pOut);
 	break;
 }
@@ -838,12 +839,8 @@ case OP_Blob: {                /* out2 */
 	assert(pOp->p1 <= SQL_MAX_LENGTH);
 	pOut = vdbe_prepare_null_out(p, pOp->p2);
 	if (pOp->p3 == 0) {
-		/*
-		 * TODO: It is possible that vabinary should be stored as
-		 * ephemeral or static depending on value. There is no way to
-		 * determine right now, so it is stored as static.
-		 */
-		mem_set_bin(pOut, pOp->p4.z, pOp->p1);
+		if (mem_set_bin(pOut, pOp->p4.z, pOp->p1) != 0)
+			goto abort_due_to_error;
 	} else {
 		assert(pOp->p3 == SQL_SUBTYPE_MSGPACK);
 		if (mp_typeof(*pOp->p4.z) == MP_MAP)
@@ -2109,7 +2106,8 @@ case OP_MakeRecord: {
 		 * sure previously allocated memory has gone.
 		 */
 		mem_destroy(pOut);
-		mem_set_bin(pOut, tuple, tuple_size);
+		if (mem_set_bin(pOut, tuple, tuple_size) != 0)
+			goto abort_due_to_error;
 		mem_set_ephemeral(pOut);
 	}
 	assert(pOp->p3>0 && pOp->p3<=(p->nMem+1 - p->nCursor));
@@ -3179,7 +3177,8 @@ case OP_RowData: {
 		goto abort_due_to_error;
 	}
 	sqlCursorPayload(pCrsr, 0, n, buf);
-	mem_set_bin(pOut, buf, n);
+	if (mem_set_bin(pOut, buf, n) != 0)
+		goto abort_due_to_error;
 	UPDATE_MAX_BLOBSIZE(pOut);
 	REGISTER_TRACE(p, pOp->p2, pOut);
 	break;

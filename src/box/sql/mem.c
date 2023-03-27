@@ -378,24 +378,25 @@ mem_set_interval(struct sql_mem *mem, const struct interval *itv)
 	assert(mem->group == MEM_GROUP_DATA);
 }
 
-void
+int
 mem_set_str(struct sql_mem *mem, char *value, uint32_t len)
 {
+	if (len > SQL_MAX_SQL_LENGTH) {
+		diag_set(ClientError, ER_SQL_TOO_LONG_VALUE);
+		return -1;
+	}
 	mem_clear(mem);
 	mem->u.z = value;
 	mem->u.n = len;
 	mem->type = MEM_TYPE_STR;
 	assert(mem->group == MEM_GROUP_DATA);
+	return 0;
 }
 
-void
+int
 mem_set_str0(struct sql_mem *mem, char *value)
 {
-	mem_clear(mem);
-	mem->u.z = value;
-	mem->u.n = strlen(value);
-	mem->type = MEM_TYPE_STR;
-	assert(mem->group == MEM_GROUP_DATA);
+	return mem_set_str(mem, value, strlen(value));
 }
 
 static int
@@ -436,14 +437,19 @@ mem_copy_str0(struct sql_mem *mem, const char *value)
 	return 0;
 }
 
-void
+int
 mem_set_bin(struct sql_mem *mem, char *value, uint32_t size)
 {
+	if (size > SQL_MAX_SQL_LENGTH) {
+		diag_set(ClientError, ER_SQL_TOO_LONG_VALUE);
+		return -1;
+	}
 	mem_clear(mem);
 	mem->u.z = value;
 	mem->u.n = size;
 	mem->type = MEM_TYPE_BIN;
 	assert(mem->group == MEM_GROUP_DATA);
+	return 0;
 }
 
 int
@@ -1807,6 +1813,7 @@ mem_copy(struct sql_mem *to, const struct sql_mem *from)
 	to->u.z = from->u.z;
 	if (!mem_is_ephemeral(from) && !mem_is_dynamic(from))
 		return 0;
+	assert(to->u.n <= SQL_MAX_SQL_LENGTH);
 	size_t size = MAX(32, to->u.n);
 	to->buf = sql_xrealloc(to->buf, size);
 	to->size = size;
@@ -2778,6 +2785,11 @@ mem_mp_type(const struct sql_mem *mem)
 static int
 sqlVdbeMemGrow(struct sql_mem *pMem, int n, int bPreserve)
 {
+	if (n > SQL_MAX_SQL_LENGTH) {
+		diag_set(ClientError, ER_SQL_TOO_LONG_VALUE);
+		return -1;
+	}
+
 	/* If the bPreserve flag is set to true, then the memory cell must already
 	 * contain a valid string or blob value.
 	 */

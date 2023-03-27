@@ -319,6 +319,7 @@ struct errcode_record {
 	/*264 */_(ER_NIL_UUID,			"Nil UUID is reserved and can't be used in replication") \
 	/*265 */_(ER_WRONG_FUNCTION_OPTIONS,	"Wrong function options: %s") \
 	/*266 */_(ER_MISSING_SYSTEM_SPACES,	"Snapshot has no system spaces") \
+	/*267 */_(ER_SQL_TOO_LONG_VALUE,	"Variable length value is too long") \
 
 /*
  * !IMPORTANT! Please follow instructions at start of the file

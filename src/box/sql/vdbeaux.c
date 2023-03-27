@@ -1201,7 +1201,11 @@ sqlVdbeList(Vdbe * p)
 			pMem++;
 
 			char *value = (char *)sqlOpcodeName(pOp->opcode);
-			mem_set_str0(pMem, value);
+			if (mem_set_str0(pMem, value) != 0) {
+				p->is_aborted = true;
+				return -1;
+			}
+
 			pMem++;
 
 			/* When an OP_Program opcode is encounter (the only opcode that has
@@ -1240,7 +1244,11 @@ sqlVdbeList(Vdbe * p)
 
 		char *buf = sql_xmalloc(256);
 		zP4 = displayP4(pOp, buf, 256);
-		mem_set_str0(pMem, zP4);
+		if (mem_set_str0(pMem, zP4) != 0) {
+			p->is_aborted = true;
+			sql_xfree(buf);
+			return -1;
+		}
 		if (zP4 != buf)
 			sql_xfree(buf);
 		else
@@ -1250,14 +1258,22 @@ sqlVdbeList(Vdbe * p)
 		if (p->explain == 1) {
 			buf = sql_xmalloc(4);
 			sql_snprintf(3, buf, "%.2x", pOp->p5);
-			mem_set_str0(pMem, buf);
+			if (mem_set_str0(pMem, buf) != 0) {
+				p->is_aborted = true;
+				sql_xfree(buf);
+				return -1;
+			}
 			mem_set_dynamic(pMem);
 			pMem++;
 
 #ifdef SQL_ENABLE_EXPLAIN_COMMENTS
 			buf = sql_xmalloc(500);
 			displayComment(pOp, zP4, buf, 500);
-			mem_set_str0(pMem, buf);
+			if (mem_set_str0(pMem, buf) != 0) {
+				p->is_aborted = true;
+				sql_xfree(buf);
+				return -1;
+			}
 			mem_set_dynamic(pMem);
 #else
 			mem_set_null(pMem);

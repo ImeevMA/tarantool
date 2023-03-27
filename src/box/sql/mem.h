@@ -380,11 +380,11 @@ void
 mem_set_interval(struct sql_mem *mem, const struct interval *itv);
 
 /** Clear MEM and set it to STRING. */
-void
+int
 mem_set_str(struct sql_mem *mem, char *value, uint32_t len);
 
 /** Clear MEM and set it to NULL-terminated STRING. */
-void
+int
 mem_set_str0(struct sql_mem *mem, char *value);
 
 /** Copy string to a newly allocated memory. The MEM type becomes STRING. */
@@ -399,7 +399,7 @@ int
 mem_copy_str0(struct sql_mem *mem, const char *value);
 
 /** Clear MEM and set it to VARBINARY. */
-void
+int
 mem_set_bin(struct sql_mem *mem, char *value, uint32_t size);
 
 /**
