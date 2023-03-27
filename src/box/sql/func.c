@@ -68,8 +68,8 @@ step_sum(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	if (sql_mem_is_null(&argv[0]))
 		return;
 	if (sql_mem_is_null(ctx->pOut))
-		return mem_copy_as_ephemeral(ctx->pOut, &argv[0]);
-	if (mem_add(ctx->pOut, &argv[0], ctx->pOut) != 0)
+		return sql_mem_copy_as_ephemeral(ctx->pOut, &argv[0]);
+	if (sql_mem_add(ctx->pOut, &argv[0], ctx->pOut) != 0)
 		ctx->is_aborted = true;
 }
 
@@ -83,8 +83,8 @@ step_total(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	if (sql_mem_is_null(&argv[0]))
 		return;
 	if (sql_mem_is_null(ctx->pOut))
-		mem_set_double(ctx->pOut, 0.0);
-	if (mem_add(ctx->pOut, &argv[0], ctx->pOut) != 0)
+		sql_mem_set_double(ctx->pOut, 0.0);
+	if (sql_mem_add(ctx->pOut, &argv[0], ctx->pOut) != 0)
 		ctx->is_aborted = true;
 }
 
@@ -94,7 +94,7 @@ fin_total(struct sql_mem *mem)
 {
 	assert(sql_mem_is_null(mem) || sql_mem_is_double(mem));
 	if (sql_mem_is_null(mem))
-		mem_set_double(mem, 0.0);
+		sql_mem_set_double(mem, 0.0);
 	return 0;
 }
 
@@ -104,7 +104,7 @@ step_avg(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 {
 	assert(argc == 1);
 	(void)argc;
-	assert(sql_mem_is_null(ctx->pOut) || mem_is_bin(ctx->pOut));
+	assert(sql_mem_is_null(ctx->pOut) || sql_mem_is_bin(ctx->pOut));
 	if (sql_mem_is_null(&argv[0]))
 		return;
 	struct sql_mem *mem;
@@ -113,17 +113,17 @@ step_avg(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 		uint32_t size = sizeof(struct sql_mem) + sizeof(uint32_t);
 		mem = sql_xmalloc(size);
 		count = (uint32_t *)(mem + 1);
-		mem_create(mem);
+		sql_mem_create(mem);
 		*count = 1;
-		mem_copy_as_ephemeral(mem, &argv[0]);
-		mem_set_bin(ctx->pOut, (char *)mem, size);
-		mem_set_dynamic(ctx->pOut);
+		sql_mem_copy_as_ephemeral(mem, &argv[0]);
+		sql_mem_set_bin(ctx->pOut, (char *)mem, size);
+		sql_mem_set_dynamic(ctx->pOut);
 		return;
 	}
 	mem = (struct sql_mem *)ctx->pOut->u.z;
 	count = (uint32_t *)(mem + 1);
 	++*count;
-	if (mem_add(mem, &argv[0], mem) != 0)
+	if (sql_mem_add(mem, &argv[0], mem) != 0)
 		ctx->is_aborted = true;
 }
 
@@ -131,16 +131,16 @@ step_avg(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 static int
 fin_avg(struct sql_mem *mem)
 {
-	assert(sql_mem_is_null(mem) || mem_is_bin(mem));
+	assert(sql_mem_is_null(mem) || sql_mem_is_bin(mem));
 	if (sql_mem_is_null(mem))
 		return 0;
 	struct sql_mem *sum = (struct sql_mem *)mem->u.z;
 	uint32_t *count_val = (uint32_t *)(sum + 1);
-	assert(mem_is_trivial(sum));
+	assert(sql_mem_is_trivial(sum));
 	struct sql_mem count;
-	mem_create(&count);
-	mem_set_uint(&count, *count_val);
-	return mem_div(sum, &count, mem);
+	sql_mem_create(&count);
+	sql_mem_set_uint(&count, *count_val);
+	return sql_mem_div(sum, &count, mem);
 }
 
 /** Implementation of the COUNT() function. */
@@ -149,7 +149,7 @@ step_count(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 {
 	assert(argc == 0 || argc == 1);
 	if (sql_mem_is_null(ctx->pOut))
-		mem_set_uint(ctx->pOut, 0);
+		sql_mem_set_uint(ctx->pOut, 0);
 	if (argc == 1 && sql_mem_is_null(&argv[0]))
 		return;
 	assert(sql_mem_is_uint(ctx->pOut));
@@ -162,7 +162,7 @@ fin_count(struct sql_mem *mem)
 {
 	assert(sql_mem_is_null(mem) || sql_mem_is_uint(mem));
 	if (sql_mem_is_null(mem))
-		mem_set_uint(mem, 0);
+		sql_mem_set_uint(mem, 0);
 	return 0;
 }
 
@@ -178,7 +178,7 @@ step_minmax(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 		return;
 	}
 	if (sql_mem_is_null(ctx->pOut)) {
-		if (mem_copy(ctx->pOut, &argv[0]) != 0)
+		if (sql_mem_copy(ctx->pOut, &argv[0]) != 0)
 			ctx->is_aborted = true;
 		return;
 	}
@@ -190,9 +190,9 @@ step_minmax(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	 * the only difference between the two being that the sense of the
 	 * comparison is inverted.
 	 */
-	int cmp = mem_cmp_scalar(ctx->pOut, &argv[0], ctx->coll);
+	int cmp = sql_mem_cmp_scalar(ctx->pOut, &argv[0], ctx->coll);
 	if ((is_max && cmp < 0) || (!is_max && cmp > 0)) {
-		if (mem_copy(ctx->pOut, &argv[0]) != 0)
+		if (sql_mem_copy(ctx->pOut, &argv[0]) != 0)
 			ctx->is_aborted = true;
 		return;
 	}
@@ -207,9 +207,9 @@ step_group_concat(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	(void)argc;
 	if (sql_mem_is_null(&argv[0]))
 		return;
-	assert(sql_mem_is_str(&argv[0]) || mem_is_bin(&argv[0]));
+	assert(sql_mem_is_str(&argv[0]) || sql_mem_is_bin(&argv[0]));
 	if (sql_mem_is_null(ctx->pOut)) {
-		if (mem_copy(ctx->pOut, &argv[0]) != 0)
+		if (sql_mem_copy(ctx->pOut, &argv[0]) != 0)
 			ctx->is_aborted = true;
 		return;
 	}
@@ -222,15 +222,15 @@ step_group_concat(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 		sep = "";
 		sep_len = 0;
 	} else {
-		assert(mem_is_same_type(&argv[0], &argv[1]));
+		assert(sql_mem_is_same_type(&argv[0], &argv[1]));
 		sep = argv[1].u.z;
 		sep_len = argv[1].u.n;
 	}
-	if (mem_append(ctx->pOut, sep, sep_len) != 0) {
+	if (sql_mem_append(ctx->pOut, sep, sep_len) != 0) {
 		ctx->is_aborted = true;
 		return;
 	}
-	if (mem_append(ctx->pOut, argv[0].u.z, argv[0].u.n) != 0)
+	if (sql_mem_append(ctx->pOut, argv[0].u.z, argv[0].u.n) != 0)
 		ctx->is_aborted = true;
 }
 
@@ -243,9 +243,9 @@ func_abs_int(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	const struct sql_mem *arg = &argv[0];
 	if (sql_mem_is_null(arg))
 		return;
-	assert(mem_is_int(arg));
+	assert(sql_mem_is_int(arg));
 	uint64_t u = sql_mem_is_uint(arg) ? arg->u.u : (uint64_t)-arg->u.i;
-	mem_set_uint(ctx->pOut, u);
+	sql_mem_set_uint(ctx->pOut, u);
 }
 
 /** Implementations of the ABS() function for DOUBLE argument. */
@@ -258,7 +258,7 @@ func_abs_double(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	if (sql_mem_is_null(arg))
 		return;
 	assert(sql_mem_is_double(arg));
-	mem_set_double(ctx->pOut, arg->u.r < 0 ? -arg->u.r : arg->u.r);
+	sql_mem_set_double(ctx->pOut, arg->u.r < 0 ? -arg->u.r : arg->u.r);
 }
 
 /** Implementations of the ABS() function for DECIMAL argument. */
@@ -271,7 +271,7 @@ func_abs_dec(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	if (sql_mem_is_null(arg))
 		return;
 	assert(sql_mem_is_dec(arg));
-	mem_set_dec(ctx->pOut, &arg->u.d);
+	sql_mem_set_dec(ctx->pOut, &arg->u.d);
 	decimal_abs(&ctx->pOut->u.d, &ctx->pOut->u.d);
 }
 
@@ -292,7 +292,7 @@ func_char_length(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 		U8_NEXT((uint8_t *)arg->u.z, offset, arg->u.n, c);
 		++len;
 	}
-	mem_set_uint(ctx->pOut, len);
+	sql_mem_set_uint(ctx->pOut, len);
 }
 
 /** Implementation of the UPPER() and LOWER() functions. */
@@ -306,7 +306,7 @@ func_lower_upper(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 		return;
 	assert(sql_mem_is_str(arg));
 	if (arg->u.n == 0)
-		return mem_set_str0(ctx->pOut, "");
+		return sql_mem_set_str0(ctx->pOut, "");
 	const char *str = arg->u.z;
 	int32_t len = arg->u.n;
 	char *res = sql_xmalloc(len);
@@ -334,8 +334,8 @@ func_lower_upper(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 			ucasemap_utf8ToLower(cm, res, size, str, len, &status);
 	}
 	ucasemap_close(cm);
-	mem_set_str(ctx->pOut, res, size);
-	mem_set_dynamic(ctx->pOut);
+	sql_mem_set_str(ctx->pOut, res, size);
+	sql_mem_set_dynamic(ctx->pOut);
 }
 
 /** Implementation of the NULLIF() function. */
@@ -344,15 +344,15 @@ func_nullif(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 {
 	assert(argc == 2);
 	(void)argc;
-	if (!mem_is_comparable(&argv[1])) {
+	if (!sql_mem_is_comparable(&argv[1])) {
 		ctx->is_aborted = true;
-		diag_set(ClientError, ER_SQL_TYPE_MISMATCH, mem_str(&argv[1]),
-			 "scalar");
+		diag_set(ClientError, ER_SQL_TYPE_MISMATCH,
+			 sql_mem_str(&argv[1]), "scalar");
 		return;
 	}
-	if (mem_cmp_scalar(&argv[0], &argv[1], ctx->coll) == 0)
+	if (sql_mem_cmp_scalar(&argv[0], &argv[1], ctx->coll) == 0)
 		return;
-	if (mem_copy(ctx->pOut, &argv[0]) != 0)
+	if (sql_mem_copy(ctx->pOut, &argv[0]) != 0)
 		ctx->is_aborted = true;
 }
 
@@ -399,8 +399,8 @@ func_trim_bin(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 {
 	if (sql_mem_is_null(&argv[0]) || (argc == 3 && sql_mem_is_null(&argv[2])))
 		return;
-	assert(argc == 2 || (argc == 3 && mem_is_bin(&argv[2])));
-	assert(mem_is_bin(&argv[0]) && sql_mem_is_uint(&argv[1]));
+	assert(argc == 2 || (argc == 3 && sql_mem_is_bin(&argv[2])));
+	assert(sql_mem_is_bin(&argv[0]) && sql_mem_is_uint(&argv[1]));
 	const char *str = argv[0].u.z;
 	int size = argv[0].u.n;
 	const char *octets;
@@ -418,8 +418,8 @@ func_trim_bin(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	int start = trim_bin_start(str, end, octets, octets_size, flags);
 
 	if (start >= end)
-		return mem_set_bin(ctx->pOut, "", 0);
-	if (mem_copy_bin(ctx->pOut, &str[start], end - start) != 0)
+		return sql_mem_set_bin(ctx->pOut, "", 0);
+	if (sql_mem_copy_bin(ctx->pOut, &str[start], end - start) != 0)
 		ctx->is_aborted = true;
 }
 
@@ -517,8 +517,8 @@ func_trim_str(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	region_truncate(region, svp);
 
 	if (start >= end)
-		return mem_set_str0(ctx->pOut, "");
-	if (mem_copy_str(ctx->pOut, &str[start], end - start) != 0)
+		return sql_mem_set_str0(ctx->pOut, "");
+	if (sql_mem_copy_str(ctx->pOut, &str[start], end - start) != 0)
 		ctx->is_aborted = true;
 }
 
@@ -528,18 +528,18 @@ func_position_octets(struct sql_context *ctx, int argc, const struct sql_mem *ar
 {
 	assert(argc == 2);
 	(void)argc;
-	if (mem_is_any_null(&argv[0], &argv[1]))
+	if (sql_mem_is_any_null(&argv[0], &argv[1]))
 		return;
-	assert(mem_is_bytes(&argv[0]) && mem_is_bytes(&argv[1]));
+	assert(sql_mem_is_bytes(&argv[0]) && sql_mem_is_bytes(&argv[1]));
 
 	const char *key = argv[0].u.z;
 	const char *str = argv[1].u.z;
 	int key_size = argv[0].u.n;
 	int str_size = argv[1].u.n;
 	if (key_size <= 0)
-		return mem_set_uint(ctx->pOut, 1);
+		return sql_mem_set_uint(ctx->pOut, 1);
 	const char *pos = memmem(str, str_size, key, key_size);
-	return mem_set_uint(ctx->pOut, pos == NULL ? 0 : pos - str + 1);
+	return sql_mem_set_uint(ctx->pOut, pos == NULL ? 0 : pos - str + 1);
 }
 
 static void
@@ -548,7 +548,7 @@ func_position_characters(struct sql_context *ctx, int argc,
 {
 	assert(argc == 2);
 	(void)argc;
-	if (mem_is_any_null(&argv[0], &argv[1]))
+	if (sql_mem_is_any_null(&argv[0], &argv[1]))
 		return;
 	assert(sql_mem_is_str(&argv[0]) && sql_mem_is_str(&argv[1]));
 
@@ -557,7 +557,7 @@ func_position_characters(struct sql_context *ctx, int argc,
 	int key_size = argv[0].u.n;
 	int str_size = argv[1].u.n;
 	if (key_size <= 0)
-		return mem_set_uint(ctx->pOut, 1);
+		return sql_mem_set_uint(ctx->pOut, 1);
 
 	int key_end = 0;
 	int str_end = 0;
@@ -567,11 +567,11 @@ func_position_characters(struct sql_context *ctx, int argc,
 		U8_NEXT((uint8_t *)str, str_end, str_size, c);
 	}
 	if (key_end < key_size)
-		return mem_set_uint(ctx->pOut, 0);
+		return sql_mem_set_uint(ctx->pOut, 0);
 
 	struct coll *coll = ctx->coll;
 	if (coll->cmp(key, key_size, str, str_end, coll) == 0)
-		return mem_set_uint(ctx->pOut, 1);
+		return sql_mem_set_uint(ctx->pOut, 1);
 
 	int i = 2;
 	int str_pos = 0;
@@ -581,10 +581,10 @@ func_position_characters(struct sql_context *ctx, int argc,
 		U8_NEXT((uint8_t *)str, str_end, str_size, c);
 		const char *s = str + str_pos;
 		if (coll->cmp(key, key_size, s, str_end - str_pos, coll) == 0)
-			return mem_set_uint(ctx->pOut, i);
+			return sql_mem_set_uint(ctx->pOut, i);
 		++i;
 	}
-	return mem_set_uint(ctx->pOut, 0);
+	return sql_mem_set_uint(ctx->pOut, 0);
 }
 
 /** Implementation of the SUBSTR() function. */
@@ -627,9 +627,9 @@ static void
 func_substr_octets(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 {
 	assert(argc == 2 || argc == 3);
-	if (mem_is_any_null(&argv[0], &argv[1]))
+	if (sql_mem_is_any_null(&argv[0], &argv[1]))
 		return;
-	assert(mem_is_bytes(&argv[0]) && mem_is_int(&argv[1]));
+	assert(sql_mem_is_bytes(&argv[0]) && sql_mem_is_int(&argv[1]));
 
 	bool is_str = sql_mem_is_str(&argv[0]);
 	uint64_t size = argv[0].u.n;
@@ -639,21 +639,21 @@ func_substr_octets(struct sql_context *ctx, int argc, const struct sql_mem *argv
 				 argv[1].u.u - 1 : 0;
 		if (start >= size) {
 			if (is_str)
-				return mem_set_str0(ctx->pOut, "");
+				return sql_mem_set_str0(ctx->pOut, "");
 			else
-				return mem_set_bin(ctx->pOut, "", 0);
+				return sql_mem_set_bin(ctx->pOut, "", 0);
 		}
 		char *s = &argv[0].u.z[start];
 		uint64_t n = size - start;
-		ctx->is_aborted = is_str ? mem_copy_str(ctx->pOut, s, n) != 0 :
-				  mem_copy_bin(ctx->pOut, s, n) != 0;
+		ctx->is_aborted = is_str ? sql_mem_copy_str(ctx->pOut, s, n) != 0 :
+				  sql_mem_copy_bin(ctx->pOut, s, n) != 0;
 		return;
 	}
 
 	assert(argc == 3);
 	if (sql_mem_is_null(&argv[2]))
 		return;
-	assert(mem_is_int(&argv[2]));
+	assert(sql_mem_is_int(&argv[2]));
 	if (!sql_mem_is_uint(&argv[2])) {
 		diag_set(ClientError, ER_SQL_EXECUTE, "Length of the result "
 			 "cannot be less than 0");
@@ -669,14 +669,14 @@ func_substr_octets(struct sql_context *ctx, int argc, const struct sql_mem *argv
 	}
 	if (start >= size || length == 0) {
 		if (is_str)
-			return mem_set_str0(ctx->pOut, "");
+			return sql_mem_set_str0(ctx->pOut, "");
 		else
-			return mem_set_bin(ctx->pOut, "", 0);
+			return sql_mem_set_bin(ctx->pOut, "", 0);
 	}
 	char *str = &argv[0].u.z[start];
 	uint64_t len = MIN(size - start, length);
-	ctx->is_aborted = is_str ? mem_copy_str(ctx->pOut, str, len) != 0 :
-			  mem_copy_bin(ctx->pOut, str, len) != 0;
+	ctx->is_aborted = is_str ? sql_mem_copy_str(ctx->pOut, str, len) != 0 :
+			  sql_mem_copy_bin(ctx->pOut, str, len) != 0;
 }
 
 static void
@@ -685,9 +685,9 @@ func_substr_characters(struct sql_context *ctx, int argc, const
 {
 	assert(argc == 2 || argc == 3);
 	(void)argc;
-	if (mem_is_any_null(&argv[0], &argv[1]))
+	if (sql_mem_is_any_null(&argv[0], &argv[1]))
 		return;
-	assert(sql_mem_is_str(&argv[0]) && mem_is_int(&argv[1]));
+	assert(sql_mem_is_str(&argv[0]) && sql_mem_is_int(&argv[1]));
 
 	const char *str = argv[0].u.z;
 	int pos = 0;
@@ -700,8 +700,8 @@ func_substr_characters(struct sql_context *ctx, int argc, const
 			U8_NEXT((uint8_t *)str, pos, end, c);
 		}
 		if (pos == end)
-			return mem_set_str0(ctx->pOut, "");
-		if (mem_copy_str(ctx->pOut, str + pos, end - pos) != 0)
+			return sql_mem_set_str0(ctx->pOut, "");
+		if (sql_mem_copy_str(ctx->pOut, str + pos, end - pos) != 0)
 			ctx->is_aborted = true;
 		return;
 	}
@@ -709,7 +709,7 @@ func_substr_characters(struct sql_context *ctx, int argc, const
 	assert(argc == 3);
 	if (sql_mem_is_null(&argv[2]))
 		return;
-	assert(mem_is_int(&argv[2]));
+	assert(sql_mem_is_int(&argv[2]));
 	if (!sql_mem_is_uint(&argv[2])) {
 		diag_set(ClientError, ER_SQL_EXECUTE, "Length of the result "
 			 "cannot be less than 0");
@@ -724,14 +724,14 @@ func_substr_characters(struct sql_context *ctx, int argc, const
 		return;
 	}
 	if (length == 0)
-		return mem_set_str0(ctx->pOut, "");
+		return sql_mem_set_str0(ctx->pOut, "");
 
 	for (uint64_t i = 0; i < start && pos < end; ++i) {
 		UChar32 c;
 		U8_NEXT((uint8_t *)str, pos, end, c);
 	}
 	if (pos == end)
-		return mem_set_str0(ctx->pOut, "");
+		return sql_mem_set_str0(ctx->pOut, "");
 
 	int cur = pos;
 	for (uint64_t i = 0; i < length && cur < end; ++i) {
@@ -739,7 +739,7 @@ func_substr_characters(struct sql_context *ctx, int argc, const
 		U8_NEXT((uint8_t *)str, cur, end, c);
 	}
 	assert(cur > pos);
-	if (mem_copy_str(ctx->pOut, str + pos, cur - pos) != 0)
+	if (sql_mem_copy_str(ctx->pOut, str + pos, cur - pos) != 0)
 		ctx->is_aborted = true;
 }
 
@@ -757,7 +757,7 @@ static void
 func_char(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 {
 	if (argc == 0)
-		return mem_set_str0(ctx->pOut, "");
+		return sql_mem_set_str0(ctx->pOut, "");
 	struct region *region = &fiber()->gc;
 	size_t svp = region_used(region);
 	uint32_t size;
@@ -789,8 +789,8 @@ func_char(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	region_truncate(region, svp);
 	assert(pos == len);
 	(void)pos;
-	mem_set_str(ctx->pOut, str, len);
-	mem_set_dynamic(ctx->pOut);
+	sql_mem_set_str(ctx->pOut, str, len);
+	sql_mem_set_dynamic(ctx->pOut);
 }
 
 /**
@@ -813,11 +813,11 @@ func_greatest_least(struct sql_context *ctx, int argc, const struct sql_mem *arg
 	for (int i = 1; i < argc; ++i) {
 		if (sql_mem_is_null(&argv[i]))
 			return;
-		int cmp = mem_cmp_scalar(&argv[best], &argv[i], ctx->coll);
+		int cmp = sql_mem_cmp_scalar(&argv[best], &argv[i], ctx->coll);
 		if ((cmp ^ mask) >= 0)
 			best = i;
 	}
-	if (mem_copy(ctx->pOut, &argv[best]) != 0)
+	if (sql_mem_copy(ctx->pOut, &argv[best]) != 0)
 		ctx->is_aborted = true;
 }
 
@@ -839,9 +839,9 @@ func_hex(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	if (sql_mem_is_null(arg))
 		return;
 
-	assert(mem_is_bin(arg));
+	assert(sql_mem_is_bin(arg));
 	if (arg->u.n == 0)
-		return mem_set_str0(ctx->pOut, "");
+		return sql_mem_set_str0(ctx->pOut, "");
 
 	uint32_t size = 2 * arg->u.n;
 	char *str = sql_xmalloc(size);
@@ -850,8 +850,8 @@ func_hex(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 		str[2 * i] = hexdigits[(c >> 4) & 0xf];
 		str[2 * i + 1] = hexdigits[c & 0xf];
 	}
-	mem_set_str(ctx->pOut, str, size);
-	mem_set_dynamic(ctx->pOut);
+	sql_mem_set_str(ctx->pOut, str, size);
+	sql_mem_set_dynamic(ctx->pOut);
 }
 
 /** Implementation of the OCTET_LENGTH() function. */
@@ -863,8 +863,8 @@ func_octet_length(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	const struct sql_mem *arg = &argv[0];
 	if (sql_mem_is_null(arg))
 		return;
-	assert(mem_is_bytes(arg));
-	mem_set_uint(ctx->pOut, arg->u.n);
+	assert(sql_mem_is_bytes(arg));
+	sql_mem_set_uint(ctx->pOut, arg->u.n);
 }
 
 /** Implementation of the PRINTF() function. */
@@ -874,13 +874,13 @@ func_printf(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	if (argc < 1 || sql_mem_is_null(&argv[0]))
 		return;
 	if (argc == 1 || !sql_mem_is_str(&argv[0])) {
-		char *str = mem_strdup(&argv[0]);
+		char *str = sql_mem_strdup(&argv[0]);
 		if (str == NULL) {
 			ctx->is_aborted = true;
 			return;
 		}
-		mem_set_str0(ctx->pOut, str);
-		mem_set_dynamic(ctx->pOut);
+		sql_mem_set_str0(ctx->pOut, str);
+		sql_mem_set_dynamic(ctx->pOut);
 		return;
 	}
 	struct PrintfArguments pargs;
@@ -892,8 +892,8 @@ func_printf(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	sqlStrAccumInit(&acc, NULL, 0, SQL_MAX_LENGTH);
 	acc.printfFlags = SQL_PRINTF_SQLFUNC;
 	sqlXPrintf(&acc, format, &pargs);
-	mem_set_str(ctx->pOut, sqlStrAccumFinish(&acc), acc.nChar);
-	mem_set_dynamic(ctx->pOut);
+	sql_mem_set_str(ctx->pOut, sqlStrAccumFinish(&acc), acc.nChar);
+	sql_mem_set_dynamic(ctx->pOut);
 }
 
 /**
@@ -908,7 +908,7 @@ func_random(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	(void)argv;
 	int64_t r;
 	sql_randomness(sizeof(r), &r);
-	mem_set_int(ctx->pOut, r, r < 0);
+	sql_mem_set_int(ctx->pOut, r, r < 0);
 }
 
 /**
@@ -923,15 +923,15 @@ func_randomblob(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	assert(argc == 1);
 	(void)argc;
 	const struct sql_mem *arg = &argv[0];
-	assert(sql_mem_is_null(arg) || mem_is_int(arg));
+	assert(sql_mem_is_null(arg) || sql_mem_is_int(arg));
 	if (sql_mem_is_null(arg) || !sql_mem_is_uint(arg))
 		return;
 	if (arg->u.u == 0)
-		return mem_set_bin(ctx->pOut, "", 0);
+		return sql_mem_set_bin(ctx->pOut, "", 0);
 	uint64_t len = arg->u.u;
 	char *res = sql_xmalloc(len);
 	sql_randomness(len, res);
-	mem_set_bin(ctx->pOut, res, len);
+	sql_mem_set_bin(ctx->pOut, res, len);
 }
 
 /**
@@ -946,15 +946,15 @@ func_zeroblob(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	assert(argc == 1);
 	(void)argc;
 	const struct sql_mem *arg = &argv[0];
-	assert(sql_mem_is_null(arg) || mem_is_int(arg));
+	assert(sql_mem_is_null(arg) || sql_mem_is_int(arg));
 	if (sql_mem_is_null(arg) || !sql_mem_is_uint(arg))
 		return;
 	if (arg->u.u == 0)
-		return mem_set_bin(ctx->pOut, "", 0);
+		return sql_mem_set_bin(ctx->pOut, "", 0);
 	uint64_t len = arg->u.u;
 	char *res = sql_xmalloc0(len);
-	mem_set_bin(ctx->pOut, res, len);
-	mem_set_dynamic(ctx->pOut);
+	sql_mem_set_bin(ctx->pOut, res, len);
+	sql_mem_set_dynamic(ctx->pOut);
 }
 
 /** Implementation of the TYPEOF() function. */
@@ -963,7 +963,7 @@ func_typeof(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 {
 	assert(argc == 1);
 	(void)argc;
-	return mem_set_str0(ctx->pOut, mem_type_to_str(&argv[0]));
+	return sql_mem_set_str0(ctx->pOut, sql_mem_type_to_str(&argv[0]));
 }
 
 /** Implementation of the ROUND() function for DOUBLE argument. */
@@ -974,7 +974,7 @@ func_round_double(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	if (sql_mem_is_null(&argv[0]) || (argc == 2 && sql_mem_is_null(&argv[1])))
 		return;
 	assert(sql_mem_is_double(&argv[0]));
-	assert(argc == 1 || mem_is_int(&argv[1]));
+	assert(argc == 1 || sql_mem_is_int(&argv[1]));
 	uint64_t n = (argc == 2 && sql_mem_is_uint(&argv[1])) ? argv[1].u.u : 0;
 	/*
 	 * The smallest positive double value is 2.225E-307, and the value
@@ -983,13 +983,13 @@ func_round_double(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	 * digits after the decimal point.
 	 */
 	if (n > 322)
-		return mem_copy_as_ephemeral(ctx->pOut, &argv[0]);
+		return sql_mem_copy_as_ephemeral(ctx->pOut, &argv[0]);
 
 	double d = argv[0].u.r;
 	struct sql_mem *res = ctx->pOut;
 	if (n != 0) {
 		d = atof(tt_sprintf("%.*lf", (int)n, d));
-		return mem_set_double(res, d);
+		return sql_mem_set_double(res, d);
 	}
 	/*
 	 * DOUBLE values greater than 2^53 or less than -2^53 have no digits
@@ -997,9 +997,9 @@ func_round_double(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	 */
 	assert(9007199254740992 == (int64_t)1 << 53);
 	if (d <= -9007199254740992.0 || d >= 9007199254740992.0)
-		return mem_set_double(res, d);
+		return sql_mem_set_double(res, d);
 	double delta = d < 0 ? -0.5 : 0.5;
-	return mem_set_double(res, (double)(int64_t)(d + delta));
+	return sql_mem_set_double(res, (double)(int64_t)(d + delta));
 }
 
 /** Implementation of the ROUND() function for DECIMAL argument. */
@@ -1010,10 +1010,10 @@ func_round_dec(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	if (sql_mem_is_null(&argv[0]) || (argc == 2 && sql_mem_is_null(&argv[1])))
 		return;
 	assert(sql_mem_is_dec(&argv[0]));
-	assert(argc == 1 || mem_is_int(&argv[1]));
+	assert(argc == 1 || sql_mem_is_int(&argv[1]));
 	uint64_t n = (argc == 2 && sql_mem_is_uint(&argv[1])) ? argv[1].u.u : 0;
 
-	mem_set_dec(ctx->pOut, &argv[0].u.d);
+	sql_mem_set_dec(ctx->pOut, &argv[0].u.d);
 	if (n < DECIMAL_MAX_DIGITS)
 		decimal_round(&ctx->pOut->u.d, n);
 }
@@ -1025,9 +1025,9 @@ func_round_int(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	assert(argc == 1 || argc == 2);
 	if (sql_mem_is_null(&argv[0]) || (argc == 2 && sql_mem_is_null(&argv[1])))
 		return;
-	assert(mem_is_int(&argv[0]));
-	assert(argc == 1 || mem_is_int(&argv[1]));
-	return mem_copy_as_ephemeral(ctx->pOut, &argv[0]);
+	assert(sql_mem_is_int(&argv[0]));
+	assert(argc == 1 || sql_mem_is_int(&argv[1]));
+	return sql_mem_copy_as_ephemeral(ctx->pOut, &argv[0]);
 }
 
 /** Implementation of the ROW_COUNT() function. */
@@ -1037,7 +1037,7 @@ func_row_count(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	(void)argc;
 	(void)argv;
 	assert(sql_get()->nChange >= 0);
-	return mem_set_uint(ctx->pOut, sql_get()->nChange);
+	return sql_mem_set_uint(ctx->pOut, sql_get()->nChange);
 }
 
 /**
@@ -1060,7 +1060,7 @@ func_uuid(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	}
 	struct tt_uuid uuid;
 	tt_uuid_create(&uuid);
-	mem_set_uuid(ctx->pOut, &uuid);
+	sql_mem_set_uuid(ctx->pOut, &uuid);
 }
 
 /** Implementation of the VERSION() function. */
@@ -1069,7 +1069,7 @@ func_version(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 {
 	(void)argc;
 	(void)argv;
-	return mem_set_str0(ctx->pOut, (char *)tarantool_version());
+	return sql_mem_set_str0(ctx->pOut, (char *)tarantool_version());
 }
 
 /**
@@ -1088,12 +1088,12 @@ func_unicode(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 		return;
 	assert(sql_mem_is_str(arg));
 	if (arg->u.n == 0)
-		return mem_set_uint(ctx->pOut, 0);
+		return sql_mem_set_uint(ctx->pOut, 0);
 	int pos = 0;
 	UChar32 c;
 	U8_NEXT((uint8_t *)arg->u.z, pos, arg->u.n, c);
 	(void)pos;
-	mem_set_uint(ctx->pOut, (uint64_t)c);
+	sql_mem_set_uint(ctx->pOut, (uint64_t)c);
 }
 
 /**
@@ -1109,7 +1109,7 @@ func_now(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	(void)argv;
 	struct datetime dt;
 	datetime_ev_now(&dt);
-	mem_set_datetime(ctx->pOut, &dt);
+	sql_mem_set_datetime(ctx->pOut, &dt);
 }
 
 /**
@@ -1124,47 +1124,47 @@ func_date_part(struct sql_context *ctx, int argc, const struct sql_mem *argv)
 	(void)argc;
 	const struct sql_mem *part = &argv[0];
 	const struct sql_mem *date = &argv[1];
-	if (mem_is_any_null(part, date))
+	if (sql_mem_is_any_null(part, date))
 		return;
-	assert(sql_mem_is_str(part) && mem_is_datetime(date));
+	assert(sql_mem_is_str(part) && sql_mem_is_datetime(date));
 	const char *str = tt_cstr(part->u.z, part->u.n);
 	const struct datetime *dt = &date->u.dt;
 	if (strcasecmp("millennium", str) == 0)
-		return mem_set_int64(ctx->pOut, datetime_millennium(dt));
+		return sql_mem_set_int64(ctx->pOut, datetime_millennium(dt));
 	if (strcasecmp("century", str) == 0)
-		return mem_set_int64(ctx->pOut, datetime_century(dt));
+		return sql_mem_set_int64(ctx->pOut, datetime_century(dt));
 	if (strcasecmp("decade", str) == 0)
-		return mem_set_int64(ctx->pOut, datetime_decade(dt));
+		return sql_mem_set_int64(ctx->pOut, datetime_decade(dt));
 	if (strcasecmp("year", str) == 0)
-		return mem_set_int64(ctx->pOut, datetime_year(dt));
+		return sql_mem_set_int64(ctx->pOut, datetime_year(dt));
 	if (strcasecmp("quarter", str) == 0)
-		return mem_set_uint(ctx->pOut, datetime_quarter(dt));
+		return sql_mem_set_uint(ctx->pOut, datetime_quarter(dt));
 	if (strcasecmp("month", str) == 0)
-		return mem_set_uint(ctx->pOut, datetime_month(dt));
+		return sql_mem_set_uint(ctx->pOut, datetime_month(dt));
 	if (strcasecmp("week", str) == 0)
-		return mem_set_uint(ctx->pOut, datetime_week(dt));
+		return sql_mem_set_uint(ctx->pOut, datetime_week(dt));
 	if (strcasecmp("day", str) == 0)
-		return mem_set_uint(ctx->pOut, datetime_day(dt));
+		return sql_mem_set_uint(ctx->pOut, datetime_day(dt));
 	if (strcasecmp("dow", str) == 0)
-		return mem_set_uint(ctx->pOut, datetime_dow(dt));
+		return sql_mem_set_uint(ctx->pOut, datetime_dow(dt));
 	if (strcasecmp("doy", str) == 0)
-		return mem_set_uint(ctx->pOut, datetime_doy(dt));
+		return sql_mem_set_uint(ctx->pOut, datetime_doy(dt));
 	if (strcasecmp("hour", str) == 0)
-		return mem_set_uint(ctx->pOut, datetime_hour(dt));
+		return sql_mem_set_uint(ctx->pOut, datetime_hour(dt));
 	if (strcasecmp("minute", str) == 0)
-		return mem_set_uint(ctx->pOut, datetime_min(dt));
+		return sql_mem_set_uint(ctx->pOut, datetime_min(dt));
 	if (strcasecmp("second", str) == 0)
-		return mem_set_uint(ctx->pOut, datetime_sec(dt));
+		return sql_mem_set_uint(ctx->pOut, datetime_sec(dt));
 	if (strcasecmp("millisecond", str) == 0)
-		return mem_set_uint(ctx->pOut, datetime_msec(dt));
+		return sql_mem_set_uint(ctx->pOut, datetime_msec(dt));
 	if (strcasecmp("microsecond", str) == 0)
-		return mem_set_uint(ctx->pOut, datetime_usec(dt));
+		return sql_mem_set_uint(ctx->pOut, datetime_usec(dt));
 	if (strcasecmp("nanosecond", str) == 0)
-		return mem_set_uint(ctx->pOut, datetime_nsec(dt));
+		return sql_mem_set_uint(ctx->pOut, datetime_nsec(dt));
 	if (strcasecmp("epoch", str) == 0)
-		return mem_set_int64(ctx->pOut, datetime_epoch(dt));
+		return sql_mem_set_int64(ctx->pOut, datetime_epoch(dt));
 	if (strcasecmp("timezone_offset", str) == 0)
-		return mem_set_int64(ctx->pOut, datetime_tzoffset(dt));
+		return sql_mem_set_int64(ctx->pOut, datetime_tzoffset(dt));
 }
 
 #define Utf8Read(s, e) \
@@ -1392,7 +1392,7 @@ likeFunc(sql_context *context, int argc, const struct sql_mem *argv)
 	u32 escape = SQL_END_OF_STRING;
 	int nPat;
 	assert(argc == 2 || argc == 3);
-	if (mem_is_any_null(&argv[0], &argv[1]))
+	if (sql_mem_is_any_null(&argv[0], &argv[1]))
 		return;
 	assert(sql_mem_is_str(&argv[0]) && sql_mem_is_str(&argv[1]));
 	const char *zB = argv[0].u.z;
@@ -1445,7 +1445,7 @@ likeFunc(sql_context *context, int argc, const struct sql_mem *argv)
 		context->is_aborted = true;
 		return;
 	}
-	mem_set_bool(context->pOut, res == MATCH);
+	sql_mem_set_bool(context->pOut, res == MATCH);
 }
 
 /*
@@ -1464,7 +1464,7 @@ quoteFunc(struct sql_context *context, int argc, const struct sql_mem *argv)
 	case MEM_TYPE_UUID: {
 		char buf[UUID_STR_LEN + 1];
 		tt_uuid_to_string(&argv[0].u.uuid, &buf[0]);
-		if (mem_copy_str(context->pOut, buf, UUID_STR_LEN) != 0)
+		if (sql_mem_copy_str(context->pOut, buf, UUID_STR_LEN) != 0)
 			context->is_aborted = true;
 		break;
 	}
@@ -1473,7 +1473,7 @@ quoteFunc(struct sql_context *context, int argc, const struct sql_mem *argv)
 		uint32_t len = datetime_to_string(&context->pOut->u.dt, buf,
 						  DT_TO_STRING_BUFSIZE);
 		assert(len == strlen(buf));
-		if (mem_copy_str(context->pOut, buf, len) != 0)
+		if (sql_mem_copy_str(context->pOut, buf, len) != 0)
 			context->is_aborted = true;
 		break;
 	}
@@ -1482,7 +1482,7 @@ quoteFunc(struct sql_context *context, int argc, const struct sql_mem *argv)
 		uint32_t len = interval_to_string(&context->pOut->u.itv, buf,
 						  DT_IVAL_TO_STRING_BUFSIZE);
 		assert(len == strlen(buf));
-		if (mem_copy_str(context->pOut, buf, len) != 0)
+		if (sql_mem_copy_str(context->pOut, buf, len) != 0)
 			context->is_aborted = true;
 		break;
 	}
@@ -1490,7 +1490,7 @@ quoteFunc(struct sql_context *context, int argc, const struct sql_mem *argv)
 	case MEM_TYPE_DEC:
 	case MEM_TYPE_UINT:
 	case MEM_TYPE_INT: {
-		if (mem_copy(context->pOut, &argv[0]) != 0)
+		if (sql_mem_copy(context->pOut, &argv[0]) != 0)
 			context->is_aborted = true;
 		break;
 	}
@@ -1501,8 +1501,8 @@ quoteFunc(struct sql_context *context, int argc, const struct sql_mem *argv)
 		assert(size > 0);
 		buf = sql_xmalloc(size);
 		mp_snprint(buf, size, argv[0].u.z);
-		mem_set_str0(context->pOut, buf);
-		mem_set_dynamic(context->pOut);
+		sql_mem_set_str0(context->pOut, buf);
+		sql_mem_set_dynamic(context->pOut);
 		break;
 	}
 	case MEM_TYPE_BIN: {
@@ -1517,8 +1517,8 @@ quoteFunc(struct sql_context *context, int argc, const struct sql_mem *argv)
 		zText[(nBlob * 2) + 2] = '\'';
 		zText[0] = 'X';
 		zText[1] = '\'';
-		mem_set_str(context->pOut, zText, size);
-		mem_set_dynamic(context->pOut);
+		sql_mem_set_str(context->pOut, zText, size);
+		sql_mem_set_dynamic(context->pOut);
 		break;
 	}
 	case MEM_TYPE_STR: {
@@ -1539,17 +1539,17 @@ quoteFunc(struct sql_context *context, int argc, const struct sql_mem *argv)
 				res[j++] = '\'';
 		}
 		res[size - 1] = '\'';
-		mem_set_str(context->pOut, res, size);
-		mem_set_dynamic(context->pOut);
+		sql_mem_set_str(context->pOut, res, size);
+		sql_mem_set_dynamic(context->pOut);
 		break;
 	}
 	case MEM_TYPE_BOOL: {
-		mem_set_str0(context->pOut, SQL_TOKEN_BOOLEAN(argv[0].u.b));
+		sql_mem_set_str0(context->pOut, SQL_TOKEN_BOOLEAN(argv[0].u.b));
 		break;
 	}
 	default:{
 		assert(sql_mem_is_null(&argv[0]));
-		mem_set_str0(context->pOut, "NULL");
+		sql_mem_set_str0(context->pOut, "NULL");
 	}
 	}
 }
@@ -1576,16 +1576,16 @@ replaceFunc(struct sql_context *context, int argc, const struct sql_mem *argv)
 
 	assert(argc == 3);
 	(void)argc;
-	if (mem_is_any_null(&argv[0], &argv[1]) || sql_mem_is_null(&argv[2]))
+	if (sql_mem_is_any_null(&argv[0], &argv[1]) || sql_mem_is_null(&argv[2]))
 		return;
-	assert(mem_is_bytes(&argv[0]) && mem_is_bytes(&argv[1]) &&
-	       mem_is_bytes(&argv[2]));
+	assert(sql_mem_is_bytes(&argv[0]) && sql_mem_is_bytes(&argv[1]) &&
+	       sql_mem_is_bytes(&argv[2]));
 	zStr = (const unsigned char *)argv[0].u.z;
 	nStr = argv[0].u.n;
 	zPattern = (const unsigned char *)argv[1].u.z;
 	nPattern = argv[1].u.n;
 	if (nPattern == 0) {
-		if (mem_copy(context->pOut, &argv[0]) != 0)
+		if (sql_mem_copy(context->pOut, &argv[0]) != 0)
 			context->is_aborted = true;
 		return;
 	}
@@ -1612,10 +1612,10 @@ replaceFunc(struct sql_context *context, int argc, const struct sql_mem *argv)
 	assert(j <= nOut);
 	zOut[j] = 0;
 	if (context->func->def->returns == FIELD_TYPE_STRING)
-		mem_set_str(context->pOut, (char *)zOut, j);
+		sql_mem_set_str(context->pOut, (char *)zOut, j);
 	else
-		mem_set_bin(context->pOut, (char *)zOut, j);
-	mem_set_dynamic(context->pOut);
+		sql_mem_set_bin(context->pOut, (char *)zOut, j);
+	sql_mem_set_dynamic(context->pOut);
 }
 
 /*
@@ -1667,10 +1667,10 @@ soundexFunc(struct sql_context *context, int argc, const struct sql_mem *argv)
 			zResult[j++] = '0';
 		}
 		zResult[j] = 0;
-		if (mem_copy_str(context->pOut, zResult, 4) != 0)
+		if (sql_mem_copy_str(context->pOut, zResult, 4) != 0)
 			context->is_aborted = true;
 	} else {
-		mem_set_str0(context->pOut, "?000");
+		sql_mem_set_str0(context->pOut, "?000");
 	}
 }
 

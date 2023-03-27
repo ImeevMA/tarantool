@@ -814,7 +814,7 @@ tarantoolsqlIdxKeyCompare(struct BtCursor *cursor,
 		}
 		next_fieldno = fieldno + 1;
 		struct coll *coll = part->coll;
-		if (mem_cmp_msgpack(mem, &p, &rc, coll) != 0)
+		if (sql_mem_cmp_msgpack(mem, &p, &rc, coll) != 0)
 			rc = 0;
 		if (rc != 0) {
 			if (part->sort_order == SORT_ORDER_ASC)

@@ -591,7 +591,7 @@ freeP4(int p4type, void *p4)
 		sql_key_info_unref(p4);
 		break;
 	case P4_MEM:
-		mem_delete((struct sql_mem *)p4);
+		sql_mem_delete((struct sql_mem *)p4);
 		break;
 	default:
 		break;
@@ -1018,7 +1018,7 @@ displayP4(Op * pOp, char *zTemp, int nTemp)
 			break;
 		}
 	case P4_MEM:{
-			const char *value = mem_str(pOp->p4.pMem);
+			const char *value = sql_mem_str(pOp->p4.pMem);
 			sqlStrAccumAppend(&x, value, strlen(value));
 			break;
 		}
@@ -1088,6 +1088,18 @@ sqlVdbePrintOp(FILE * pOut, int pc, Op * pOp)
 }
 #endif
 
+/** Release an array of N Mem elements */
+static void
+release_array_of_mems(struct sql_mem *p, size_t n)
+{
+	if (p == NULL)
+		return;
+	for (size_t i = 0; i < n; ++i) {
+		sql_mem_destroy(&p[i]);
+		sql_mem_set_invalid(&p[i]);
+	}
+}
+
 /*
  * Delete a VdbeFrame object and its contents. VdbeFrame objects are
  * allocated by the OP_Program opcode in sqlVdbeExec().
@@ -1096,11 +1108,11 @@ void
 sqlVdbeFrameDelete(VdbeFrame * p)
 {
 	int i;
-	struct sql_mem *aMem = VdbeFrameMem(p);
+	struct sql_mem *aMem = sql_mem_from_frame(p);
 	VdbeCursor **apCsr = (VdbeCursor **) & aMem[p->nChildMem];
 	for (i = 0; i < p->nChildCsr; i++)
 		sqlVdbeFreeCursor(apCsr[i]);
-	releaseMemArray(aMem, p->nChildMem);
+	release_array_of_mems(aMem, p->nChildMem);
 	sql_xfree(p);
 }
 
@@ -1139,7 +1151,7 @@ sqlVdbeList(Vdbe * p)
 	 * the result, result columns may become dynamic if the user calls
 	 * sql_column_text16(), causing a translation to UTF-16 encoding.
 	 */
-	releaseMemArray(pMem, 8);
+	release_array_of_mems(pMem, 8);
 	p->pResultSet = 0;
 
 	/* When the number of output rows reaches nRow, that means the
@@ -1158,7 +1170,7 @@ sqlVdbeList(Vdbe * p)
 		 */
 		assert(p->nMem > 9);
 		pSub = &p->aMem[9];
-		if (mem_is_bin(pSub)) {
+		if (sql_mem_is_bin(pSub)) {
 			/* On the first call to sql_step(), pSub will hold a NULL.  It is
 			 * initialized to a BLOB by the P4_SUBPROGRAM processing logic below
 			 */
@@ -1196,12 +1208,12 @@ sqlVdbeList(Vdbe * p)
 		}
 		if (p->explain == 1) {
 			assert(i >= 0);
-			mem_set_uint(pMem, i);
+			sql_mem_set_uint(pMem, i);
 
 			pMem++;
 
 			char *value = (char *)sqlOpcodeName(pOp->opcode);
-			mem_set_str0(pMem, value);
+			sql_mem_set_str0(pMem, value);
 			pMem++;
 
 			/* When an OP_Program opcode is encounter (the only opcode that has
@@ -1218,49 +1230,51 @@ sqlVdbeList(Vdbe * p)
 				if (nSub == 0) {
 					uint32_t size = sizeof(SubProgram *);
 					char *bin = (char *)&pOp->p4.pProgram;
-					if (mem_copy_bin(pSub, bin, size) != 0)
+					if (sql_mem_copy_bin(pSub, bin,
+							     size) != 0)
 						return -1;
 				} else if (j == nSub) {
 					char *bin = (char *)&pOp->p4.pProgram;
 					uint32_t size = sizeof(SubProgram *);
-					if (mem_append(pSub, bin, size) != 0)
+					if (sql_mem_append(pSub, bin,
+							   size) != 0)
 						return -1;
 				}
 			}
 		}
 
-		mem_set_int(pMem, pOp->p1, pOp->p1 < 0);
+		sql_mem_set_int(pMem, pOp->p1, pOp->p1 < 0);
 		pMem++;
 
-		mem_set_int(pMem, pOp->p2, pOp->p2 < 0);
+		sql_mem_set_int(pMem, pOp->p2, pOp->p2 < 0);
 		pMem++;
 
-		mem_set_int(pMem, pOp->p3, pOp->p3 < 0);
+		sql_mem_set_int(pMem, pOp->p3, pOp->p3 < 0);
 		pMem++;
 
 		char *buf = sql_xmalloc(256);
 		zP4 = displayP4(pOp, buf, 256);
-		mem_set_str0(pMem, zP4);
+		sql_mem_set_str0(pMem, zP4);
 		if (zP4 != buf)
 			sql_xfree(buf);
 		else
-			mem_set_dynamic(pMem);
+			sql_mem_set_dynamic(pMem);
 		pMem++;
 
 		if (p->explain == 1) {
 			buf = sql_xmalloc(4);
 			sql_snprintf(3, buf, "%.2x", pOp->p5);
-			mem_set_str0(pMem, buf);
-			mem_set_dynamic(pMem);
+			sql_mem_set_str0(pMem, buf);
+			sql_mem_set_dynamic(pMem);
 			pMem++;
 
 #ifdef SQL_ENABLE_EXPLAIN_COMMENTS
 			buf = sql_xmalloc(500);
 			displayComment(pOp, zP4, buf, 500);
-			mem_set_str0(pMem, buf);
-			mem_set_dynamic(pMem);
+			sql_mem_set_str0(pMem, buf);
+			sql_mem_set_dynamic(pMem);
 #else
-			mem_set_null(pMem);
+			sql_mem_set_null(pMem);
 #endif
 		}
 
@@ -1461,11 +1475,11 @@ sqlVdbeMakeReady(Vdbe * p,	/* The VDBE */
 	p->nCursor = nCursor;
 	p->nVar = nVar;
 	for (int i = 0; i < nVar; ++i)
-		mem_create(&p->aVar[i]);
+		sql_mem_create(&p->aVar[i]);
 	p->nMem = nMem;
 	for (int i = 0; i < nMem; ++i) {
-		mem_create(&p->aMem[i]);
-		mem_set_invalid(&p->aMem[i]);
+		sql_mem_create(&p->aMem[i]);
+		sql_mem_set_invalid(&p->aMem[i]);
 	}
 	memset(p->apCsr, 0, nCursor * sizeof(VdbeCursor *));
 	sqlVdbeRewind(p);
@@ -1562,7 +1576,7 @@ static void
 closeCursorsAndFree(Vdbe * p)
 {
 	if (p->aMem) {
-		releaseMemArray(p->aMem, p->nMem);
+		release_array_of_mems(p->aMem, p->nMem);
 	}
 	while (p->pDelFrame) {
 		VdbeFrame *pDel = p->pDelFrame;
@@ -1588,7 +1602,7 @@ Cleanup(Vdbe * p)
 			assert(p->apCsr[i] == 0);
 	if (p->aMem) {
 		for (i = 0; i < p->nMem; i++)
-			assert(mem_is_invalid(&p->aMem[i]));
+			assert(sql_mem_is_invalid(&p->aMem[i]));
 	}
 #endif
 
@@ -1985,7 +1999,7 @@ sqlVdbeClearObject(struct Vdbe *p)
 		sql_xfree(pSub);
 	}
 	if (p->magic != VDBE_MAGIC_INIT) {
-		releaseMemArray(p->aVar, p->nVar);
+		release_array_of_mems(p->aVar, p->nVar);
 		sql_xfree(p->pVList);
 		sql_xfree(p->pFree);
 	}
@@ -2027,7 +2041,7 @@ sqlVdbeAllocUnpackedRecord(struct key_def *key_def)
 	size_t idx = ROUND8(sizeof(struct UnpackedRecord));
 	p->aMem = (struct sql_mem *)&((char *)p)[idx];
 	for (uint32_t i = 0; i < key_def->part_count + 1; ++i)
-		mem_create(&p->aMem[i]);
+		sql_mem_create(&p->aMem[i]);
 	p->key_def = key_def;
 	p->nField = key_def->part_count + 1;
 	return p;
@@ -2087,7 +2101,7 @@ sqlVdbeRecordUnpackMsgpack(struct key_def *key_def,	/* Information about the rec
 	p->default_rc = 0;
 	p->key_def = key_def;
 	while (n--) {
-		mem_destroy(pMem);
+		sql_mem_destroy(pMem);
 		uint32_t sz = 0;
 		mem_from_mp_ephemeral(pMem, zParse, &sz);
 		assert(sz != 0);

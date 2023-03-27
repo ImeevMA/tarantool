@@ -169,135 +169,120 @@ sql_mem_is_double(const struct sql_mem *mem)
 }
 
 static inline bool
-mem_is_dec(const struct sql_mem *mem)
+sql_mem_is_dec(const struct sql_mem *mem)
 {
 	return mem->type == MEM_TYPE_DEC;
 }
 
 static inline bool
-mem_is_int(const struct sql_mem *mem)
+sql_mem_is_int(const struct sql_mem *mem)
 {
 	return (mem->type & (MEM_TYPE_UINT | MEM_TYPE_INT)) != 0;
 }
 
 static inline bool
-mem_is_bool(const struct sql_mem *mem)
+sql_mem_is_bool(const struct sql_mem *mem)
 {
 	return mem->type == MEM_TYPE_BOOL;
 }
 
 static inline bool
-mem_is_bin(const struct sql_mem *mem)
+sql_mem_is_bin(const struct sql_mem *mem)
 {
 	return mem->type == MEM_TYPE_BIN;
 }
 
 static inline bool
-mem_is_map(const struct sql_mem *mem)
+sql_mem_is_map(const struct sql_mem *mem)
 {
 	return mem->type == MEM_TYPE_MAP;
 }
 
 static inline bool
-mem_is_array(const struct sql_mem *mem)
+sql_mem_is_array(const struct sql_mem *mem)
 {
 	return mem->type == MEM_TYPE_ARRAY;
 }
 
 static inline bool
-mem_is_datetime(const struct sql_mem *mem)
+sql_mem_is_datetime(const struct sql_mem *mem)
 {
 	return mem->type == MEM_TYPE_DATETIME;
 }
 
 static inline bool
-mem_is_interval(const struct sql_mem *mem)
+sql_mem_is_interval(const struct sql_mem *mem)
 {
 	return mem->type == MEM_TYPE_INTERVAL;
 }
 
 static inline bool
-mem_is_bytes(const struct sql_mem *mem)
+sql_mem_is_bytes(const struct sql_mem *mem)
 {
 	return (mem->type & (MEM_TYPE_BIN | MEM_TYPE_STR |
 			     MEM_TYPE_MAP | MEM_TYPE_ARRAY)) != 0;
 }
 
 static inline bool
-mem_is_frame(const struct sql_mem *mem)
+sql_mem_is_frame(const struct sql_mem *mem)
 {
 	return mem->type == MEM_TYPE_FRAME;
 }
 
 static inline bool
-mem_is_invalid(const struct sql_mem *mem)
+sql_mem_is_invalid(const struct sql_mem *mem)
 {
 	return mem->type == MEM_TYPE_INVALID;
 }
 
 static inline bool
-mem_is_ephemeral(const struct sql_mem *mem)
+sql_mem_is_ephemeral(const struct sql_mem *mem)
 {
-	return mem_is_bytes(mem) && mem->is_ephemeral;
+	return sql_mem_is_bytes(mem) && mem->is_ephemeral;
 }
 
 static inline bool
-mem_is_dynamic(const struct sql_mem *mem)
+sql_mem_is_dynamic(const struct sql_mem *mem)
 {
-	return mem_is_bytes(mem) && mem->u.z == mem->buf;
+	return sql_mem_is_bytes(mem) && mem->u.z == mem->buf;
 }
 
 /** Return TRUE if MEM does not need to be freed or destroyed. */
 static inline bool
-mem_is_trivial(const struct sql_mem *mem)
+sql_mem_is_trivial(const struct sql_mem *mem)
 {
 	return mem->size == 0 && mem->type != MEM_TYPE_FRAME;
 }
 
 static inline bool
-mem_is_cleared(const struct sql_mem *mem)
-{
-	assert(!mem->is_cleared || mem->type == MEM_TYPE_NULL);
-	return mem->is_cleared;
-}
-
-static inline bool
-mem_is_comparable(const struct sql_mem *mem)
+sql_mem_is_comparable(const struct sql_mem *mem)
 {
 	uint32_t incmp = MEM_TYPE_ARRAY | MEM_TYPE_MAP | MEM_TYPE_INTERVAL;
 	return mem->group != MEM_GROUP_ANY && (mem->type & incmp) == 0;
 }
 
 static inline bool
-mem_is_same_type(const struct sql_mem *mem1, const struct sql_mem *mem2)
+sql_mem_is_same_type(const struct sql_mem *mem1, const struct sql_mem *mem2)
 {
 	return mem1->type == mem2->type;
 }
 
 static inline bool
-mem_is_any_null(const struct sql_mem *mem1, const struct sql_mem *mem2)
+sql_mem_is_any_null(const struct sql_mem *mem1, const struct sql_mem *mem2)
 {
 	return ((mem1->type| mem2->type) & MEM_TYPE_NULL) != 0;
 }
 
 /** Check if MEM is compatible with field type. */
 bool
-mem_is_field_compatible(const struct sql_mem *mem, enum field_type type);
-
-/**
- * Write a NULL-terminated string representation of a MEM to buf. Returns the
- * number of bytes required to write the value, excluding '\0'. If the return
- * value is equal to or greater than size, then the value has been truncated.
- */
-int
-mem_snprintf(char *buf, uint32_t size, const struct sql_mem *mem);
+sql_mem_is_field_compatible(const struct sql_mem *mem, enum field_type type);
 
 /**
  * Returns a NULL-terminated string representation of a MEM. Memory for the
  * result was allocated using sql_xmalloc() and should be freed.
  */
 char *
-mem_strdup(const struct sql_mem *mem);
+sql_mem_strdup(const struct sql_mem *mem);
 
 /**
  * Return a string that contains description of type and value of MEM. String is
@@ -306,11 +291,11 @@ mem_strdup(const struct sql_mem *mem);
  * description of errors.
  */
 const char *
-mem_str(const struct sql_mem *mem);
+sql_mem_str(const struct sql_mem *mem);
 
 /** Initialize MEM and set NULL. */
 static inline void
-mem_create(struct sql_mem *mem)
+sql_mem_create(struct sql_mem *mem)
 {
 	memset(mem, 0, sizeof(*mem));
 	mem->type = MEM_TYPE_NULL;
@@ -318,137 +303,140 @@ mem_create(struct sql_mem *mem)
 
 /** Free all allocated memory in MEM and set MEM to NULL. */
 void
-mem_destroy(struct sql_mem *mem);
+sql_mem_destroy(struct sql_mem *mem);
 
+/**
+ * Free all memory managed by the MEM and the memory where the MEM is located.
+ */
 void
-mem_delete(struct sql_mem *);
+sql_mem_delete(struct sql_mem *);
 
 /** Clear MEM and set it to NULL. */
 void
-mem_set_null(struct sql_mem *mem);
+sql_mem_set_null(struct sql_mem *mem);
 
 /** Clear MEM and set it to INTEGER. */
 void
-mem_set_int(struct sql_mem *mem, int64_t value, bool is_neg);
+sql_mem_set_int(struct sql_mem *mem, int64_t value, bool is_neg);
 
 /** Clear MEM and set it to UNSIGNED. */
 void
-mem_set_uint(struct sql_mem *mem, uint64_t value);
+sql_mem_set_uint(struct sql_mem *mem, uint64_t value);
 
 /** Clear MEM and set it to NEGATIVE INTEGER. */
 void
-mem_set_nint(struct sql_mem *mem, int64_t value);
+sql_mem_set_nint(struct sql_mem *mem, int64_t value);
 
 /** Clear MEM and set it to INT64. */
 static inline void
-mem_set_int64(struct sql_mem *mem, int64_t value)
+sql_mem_set_int64(struct sql_mem *mem, int64_t value)
 {
 	if (value < 0)
-		mem_set_nint(mem, value);
+		sql_mem_set_nint(mem, value);
 	else
-		mem_set_uint(mem, value);
+		sql_mem_set_uint(mem, value);
 }
 
 /** Clear MEM and set it to BOOLEAN. */
 void
-mem_set_bool(struct sql_mem *mem, bool value);
+sql_mem_set_bool(struct sql_mem *mem, bool value);
 
 /** Clear MEM and set it to DOUBLE. */
 void
-mem_set_double(struct sql_mem *mem, double value);
+sql_mem_set_double(struct sql_mem *mem, double value);
 
 /** Clear MEM and set it to UUID. */
 void
-mem_set_uuid(struct sql_mem *mem, const struct tt_uuid *uuid);
+sql_mem_set_uuid(struct sql_mem *mem, const struct tt_uuid *uuid);
 
 /** Clear MEM and set it to DECIMAL. */
 void
-mem_set_dec(struct sql_mem *mem, const decimal_t *dec);
+sql_mem_set_dec(struct sql_mem *mem, const decimal_t *dec);
 
 /** Clear MEM and set it to DATETIME. */
 void
-mem_set_datetime(struct sql_mem *mem, const struct datetime *dt);
+sql_mem_set_datetime(struct sql_mem *mem, const struct datetime *dt);
 
 /** Clear MEM and set it to INTERVAL. */
 void
-mem_set_interval(struct sql_mem *mem, const struct interval *itv);
+sql_mem_set_interval(struct sql_mem *mem, const struct interval *itv);
 
 /** Clear MEM and set it to STRING. */
 void
-mem_set_str(struct sql_mem *mem, char *value, uint32_t len);
+sql_mem_set_str(struct sql_mem *mem, char *value, uint32_t len);
 
 /** Clear MEM and set it to NULL-terminated STRING. */
 void
-mem_set_str0(struct sql_mem *mem, char *value);
+sql_mem_set_str0(struct sql_mem *mem, char *value);
 
 /** Copy string to a newly allocated memory. The MEM type becomes STRING. */
 int
-mem_copy_str(struct sql_mem *mem, const char *value, uint32_t len);
+sql_mem_copy_str(struct sql_mem *mem, const char *value, uint32_t len);
 
 /**
  * Copy NULL-terminated string to a newly allocated memory. The MEM type becomes
  * STRING.
  */
 int
-mem_copy_str0(struct sql_mem *mem, const char *value);
+sql_mem_copy_str0(struct sql_mem *mem, const char *value);
 
 /** Clear MEM and set it to VARBINARY. */
 void
-mem_set_bin(struct sql_mem *mem, char *value, uint32_t size);
+sql_mem_set_bin(struct sql_mem *mem, char *value, uint32_t size);
 
 /**
  * Copy binary value to a newly allocated memory. The MEM type becomes
  * VARBINARY.
  */
 int
-mem_copy_bin(struct sql_mem *mem, const char *value, uint32_t size);
+sql_mem_copy_bin(struct sql_mem *mem, const char *value, uint32_t size);
 
 /**
  * Clear MEM and set it to MAP. The binary value must be msgpack of MAP type.
  */
 void
-mem_set_map(struct sql_mem *mem, char *value, uint32_t size);
+sql_mem_set_map(struct sql_mem *mem, char *value, uint32_t size);
 
 /** Copy MAP value to a newly allocated memory. The MEM type becomes MAP. */
 int
-mem_copy_map(struct sql_mem *mem, const char *value, uint32_t size);
+sql_mem_copy_map(struct sql_mem *mem, const char *value, uint32_t size);
 
 /**
  * Clear MEM and set it to ARRAY. The binary value must be msgpack of ARRAY
  * type.
  */
 void
-mem_set_array(struct sql_mem *mem, char *value, uint32_t size);
+sql_mem_set_array(struct sql_mem *mem, char *value, uint32_t size);
 
 /** Copy ARRAY value to a newly allocated memory. The MEM type becomes ARRAY. */
 int
-mem_copy_array(struct sql_mem *mem, const char *value, uint32_t size);
+sql_mem_copy_array(struct sql_mem *mem, const char *value, uint32_t size);
 
 /** Clear MEM and set it to invalid state. */
 void
-mem_set_invalid(struct sql_mem *mem);
+sql_mem_set_invalid(struct sql_mem *mem);
 
 /** Clear MEM and set pointer to be its value. */
 void
-mem_set_ptr(struct sql_mem *mem, void *ptr);
+sql_mem_set_ptr(struct sql_mem *mem, void *ptr);
 
 /** Clear MEM and set frame to be its value. */
 void
-mem_set_frame(struct sql_mem *mem, struct VdbeFrame *frame);
+sql_mem_set_frame(struct sql_mem *mem, struct VdbeFrame *frame);
 
 /**
  * Clear the MEM, set the function as its value, and allocate enough memory to
  * hold the accumulation structure for the aggregate function.
  */
 int
-mem_set_agg(struct sql_mem *mem, struct func *func, int size);
+sql_mem_set_agg(struct sql_mem *mem, struct func *func, int size);
 
 /** Clear MEM and set it to special, "cleared", NULL. */
 void
-mem_set_null_clear(struct sql_mem *mem);
+sql_mem_set_null_clear(struct sql_mem *mem);
 
 static inline void
-mem_set_ephemeral(struct sql_mem *mem)
+sql_mem_set_ephemeral(struct sql_mem *mem)
 {
 	mem->is_ephemeral = true;
 }
@@ -458,9 +446,9 @@ mem_set_ephemeral(struct sql_mem *mem)
  * value is located.
  */
 static inline void
-mem_set_dynamic(struct sql_mem *mem)
+sql_mem_set_dynamic(struct sql_mem *mem)
 {
-	if (!mem_is_bytes(mem))
+	if (!sql_mem_is_bytes(mem))
 		return;
 	sql_xfree(mem->buf);
 	mem->buf = mem->u.z;
@@ -473,7 +461,7 @@ mem_set_dynamic(struct sql_mem *mem)
  * newly allocated by destination MEM memory.
  */
 int
-mem_copy(struct sql_mem *to, const struct sql_mem *from);
+sql_mem_copy(struct sql_mem *to, const struct sql_mem *from);
 
 /**
  * Copy content of MEM from one MEM to another. In case source MEM contains
@@ -481,13 +469,13 @@ mem_copy(struct sql_mem *to, const struct sql_mem *from);
  * value with ephemeral allocation type.
  */
 void
-mem_copy_as_ephemeral(struct sql_mem *to, const struct sql_mem *from);
+sql_mem_copy_as_ephemeral(struct sql_mem *to, const struct sql_mem *from);
 
 /**
  * Move all content of source MEM to destination MEM. Source MEM is set to NULL.
  */
 void
-mem_move(struct sql_mem *to, struct sql_mem *from);
+sql_mem_move(struct sql_mem *to, struct sql_mem *from);
 
 /**
  * Append the given string to the end of the STRING or VARBINARY contained in
@@ -495,7 +483,7 @@ mem_move(struct sql_mem *to, struct sql_mem *from);
  * memory is allocated in an attempt to reduce the total number of allocations.
  */
 int
-mem_append(struct sql_mem *mem, const char *value, uint32_t len);
+sql_mem_append(struct sql_mem *mem, const char *value, uint32_t len);
 
 /**
  * Concatenate strings or binaries from the first and the second MEMs and write
@@ -503,85 +491,85 @@ mem_append(struct sql_mem *mem, const char *value, uint32_t len);
  * result MEM is set to NULL even if the result MEM is actually the first MEM.
  */
 int
-mem_concat(const struct sql_mem *a, const struct sql_mem *b,
-	   struct sql_mem *result);
+sql_mem_concat(const struct sql_mem *a, const struct sql_mem *b,
+	       struct sql_mem *result);
 
 /**
  * Add the first MEM to the second MEM and write the result to the third MEM.
  */
 int
-mem_add(const struct sql_mem *left, const struct sql_mem *right,
-	struct sql_mem *result);
+sql_mem_add(const struct sql_mem *left, const struct sql_mem *right,
+	    struct sql_mem *result);
 
 /**
  * Subtract the second MEM from the first MEM and write the result to the third
  * MEM.
  */
 int
-mem_sub(const struct sql_mem *left, const struct sql_mem *right,
-	struct sql_mem *result);
+sql_mem_sub(const struct sql_mem *left, const struct sql_mem *right,
+	    struct sql_mem *result);
 
 /**
  * Multiply the first MEM by the second MEM and write the result to the third
  * MEM.
  */
 int
-mem_mul(const struct sql_mem *left, const struct sql_mem *right,
-	struct sql_mem *result);
+sql_mem_mul(const struct sql_mem *left, const struct sql_mem *right,
+	    struct sql_mem *result);
 
 /**
  * Divide the first MEM by the second MEM and write the result to the third
  * MEM.
  */
 int
-mem_div(const struct sql_mem *left, const struct sql_mem *right,
-	struct sql_mem *result);
+sql_mem_div(const struct sql_mem *left, const struct sql_mem *right,
+	    struct sql_mem *result);
 
 /**
  * Divide the first MEM by the second MEM and write integer part of the result
  * to the third MEM.
  */
 int
-mem_rem(const struct sql_mem *left, const struct sql_mem *right,
-	struct sql_mem *result);
+sql_mem_rem(const struct sql_mem *left, const struct sql_mem *right,
+	    struct sql_mem *result);
 
 /** Perform a bitwise AND for two MEMs and write the result to the third MEM. */
 int
-mem_bit_and(const struct sql_mem *left, const struct sql_mem *right,
-	    struct sql_mem *result);
+sql_mem_bit_and(const struct sql_mem *left, const struct sql_mem *right,
+		struct sql_mem *result);
 
 /** Perform a bitwise OR for two MEMs and write the result to the third MEM. */
 int
-mem_bit_or(const struct sql_mem *left, const struct sql_mem *right,
-	   struct sql_mem *result);
+sql_mem_bit_or(const struct sql_mem *left, const struct sql_mem *right,
+	       struct sql_mem *result);
 
 /**
  * Perform a bitwise left shift for the first MEM by value from the second MEM
  * and write the result to the third MEM.
  */
 int
-mem_shift_left(const struct sql_mem *left, const struct sql_mem *right,
-	       struct sql_mem *result);
+sql_mem_shift_left(const struct sql_mem *left, const struct sql_mem *right,
+		   struct sql_mem *result);
 
 /**
  * Perform a bitwise right shift for the first MEM by value from the second MEM
  * and write the result to the third MEM.
  */
 int
-mem_shift_right(const struct sql_mem *left, const struct sql_mem *right,
-		struct sql_mem *result);
+sql_mem_shift_right(const struct sql_mem *left, const struct sql_mem *right,
+		    struct sql_mem *result);
 
 /** Perform a bitwise NOT to the MEM and write the result to the second MEM. */
 int
-mem_bit_not(const struct sql_mem *mem, struct sql_mem *result);
+sql_mem_bit_not(const struct sql_mem *mem, struct sql_mem *result);
 
 /**
  * Compare two MEMs using SCALAR rules and return the result of comparison. MEMs
  * should be scalars. Original MEMs are not changed.
  */
 int
-mem_cmp_scalar(const struct sql_mem *a, const struct sql_mem *b,
-	       const struct coll *coll);
+sql_mem_cmp_scalar(const struct sql_mem *a, const struct sql_mem *b,
+		   const struct coll *coll);
 
 /**
  * Compare MEM and packed to msgpack value using SCALAR rules and return the
@@ -590,65 +578,31 @@ mem_cmp_scalar(const struct sql_mem *a, const struct sql_mem *b,
  * following the specified packed value.
  */
 int
-mem_cmp_msgpack(const struct sql_mem *a, const char **b, int *result,
-		const struct coll *coll);
+sql_mem_cmp_msgpack(const struct sql_mem *a, const char **b, int *result,
+		    const struct coll *coll);
 
 /**
  * Compare two MEMs using implicit cast rules and return the result of
  * comparison. MEMs should be scalars. Original MEMs are not changed.
  */
 int
-mem_cmp(const struct sql_mem *a, const struct sql_mem *b, int *result,
-	const struct coll *coll);
+sql_mem_cmp(const struct sql_mem *a, const struct sql_mem *b, int *result,
+	    const struct coll *coll);
 
 /**
- * Convert the given MEM to INTEGER. This function and the function below define
- * the rules that are used to convert values of all other types to INTEGER. In
- * this function, the conversion from double to integer may result in loss of
- * precision.
+ * Convert value of the given MEM to INTEGER. In this function, the conversion
+ * from double to integer is only possible if it is lossless.
  */
 int
-mem_to_int(struct sql_mem *mem);
-
-/**
- * Convert the given MEM to INTEGER. This function and the function above define
- * the rules that are used to convert values of all other types to INTEGER. In
- * this function, the conversion from double to integer is only possible if it
- * is lossless.
- */
-int
-mem_to_int_precise(struct sql_mem *mem);
-
-/**
- * Convert the given MEM to DOUBLE. This function defines the rules that are
- * used to convert values of all other types to DOUBLE.
- */
-int
-mem_to_double(struct sql_mem *mem);
-
-/**
- * Convert the given MEM to NUMBER. This function defines the rules that are
- * used to convert values of all other types to NUMBER.
- */
-int
-mem_to_number(struct sql_mem *mem);
-
-/**
- * Convert the given MEM to STRING. This function and the function below define
- * the rules that are used to convert values of all other types to STRING. In
- * this function, the string received after the convertion may be not
- * NULL-terminated.
- */
-int
-mem_to_str(struct sql_mem *mem);
+sql_mem_to_int_precise(struct sql_mem *mem);
 
 /** Convert the given MEM to given type according to explicit cast rules. */
 int
-mem_cast_explicit(struct sql_mem *mem, enum field_type type);
+sql_mem_cast_explicit(struct sql_mem *mem, enum field_type type);
 
 /** Convert the given MEM to given type according to implicit cast rules. */
 int
-mem_cast_implicit(struct sql_mem *mem, enum field_type type);
+sql_mem_cast_implicit(struct sql_mem *mem, enum field_type type);
 
 /**
  * Cast MEM with numeric value to given numeric type. Doesn't fail. The return
@@ -656,7 +610,7 @@ mem_cast_implicit(struct sql_mem *mem, enum field_type type);
  * original value is greater than the result, and 0 if the cast is precise.
  */
 int
-mem_cast_implicit_number(struct sql_mem *mem, enum field_type type);
+sql_mem_cast_implicit_number(struct sql_mem *mem, enum field_type type);
 
 /**
  * Return value for MEM of INTEGER type. For MEM of all other types convert
@@ -664,19 +618,19 @@ mem_cast_implicit_number(struct sql_mem *mem, enum field_type type);
  * MEM is not changed.
  */
 int
-mem_get_int(const struct sql_mem *mem, int64_t *i, bool *is_neg);
+sql_mem_get_int(const struct sql_mem *mem, int64_t *i, bool *is_neg);
 
 /**
  * Return value of MEM converted to int64_t. This function is not safe, since it
- * returns 0 if mem_get_int() fails. There is no proper handling for this case.
+ * returns 0 if sql_mem_get_int() fails. There is no proper handling for this case.
  * Also it works incorrectly with integer values that are more than INT64_MAX.
  */
 static inline int64_t
-mem_get_int_unsafe(const struct sql_mem *mem)
+sql_mem_get_int_unsafe(const struct sql_mem *mem)
 {
 	int64_t i;
 	bool is_neg;
-	if (mem_get_int(mem, &i, &is_neg) != 0)
+	if (sql_mem_get_int(mem, &i, &is_neg) != 0)
 		return 0;
 	return i;
 }
@@ -687,17 +641,17 @@ mem_get_int_unsafe(const struct sql_mem *mem)
  * MEM is not changed.
  */
 int
-mem_get_uint(const struct sql_mem *mem, uint64_t *u);
+sql_mem_get_uint(const struct sql_mem *mem, uint64_t *u);
 
 /**
  * Return value of MEM converted to uint64_t. This function is not safe, since it
- * returns 0 if mem_get_uint() fails. There is no proper handling for this case.
+ * returns 0 if sql_mem_get_uint() fails. There is no proper handling for this case.
  */
 static inline uint64_t
-mem_get_uint_unsafe(const struct sql_mem *mem)
+sql_mem_get_uint_unsafe(const struct sql_mem *mem)
 {
 	uint64_t u;
-	if (mem_get_uint(mem, &u) != 0)
+	if (sql_mem_get_uint(mem, &u) != 0)
 		return 0;
 	return u;
 }
@@ -708,18 +662,18 @@ mem_get_uint_unsafe(const struct sql_mem *mem)
  * MEM is not changed.
  */
 int
-mem_get_double(const struct sql_mem *mem, double *d);
+sql_mem_get_double(const struct sql_mem *mem, double *d);
 
 /**
  * Return value of MEM converted to double. This function is not safe since
- * there is no proper processing in case mem_get_double() return an error. In
+ * there is no proper processing in case sql_mem_get_double() return an error. In
  * this case this functions returns 0.
  */
 static inline double
-mem_get_double_unsafe(const struct sql_mem *mem)
+sql_mem_get_double_unsafe(const struct sql_mem *mem)
 {
 	double d;
-	if (mem_get_double(mem, &d) != 0)
+	if (sql_mem_get_double(mem, &d) != 0)
 		return 0.;
 	return d;
 }
@@ -730,18 +684,18 @@ mem_get_double_unsafe(const struct sql_mem *mem)
  * MEM is not changed.
  */
 int
-mem_get_bool(const struct sql_mem *mem, bool *b);
+sql_mem_get_bool(const struct sql_mem *mem, bool *b);
 
 /**
  * Return value of MEM converted to boolean. This function is not safe since
- * there is no proper processing in case mem_get_bool() return an error. In
+ * there is no proper processing in case sql_mem_get_bool() return an error. In
  * this case this function returns FALSE.
  */
 static inline bool
-mem_get_bool_unsafe(const struct sql_mem *mem)
+sql_mem_get_bool_unsafe(const struct sql_mem *mem)
 {
 	bool b;
-	if (mem_get_bool(mem, &b) != 0)
+	if (sql_mem_get_bool(mem, &b) != 0)
 		return false;
 	return b;
 }
@@ -752,35 +706,14 @@ mem_get_bool_unsafe(const struct sql_mem *mem)
  * Original MEM is not changed.
  */
 int
-mem_get_bin(const struct sql_mem *mem, const char **s);
-
-/**
- * Return length of value for MEM of STRING or VARBINARY type. Original MEM is
- * not changed.
- */
-int
-mem_len(const struct sql_mem *mem, uint32_t *len);
-
-/**
- * Return length of value for MEM of STRING or VARBINARY type. This function is
- * not safe since there is no proper processing in case mem_len() return an
- * error. In this case this function returns 0.
- */
-static inline int
-mem_len_unsafe(const struct sql_mem *mem)
-{
-	uint32_t len;
-	if (mem_len(mem, &len) != 0)
-		return 0;
-	return len;
-}
+sql_mem_get_bin(const struct sql_mem *mem, const char **s);
 
 /**
  * Simple type to str convertor. It is used to simplify
  * error reporting.
  */
 char *
-mem_type_to_str(const struct sql_mem *p);
+sql_mem_type_to_str(const struct sql_mem *p);
 
 /*
  * Return the MP_type of the value of the MEM.
@@ -788,46 +721,41 @@ mem_type_to_str(const struct sql_mem *p);
  * transparent memory cell.
  */
 enum mp_type
-mem_mp_type(const struct sql_mem *mem);
+sql_mem_mp_type(const struct sql_mem *mem);
 
 #ifdef SQL_DEBUG
 /*
  * Return true if a memory cell is not marked as invalid.  This macro
  * is for use inside assert() statements only.
  */
-#define memIsValid(M)  ((M)->type != MEM_TYPE_INVALID)
+#define sql_mem_is_valid(M)  ((M)->type != MEM_TYPE_INVALID)
 #endif
 
 /**
- * Change the mem->buf allocation to be at least n bytes. If mem->buf already
- * meets or exceeds the requested size, this routine is a no-op.
+ * Make sure mem->u.z points to a writable allocation of at least min(n, 32)
+ * bytes.
+ *
+ * If the is_preserved argument is true, then copy the contents of mem->u.z to a
+ * new selection. The mem value must be a variable length value.
+ *
+ * If the is_preserved argument is false, then any prior content in mem->u.z is
+ * discarded.
  */
 void
-sqlVdbeMemClearAndResize(struct sql_mem *mem, size_t n);
+sql_mem_grow(struct sql_mem *mem, size_t n, bool is_preserved);
 
-/*
- * Release an array of N Mem elements
- */
-void
-releaseMemArray(struct sql_mem *p, int N);
-
-#define VdbeFrameMem(p) \
-	((struct sql_mem *)&((u8 *)p)[ROUND8(sizeof(struct VdbeFrame))])
+#define sql_mem_from_frame(p) \
+	((struct sql_mem *)&((char *)p)[ROUND8(sizeof(struct VdbeFrame))])
 
 /**
  * Return true if Mem contains a variable length with length value greater than
  * SQL_MAX_LENGTH.
  */
 static inline bool
-sqlVdbeMemTooBig(struct sql_mem *mem)
+sql_mem_is_too_long(struct sql_mem *mem)
 {
-	return mem_is_bytes(mem) ? mem->u.n > SQL_MAX_LENGTH : false;
+	return sql_mem_is_bytes(mem) ? mem->u.n > SQL_MAX_LENGTH : false;
 }
-
-/* Return TRUE if Mem X contains dynamically allocated content - anything
- * that needs to be deallocated to avoid a leak.
- */
-#define VdbeMemDynamic(X) (((X)->type & MEM_TYPE_FRAME) != 0)
 
 /**
  * Perform comparison of two tuples: unpacked (key1) and packed (key2)

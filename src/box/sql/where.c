@@ -1257,9 +1257,11 @@ whereRangeSkipScanEst(Parse * pParse,		/* Parsing & code generating context */
 		int nDiff;
 		uint32_t sample_count = index->def->opts.stat->sample_count;
 		for (i = 0; i < (int)sample_count; i++) {
-			if (p1 != NULL && mem_cmp_scalar(p1, pVal, coll) >= 0)
+			if (p1 != NULL &&
+			    sql_mem_cmp_scalar(p1, pVal, coll) >= 0)
 				nLower++;
-			if (p2 != NULL && mem_cmp_scalar(p2, pVal, coll) >= 0)
+			if (p2 != NULL &&
+			    sql_mem_cmp_scalar(p2, pVal, coll) >= 0)
 				nUpper++;
 		}
 		nDiff = (nUpper - nLower);
@@ -1287,9 +1289,9 @@ whereRangeSkipScanEst(Parse * pParse,		/* Parsing & code generating context */
 		assert(*pbDone == 0);
 	}
 
-	mem_delete(p1);
-	mem_delete(p2);
-	mem_delete(pVal);
+	sql_mem_delete(p1);
+	sql_mem_delete(p2);
+	sql_mem_delete(pVal);
 
 	return rc;
 }
