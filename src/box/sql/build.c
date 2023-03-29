@@ -3486,3 +3486,176 @@ sql_emit_show_create_tables_include(struct Parse *parse)
 {
 	return sql_emit_show_create_table_all(parse, SQL_SHOW_INCLUDE);
 }
+
+/**
+ * Emit VDBE instructions for "SHOW CREATE INDEX table_name (index_name);" and
+ * "SHOW CREATE INDEX table_name (index_name) INCLUDING ERRORS;".
+ */
+static void
+sql_emit_show_create_index_one(struct Parse *parse, struct Token *table_name,
+			       struct Token *name, enum sql_show_type type)
+{
+	struct Vdbe *v = sqlGetVdbe(parse);
+	char *space_name = sql_name_from_token(table_name);
+	char *index_name = sql_name_from_token(name);
+	sqlVdbeSetNumCols(v, 1);
+	vdbe_metadata_set_col_name(v, 0, "statement");
+	vdbe_metadata_set_col_type(v, 0, "string");
+
+	int cursor_space = parse->nTab++;
+	int system_space_reg = ++parse->nMem;
+	int space_name_reg = ++parse->nMem;
+	sqlVdbeAddOp2(v, OP_OpenSpace, system_space_reg, BOX_VSPACE_ID);
+	sqlVdbeAddOp3(v, OP_IteratorOpen, cursor_space, 2, system_space_reg);
+	sqlVdbeChangeP5(v, OPFLAG_SEEKEQ);
+	sqlVdbeAddOp4(v, OP_String8, 0, space_name_reg, 0, space_name,
+		      P4_DYNAMIC);
+	int addr1 = sqlVdbeAddOp4Int(v, OP_SeekGE, cursor_space, 0,
+				     space_name_reg, 1);
+	int addr2 = sqlVdbeAddOp4Int(v, OP_IdxGT, cursor_space, 0,
+				     space_name_reg, 1);
+	int space_id_reg = ++parse->nMem;
+	int index_name_reg = ++parse->nMem;
+	sqlVdbeAddOp3(v, OP_Column, cursor_space, BOX_SPACE_FIELD_ID,
+		      space_id_reg);
+
+	int cursor_index = parse->nTab++;
+	int system_index_reg = ++parse->nMem;
+	sqlVdbeAddOp2(v, OP_OpenSpace, system_index_reg, BOX_VINDEX_ID);
+	sqlVdbeAddOp3(v, OP_IteratorOpen, cursor_index, 2, system_index_reg);
+	sqlVdbeChangeP5(v, OPFLAG_SEEKEQ);
+	assert(index_name_reg == space_id_reg + 1);
+	sqlVdbeAddOp4(v, OP_String8, 0, index_name_reg, 0, index_name,
+		      P4_DYNAMIC);
+	int addr3 = sqlVdbeAddOp4Int(v, OP_SeekGE, cursor_index, 0,
+				     space_id_reg, 2);
+	int addr4 = sqlVdbeAddOp4Int(v, OP_IdxGT, cursor_index, 0,
+				     space_id_reg, 2);
+	int index_id_reg = ++parse->nMem;
+	sqlVdbeAddOp3(v, OP_Column, cursor_index, BOX_INDEX_FIELD_ID,
+		      index_id_reg);
+
+	int result_reg = ++parse->nMem;
+	int addr5 = sqlVdbeAddOp4Int(v, OP_ShowCreateIndex, space_id_reg, 0,
+				     result_reg, index_id_reg);
+	sqlVdbeChangeP5(v, type);
+	sqlVdbeAddOp2(v, OP_ResultRow, result_reg, 1);
+	int addr6 = sqlVdbeAddOp0(v, OP_Goto);
+
+	sqlVdbeJumpHere(v, addr1);
+	sqlVdbeJumpHere(v, addr2);
+	char *err_space = sqlMPrintf(tnt_errcode_desc(ER_NO_SUCH_SPACE),
+				     space_name);
+	sqlVdbeAddOp4(v, OP_SetDiag, ER_NO_SUCH_SPACE, 0, 0, err_space,
+		      P4_DYNAMIC);
+	sqlVdbeAddOp2(v, OP_Halt, -1, ON_CONFLICT_ACTION_ABORT);
+
+	sqlVdbeJumpHere(v, addr3);
+	sqlVdbeJumpHere(v, addr4);
+	char *err_index = sqlMPrintf(tnt_errcode_desc(ER_NO_SUCH_INDEX_NAME),
+				     index_name, space_name);
+	sqlVdbeAddOp4(v, OP_SetDiag, ER_NO_SUCH_INDEX_NAME, 0, 0, err_index,
+		      P4_DYNAMIC);
+	sqlVdbeAddOp2(v, OP_Halt, -1, ON_CONFLICT_ACTION_ABORT);
+
+	sqlVdbeJumpHere(v, addr5);
+	sqlVdbeJumpHere(v, addr6);
+}
+
+void
+sql_emit_show_create_index_throw(struct Parse *parse, struct Token *space_name,
+				 struct Token *index_name)
+{
+	return sql_emit_show_create_index_one(parse, space_name, index_name,
+					      SQL_SHOW_THROW);
+}
+
+void
+sql_emit_show_create_index_include(struct Parse *parse,
+				   struct Token *space_name,
+				   struct Token *index_name)
+{
+	return sql_emit_show_create_index_one(parse, space_name, index_name,
+					      SQL_SHOW_INCLUDE);
+}
+
+/**
+ * Emit VDBE instructions for "SHOW CREATE INDEX table_name INCLUDING ERRORS;"
+ * and "SHOW CREATE INDEX table_name;".
+ */
+static void
+sql_emit_show_create_index_all(struct Parse *parse, struct Token *table_name,
+			       enum sql_show_type type)
+{
+	struct Vdbe *v = sqlGetVdbe(parse);
+	char *space_name = sql_name_from_token(table_name);
+	sqlVdbeSetNumCols(v, 1);
+	vdbe_metadata_set_col_name(v, 0, "statement");
+	vdbe_metadata_set_col_type(v, 0, "string");
+
+	int cursor_space = parse->nTab++;
+	int system_space_reg = ++parse->nMem;
+	int space_name_reg = ++parse->nMem;
+	sqlVdbeAddOp2(v, OP_OpenSpace, system_space_reg, BOX_VSPACE_ID);
+	sqlVdbeAddOp3(v, OP_IteratorOpen, cursor_space, 2, system_space_reg);
+	sqlVdbeChangeP5(v, OPFLAG_SEEKEQ);
+	sqlVdbeAddOp4(v, OP_String8, 0, space_name_reg, 0, space_name,
+		      P4_DYNAMIC);
+	int addr1 = sqlVdbeAddOp4Int(v, OP_SeekGE, cursor_space, 0,
+				     space_name_reg, 1);
+	int addr2 = sqlVdbeAddOp4Int(v, OP_IdxGT, cursor_space, 0,
+				     space_name_reg, 1);
+	int space_id_reg = ++parse->nMem;
+	sqlVdbeAddOp3(v, OP_Column, cursor_space, BOX_SPACE_FIELD_ID,
+		      space_id_reg);
+
+	int cursor_index = parse->nTab++;
+	int system_index_reg = ++parse->nMem;
+	sqlVdbeAddOp2(v, OP_OpenSpace, system_index_reg, BOX_VINDEX_ID);
+	sqlVdbeAddOp3(v, OP_IteratorOpen, cursor_index, 2, system_index_reg);
+	sqlVdbeChangeP5(v, OPFLAG_SEEKEQ);
+	int addr3 = sqlVdbeAddOp4Int(v, OP_SeekGE, cursor_index, 0,
+				     space_id_reg, 1);
+	int addr4 = sqlVdbeAddOp4Int(v, OP_IdxGT, cursor_index, 0,
+				     space_id_reg, 1);
+	int index_id_reg = ++parse->nMem;
+	int addr5 = sqlVdbeAddOp3(v, OP_Column, cursor_index,
+				  BOX_INDEX_FIELD_ID, index_id_reg);
+
+	int result_reg = ++parse->nMem;
+	int addr6 = sqlVdbeAddOp4Int(v, OP_ShowCreateIndex, space_id_reg, 0,
+				     result_reg, index_id_reg);
+	sqlVdbeChangeP5(v, type);
+	sqlVdbeAddOp2(v, OP_ResultRow, result_reg, 1);
+	sqlVdbeJumpHere(v, addr6);
+	sqlVdbeAddOp2(v, OP_Next, cursor_index, addr5);
+	int addr7 = sqlVdbeAddOp0(v, OP_Goto);
+
+	sqlVdbeJumpHere(v, addr1);
+	sqlVdbeJumpHere(v, addr2);
+	char *err_space = sqlMPrintf(tnt_errcode_desc(ER_NO_SUCH_SPACE),
+				     space_name);
+	sqlVdbeAddOp4(v, OP_SetDiag, ER_NO_SUCH_SPACE, 0, 0, err_space,
+		      P4_DYNAMIC);
+	sqlVdbeAddOp2(v, OP_Halt, -1, ON_CONFLICT_ACTION_ABORT);
+
+	sqlVdbeJumpHere(v, addr3);
+	sqlVdbeJumpHere(v, addr4);
+	sqlVdbeJumpHere(v, addr7);
+}
+
+void
+sql_emit_show_create_indexes_ignore(struct Parse *parse,
+				    struct Token *table_name)
+{
+	return sql_emit_show_create_index_all(parse, table_name,
+					      SQL_SHOW_IGNORE);
+}
+
+void
+sql_emit_show_create_indexes_include(struct Parse *parse,
+				     struct Token *table_name)
+{
+	return sql_emit_show_create_index_all(parse, table_name,
+					      SQL_SHOW_INCLUDE);
+}

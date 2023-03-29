@@ -2685,11 +2685,32 @@ sql_emit_show_create_tables_ignore(struct Parse *parse);
 void
 sql_emit_show_create_tables_include(struct Parse *parse);
 
+void
+sql_emit_show_create_index_throw(struct Parse *parse, struct Token *space_name,
+				 struct Token *index_name);
+
+void
+sql_emit_show_create_index_include(struct Parse *parse,
+				   struct Token *space_name,
+				   struct Token *index_name);
+
 /**
  * Generate a CREATE TABLE statement for the space with the given identifier.
  */
 int
 sql_show_create_table(uint32_t space_id, enum sql_show_type type, char **res);
+
+int
+sql_show_create_index(uint32_t space_id, uint32_t index_id,
+		      enum sql_show_type type, char **res);
+
+void
+sql_emit_show_create_indexes_ignore(struct Parse *parse,
+				    struct Token *table_name);
+
+void
+sql_emit_show_create_indexes_include(struct Parse *parse,
+				     struct Token *table_name);
 
 /**
  * Return true if given column is part of primary key.

@@ -1513,6 +1513,20 @@ cmd ::= SHOW CREATE TABLE INCLUDING ERRORS. {
   sql_emit_show_create_tables_include(pParse);
 }
 
+//////////////////////////// The SHOW CREATE INDEX command /////////////////////
+cmd ::= SHOW CREATE INDEX nm(X) DOT nm(Y). {
+  sql_emit_show_create_index_throw(pParse, &X, &Y);
+}
+cmd ::= SHOW CREATE INDEX nm(X) DOT nm(Y) INCLUDING ERRORS. {
+  sql_emit_show_create_index_include(pParse, &X, &Y);
+}
+cmd ::= SHOW CREATE INDEX nm(X). {
+  sql_emit_show_create_indexes_ignore(pParse, &X);
+}
+cmd ::= SHOW CREATE INDEX nm(X) INCLUDING ERRORS. {
+  sql_emit_show_create_indexes_include(pParse, &X);
+}
+
 //////////////////////////// The CREATE TRIGGER command /////////////////////
 
 cmd ::= createkw trigger_decl(A) BEGIN trigger_cmd_list(S) END(Z). {

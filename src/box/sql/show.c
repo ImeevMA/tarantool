@@ -20,7 +20,7 @@ struct sql_desc {
 	struct StrAccum acc;
 	/** Accumulate the string representation of the error. */
 	struct StrAccum err;
-	/** Space used in SHOW CREATE TABLE;. */
+	/** Space used in SHOW CREATE TABLE;. NULL for SHOW CREATE INDEX;. */
 	const struct space *space;
 	/** A type that specifies the action to take on an error. */
 	enum sql_show_type type;
@@ -29,8 +29,8 @@ struct sql_desc {
 };
 
 /**
- * Return name that can be used in CREATE TABLE and the created object will have
- * the original name.
+ * Return name that can be used in the statement and the created object will
+ * have the original name.
  */
 static char *
 sql_prettify_name_new(const char *name)
@@ -51,16 +51,27 @@ sql_prettify_name_new(const char *name)
 /** Initialize the object used to accumulate a statement. */
 static void
 sql_desc_initialize(struct sql_desc *desc, enum sql_show_type type,
-		    const struct space *space)
+		    const struct space *space, const struct index *index)
 {
+	assert(space != NULL);
 	sqlStrAccumInit(&desc->acc, NULL, 0, SQL_MAX_LENGTH);
 	sqlStrAccumInit(&desc->err, NULL, 0, SQL_MAX_LENGTH);
-	desc->space = space;
+	desc->space = index == NULL ? space : NULL;
 	desc->type = type;
 	desc->is_aborted = false;
 
 	char *new_name = sql_prettify_name_new(space->def->name);
-	sqlXPrintf(&desc->acc, "CREATE TABLE %s(", new_name);
+	if (index != NULL) {
+		char *index_name = sql_prettify_name_new(index->def->name);
+		if (index->def->opts.is_unique)
+			sqlXPrintf(&desc->acc, "CREATE UNIQUE INDEX ");
+		else
+			sqlXPrintf(&desc->acc, "CREATE INDEX ");
+		sqlXPrintf(&desc->acc, "%s ON %s(", index_name, new_name);
+		sql_xfree(index_name);
+	} else {
+		sqlXPrintf(&desc->acc, "CREATE TABLE %s(", new_name);
+	}
 	sql_xfree(new_name);
 }
 
@@ -121,7 +132,9 @@ sql_desc_finalize(struct sql_desc *desc)
 		sql_xfree(err);
 	}
 
-	if (space_is_memtx(desc->space))
+	if (desc->space == NULL)
+		sqlXPrintf(&desc->acc, ");");
+	else if (space_is_memtx(desc->space))
 		sqlXPrintf(&desc->acc, ")\nWITH ENGINE = 'memtx';");
 	else if (space_is_vinyl(desc->space))
 		sqlXPrintf(&desc->acc, ")\nWITH ENGINE = 'vinyl';");
@@ -398,7 +411,7 @@ sql_describe_index(struct sql_desc *desc, const struct space *space,
 		sql_desc_error(desc, "index", index->def->name, err);
 		is_error = true;
 	}
-	if (!index->def->opts.is_unique) {
+	if (desc->space != NULL && !index->def->opts.is_unique) {
 		const char *err = "non-unique index";
 		sql_desc_error(desc, "index", index->def->name, err);
 		is_error = true;
@@ -432,16 +445,19 @@ sql_describe_index(struct sql_desc *desc, const struct space *space,
 	if (is_error)
 		return;
 
-	sql_desc_append(desc, ",\nCONSTRAINT ");
-	sql_desc_append_name(desc, index->def->name);
-	sql_desc_append(desc, " UNIQUE(");
+	if (desc->space != NULL) {
+		sql_desc_append(desc, ",\nCONSTRAINT ");
+		sql_desc_append_name(desc, index->def->name);
+		sql_desc_append(desc, " UNIQUE(");
+	}
 	for (uint32_t i = 0; i < index->def->key_def->part_count; ++i) {
 		uint32_t fieldno = index->def->key_def->parts[i].fieldno;
 		if (i > 0)
 			sql_desc_append(desc, ", ");
 		sql_desc_append_name(desc, space->def->fields[fieldno].name);
 	}
-	sql_desc_append(desc, ")");
+	if (desc->space != NULL)
+		sql_desc_append(desc, ")");
 }
 
 /** Add the table to the statement description. */
@@ -488,8 +504,27 @@ sql_show_create_table(uint32_t space_id, enum sql_show_type type, char **res)
 	assert(space != NULL);
 
 	struct sql_desc desc;
-	sql_desc_initialize(&desc, type, space);
+	sql_desc_initialize(&desc, type, space, NULL);
 	sql_describe_table(&desc, space);
+	*res = sql_desc_finalize(&desc);
+	if (desc.is_aborted && type == SQL_SHOW_THROW)
+		return -1;
+	return 0;
+}
+
+int
+sql_show_create_index(uint32_t space_id, uint32_t index_id,
+		      enum sql_show_type type, char **res)
+{
+	struct space *space = space_by_id(space_id);
+	assert(space != NULL);
+
+	struct index *index = space_index(space, index_id);
+	assert(index != NULL);
+
+	struct sql_desc desc;
+	sql_desc_initialize(&desc, type, space, index);
+	sql_describe_index(&desc, space, index);
 	*res = sql_desc_finalize(&desc);
 	if (desc.is_aborted && type == SQL_SHOW_THROW)
 		return -1;
