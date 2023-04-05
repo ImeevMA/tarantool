@@ -61,6 +61,13 @@ typedef struct VdbeSorter VdbeSorter;
 #define CURTYPE_SORTER      1
 #define CURTYPE_PSEUDO      2
 
+struct sql_storage {
+	char **buf;
+	size_t id;
+	size_t size;
+	size_t next_id;
+};
+
 /*
  * A VdbeCursor is an superclass (a wrapper) for various cursor objects:
  *
@@ -99,6 +106,7 @@ struct VdbeCursor {
 		BtCursor *pCursor;	/* CURTYPE_TARANTOOL */
 		int pseudoTableReg;	/* CURTYPE_PSEUDO. Reg holding content. */
 		VdbeSorter *pSorter;	/* CURTYPE_SORTER. Sorter object */
+		struct sql_storage *storage;
 	} uc;
 	/** Info about keys needed by index cursors. */
 	struct key_def *key_def;

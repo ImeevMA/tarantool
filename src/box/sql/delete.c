@@ -205,7 +205,6 @@ sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 		 * is held in ephemeral table, there is no PK for
 		 * it, so columns should be loaded manually.
 		 */
-		int reg_eph = ++parse->nMem;
 		int reg_pk = parse->nMem + 1;
 		int pk_len = is_view ? space->def->field_count + 1 :
 			     space->index[0]->def->key_def->part_count;
@@ -243,8 +242,7 @@ sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 			goto delete_from_cleanup;
 		}
 		parse->nMem += pk_len;
-		sqlVdbeAddOp4(v, OP_OpenTEphemeral, reg_eph, 0, 0, (char *)info,
-			      P4_DYNAMIC);
+		sqlVdbeAddOp2(v, OP_StorageOpen, eph_cursor, info->field_count);
 
 		/* Construct a query to find the primary key for
 		 * every row to be deleted, based on the WHERE
@@ -315,7 +313,7 @@ sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 			 * by malloc.
 			 */
 			sqlVdbeChangeP5(v, 1);
-			sqlVdbeAddOp2(v, OP_IdxInsert, reg_key, reg_eph);
+			sqlVdbeAddOp2(v, OP_StorageInsert, eph_cursor, reg_key);
 		}
 
 		/* If this DELETE cannot use the ONEPASS strategy,
@@ -356,10 +354,8 @@ sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 			sqlVdbeAddOp4Int(v, OP_NotFound, tab_cursor,
 					     addr_bypass, reg_key, key_len);
 		} else {
-			sqlVdbeAddOp3(v, OP_IteratorOpen,
-					  eph_cursor, 0, reg_eph);
-			addr_loop = sqlVdbeAddOp1(v, OP_Rewind, eph_cursor);
-			sqlVdbeAddOp2(v, OP_RowData, eph_cursor, reg_key);
+			addr_loop = sqlVdbeAddOp3(v, OP_StorageData, eph_cursor,
+						  0, reg_key);
 		}
 
 		/* Delete the row */
@@ -381,8 +377,7 @@ sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 			sqlVdbeResolveLabel(v, addr_bypass);
 			sqlWhereEnd(winfo);
 		} else {
-			sqlVdbeAddOp2(v, OP_Next, eph_cursor,
-					  addr_loop + 1);
+			sqlVdbeAddOp2(v, OP_StorageNext, eph_cursor, addr_loop);
 			sqlVdbeJumpHere(v, addr_loop);
 		}
 	}

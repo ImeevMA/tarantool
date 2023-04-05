@@ -37,7 +37,7 @@ test:plan(28)
 local function has_rowdata(sql)
     local result = test:execsql('EXPLAIN '..sql)
 
-    if test:lsearch(result, 'RowData') >= 0 then
+    if test:lsearch(result, 'StorageData') >= 0 then
         return {0};
     else
         return {1};

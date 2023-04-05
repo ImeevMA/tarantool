@@ -2477,6 +2477,56 @@ case OP_SorterOpen: {
 	break;
 }
 
+case OP_StorageOpen: {
+	struct VdbeCursor *cur = allocateCursor(p, pOp->p1, pOp->p2,
+						CURTYPE_PSEUDO);
+	struct sql_storage *storage = xmalloc(sizeof(struct sql_storage));
+	storage->next_id = 0;
+	storage->size = 32;
+	storage->buf = xmalloc(storage->size * sizeof(*storage->buf));
+	storage->id = 0;
+	cur->uc.storage = storage;
+	break;
+}
+
+case OP_StorageInsert: {
+	struct Mem *mem = &aMem[pOp->p2];
+	assert(mem_is_allocated(mem));
+	struct sql_storage *storage = p->apCsr[pOp->p1]->uc.storage;
+	if (storage->next_id >= storage->size) {
+		storage->size *= 2;
+		size_t new_alloc_size = storage->size * sizeof(*storage->buf);
+		storage->buf = xrealloc(storage->buf, new_alloc_size);
+	}
+	storage->buf[storage->next_id] = mem->z;
+	++storage->next_id;
+	mem->zMalloc = NULL;
+	mem->szMalloc = 0;
+	mem_set_null(mem);
+	break;
+}
+
+case OP_StorageData: {
+	struct sql_storage *storage = p->apCsr[pOp->p1]->uc.storage;
+	if (storage->id == storage->next_id)
+		goto jump_to_p2;
+	char *begin = storage->buf[storage->id];
+	assert(mp_typeof(*begin) == MP_ARRAY);
+	const char *end = begin;
+	mp_next(&end);
+	struct Mem *mem = &aMem[pOp->p3];
+	mem_set_bin_static(mem, begin, end - begin);
+	break;
+}
+
+case OP_StorageNext: {
+	struct sql_storage *storage = p->apCsr[pOp->p1]->uc.storage;
+	++storage->id;
+	if (storage->id < storage->next_id)
+		goto jump_to_p2;
+	break;
+}
+
 /* Opcode: SequenceTest P1 P2 * * *
  * Synopsis: if (cursor[P1].ctr++) pc = P2
  *

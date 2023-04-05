@@ -216,7 +216,6 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 	int iPk = pParse->nMem + 1;
 	pParse->nMem += pk_part_count;
 	regKey = ++pParse->nMem;
-	int reg_eph = ++pParse->nMem;
 	iEph = pParse->nTab++;
 	sqlVdbeAddOp2(v, OP_Null, 0, iPk);
 
@@ -231,8 +230,8 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 		goto update_cleanup;
 	}
 	/* Address of the OpenEphemeral instruction. */
-	int addrOpen = sqlVdbeAddOp4(v, OP_OpenTEphemeral, reg_eph, 0, 0,
-				     (char *)info, P4_DYNAMIC);
+	int addrOpen = sqlVdbeAddOp2(v, OP_StorageOpen, iEph,
+				     info->field_count);
 
 	pWInfo = sqlWhereBegin(pParse, pTabList, pWhere, 0, 0,
 				   WHERE_ONEPASS_DESIRED, pk_cursor);
@@ -262,7 +261,7 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 		 * malloc.
 		 */
 		sqlVdbeChangeP5(v, 1);
-		sqlVdbeAddOp2(v, OP_IdxInsert, regKey, reg_eph);
+		sqlVdbeAddOp2(v, OP_StorageInsert, iEph, regKey);
 	}
 	/* End the database scan loop.
 	 */
@@ -282,9 +281,7 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 		}
 	} else {
 		labelContinue = sqlVdbeMakeLabel(v);
-		sqlVdbeAddOp3(v, OP_IteratorOpen, iEph, 0, reg_eph);
-		sqlVdbeAddOp2(v, OP_Rewind, iEph, labelBreak);
-		addrTop = sqlVdbeAddOp2(v, OP_RowData, iEph, regKey);
+		addrTop = sqlVdbeAddOp3(v, OP_StorageData, iEph, 0, regKey);
 		sqlVdbeAddOp4Int(v, OP_NotFound, pk_cursor, labelContinue,
 				     regKey, 0);
 	}
@@ -454,7 +451,8 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 		/* Nothing to do at end-of-loop for a single-pass */
 	} else {
 		sqlVdbeResolveLabel(v, labelContinue);
-		sqlVdbeAddOp2(v, OP_Next, iEph, addrTop);
+		sqlVdbeAddOp2(v, OP_StorageNext, iEph, addrTop);
+		sqlVdbeJumpHere(v, addrTop);
 	}
 	sqlVdbeResolveLabel(v, labelBreak);
 
