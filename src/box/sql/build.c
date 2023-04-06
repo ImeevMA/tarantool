@@ -3404,9 +3404,9 @@ sql_emit_show_create_table_one(struct Parse *parse, struct Token *name)
 	char *space_name = sql_name_from_token(name);
 	sqlVdbeSetNumCols(v, 2);
 	vdbe_metadata_set_col_name(v, 0, "STATEMENTS");
-	vdbe_metadata_set_col_type(v, 0, "string");
+	vdbe_metadata_set_col_type(v, 0, "array");
 	vdbe_metadata_set_col_name(v, 1, "ERRORS");
-	vdbe_metadata_set_col_type(v, 1, "string");
+	vdbe_metadata_set_col_type(v, 1, "array");
 
 	int cursor = parse->nTab++;
 	int space_reg = ++parse->nMem;
@@ -3440,9 +3440,9 @@ sql_emit_show_create_table_all(struct Parse *parse)
 	struct Vdbe *v = sqlGetVdbe(parse);
 	sqlVdbeSetNumCols(v, 2);
 	vdbe_metadata_set_col_name(v, 0, "STATEMENTS");
-	vdbe_metadata_set_col_type(v, 0, "string");
+	vdbe_metadata_set_col_type(v, 0, "array");
 	vdbe_metadata_set_col_name(v, 1, "ERRORS");
-	vdbe_metadata_set_col_type(v, 1, "string");
+	vdbe_metadata_set_col_type(v, 1, "array");
 
 	int cursor = parse->nTab++;
 	int space_reg = ++parse->nMem;

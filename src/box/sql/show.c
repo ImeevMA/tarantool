@@ -4,7 +4,9 @@
  * Copyright 2010-2023, Tarantool AUTHORS, please see AUTHORS file.
  */
 #include <ctype.h>
+
 #include "sqlInt.h"
+#include "mem.h"
 #include "schema.h"
 #include "sequence.h"
 #include "coll_id_cache.h"
@@ -17,27 +19,26 @@ enum {
 /** An objected used to accumulate a statement. */
 struct sql_desc {
 	/** Accumulate the string representation of the statement. */
-	struct StrAccum statements;
-	/** Accumulate the string representation of the error. */
-	struct StrAccum errors;
-	/**
-	 * The address of the variable where the compiled statements are to be
-	 * inserted.
-	 */
-	char **ret;
-	/**
-	 * The address of the variable where the compiled errors are to be
-	 * inserted.
-	 */
-	char **err;
+	struct StrAccum acc;
+	/** MEM where the array of compiled statements should be inserted. */
+	struct Mem *ret;
+	/** MEM where the array of compiled errors should be inserted. */
+	struct Mem *err;
+	char **statements;
+	char **errors;
+	uint32_t statement_count;
+	uint32_t error_count;
 };
 
 /** Initialize the object used to accumulate a statement. */
 static void
-sql_desc_initialize(struct sql_desc *desc, char **ret, char **err)
+sql_desc_initialize(struct sql_desc *desc, struct Mem *ret, struct Mem *err)
 {
-	sqlStrAccumInit(&desc->statements, NULL, 0, SQL_MAX_LENGTH);
-	sqlStrAccumInit(&desc->errors, NULL, 0, SQL_MAX_LENGTH);
+	sqlStrAccumInit(&desc->acc, NULL, 0, SQL_MAX_LENGTH);
+	desc->statements = NULL;
+	desc->statement_count = 0;
+	desc->errors = NULL;
+	desc->error_count = 0;
 	desc->ret = ret;
 	desc->err = err;
 }
@@ -48,7 +49,7 @@ sql_desc_append(struct sql_desc *desc, const char *fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
-	sqlVXPrintf(&desc->statements, fmt, ap);
+	sqlVXPrintf(&desc->acc, fmt, ap);
 	va_end(ap);
 }
 
@@ -61,9 +62,9 @@ sql_desc_append_name(struct sql_desc *desc, const char *name)
 	char *normalized = sql_normalized_name_new(name, strlen(name));
 	if (isalpha(name[0]) && strlen(escaped) == strlen(name) + 2 &&
 	    strcmp(normalized, name) == 0)
-		sqlXPrintf(&desc->statements, "%s", normalized);
+		sqlXPrintf(&desc->acc, "%s", normalized);
 	else
-		sqlXPrintf(&desc->statements, "%s", escaped);
+		sqlXPrintf(&desc->acc, "%s", escaped);
 	sql_xfree(normalized);
 	sql_xfree(escaped);
 }
@@ -71,20 +72,61 @@ sql_desc_append_name(struct sql_desc *desc, const char *name)
 /** Append a new error to the object used to accumulate a statement. */
 static void
 sql_desc_error(struct sql_desc *desc, const char *type, const char *name,
-	       const char *err)
+	       const char *error)
 {
-	if (desc->errors.nChar != 0)
-		sqlXPrintf(&desc->errors, "\n");
-	sqlXPrintf(&desc->errors, "Problem with %s '%s': %s.", type, name, err);
+	char *str = sqlMPrintf("Problem with %s '%s': %s.", type, name, error);
+	uint32_t id = desc->error_count;
+	++desc->error_count;
+	uint32_t size = desc->error_count * sizeof(desc->errors);
+	desc->errors = sql_xrealloc(desc->errors, size);
+	desc->errors[id] = str;
+}
+
+static void
+sql_desc_finish_statement(struct sql_desc *desc)
+{
+	char *str = sqlStrAccumFinish(&desc->acc);
+	sqlStrAccumInit(&desc->acc, NULL, 0, SQL_MAX_LENGTH);
+	uint32_t id = desc->statement_count;
+	++desc->statement_count;
+	uint32_t size = desc->statement_count * sizeof(desc->statements);
+	desc->statements = sql_xrealloc(desc->statements, size);
+	desc->statements[id] = str;
 }
 
 /** Finalize a described statement. */
 static void
 sql_desc_finalize(struct sql_desc *desc)
 {
-	bool has_errors = desc->errors.nChar > 0;
-	*desc->err = has_errors ? sqlStrAccumFinish(&desc->errors) : NULL;
-	*desc->ret = sqlStrAccumFinish(&desc->statements);
+	if (desc->error_count > 0) {
+		uint32_t size = mp_sizeof_array(desc->error_count);
+		for (uint32_t i = 0; i < desc->error_count; ++i)
+			size += mp_sizeof_str(strlen(desc->errors[i]));
+		char *buf = sql_xmalloc(size);
+		char *end = mp_encode_array(buf, desc->error_count);
+		for (uint32_t i = 0; i < desc->error_count; ++i) {
+			end = mp_encode_str0(end, desc->errors[i]);
+			sql_xfree(desc->errors[i]);
+		}
+		sql_xfree(desc->errors);
+		assert(end - buf == size);
+		mem_set_array_allocated(desc->err, buf, size);
+	} else {
+		mem_set_null(desc->err);
+	}
+
+	uint32_t size = mp_sizeof_array(desc->statement_count);
+	for (uint32_t i = 0; i < desc->statement_count; ++i)
+		size += mp_sizeof_str(strlen(desc->statements[i]));
+	char *buf = sql_xmalloc(size);
+	char *end = mp_encode_array(buf, desc->statement_count);
+	for (uint32_t i = 0; i < desc->statement_count; ++i) {
+		end = mp_encode_str0(end, desc->statements[i]);
+		sql_xfree(desc->statements[i]);
+	}
+	sql_xfree(desc->statements);
+	assert(end - buf == size);
+	mem_set_array_allocated(desc->ret, buf, size);
 }
 
 /** Add a field foreign key constraint to the statement description. */
@@ -376,9 +418,9 @@ sql_describe_index(struct sql_desc *desc, const struct space *space,
 		return;
 
 	if (!index->def->opts.is_unique)
-		sql_desc_append(desc, "\nCREATE INDEX ");
+		sql_desc_append(desc, "CREATE INDEX ");
 	else
-		sql_desc_append(desc, "\nCREATE UNIQUE INDEX ");
+		sql_desc_append(desc, "CREATE UNIQUE INDEX ");
 	sql_desc_append_name(desc, index->def->name);
 	sql_desc_append(desc, " ON ");
 	sql_desc_append_name(desc, space->def->name);
@@ -390,6 +432,7 @@ sql_describe_index(struct sql_desc *desc, const struct space *space,
 		sql_desc_append_name(desc, space->def->fields[fieldno].name);
 	}
 	sql_desc_append(desc, ");");
+	sql_desc_finish_statement(desc);
 }
 
 /** Add the table to the statement description. */
@@ -433,10 +476,11 @@ sql_describe_table(struct sql_desc *desc, const struct space *space)
 	else
 		sql_desc_error(desc, "space", def->name, "wrong space engine");
 	sql_desc_append(desc, ";");
+	sql_desc_finish_statement(desc);
 }
 
 void
-sql_show_create_table(uint32_t space_id, char **ret, char **err)
+sql_show_create_table(uint32_t space_id, struct Mem *ret, struct Mem *err)
 {
 	struct space *space = space_by_id(space_id);
 	assert(space != NULL);

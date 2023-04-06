@@ -4407,15 +4407,9 @@ case OP_SetSession: {
  * register P2 + 1.
  */
 case OP_ShowCreateTable: {
-	char *ret = NULL;
-	char *err = NULL;
-	sql_show_create_table(aMem[pOp->p1].u.i, &ret, &err);
-	assert(ret != NULL);
-	mem_set_str0_allocated(&aMem[pOp->p2], ret);
-	if (err != NULL)
-		mem_set_str0_allocated(&aMem[pOp->p2 + 1], err);
-	else
-		mem_set_null(&aMem[pOp->p2 + 1]);
+	struct Mem *ret = &aMem[pOp->p2];
+	struct Mem *err = &aMem[pOp->p2 + 1];
+	sql_show_create_table(aMem[pOp->p1].u.i, ret, err);
 	break;
 }
 

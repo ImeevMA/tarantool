@@ -2668,7 +2668,7 @@ sql_emit_show_create_table_all(struct Parse *parse);
 
 /** Generate a CREATE TABLE statement for the space with the given ID. */
 void
-sql_show_create_table(uint32_t space_id, char **ret, char **err);
+sql_show_create_table(uint32_t space_id, struct Mem *ret, struct Mem *err);
 
 /**
  * Return true if given column is part of primary key.
