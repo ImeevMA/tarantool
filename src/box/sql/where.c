@@ -4541,7 +4541,7 @@ sqlWhereBegin(Parse * pParse,	/* The parser context */
 				op = 0;
 			} else if (pWInfo->eOnePass != ONEPASS_OFF) {
 				iIndexCur = iAuxArg;
-				if (pTabItem->space->index_count != 0) {
+				if (pTabItem->space->index_count != 1) {
 					uint32_t iid = 0;
 					struct index *pJ =
 						pTabItem->space->index[iid];
