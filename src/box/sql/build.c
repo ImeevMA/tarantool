@@ -2035,30 +2035,27 @@ tnt_error:
  * _fk_constraint space corresponding with the constraint type.
  */
 void
-sql_drop_constraint(struct Parse *parse_context)
+sql_drop_constraint(struct Parse *parse_context, struct Token *table_name,
+		    struct Token *constraint_name)
 {
-	struct drop_entity_def *drop_def =
-		&parse_context->drop_constraint_def.base;
-	assert(drop_def->base.entity_type == ENTITY_TYPE_CONSTRAINT);
-	assert(drop_def->base.alter_action == ALTER_ACTION_DROP);
-	const char *table_name = drop_def->base.entity_name->a[0].zName;
-	assert(table_name != NULL);
-	struct space *space = space_by_name0(table_name);
+	char *table_name_str = sql_name_from_token(table_name);
+	struct space *space = space_by_name0(table_name_str);
 	if (space == NULL) {
-		diag_set(ClientError, ER_NO_SUCH_SPACE, table_name);
+		sql_xfree(table_name_str);
+		diag_set(ClientError, ER_NO_SUCH_SPACE, table_name_str);
 		parse_context->is_aborted = true;
 		return;
 	}
-	char *name = sql_normalized_name_region_new(&parse_context->region,
-						    drop_def->name.z,
-						    drop_def->name.n);
+	sql_xfree(table_name_str);
+	char *constraint_name_str = sql_name_from_token(constraint_name);
 	struct Vdbe *v = sqlGetVdbe(parse_context);
 	assert(v != NULL);
-	struct constraint_id *id = space_find_constraint_id(space, name);
+	struct constraint_id *id =
+		space_find_constraint_id(space, constraint_name_str);
 	if (id == NULL) {
 		sqlVdbeCountChanges(v);
 		sqlVdbeAddOp4(v, OP_DropTupleConstraint, space->def->id, 0, 0,
-			      sql_xstrdup(name), P4_DYNAMIC);
+			      constraint_name_str, P4_DYNAMIC);
 		return;
 	}
 	/*
@@ -2069,8 +2066,9 @@ sql_drop_constraint(struct Parse *parse_context)
 	 */
 	assert(id->type == CONSTRAINT_TYPE_PK ||
 	       id->type == CONSTRAINT_TYPE_UNIQUE);
-	vdbe_emit_index_drop(parse_context, name, space->def,
+	vdbe_emit_index_drop(parse_context, constraint_name_str, space->def,
 			     ER_NO_SUCH_CONSTRAINT, false);
+	sql_xfree(constraint_name_str);
 	sqlVdbeCountChanges(v);
 	sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
 }
