@@ -2060,7 +2060,6 @@ struct Parse {
 		struct create_index_def create_index_def;
 		struct create_trigger_def create_trigger_def;
 		struct create_view_def create_view_def;
-		struct rename_entity_def rename_entity_def;
 		struct drop_index_def drop_index_def;
 		struct drop_table_def drop_table_def;
 		struct drop_trigger_def drop_trigger_def;
@@ -4084,14 +4083,10 @@ extern const Token sqlIntTokens[];
 extern SQL_WSD struct sqlConfig sqlConfig;
 extern int sqlPendingByte;
 
-/**
- * Generate code to implement the "ALTER TABLE xxx RENAME TO yyy"
- * command.
- *
- * @param parse Current parsing context.
- */
-void
-sql_alter_table_rename(struct Parse *parse);
+/** Generate code to implement the "ALTER TABLE xxx RENAME TO yyy" command. */
+int
+sql_alter_table_rename(struct Parse *parse, const struct Token *old_name,
+		       const struct Token *new_name);
 
 /**
  * Return the length (in bytes) of the token that begins at z[0].
