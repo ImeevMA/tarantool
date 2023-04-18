@@ -10,6 +10,8 @@ if platform.system() == "OpenBSD":
 
 # mask BFD warnings: https://bugs.launchpad.net/tarantool/+bug/1018356
 sys.stdout.push_filter("unable to read unknown load command 0x2\d+", "")
+sys.stdout.push_filter(".* (\d+)\.\d+\.\d+(-\w+)*",
+                       "Tarantool \\1.<minor>.<patch>-<suffix>")
 server.test_option("--help")
 server.test_option("-h")
 # Replace with the same value for case when builddir inside source dir
@@ -21,8 +23,6 @@ sys.stdout.push_filter("unrecognized option.*", "unrecognized option")
 server.test_option("-Z")
 server.test_option("--no-such-option")
 server.test_option("--no-such-option --version")
-sys.stdout.push_filter(".* (\d+)\.\d+\.\d+(-\w+)*",
-                       "Tarantool \\1.<minor>.<patch>-<suffix>")
 sys.stdout.push_filter("Target: .*", "Target: platform <build>")
 sys.stdout.push_filter(".*Disable shared arena since.*\n", "")
 sys.stdout.push_filter("Build options: .*", "Build options: flags")
