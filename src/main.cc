@@ -616,12 +616,16 @@ print_version(void)
 static void
 print_help(const char *program)
 {
-	puts("Tarantool - a Lua application server");
+	printf("Tarantool %s\n", (char *)tarantool_version());
 	puts("");
-	printf("Usage: %s script.lua [OPTIONS] [SCRIPT [ARGS]]\n", program);
+	printf("Start an instance: %s --config <path> --name <instance_name>", program);
 	puts("");
-	puts("All command line options are passed to the interpreted script.");
-	puts("When no script name is provided, the server responds to:");
+	puts("Connect to an instance: tt connect <uri>");
+	puts("");
+	printf("Usage: %s [OPTIONS]\n", program);
+	puts("");
+	puts("  -c, --config <path>\t\tset a path to config file");
+	puts("  -n, --name <instance_name>\tset an instance name");
 	puts("  -h, --help\t\t\tdisplay this help and exit");
 	puts("  -v, --version\t\t\tprint program version and exit");
 	puts("  -e EXPR\t\t\texecute string 'EXPR'");
@@ -656,17 +660,27 @@ main(int argc, char **argv)
 	int optc_max = (argc - 1) * 2;
 	auto guard = make_scoped_guard([&optc, &optv]{ if (optc) free(optv); });
 
+	static instance_state instance;
+
 	static struct option longopts[] = {
 		{"help", no_argument, 0, 'h'},
 		{"version", no_argument, 0, 'v'},
+		{"config", required_argument, 0, 'c'},
+		{"name", required_argument, 0, 'n'},
 		{NULL, 0, 0, 0},
 	};
-	static const char *opts = "+hVvb::ij:e:l:d";
+	static const char *opts = "+hVvb::ij:e:l:d:c::n::";
 
 	int ch;
 	bool lj_arg = false;
 	while ((ch = getopt_long(argc, argv, opts, longopts, NULL)) != -1) {
 		switch (ch) {
+		case 'n':
+			instance.name = optarg;
+			break;
+		case 'c':
+			instance.config = optarg;
+			break;
 		case 'V':
 		case 'v':
 			print_version();
@@ -691,9 +705,11 @@ main(int argc, char **argv)
 			lj_arg = true;
 			optind--;
 			break;
+		case 'e':
+			script = optarg;
+			/* fallthrough */
 		case 'j':
 		case 'l':
-		case 'e':
 			/* Save Lua interepter options to optv as is */
 			if (optc == 0)
 				optv = (const char **)xcalloc(optc_max,
@@ -715,6 +731,11 @@ main(int argc, char **argv)
 		if (lj_arg)
 			break;
 	}
+
+	if (instance.name == NULL)
+		instance.name = getenv("TT_INSTANCE_NAME");
+	if (instance.config == NULL)
+		instance.config = getenv("TT_CONFIG");
 
 	/* Shift arguments */
 	argc = 1 + (argc - optind);
@@ -765,6 +786,13 @@ main(int argc, char **argv)
 	strlcpy(tarantool_path, tarantool_bin, sizeof(tarantool_path));
 	if (strlen(tarantool_path) < strlen(tarantool_bin))
 		panic("executable path is trimmed");
+
+	if (script == NULL && instance.name == NULL &&
+	    !(opt_mask & O_INTERACTIVE)) {
+		print_help(basename(argv[0]));
+		return 0;
+	}
+
 
 	struct timespec ts;
 	if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
@@ -834,8 +862,8 @@ main(int argc, char **argv)
 		 * is why script must run only after the server was fully
 		 * initialized.
 		 */
-		if (tarantool_lua_run_script(script, opt_mask, optc, optv,
-					     main_argc, main_argv) != 0)
+		if (tarantool_lua_run_script(script, &instance, opt_mask, optc,
+					     optv, main_argc, main_argv) != 0)
 			diag_raise();
 		/*
 		 * Start event loop after executing Lua script if signal_cb()

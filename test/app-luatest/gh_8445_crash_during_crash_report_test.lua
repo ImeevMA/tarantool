@@ -36,7 +36,7 @@ g.test_crash_during_crash_report = function(cg)
         if chunk ~= nil then
            output = output .. chunk
         end
-        t.assert_str_contains(output, "pid = ")
+        t.assert_str_contains(output, "pid = (%d+)", true)
     end)
 
     -- ph:info().pid won't work, because it returns pid of the shell rather than
