@@ -327,8 +327,7 @@ ccons ::= cconsname(N) CHECK LP expr(X) RP. {
 }
 
 ccons ::= cconsname(N) REFERENCES nm(T) eidlist_opt(TA). {
-  create_fk_def_init(&pParse->create_fk_def, NULL, &N, NULL, &T, TA);
-  sql_create_foreign_key(pParse);
+  sql_create_foreign_key(pParse, &N, NULL, NULL, &T, TA);
 }
 ccons ::= COLLATE id(C).        {sqlAddCollateType(pParse, &C);}
 
@@ -355,8 +354,7 @@ tcons ::= cconsname(N) CHECK LP expr(X) RP. {
 }
 tcons ::= cconsname(N) FOREIGN KEY LP eidlist(FA) RP
           REFERENCES nm(T) eidlist_opt(TA). {
-  create_fk_def_init(&pParse->create_fk_def, NULL, &N, FA, &T, TA);
-  sql_create_foreign_key(pParse);
+  sql_create_foreign_key(pParse, &N, NULL, FA, &T, TA);
 }
 
 // The following is a non-standard extension that allows us to declare the
@@ -1686,8 +1684,7 @@ alter_column_def ::= alter_add_column(N) typedef(Y). {
 
 cmd ::= alter_add_constraint(N) FOREIGN KEY LP eidlist(FA) RP REFERENCES
         nm(T) eidlist_opt(TA). {
-  create_fk_def_init(&pParse->create_fk_def, N.table_name, &N.name, FA, &T, TA);
-  sql_create_foreign_key(pParse);
+  sql_create_foreign_key(pParse, &N.name, N.table_name, FA, &T, TA);
 }
 
 cmd ::= alter_add_constraint(N) CHECK LP expr(X) RP. {

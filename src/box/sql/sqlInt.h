@@ -2041,7 +2041,6 @@ struct Parse {
 	 */
 	union {
 		struct create_ck_def create_ck_def;
-		struct create_fk_def create_fk_def;
 		struct create_index_def create_index_def;
 		struct create_trigger_def create_trigger_def;
 		struct create_view_def create_view_def;
@@ -3592,11 +3591,11 @@ int sqlJoinType(Parse *, Token *, Token *, Token *);
  * <ALTER TABLE child ADD CONSTRAINT constraint
  *     FOREIGN KEY (child_cols) REFERENCES parent (parent_cols)>
  * OR to handle <CREATE TABLE ...>
- *
- * @param parse_context Parsing context.
  */
 void
-sql_create_foreign_key(struct Parse *parse_context);
+sql_create_foreign_key(struct Parse *parse_context, struct Token *name,
+		       struct SrcList *child, struct ExprList *child_cols,
+		       struct Token *parent, struct ExprList *parent_cols);
 
 /**
  * Emit code to drop the entry from _index or drop FOREIGN KEY or CHECK

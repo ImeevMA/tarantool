@@ -369,13 +369,6 @@ struct create_ck_def {
 	struct ExprSpan *expr;
 };
 
-struct create_fk_def {
-	struct create_constraint_def base;
-	struct ExprList *child_cols;
-	struct Token *parent_name;
-	struct ExprList *parent_cols;
-};
-
 struct create_index_def {
 	struct create_constraint_def base;
 	/** List of indexed columns. */
@@ -461,18 +454,6 @@ create_index_def_init(struct create_index_def *index_def,
 	index_def->cols = cols;
 	index_def->idx_type = idx_type;
 	index_def->sort_order = sort_order;
-}
-
-static inline void
-create_fk_def_init(struct create_fk_def *fk_def, struct SrcList *table_name,
-		   struct Token *name, struct ExprList *child_cols,
-		   struct Token *parent_name, struct ExprList *parent_cols)
-{
-	create_constraint_def_init(&fk_def->base, table_name, name,
-				   false, ENTITY_TYPE_FK);
-	fk_def->child_cols = child_cols;
-	fk_def->parent_name = parent_name;
-	fk_def->parent_cols = parent_cols;
 }
 
 static inline void
