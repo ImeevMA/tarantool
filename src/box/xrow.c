@@ -652,22 +652,16 @@ void
 iproto_do_write_error(struct iostream *io, const struct error *e,
 		      uint64_t schema_version, uint64_t sync)
 {
-	bool is_error = false;
 	struct mpstream stream;
 	struct region *region = &fiber()->gc;
-	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
-		      mpstream_error_handler, &is_error);
+	mpstream_xregion_init(&stream, region);
 
 	size_t region_svp = region_used(region);
 	mpstream_iproto_encode_error(&stream, e);
 	mpstream_flush(&stream);
-	if (is_error)
-		goto cleanup;
 
 	size_t payload_size = region_used(region) - region_svp;
-	char *payload = region_join(region, payload_size);
-	if (payload == NULL)
-		goto cleanup;
+	char *payload = xregion_join(region, payload_size);
 
 	uint32_t errcode = box_error_code(e);
 	char header[IPROTO_HEADER_LEN];
@@ -680,7 +674,6 @@ iproto_do_write_error(struct iostream *io, const struct error *e,
 	unused = iostream_write(io, header, sizeof(header));
 	unused = iostream_write(io, payload, payload_size);
 	(void) unused;
-cleanup:
 	region_truncate(region, region_svp);
 }
 

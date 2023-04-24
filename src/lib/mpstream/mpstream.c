@@ -17,6 +17,7 @@
 #include "mp_uuid.h"
 #include "mp_datetime.h"
 #include "mp_interval.h"
+#include "small/region.h"
 
 void
 mpstream_reserve_slow(struct mpstream *stream, size_t size)
@@ -59,6 +60,31 @@ mpstream_init(struct mpstream *stream, void *ctx,
 	stream->error = error;
 	stream->error_ctx = error_ctx;
 	mpstream_reset(stream);
+}
+
+static inline void *
+xregion_alloc_cb(void *ctx, size_t size)
+{
+	return xregion_alloc(ctx, size);
+}
+
+static inline void *
+xregion_reserve_cb(void *ctx, size_t *size)
+{
+	return xalloc_impl(*size, region_reserve_cb, ctx, size);
+}
+
+static inline void
+ignore_encode_error(void *error_ctx)
+{
+	(void)error_ctx;
+}
+
+void
+mpstream_xregion_init(struct mpstream *stream, struct region *region)
+{
+	mpstream_init(stream, region, xregion_reserve_cb, xregion_alloc_cb,
+		      ignore_encode_error, NULL);
 }
 
 void

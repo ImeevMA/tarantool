@@ -166,8 +166,8 @@ static void
 luaT_mpstream_init_box_region(struct mpstream *stream, struct lua_State *L,
 			      void *buffer)
 {
-	mpstream_init(stream, (struct region *)buffer, region_reserve_cb,
-		      region_alloc_cb, luamp_error, L);
+	(void)L;
+	mpstream_xregion_init(stream, (struct region *)buffer);
 }
 
 /** Helper to pass parameters into luaT_tuple_encode_table via the Lua stack. */

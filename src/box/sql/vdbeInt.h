@@ -384,14 +384,4 @@ void sqlVdbePrintSql(Vdbe *);
 #endif
 int sqlVdbeMemHandleBom(Mem * pMem);
 
-struct mpstream;
-struct region;
-
-/** Callback to forward and error from mpstream methods. */
-static inline void
-set_encode_error(void *error_ctx)
-{
-	*(bool *)error_ctx = true;
-}
-
 #endif				/* !defined(SQL_VDBEINT_H) */

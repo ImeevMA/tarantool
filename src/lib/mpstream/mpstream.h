@@ -17,6 +17,7 @@
 extern "C" {
 #endif /* defined(__cplusplus) */
 
+struct region;
 struct tt_uuid;
 struct datetime;
 struct interval;
@@ -61,6 +62,9 @@ void
 mpstream_init(struct mpstream *stream, void *ctx,
 	      mpstream_reserve_f reserve, mpstream_alloc_f alloc,
 	      mpstream_error_f error, void *error_ctx);
+
+void
+mpstream_xregion_init(struct mpstream *stream, struct region *region);
 
 static inline void
 mpstream_flush(struct mpstream *stream)

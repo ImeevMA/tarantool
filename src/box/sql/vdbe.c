@@ -3587,10 +3587,8 @@ case OP_Update: {
 	/* Prepare Tarantool update ops msgpack. */
 	struct region *region = &fiber()->gc;
 	size_t used = region_used(region);
-	bool is_error = false;
 	struct mpstream stream;
-	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
-		      set_encode_error, &is_error);
+	mpstream_xregion_init(&stream, region);
 	mpstream_encode_array(&stream, upd_fields_cnt);
 	for (uint32_t i = 0; i < upd_fields_cnt; i++) {
 		uint32_t field_idx = upd_fields[i];
@@ -3601,19 +3599,8 @@ case OP_Update: {
 		mem_to_mpstream(new_tuple + field_idx, &stream);
 	}
 	mpstream_flush(&stream);
-	if (is_error) {
-		region_truncate(&fiber()->gc, used);
-		diag_set(OutOfMemory, stream.pos - stream.buf,
-			"mpstream_flush", "stream");
-		goto abort_due_to_error;
-	}
 	uint32_t ops_size = region_used(region) - used;
-	const char *ops = region_join(region, ops_size);
-	if (ops == NULL) {
-		region_truncate(&fiber()->gc, used);
-		diag_set(OutOfMemory, ops_size, "region_join", "raw");
-		goto abort_due_to_error;
-	}
+	const char *ops = xregion_join(region, ops_size);
 
 	assert(rc == 0);
 	rc = box_update(space->def->id, 0, key_mem->z, key_mem->z + key_mem->n,

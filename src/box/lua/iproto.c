@@ -330,8 +330,7 @@ encode_packet(struct lua_State *L, int idx, size_t *mp_len)
 	 * region to leak.
 	 */
 	struct mpstream stream;
-	mpstream_init(&stream, gc, region_reserve_cb, region_alloc_cb,
-		      luamp_error, L);
+	mpstream_xregion_init(&stream, gc);
 	size_t used = region_used(gc);
 	luamp_encode_with_translation(L, luaL_msgpack_default, &stream, idx,
 				      iproto_key_translation);

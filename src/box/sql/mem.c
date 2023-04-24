@@ -3221,26 +3221,12 @@ char *
 mem_to_mp(const struct Mem *mem, uint32_t *size, struct region *region)
 {
 	size_t used = region_used(region);
-	bool is_error = false;
 	struct mpstream stream;
-	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
-		      set_encode_error, &is_error);
+	mpstream_xregion_init(&stream, region);
 	mem_to_mpstream(mem, &stream);
 	mpstream_flush(&stream);
-	if (is_error) {
-		region_truncate(region, used);
-		diag_set(OutOfMemory, stream.pos - stream.buf,
-			 "mpstream_flush", "stream");
-		return NULL;
-	}
 	*size = region_used(region) - used;
-	char *data = region_join(region, *size);
-	if (data == NULL) {
-		region_truncate(region, used);
-		diag_set(OutOfMemory, *size, "region_join", "data");
-		return NULL;
-	}
-	return data;
+	return xregion_join(region, *size);
 }
 
 char *
@@ -3248,29 +3234,14 @@ mem_encode_array(const struct Mem *mems, uint32_t count, uint32_t *size,
 		 struct region *region)
 {
 	size_t used = region_used(region);
-	bool is_error = false;
 	struct mpstream stream;
-	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
-		      set_encode_error, &is_error);
+	mpstream_xregion_init(&stream, region);
 	mpstream_encode_array(&stream, count);
 	for (const struct Mem *mem = mems; mem < mems + count; mem++)
 		mem_to_mpstream(mem, &stream);
 	mpstream_flush(&stream);
-	if (is_error) {
-		region_truncate(region, used);
-		diag_set(OutOfMemory, stream.pos - stream.buf,
-			 "mpstream_flush", "stream");
-		return NULL;
-	}
 	*size = region_used(region) - used;
-	char *array = region_join(region, *size);
-	if (array == NULL) {
-		region_truncate(region, used);
-		diag_set(OutOfMemory, *size, "region_join", "array");
-		return NULL;
-	}
-	mp_tuple_assert(array, array + *size);
-	return array;
+	return xregion_join(region, *size);
 }
 
 char *
@@ -3278,10 +3249,8 @@ mem_encode_map(const struct Mem *mems, uint32_t count, uint32_t *size,
 	       struct region *region)
 {
 	size_t used = region_used(region);
-	bool is_error = false;
 	struct mpstream stream;
-	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
-		      set_encode_error, &is_error);
+	mpstream_xregion_init(&stream, region);
 	mpstream_encode_map(&stream, count);
 	for (uint32_t i = 0; i < count; ++i) {
 		const struct Mem *key = &mems[2 * i];
@@ -3291,25 +3260,15 @@ mem_encode_map(const struct Mem *mems, uint32_t count, uint32_t *size,
 				  MEM_TYPE_STR)) == 0) {
 			diag_set(ClientError, ER_SQL_TYPE_MISMATCH,
 				 mem_str(key), "integer, string or uuid");
-			goto error;
+			region_truncate(region, used);
+			return NULL;
 		}
 		mem_to_mpstream(key, &stream);
 		mem_to_mpstream(value, &stream);
 	}
 	mpstream_flush(&stream);
-	if (is_error) {
-		diag_set(OutOfMemory, stream.pos - stream.buf,
-			 "mpstream_flush", "stream");
-		goto error;
-	}
 	*size = region_used(region) - used;
-	char *map = region_join(region, *size);
-	if (map != NULL)
-		return map;
-	diag_set(OutOfMemory, *size, "region_join", "map");
-error:
-	region_truncate(region, used);
-	return NULL;
+	return xregion_join(region, *size);
 }
 
 /* Locate an element in a MAP or ARRAY using the given key.*/
@@ -3451,24 +3410,14 @@ port_vdbemem_get_msgpack(struct port *base, uint32_t *size)
 	struct port_vdbemem *port = (struct port_vdbemem *) base;
 	struct region *region = &fiber()->gc;
 	size_t region_svp = region_used(region);
-	bool is_error = false;
 	struct mpstream stream;
-	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
-		      set_encode_error, &is_error);
+	mpstream_xregion_init(&stream, region);
 	mpstream_encode_array(&stream, port->mem_count);
-	for (uint32_t i = 0; i < port->mem_count && !is_error; i++)
+	for (uint32_t i = 0; i < port->mem_count; i++)
 		mem_to_mpstream((struct Mem *)port->mem + i, &stream);
 	mpstream_flush(&stream);
 	*size = region_used(region) - region_svp;
-	if (is_error)
-		goto error;
-	const char *ret = (char *)region_join(region, *size);
-	if (ret == NULL)
-		goto error;
-	return ret;
-error:
-	diag_set(OutOfMemory, *size, "region", "ret");
-	return NULL;
+	return xregion_join(region, *size);
 }
 
 static const struct port_vtab port_vdbemem_vtab;
@@ -3570,27 +3519,14 @@ port_lua_get_vdbemem(struct port *base, uint32_t *size)
 			size_t used = region_used(region);
 			bool is_map = field.type == MP_MAP;
 			struct mpstream stream;
-			bool is_error = false;
-			mpstream_init(&stream, region, region_reserve_cb,
-				      region_alloc_cb, set_encode_error,
-				      &is_error);
+			mpstream_xregion_init(&stream, region);
 			lua_pushvalue(L, index);
 			luamp_encode_r(L, luaL_msgpack_default, &stream,
 				       &field, 0);
 			lua_pop(L, 1);
 			mpstream_flush(&stream);
-			if (is_error) {
-				diag_set(OutOfMemory, stream.pos - stream.buf,
-					 "mpstream_flush", "stream");
-				return NULL;
-			}
 			uint32_t size = region_used(region) - used;
 			char *raw = region_join(region, size);
-			if (raw == NULL) {
-				diag_set(OutOfMemory, size, "region_join",
-					 "raw");
-				goto error;
-			}
 			int rc = is_map ? mem_copy_map(&val[i], raw, size) :
 				 mem_copy_array(&val[i], raw, size);
 			if (rc != 0)

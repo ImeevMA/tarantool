@@ -397,26 +397,14 @@ lua_sql_bind_decode(struct lua_State *L, struct sql_bind *bind, int idx, int i)
 	case MP_ARRAY: {
 		size_t used = region_used(region);
 		struct mpstream stream;
-		bool is_error = false;
-		mpstream_init(&stream, region, region_reserve_cb,
-			      region_alloc_cb, set_encode_error, &is_error);
+		mpstream_xregion_init(&stream, region);
 		lua_pushvalue(L, -1);
 		luamp_encode_r(L, luaL_msgpack_default, &stream, &field, 0);
 		lua_pop(L, 1);
 		mpstream_flush(&stream);
-		if (is_error) {
-			region_truncate(region, used);
-			diag_set(OutOfMemory, stream.pos - stream.buf,
-				 "mpstream_flush", "stream");
-			return -1;
-		}
 		bind->bytes = region_used(region) - used;
-		bind->s = region_join(region, bind->bytes);
-		if (bind->s != NULL)
-			break;
-		region_truncate(region, used);
-		diag_set(OutOfMemory, bind->bytes, "region_join", "bind->s");
-		return -1;
+		bind->s = xregion_join(region, bind->bytes);
+		break;
 	}
 	default:
 		unreachable();

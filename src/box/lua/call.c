@@ -574,8 +574,7 @@ port_lua_get_msgpack(struct port *base, uint32_t *size)
 	struct region *region = &fiber()->gc;
 	uint32_t region_svp = region_used(region);
 	struct mpstream stream;
-	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
-		      luamp_error, port->L);
+	mpstream_xregion_init(&stream, region);
 	mpstream_encode_array(&stream, lua_gettop(port->L));
 	int rc = port_lua_do_dump(base, &stream, HANDLER_ENCODE_CALL);
 	if (rc < 0) {
@@ -583,13 +582,7 @@ port_lua_get_msgpack(struct port *base, uint32_t *size)
 		return NULL;
 	}
 	*size = region_used(region) - region_svp;
-	const char *data = region_join(region, *size);
-	if (data == NULL) {
-		diag_set(OutOfMemory, *size, "region", "data");
-		region_truncate(region, region_svp);
-		return NULL;
-	}
-	return data;
+	return xregion_join(region, *size);
 }
 
 static void

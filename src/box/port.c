@@ -243,13 +243,6 @@ port_c_dump_msgpack(struct port *base, struct obuf *out)
 	return 1;
 }
 
-/** Callback to forward and error from mpstream methods. */
-static inline void
-set_encode_error(void *error_ctx)
-{
-	*(bool *)error_ctx = true;
-}
-
 /** Method get_msgpack for struct port_c. */
 static const char *
 port_c_get_msgpack(struct port *base, uint32_t *size)
@@ -257,10 +250,8 @@ port_c_get_msgpack(struct port *base, uint32_t *size)
 	struct port_c *port = (struct port_c *)base;
 	struct region *region = &fiber()->gc;
 	size_t used = region_used(region);
-	bool is_error = false;
 	struct mpstream stream;
-	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
-		      set_encode_error, &is_error);
+	mpstream_xregion_init(&stream, region);
 	mpstream_encode_array(&stream, port->size);
 	struct port_c_entry *pe;
 	for (pe = port->first; pe != NULL; pe = pe->next) {
@@ -276,18 +267,8 @@ port_c_get_msgpack(struct port *base, uint32_t *size)
 		mpstream_memcpy(&stream, data, len);
 	}
 	mpstream_flush(&stream);
-	if (is_error) {
-		diag_set(OutOfMemory, stream.pos - stream.buf,
-			 "mpstream_flush", "stream");
-		return NULL;
-	}
 	*size = region_used(region) - used;
-	const char *res = region_join(region, *size);
-	if (res == NULL) {
-		region_truncate(region, used);
-		diag_set(OutOfMemory, *size, "region_join", "res");
-		return NULL;
-	}
+	const char *res = xregion_join(region, *size);
 	mp_tuple_assert(res, res + *size);
 	return res;
 }

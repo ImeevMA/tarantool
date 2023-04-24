@@ -1020,14 +1020,12 @@ sql_encode_table(struct region *region, struct space_def *def, uint32_t *size)
 {
 	size_t used = region_used(region);
 	struct mpstream stream;
-	bool is_error = false;
-	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
-		      set_encode_error, &is_error);
+	mpstream_xregion_init(&stream, region);
 
 	assert(def != NULL);
 	uint32_t field_count = def->field_count;
 	mpstream_encode_array(&stream, field_count);
-	for (uint32_t i = 0; i < field_count && !is_error; i++) {
+	for (uint32_t i = 0; i < field_count; i++) {
 		uint32_t cid = def->fields[i].coll_id;
 		struct field_def *field = &def->fields[i];
 		const char *default_str = field->default_value;
@@ -1078,16 +1076,8 @@ sql_encode_table(struct region *region, struct space_def *def, uint32_t *size)
 						fk_count);
 	}
 	mpstream_flush(&stream);
-	if (is_error) {
-		diag_set(OutOfMemory, stream.pos - stream.buf,
-			"mpstream_flush", "stream");
-		return NULL;
-	}
 	*size = region_used(region) - used;
-	char *raw = region_join(region, *size);
-	if (raw == NULL)
-		diag_set(OutOfMemory, *size, "region_join", "raw");
-	return raw;
+	return xregion_join(region, *size);
 }
 
 char *
@@ -1096,9 +1086,7 @@ sql_encode_table_opts(struct region *region, struct space_def *def,
 {
 	size_t used = region_used(region);
 	struct mpstream stream;
-	bool is_error = false;
-	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
-		      set_encode_error, &is_error);
+	mpstream_xregion_init(&stream, region);
 	bool is_view = def->opts.is_view;
 	mpstream_encode_map(&stream, 2 * is_view);
 
@@ -1110,16 +1098,8 @@ sql_encode_table_opts(struct region *region, struct space_def *def,
 		mpstream_encode_bool(&stream, true);
 	}
 	mpstream_flush(&stream);
-	if (is_error) {
-		diag_set(OutOfMemory, stream.pos - stream.buf,
-			 "mpstream_flush", "stream");
-		return NULL;
-	}
 	*size = region_used(region) - used;
-	char *raw = region_join(region, *size);
-	if (raw == NULL)
-		diag_set(OutOfMemory, *size, "region_join", "raw");
-	return raw;
+	return xregion_join(region, *size);
 }
 
 char *
@@ -1145,9 +1125,7 @@ sql_encode_index_parts(struct region *region, const struct field_def *fields,
 {
 	size_t used = region_used(region);
 	struct mpstream stream;
-	bool is_error = false;
-	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
-		      set_encode_error, &is_error);
+	mpstream_xregion_init(&stream, region);
 	struct key_def *key_def = idx_def->key_def;
 	struct key_part *part = key_def->parts;
 	mpstream_encode_array(&stream, key_def->part_count);
@@ -1183,16 +1161,8 @@ sql_encode_index_parts(struct region *region, const struct field_def *fields,
 		mpstream_encode_bool(&stream, false);
 	}
 	mpstream_flush(&stream);
-	if (is_error) {
-		diag_set(OutOfMemory, stream.pos - stream.buf,
-			 "mpstream_flush", "stream");
-		return NULL;
-	}
 	*size = region_used(region) - used;
-	char *raw = region_join(region, *size);
-	if (raw == NULL)
-		diag_set(OutOfMemory, *size, "region_join", "raw");
-	return raw;
+	return xregion_join(region, *size);
 }
 
 char *
@@ -1201,9 +1171,7 @@ sql_encode_index_opts(struct region *region, const struct index_opts *opts,
 {
 	size_t used = region_used(region);
 	struct mpstream stream;
-	bool is_error = false;
-	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
-		      set_encode_error, &is_error);
+	mpstream_xregion_init(&stream, region);
 	/*
 	 * In case of vinyl engine we must inherit global
 	 * (i.e. set via box.cfg) params such as bloom_fpr,
@@ -1227,16 +1195,8 @@ sql_encode_index_opts(struct region *region, const struct index_opts *opts,
 		mpstream_encode_double(&stream, cfg_getd("vinyl_bloom_fpr"));
 	}
 	mpstream_flush(&stream);
-	if (is_error) {
-		diag_set(OutOfMemory, stream.pos - stream.buf,
-			 "mpstream_flush", "stream");
-		return NULL;
-	}
 	*size = region_used(region) - used;
-	char *raw = region_join(region, *size);
-	if (raw == NULL)
-		diag_set(OutOfMemory, *size, "region_join", "raw");
-	return raw;
+	return xregion_join(region, *size);
 }
 
 void

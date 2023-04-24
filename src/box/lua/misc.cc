@@ -66,12 +66,11 @@ lbox_encode_tuple_on_gc(lua_State *L, int idx, size_t *p_len)
 	struct region *gc = &fiber()->gc;
 	size_t used = region_used(gc);
 	struct mpstream stream;
-	mpstream_init(&stream, gc, region_reserve_cb, region_alloc_cb,
-			luamp_error, L);
+	mpstream_xregion_init(&stream, gc);
 	luamp_encode_tuple(L, luaL_msgpack_default, &stream, idx);
 	mpstream_flush(&stream);
 	*p_len = region_used(gc) - used;
-	return (char *) region_join_xc(gc, *p_len);
+	return (char *)xregion_join(gc, *p_len);
 }
 
 int
