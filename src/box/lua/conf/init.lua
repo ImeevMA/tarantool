@@ -1,4 +1,3 @@
-local args = require('conf.args')
 local instance_config = require('conf.instance_config')
 local cluster_config = require('conf.cluster_config')
 local configdata = require('conf.configdata')
@@ -32,18 +31,27 @@ local function register_applier(applier)
     table.insert(ctx.appliers, applier)
 end
 
-local function initialize(instance_name, config_file)
-    local arguments = args.parse(instance_name, config_file)
+local function parse_args(instance_name, config_file)
+    if instance_name == nil then
+        instance_name = os.getenv('TT_INSTANCE_NAME')
+    end
 
-    if arguments.instance_name == nil then
+    if instance_name == nil then
         error('No instance name provided')
     end
-    ctx.instance_name = arguments.instance_name
 
+    if config_file == nil then
+        config_file = os.getenv('TT_CONFIG')
+    end
+
+    ctx.instance_name = instance_name
+    ctx.config_file = config_file
+end
+
+local function initialize()
     register_source(require('conf.source.env'))
 
-    if arguments.config_file ~= nil then
-        ctx.config_file = arguments.config_file
+    if ctx.config_file ~= nil then
         register_source(require('conf.source.file'))
     end
 
@@ -109,7 +117,8 @@ local function apply()
 end
 
 local function startup(instance_name, config_file)
-    initialize(instance_name, config_file)
+    parse_args(instance_name, config_file)
+    initialize()
     collect()
     apply()
 end

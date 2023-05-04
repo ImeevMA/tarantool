@@ -319,10 +319,6 @@ static const char *lua_sources[] = {
 	"conf.utils.schema",
 	conf_utils_schema_lua,
 
-	"conf/args",
-	"conf.args",
-	conf_args_lua,
-
 	"conf/instance_config",
 	"conf.instance_config",
 	conf_instance_config_lua,
