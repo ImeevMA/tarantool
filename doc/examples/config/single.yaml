@@ -1,0 +1,8 @@
+groups:
+  g:
+    replicasets:
+      r:
+        instances:
+          i:
+            iproto:
+              listen: localhost:3301
