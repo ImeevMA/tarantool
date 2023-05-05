@@ -586,6 +586,69 @@ return schema.new('instance_config', {
             default = 'auto',
         }),
     },
+    credentials = {
+        -- XXX: needs more validation, it is enum in fact
+        mode = schema.scalar({
+            type = 'string',
+            values = {'create', 'sync'}
+        }),
+        roles = schema.map({
+            -- Rolename
+            key = schema.scalar({
+                type = 'string'
+            }),
+            -- Grants
+            -- XXX: should be an array of all grants
+            -- (privilege + entities).
+            value = {
+                -- XXX: actually a set of enums
+                -- TODO: annotate unique array (set alike)
+                privileges = schema.scalar({
+                    type = '[string]',
+                    -- TODO: support the annotation
+                    values = {'super', 'read', 'write', 'execute', 'create',
+                              'alter', 'drop', 'usage', 'session'}
+                }),
+                universe = schema.scalar({
+                    type = 'boolean',
+                }),
+                spaces = schema.scalar({
+                    type = '[string]',
+                }),
+                functions = schema.scalar({
+                    type = '[string]',
+                }),
+                sequences = schema.scalar({
+                    type = '[string]',
+                }),
+                roles = schema.scalar({
+                    type = '[string]',
+                }),
+            },
+        }),
+        users = schema.map({
+            key = schema.scalar({
+                type = 'string'
+            }),
+            value = {
+                passwd = {
+                    plain = schema.scalar({
+                        type = 'string'
+                    }),
+                    sha1 = schema.scalar({
+                        type = 'string'
+                    }),
+                    sha256 = schema.scalar({
+                        type = 'string'
+                    })
+                },
+                -- XXX: actually roles, not grants.
+                grant = schema.scalar({
+                    type = '[string]',
+                }),
+            },
+        }),
+    },
     -- TODO: audit
     -- TODO: security
     -- TODO: feedback

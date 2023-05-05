@@ -57,6 +57,7 @@ local function initialize()
 
     register_applier(require('conf.applier.mkdir'))
     register_applier(require('conf.applier.box_cfg'))
+    register_applier(require('conf.applier.credentials'))
     register_applier(require('conf.applier.console'))
     register_applier(require('conf.applier.fiber'))
 end
