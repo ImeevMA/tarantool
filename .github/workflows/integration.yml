@@ -5,6 +5,7 @@ on:
     branches:
       - 'master'
       - 'release/**'  # release branches
+      - 'dev/centralized-config'
     tags:
       - '*'
   pull_request:
