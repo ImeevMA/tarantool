@@ -6,6 +6,7 @@ on:
       - 'master'
       - 'release/**'
       - '[0-9].[0-9]+'
+      - 'dev/centralized-config'
     tags:
       - '**'
   pull_request:
