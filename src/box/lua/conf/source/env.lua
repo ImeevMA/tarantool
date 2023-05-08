@@ -94,7 +94,7 @@ end
 
 return {
     name = 'env',
-    -- doc/source_type.md
+    -- The type is either 'instance' or 'cluster'.
     type = 'instance',
     -- Gather most actual config values.
     sync = sync,
