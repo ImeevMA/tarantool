@@ -31,7 +31,7 @@ end
 
 return {
     name = 'file',
-    -- doc/source_type.md
+    -- The type is either 'instance' or 'cluster'.
     type = 'cluster',
     -- Gather most actual config values.
     sync = sync,
