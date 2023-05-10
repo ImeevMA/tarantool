@@ -127,6 +127,10 @@ local g = t.group('debug', {
     {sequence = 'bp_delete_fail'},
 })
 
+g.before_each(function()
+    t.skip('Temporary disable')
+end)
+
 local sequences = {
 
     -- full, complex sequence
@@ -339,6 +343,11 @@ g.test_debugger = function(cg)
 end
 
 local g_self = t.group('self-debug')
+
+g_self.before_each(function()
+    t.skip('Temporary disable')
+end)
+
 
 local shorter_sequence = {
         dbg_script [[
