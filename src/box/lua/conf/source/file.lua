@@ -3,7 +3,7 @@ local yaml = require('yaml')
 
 local values = {}
 
-local function sync(ctx)
+local function sync(ctx, _iconfig)
     assert(ctx.config_file ~= nil)
 
     local fh, err = fio.open(ctx.config_file)

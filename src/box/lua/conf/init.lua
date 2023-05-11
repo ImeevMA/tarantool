@@ -10,10 +10,9 @@ local ctx = {
     -- part of the configuration. They're stored here.
     instance_name = nil,
     config_file = nil,
-    -- Applied config values.
-    --
-    -- XXX: Split gathered values, applied values.
+    -- Collected config values.
     configdata = nil,
+    -- TODO: Track applied configdata as well.
 }
 
 local function register_source(source)
@@ -60,24 +59,40 @@ local function initialize()
     register_applier(require('conf.applier.credentials'))
     register_applier(require('conf.applier.console'))
     register_applier(require('conf.applier.fiber'))
+
+    -- Tarantool Enterprise Edition has its own additions
+    -- for this module.
+    local ok, extras = pcall(require, 'conf.extras')
+    if ok then
+        extras.initialize(ctx)
+    end
 end
 
 local function collect()
     -- XXX: Should order of sync should be the same as order of
     -- values merge?
+    --
+    -- No. We should prefer env values over file ones.
+
+    -- XXX: Error handling.
+    -- Idea: add ctx.error(). We can set it to error() at
+    -- first and to add errors into some table later.
+
+    -- XXX: Are we need a revision from a source?
+
+    local iconfig = {}
+    local cconfig = {}
+
     for _, source in ipairs(ctx.sources) do
         -- Gather config values.
         --
-        -- XXX: Error handling.
-        -- Idea: add ctx.error(). We can set it to error() at
-        -- first and to add errors into some table later.
-        --
-        -- XXX: We need a revision from a source?
-        source.sync(ctx)
-    end
+        -- The configdata object is not constructed yet, so we
+        -- pass currently collected instance config as the second
+        -- argument. The 'config' section of the config may
+        -- contain a configuration needed for a source.
+        source.sync(ctx, iconfig)
 
-    -- Validate configurations gathered from the sources.
-    for _, source in ipairs(ctx.sources) do
+        -- Validate configurations gathered from the sources.
         if source.type == 'instance' then
             instance_config:validate(source.get())
         elseif source.type == 'cluster' then
@@ -85,22 +100,19 @@ local function collect()
         else
             assert(false)
         end
-    end
 
-    -- TODO: We need specific validators at least for the instance
-    -- config. For example, there should be a validator, which
-    -- forbids Tarantool EE options in Tarantool CE.
+        -- TODO: We need specific validators at least for the
+        -- instance config. For example, there should be a
+        -- validator, which forbids Tarantool EE options in
+        -- Tarantool CE.
 
-    -- XXX: If config section changes, we may want to attach and/or
-    -- reconfigure sources.
-
-    -- Merge configurations from the sources.
-    --
-    -- Instantiate a cluster config to an instance config for
-    -- cluster config sources.
-    local iconfig = {}
-    local cconfig = {}
-    for _, source in ipairs(ctx.sources) do
+        -- Merge configurations from the sources.
+        --
+        -- Instantiate a cluster config to an instance config for
+        -- cluster config sources.
+        --
+        -- TODO: Reverse the priority: keep first gathered values
+        -- and fill only missed ones from next sources.
         local cfg = source.get()
         if source.type == 'cluster' then
             cconfig = cluster_config:merge(cconfig, cfg)
@@ -108,6 +120,7 @@ local function collect()
         end
         iconfig = instance_config:merge(iconfig, cfg)
     end
+
     ctx.configdata = configdata.new(iconfig, cconfig, ctx.instance_name)
 end
 
