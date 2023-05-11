@@ -76,7 +76,7 @@ local function transform_from_env(env_var_name, node_type, scalar_type)
     error(('Unknown environment option type: %q'):format(scalar_type))
 end
 
-local function sync(_ctx)
+local function sync(_ctx, _iconfig)
     for _, w in instance_config:pairs() do
         local node_type = w.type
         local scalar_type = w.type == 'scalar' and w.schema.type or nil
