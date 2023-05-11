@@ -770,13 +770,36 @@ static int
 vdbeSorterCompare(struct SortSubtask *task, bool *key2_cached,
 		  const void *key1, const void *key2)
 {
-	struct UnpackedRecord *r2 = task->pUnpacked;
-	if (!*key2_cached) {
-		sqlVdbeRecordUnpackMsgpack(task->pSorter->key_def,
-					       key2, r2);
-		*key2_cached = 1;
+	*key2_cached = false;
+	const char *field_a = key1;
+	const char *field_b = key2;
+	uint32_t n1 = mp_decode_array(&field_a);
+	uint32_t n2 = mp_decode_array(&field_b);
+	assert(n1 == n2);
+	(void)n1;
+	(void)n2;
+	for (uint32_t i = 0; i < task->pSorter->key_def->part_count; ++i) {
+		const struct key_part *part = &task->pSorter->key_def->parts[i];
+		assert(part->fieldno == i);
+		int sign = part->sort_order != SORT_ORDER_ASC ? -1 : 1;
+		if (mp_typeof(*field_a) == MP_NIL) {
+			if (mp_typeof(*field_b) == MP_NIL) {
+				mp_next(&field_a);
+				mp_next(&field_b);
+				continue;
+			}
+			return -sign;
+		}
+		if (mp_typeof(*field_b) == MP_NIL)
+			return sign;
+		int cmp = tuple_compare_field(field_a, field_b,
+					      FIELD_TYPE_SCALAR, part->coll);
+		if (cmp != 0)
+			return sign * cmp;
+		mp_next(&field_a);
+		mp_next(&field_b);
 	}
-	return sqlVdbeRecordCompareMsgpack(key1, r2);
+	return 0;
 }
 
 int

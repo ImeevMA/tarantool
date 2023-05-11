@@ -116,8 +116,13 @@ sql_expr_type(struct Expr *pExpr)
 		return sql_type_result(rhs_type, lhs_type);
 	case TK_GETITEM:
 		return FIELD_TYPE_ANY;
-	case TK_CONCAT:
+	case TK_CONCAT: {
+		enum field_type lhs_type = sql_expr_type(pExpr->pLeft);
+		enum field_type rhs_type = sql_expr_type(pExpr->pRight);
+		if (lhs_type == rhs_type)
+			return lhs_type;
 		return FIELD_TYPE_STRING;
+	}
 	case TK_CASE: {
 		struct ExprList *cs = pExpr->x.pList;
 		assert(cs->nExpr >= 2);
