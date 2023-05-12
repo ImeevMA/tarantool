@@ -45,6 +45,7 @@ set(sql_sources
     sql/cursor.c
     sql/build.c
     sql/callback.c
+    sql/collector.c
     sql/delete.c
     sql/expr.c
     sql/func.c
