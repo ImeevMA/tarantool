@@ -113,7 +113,11 @@ return schema.new('instance_config', {
                     timeout = schema.scalar({
                         type = 'number',
                         default = 0.3,
-                    })
+                    }),
+                    unix_socket = schema.scalar({
+                        type = 'string',
+                        default = nil,
+                    }),
                 },
             },
             ssl = {
