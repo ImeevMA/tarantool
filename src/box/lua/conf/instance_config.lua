@@ -87,7 +87,7 @@ return schema.new('instance_config', schema.record({
         etcd = enterprise_edition(schema.record({
             prefix = schema.scalar({
                 type = 'string',
-                validate = function(schema, data, w)
+                validate = function(_schema, data, w)
                     if not data:startswith('/') then
                         w.error(('config.etcd.prefix should be a path alike ' ..
                             'value, got %q'):format(data))
@@ -134,7 +134,7 @@ return schema.new('instance_config', schema.record({
                 }),
             }),
         }, {
-            validate = function(schema, data, w)
+            validate = function(_schema, data, w)
                 -- No config.etcd section at all -- OK.
                 if data == nil or next(data) == nil then
                     return
