@@ -58,7 +58,7 @@ local replicasets = schema.map({
     key = schema.scalar({type = 'string'}),
     value = schema.mix(
         schema.annotate(instance_config, {scope = 'replicaset'}),
-        {instances = instances}
+        schema.record({instances = instances})
     ),
 })
 
@@ -66,13 +66,13 @@ local groups = schema.map({
     key = schema.scalar({type = 'string'}),
     value = schema.mix(
         schema.annotate(instance_config, {scope = 'group'}),
-        {replicasets = replicasets}
+        schema.record({replicasets = replicasets})
     ),
 })
 
 return schema.new('cluster_config', schema.mix(
     schema.annotate(instance_config, {scope = 'global'}),
-    {groups = groups}
+    schema.record({groups = groups})
 ), {
     methods = {
         instantiate = instantiate,
