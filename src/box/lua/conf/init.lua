@@ -48,6 +48,13 @@ local function parse_args(instance_name, config_file)
 end
 
 local function initialize()
+    -- The sources are synchronized in the order of registration:
+    -- env, file, etcd (the latter is present in Tarantool EE).
+    --
+    -- The configuration values from the first source has highest
+    -- priority. The menthal rule here is the following: values
+    -- closer to the process are preferred: env first, then file,
+    -- then etcd (if available).
     register_source(require('conf.source.env'))
 
     if ctx.config_file ~= nil then
@@ -69,11 +76,6 @@ local function initialize()
 end
 
 local function collect()
-    -- XXX: Should order of sync should be the same as order of
-    -- values merge?
-    --
-    -- No. We should prefer env values over file ones.
-
     -- XXX: Error handling.
     -- Idea: add ctx.error(). We can set it to error() at
     -- first and to add errors into some table later.
@@ -111,14 +113,23 @@ local function collect()
         -- Instantiate a cluster config to an instance config for
         -- cluster config sources.
         --
-        -- TODO: Reverse the priority: keep first gathered values
-        -- and fill only missed ones from next sources.
-        local cfg = source.get()
+        -- The configuration values from a first source has highest
+        -- priority. We should keep already gathered values in the
+        -- accumulator and fill only missed ones from next sources.
+        --
+        -- :merge() prefers values from the second argument, so the
+        -- accumulator is passed as the second.
+        local source_iconfig
         if source.type == 'cluster' then
-            cconfig = cluster_config:merge(cconfig, cfg)
-            cfg = cluster_config:instantiate(cconfig, ctx.instance_name)
+            local source_cconfig = source.get()
+            cconfig = cluster_config:merge(source_cconfig, cconfig)
+            source_iconfig = cluster_config:instantiate(cconfig, ctx.instance_name)
+        elseif source.type == 'instance' then
+            source_iconfig = source.get()
+        else
+            assert(false)
         end
-        iconfig = instance_config:merge(iconfig, cfg)
+        iconfig = instance_config:merge(source_iconfig, iconfig)
     end
 
     ctx.configdata = configdata.new(iconfig, cconfig, ctx.instance_name)
