@@ -76,12 +76,6 @@ local function initialize()
 end
 
 local function collect()
-    -- XXX: Error handling.
-    -- Idea: add ctx.error(). We can set it to error() at
-    -- first and to add errors into some table later.
-
-    -- XXX: Are we need a revision from a source?
-
     local iconfig = {}
     local cconfig = {}
 

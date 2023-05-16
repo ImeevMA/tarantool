@@ -121,7 +121,6 @@ local function apply(configdata)
 
     log.debug('box_cfg.apply: %s', box_cfg)
 
-    -- XXX: think on error reporting
     box.cfg(box_cfg)
 end
 
