@@ -9,12 +9,15 @@
 -- Provides several utility function to costruct a schema
 -- definition:
 --
+-- * schema.new(<record>)
+-- * schema.record({
+--       foo = <...>,
+--   }, {
+--       my_annotation = <...>,
+--   })
 -- * schema.scalar({
 --       type = <...>,
 --       my_annotation = <...>,
---   })
--- * schema.new({
---       foo = schema.scalar(<...>),
 --   })
 -- * schema.map({
 --       key = schema.scalar(<...>),
@@ -62,7 +65,7 @@
 --
 -- Record (a map with certain field names and types).
 --
--- * Just table without any metatable.
+-- * schema.record(<...>)
 --
 -- Map (arbitrary key names, strict about keys and values types).
 --
@@ -144,6 +147,7 @@
 local fun = require('fun')
 
 local schema_mt = {}
+local record_mt = {}
 local map_mt = {}
 local scalar_mt = {}
 
@@ -203,7 +207,7 @@ local function schema_node_type(schema, ctx)
         walkthrough_error(ctx, 'Unexpected schema node type %q', type(schema))
     end
 
-    if getmetatable(schema) == nil then
+    if getmetatable(schema) == record_mt then
         return 'record'
     end
     if getmetatable(schema) == map_mt then
@@ -242,7 +246,7 @@ schema_pairs_impl = function(schema, ctx)
         }
         table.insert(ctx.acc, walkthrough_node)
     elseif node_type == 'record' then
-        for k, v in pairs(schema) do
+        for k, v in pairs(schema.fields) do
             walkthrough_enter(ctx, k)
             schema_pairs_impl(v, ctx)
             walkthrough_leave(ctx)
@@ -358,7 +362,7 @@ get_impl = function(schema, data, ctx)
             requested_field)
     elseif node_type == 'record' then
         walkthrough_enter(ctx, requested_field)
-        local field_def = schema[requested_field]
+        local field_def = schema.fields[requested_field]
         if field_def == nil then
             walkthrough_error(ctx, 'No such field in the schema')
         end
@@ -445,7 +449,7 @@ walkthrough_impl = function(schema, data, f, ctx)
                 type(data))
         end
 
-        for field_name, field_def in pairs(schema) do
+        for field_name, field_def in pairs(schema.fields) do
             walkthrough_enter(ctx, field_name)
 
             if type(field_def) ~= 'table' then
@@ -541,7 +545,7 @@ local function validate_impl(schema, data, ctx)
                 type(data))
         end
 
-        for field_name, field_def in pairs(schema) do
+        for field_name, field_def in pairs(schema.fields) do
             walkthrough_enter(ctx, field_name)
 
             local field = data[field_name]
@@ -555,7 +559,7 @@ local function validate_impl(schema, data, ctx)
 
         -- Walk over the data to catch unknown fields.
         for field_name, _ in pairs(data) do
-            local field_def = schema[field_name]
+            local field_def = schema.fields[field_name]
             if field_def == nil then
                 walkthrough_error(ctx, 'Unexpected field "%s"', field_name)
             end
@@ -646,7 +650,7 @@ local function map_impl(schema, data, f, ctx)
         end
 
         local res = {}
-        for field_name, field_def in pairs(schema) do
+        for field_name, field_def in pairs(schema.fields) do
             walkthrough_enter(ctx, field_name)
 
             local field
@@ -734,6 +738,18 @@ end
 
 -- {{{ Module functions
 
+-- schema.record({
+--     foo = schema.scalar(<...>),
+-- }, {
+--     <..annotations..>
+-- })
+local function record(fields, annotations)
+    return setmetatable({
+        fields = fields or {},
+        annotations = annotations or {},
+    }, record_mt)
+end
+
 -- schema.scalar({
 --     type = 'string',
 --     my_annotation = <...>,
@@ -758,18 +774,32 @@ local function mix(a, b)
     assert(schema_node_type(a) == 'record')
     assert(schema_node_type(b) == 'record')
 
-    local res = {}
-    for field_name, field_def in pairs(a) do
-        res[field_name] = field_def
+    local fields = {}
+    local annotations = {}
+
+    for field_name, field_def in pairs(a.fields) do
+        fields[field_name] = field_def
     end
-    for field_name, field_def in pairs(b) do
-        if res[field_name] ~= nil then
+    for k, v in pairs(a.annotations) do
+        annotations[k] = v
+    end
+
+    for field_name, field_def in pairs(b.fields) do
+        if fields[field_name] ~= nil then
             -- XXX: Proper error reporting.
             error('XXX')
         end
-        res[field_name] = field_def
+        fields[field_name] = field_def
     end
-    return res
+    for k, v in pairs(b.annotations) do
+        if annotations[k] ~= nil then
+            -- XXX: Proper error reporting.
+            error('XXX')
+        end
+        annotations[k] = v
+    end
+
+    return record(fields, annotations)
 end
 
 local annotate_impl
@@ -782,7 +812,7 @@ annotate_impl = function(schema, ctx)
             res[k] = v
         end
     elseif node_type == 'record' then
-        for field_name, field_def in pairs(schema) do
+        for field_name, field_def in pairs(schema.fields) do
             walkthrough_enter(ctx, field_name)
             res[field_name] = annotate_impl(field_def, ctx)
             walkthrough_leave(ctx)
@@ -845,7 +875,7 @@ end
 -- 4. Support the `contraints` field in
 --    <schema object>:validate().
 local function union_of_records(...)
-    local res = {}
+    local res = record({})
     for i = 1, select('#', ...) do
         res = mix(res, (select(i, ...)))
     end
@@ -867,6 +897,7 @@ end
 
 return {
     -- TODO: add .enum()
+    record = record,
     scalar = scalar,
     -- TODO: add .array()
     mix = mix,

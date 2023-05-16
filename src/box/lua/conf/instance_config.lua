@@ -39,8 +39,8 @@ local function enterprise_edition(schema_node)
     })
 end
 
-return schema.new('instance_config', {
-    config = {
+return schema.new('instance_config', schema.record({
+    config = schema.record({
         -- TODO: Not handled anywhere.
         version = schema.scalar({
             type = 'string',
@@ -48,37 +48,37 @@ return schema.new('instance_config', {
             required = true,
         }),
         -- TODO: Not handled anywhere.
-        hooks = {
-            pre_cfg = schema.union_of_records({
+        hooks = schema.record({
+            pre_cfg = schema.union_of_records(schema.record({
                 file = schema.scalar({
                     type = 'string',
                     default = nil,
                 }),
-            }, {
+            }), schema.record({
                 module = schema.scalar({
                     type = 'string',
                     default = nil,
                 }),
-            }),
-            post_cfg = schema.union_of_records({
+            })),
+            post_cfg = schema.union_of_records(schema.record({
                 file = schema.scalar({
                     type = 'string',
                     default = nil,
                 }),
-            }, {
+            }), schema.record({
                 module = schema.scalar({
                     type = 'string',
                     default = nil,
                 }),
-            }),
-        },
+            })),
+        }),
         -- Supported in Tarantool Entreprise Edition.
         --
         -- Ignored in Tarantool Community Edition.
         --
         -- TODO: Is it better to give an error if one of those
         -- options arrive to CE?
-        etcd = enterprise_edition({
+        etcd = enterprise_edition(schema.record({
             prefix = schema.scalar({
                 type = 'string',
                 default = nil,
@@ -108,8 +108,8 @@ return schema.new('instance_config', {
                 type = 'string',
                 default = nil,
             }),
-            http = {
-                request = {
+            http = schema.record({
+                request = schema.record({
                     timeout = schema.scalar({
                         type = 'number',
                         default = 0.3,
@@ -118,9 +118,9 @@ return schema.new('instance_config', {
                         type = 'string',
                         default = nil,
                     }),
-                },
-            },
-            ssl = {
+                }),
+            }),
+            ssl = schema.record({
                 ssl_key = schema.scalar({
                     type = 'string',
                     default = nil,
@@ -141,10 +141,10 @@ return schema.new('instance_config', {
                     type = 'boolean',
                     default = nil,
                 }),
-            },
-        }),
-    },
-    process = {
+            }),
+        })),
+    }),
+    process = schema.record({
         strip_core = schema.scalar({
             type = 'boolean',
             box_cfg = 'strip_core',
@@ -191,8 +191,8 @@ return schema.new('instance_config', {
             -- {{ TARANTOOL_RUNDIR }} instead of hardcoded
             -- /var/run.
         }),
-    },
-    console = {
+    }),
+    console = schema.record({
         enabled = schema.scalar({
             type = 'boolean',
             default = true,
@@ -203,8 +203,8 @@ return schema.new('instance_config', {
             -- XXX: Use TARANTOOL_RUNDIR.
             default = '/var/run/tarantool/{{ instance_name }}.socket',
         }),
-    },
-    fiber = {
+    }),
+    fiber = schema.record({
         io_collect_interval = schema.scalar({
             type = 'number',
             box_cfg = 'io_collect_interval',
@@ -220,7 +220,7 @@ return schema.new('instance_config', {
             box_cfg = 'worker_pool_threads',
             default = 4,
         }),
-        slice = {
+        slice = schema.record({
             warn = schema.scalar({
                 type = 'number',
                 default = 0.5,
@@ -229,15 +229,15 @@ return schema.new('instance_config', {
                 type = 'number',
                 default = 1,
             }),
-        },
-        top = {
+        }),
+        top = schema.record({
             enabled = schema.scalar({
                 type = 'boolean',
                 default = false,
             }),
-        },
-    },
-    log = {
+        }),
+    }),
+    log = schema.record({
         -- The logger destination is handled separately in the
         -- box_cfg applier, so there are no explicit box_cfg and
         -- box_cfg_nondynamic annotations.
@@ -245,16 +245,16 @@ return schema.new('instance_config', {
         -- The reason is that there is no direct-no-transform
         -- mapping from, say, `log.to.file` to `box_cfg.log`.
         -- The applier should add the `file:` prefix.
-        to = schema.union_of_records({
+        to = schema.union_of_records(schema.record({
             file = schema.scalar({
                 type = 'string',
             }),
-        }, {
+        }), schema.record({
             pipe = schema.scalar({
                 type = 'string',
             }),
-        }, {
-            syslog = {
+        }), schema.record({
+            syslog = schema.record({
                 enabled = schema.scalar({
                     type = 'boolean',
                 }),
@@ -267,8 +267,8 @@ return schema.new('instance_config', {
                 server = schema.scalar({
                     type = 'string',
                 }),
-            },
-        }),
+            }),
+        })),
         nonblock = schema.scalar({
             type = 'boolean',
             box_cfg = 'log_nonblock',
@@ -296,8 +296,8 @@ return schema.new('instance_config', {
             -- schema.lua, because defaults are assumed on scalars
             -- at the moment.
         }),
-    },
-    iproto = {
+    }),
+    iproto = schema.record({
         -- XXX: listen/advertise are specific: accept a string of
         -- a particular format, a number (port), a table of a
         -- particular format.
@@ -328,8 +328,8 @@ return schema.new('instance_config', {
             box_cfg = 'readahead',
             default = 16320,
         }),
-    },
-    database = {
+    }),
+    database = schema.record({
         -- XXX: needs more validation
         instance_uuid = schema.scalar({
             type = 'string',
@@ -368,15 +368,15 @@ return schema.new('instance_config', {
             box_cfg = 'memtx_use_mvcc_engine',
             default = false,
         }),
-    },
-    sql = {
+    }),
+    sql = schema.record({
         cache_size = schema.scalar({
             type = 'integer',
             box_cfg = 'sql_cache_size',
             default = 5 * 1024 * 1024,
         }),
-    },
-    memtx = {
+    }),
+    memtx = schema.record({
         memory = schema.scalar({
             type = 'integer',
             box_cfg = 'memtx_memory',
@@ -408,16 +408,16 @@ return schema.new('instance_config', {
             box_cfg = 'memtx_max_tuple_size',
             default = 1024 * 1024,
         }),
-    },
-    vinyl = {
+    }),
+    vinyl = schema.record({
         -- TODO: vinyl options.
         max_tuple_size = schema.scalar({
             type = 'integer',
             box_cfg = 'vinyl_max_tuple_size',
             default = 1024 * 1024,
         }),
-    },
-    wal = {
+    }),
+    wal = schema.record({
         dir = schema.scalar({
             type = 'string',
             box_cfg = 'wal_dir',
@@ -454,7 +454,7 @@ return schema.new('instance_config', {
         -- because it is supposed to be used in scalars and some
         -- schema.lua changes may be needed to support it for
         -- records.
-        ext = enterprise_edition({
+        ext = enterprise_edition(schema.record({
             old = schema.scalar({
                 type = 'boolean',
                 default = false,
@@ -470,7 +470,7 @@ return schema.new('instance_config', {
                 key = schema.scalar({
                     type = 'string',
                 }),
-                value = {
+                value = schema.record({
                     old = schema.scalar({
                         type = 'boolean',
                         default = false,
@@ -479,18 +479,18 @@ return schema.new('instance_config', {
                         type = 'boolean',
                         default = false,
                     }),
-                },
+                }),
             }),
-        }),
-    },
-    snapshot = {
+        })),
+    }),
+    snapshot = schema.record({
         dir = schema.scalar({
             type = 'string',
             box_cfg = 'memtx_dir',
             mkdir = true,
             default = '.',
         }),
-        by = {
+        by = schema.record({
             interval = schema.scalar({
                 type = 'number',
                 box_cfg = 'checkpoint_interval',
@@ -501,7 +501,7 @@ return schema.new('instance_config', {
                 box_cfg = 'checkpoint_wal_threshold',
                 default = 1e18,
             }),
-        },
+        }),
         count = schema.scalar({
             type = 'integer',
             box_cfg = 'checkpoint_count',
@@ -512,8 +512,8 @@ return schema.new('instance_config', {
             box_cfg = 'snap_io_rate_limit',
             default = box.NULL,
         }),
-    },
-    replication = {
+    }),
+    replication = schema.record({
         -- XXX: needs more validation
         peers = schema.scalar({
             type = '[string]',
@@ -589,8 +589,8 @@ return schema.new('instance_config', {
             box_cfg = 'bootstrap_strategy',
             default = 'auto',
         }),
-    },
-    credentials = {
+    }),
+    credentials = schema.record({
         -- XXX: needs more validation, it is enum in fact
         mode = schema.scalar({
             type = 'string',
@@ -604,7 +604,7 @@ return schema.new('instance_config', {
             -- Grants
             -- XXX: should be an array of all grants
             -- (privilege + entities).
-            value = {
+            value = schema.record({
                 -- XXX: actually a set of enums
                 -- TODO: annotate unique array (set alike)
                 privileges = schema.scalar({
@@ -628,14 +628,14 @@ return schema.new('instance_config', {
                 roles = schema.scalar({
                     type = '[string]',
                 }),
-            },
+            }),
         }),
         users = schema.map({
             key = schema.scalar({
                 type = 'string'
             }),
-            value = {
-                passwd = {
+            value = schema.record({
+                passwd = schema.record({
                     plain = schema.scalar({
                         type = 'string'
                     }),
@@ -645,18 +645,18 @@ return schema.new('instance_config', {
                     sha256 = schema.scalar({
                         type = 'string'
                     })
-                },
+                }),
                 -- XXX: actually roles, not grants.
                 grant = schema.scalar({
                     type = '[string]',
                 }),
-            },
+            }),
         }),
-    },
+    }),
     -- TODO: audit
     -- TODO: security
     -- TODO: feedback
     -- TODO: flightrec
     -- TODO: metrics
     -- TODO: app
-})
+}))
