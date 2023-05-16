@@ -626,6 +626,21 @@ local function validate_impl(schema, data, ctx)
     else
         assert(false)
     end
+
+    -- Call user provided validation function.
+    --
+    -- Important: it is called when all the type validation is
+    -- already done, including nested nodes.
+    if schema.validate ~= nil then
+        assert(type(schema.validate) == 'function')
+        local w = {
+            path = ctx.path,
+            error = function(message, ...)
+                walkthrough_error(ctx, message, ...)
+            end,
+        }
+        schema.validate(schema, data, w)
+    end
 end
 
 function methods.validate(self, data)
@@ -786,11 +801,14 @@ end
 --     <..annotations..>
 -- })
 local function record(fields, annotations)
-    return {
+    local res = {
         type = 'record',
         fields = fields or {},
-        annotations = annotations or {},
     }
+    for k, v in pairs(annotations or {}) do
+        res[k] = v
+    end
+    return res
 end
 
 -- schema.scalar({
@@ -826,8 +844,10 @@ local function mix(a, b)
     for field_name, field_def in pairs(a.fields) do
         fields[field_name] = field_def
     end
-    for k, v in pairs(a.annotations) do
-        annotations[k] = v
+    for k, v in pairs(a) do
+        if k ~= 'fields' and k ~= 'type' then
+            annotations[k] = v
+        end
     end
 
     for field_name, field_def in pairs(b.fields) do
@@ -837,12 +857,14 @@ local function mix(a, b)
         end
         fields[field_name] = field_def
     end
-    for k, v in pairs(b.annotations) do
-        if annotations[k] ~= nil then
-            -- XXX: Proper error reporting.
-            error('XXX')
+    for k, v in pairs(b) do
+        if k ~= 'fields' and k ~= 'type' then
+            if annotations[k] ~= nil then
+                -- XXX: Proper error reporting.
+                error('XXX')
+            end
+            annotations[k] = v
         end
-        annotations[k] = v
     end
 
     return record(fields, annotations)

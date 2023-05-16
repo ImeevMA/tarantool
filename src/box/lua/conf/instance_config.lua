@@ -78,70 +78,72 @@ return schema.new('instance_config', schema.record({
         --
         -- TODO: Is it better to give an error if one of those
         -- options arrive to CE?
+        --
+        -- Defaults can't be set there, because the `validate`
+        -- annotation expects either no data or data with existing
+        -- prefix field. The prefix field has no default. So,
+        -- applying defaults to an empty data would make the data
+        -- invalid.
         etcd = enterprise_edition(schema.record({
             prefix = schema.scalar({
                 type = 'string',
-                default = nil,
+                validate = function(schema, data, w)
+                    if not data:startswith('/') then
+                        w.error(('config.etcd.prefix should be a path alike ' ..
+                            'value, got %q'):format(data))
+                    end
+                end,
             }),
             endpoints = schema.scalar({
                 type = '[string]',
-                default = nil,
             }),
-            -- TODO: Wait for support in the etcd-client.
-            --
-            -- TODO: Name it `discovery_interval` or similarly to
-            -- set a period (zero would mean disabling the
-            -- option)? The official Go etcd client has the
-            -- `AutoSyncInterval` option.
-            --
-            -- See https://github.com/tarantool/etcd-client/issues/35.
-            --[[
-            discover_endpoints = schema.scalar({
-                type = 'boolean',
-            }),
-            ]]--
             username = schema.scalar({
                 type = 'string',
-                default = nil,
             }),
             password = schema.scalar({
                 type = 'string',
-                default = nil,
             }),
             http = schema.record({
                 request = schema.record({
                     timeout = schema.scalar({
                         type = 'number',
-                        default = 0.3,
+                        -- default = 0.3 is applied right in the
+                        -- etcd source. See a comment above
+                        -- regarding defaults in config.etcd.
                     }),
                     unix_socket = schema.scalar({
                         type = 'string',
-                        default = nil,
                     }),
                 }),
             }),
             ssl = schema.record({
                 ssl_key = schema.scalar({
                     type = 'string',
-                    default = nil,
                 }),
                 ca_path = schema.scalar({
                     type = 'string',
-                    default = nil,
                 }),
                 ca_file = schema.scalar({
                     type = 'string',
-                    default = nil,
                 }),
                 verify_peer = schema.scalar({
                     type = 'boolean',
-                    default = nil,
                 }),
                 verify_host = schema.scalar({
                     type = 'boolean',
-                    default = nil,
                 }),
             }),
+        }, {
+            validate = function(schema, data, w)
+                -- No config.etcd section at all -- OK.
+                if data == nil or next(data) == nil then
+                    return
+                end
+                -- There is some data -- the prefix should be there.
+                if data.prefix == nil then
+                    w.error('No config.etcd.prefix provided')
+                end
+            end,
         })),
     }),
     process = schema.record({
