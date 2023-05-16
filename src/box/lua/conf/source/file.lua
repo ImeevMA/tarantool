@@ -8,7 +8,6 @@ local function sync(ctx, _iconfig)
 
     local fh, err = fio.open(ctx.config_file)
     if fh == nil then
-        -- XXX: Think on error handling.
         error(('Unable to open a config file %q: %s'):format(
             ctx.config_file, err))
     end
@@ -17,7 +16,6 @@ local function sync(ctx, _iconfig)
 
     local ok, res = pcall(yaml.decode, data)
     if not ok then
-        -- XXX: Think on error handling.
         error(('Unable to parse a config file %q as YAML: %s'):format(
             ctx.config_file, res))
     end
