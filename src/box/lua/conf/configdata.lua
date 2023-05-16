@@ -66,7 +66,7 @@ local mt = {
 
 local function apply_vars_f(schema, data, w, vars)
     -- TODO: How about string values inside an array?
-    if w.node_type == 'scalar' and schema.type == 'string' and data ~= nil then
+    if schema.type == 'string' and data ~= nil then
         assert(type(data) == 'string')
         return (data:gsub('{{ *(.-) *}}', function(var_name)
             if vars[var_name] ~= nil then

@@ -5,14 +5,14 @@ local values = {}
 
 -- XXX: Move string (from env) -> Lua value transformation to a
 -- schema.
-local function transform_from_env(env_var_name, node_type, scalar_type)
+local function transform_from_env(env_var_name, schema_type)
     local raw_value = os.getenv(env_var_name)
 
     if raw_value == nil or raw_value == '' then
         return nil
     end
 
-    if node_type == 'map' then
+    if schema_type == 'map' then
         -- JSON.
         if raw_value:startswith('{') then
             local ok, res = pcall(json.decode, raw_value)
@@ -43,22 +43,20 @@ local function transform_from_env(env_var_name, node_type, scalar_type)
         return res
     end
 
-    assert(node_type == 'scalar')
-
-    if scalar_type == 'string' then
+    if schema_type == 'string' then
         return raw_value
-    elseif scalar_type == '[string]' then
+    elseif schema_type == '[string]' then
         return raw_value:split(',')
-    elseif scalar_type == 'integer' then
+    elseif schema_type == 'integer' then
         -- XXX: Forbid floats.
         return tonumber64(raw_value)
-    elseif scalar_type == 'number' then
+    elseif schema_type == 'number' then
         -- XXX: Support large integers?
         return tonumber(raw_value)
-    elseif scalar_type == 'number, string' or
-            scalar_type == 'string, number' then -- XXX: just hack
+    elseif schema_type == 'number, string' or
+            schema_type == 'string, number' then -- XXX: just hack
         return tonumber(raw_value) or raw_value
-    elseif scalar_type == 'boolean' then
+    elseif schema_type == 'boolean' then
         -- Accept false/true case insensitively.
         --
         -- Accept 0/1 as boolean values.
@@ -73,15 +71,13 @@ local function transform_from_env(env_var_name, node_type, scalar_type)
             'variable %q'):format(env_var_name))
     end
 
-    error(('Unknown environment option type: %q'):format(scalar_type))
+    error(('Unknown environment option type: %q'):format(schema_type))
 end
 
 local function sync(_ctx, _iconfig)
     for _, w in instance_config:pairs() do
-        local node_type = w.type
-        local scalar_type = w.type == 'scalar' and w.schema.type or nil
         local env_var_name = 'TT_' .. table.concat(w.path, '_'):upper()
-        local value = transform_from_env(env_var_name, node_type, scalar_type)
+        local value = transform_from_env(env_var_name, w.schema.type)
         if value ~= nil then
             instance_config:set(values, w.path, value)
         end
