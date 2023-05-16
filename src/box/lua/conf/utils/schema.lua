@@ -55,27 +55,15 @@
 -- * Merge two values.
 --   <schema object>:merge(a, b)
 --
--- Scalar types:
+-- Schema node types (possible `schema.type` values):
 --
 -- * string
 -- * number
 -- * integer
 -- * [string] (yeah, that's the temporary hack)
 -- * union of scalars (say, 'string, number')
---
--- Record (a map with certain field names and types).
---
--- * schema.record(<...>)
---
--- Map (arbitrary key names, strict about keys and values types).
---
--- * schema.map(<...>)
---
--- (Don't confuse with the <schema object>:map(data, f) method.)
---
--- Union of records.
---
--- * schema.union_of_records(record_1, record_2, ...)
+-- * record (a dictionary with certain field names and types)
+-- * map (arbitrary key names, strict about keys and values types)
 --
 -- }}} Details
 
@@ -128,7 +116,7 @@
 --   (:pairs(), :filter()).
 -- * Eliminate or replace temporary tables whose only purpose is
 --   to pass a couple of values to an external loop (search for
---   `walkthrough_node`).
+--   `w`).
 -- * Prepare data+schema object, which allows to get particular
 --   value using <schema object>:get('foo.bar') at one hop.
 --
@@ -147,10 +135,8 @@
 local fun = require('fun')
 
 local schema_mt = {}
-local record_mt = {}
-local map_mt = {}
-local scalar_mt = {}
 
+local scalars = {}
 local methods = {}
 
 -- {{{ Helpers
@@ -195,29 +181,8 @@ local function walkthrough_error(ctx, message, ...)
     error(('%s: %s'):format(error_prefix, message:format(...)), 2)
 end
 
-local function schema_node_type(schema, ctx)
-    -- XXX: Accept nil use the function in asserts. It would be
-    -- better to create a proper context everywhere. Let's remove
-    -- this hack, when it'll be done.
-    if ctx == nil then
-        ctx = {path = {}, name = '<unknown>'}
-    end
-
-    if type(schema) ~= 'table' then
-        walkthrough_error(ctx, 'Unexpected schema node type %q', type(schema))
-    end
-
-    if getmetatable(schema) == record_mt then
-        return 'record'
-    end
-    if getmetatable(schema) == map_mt then
-        return 'map'
-    end
-    if getmetatable(schema) == scalar_mt then
-        return 'scalar'
-    end
-
-    walkthrough_error(ctx, 'Unexpected schema node metatable')
+local function is_scalar(schema)
+    return scalars[schema.type] ~= nil
 end
 
 local function x_or_default(x, default, opts)
@@ -230,36 +195,144 @@ local function x_or_default(x, default, opts)
     return nil
 end
 
+-- Verify whether given value (data) has expected type and produce
+-- a human readable error message otherwise.
+local function validate_type_noexc(data, exp_type)
+    -- exp_type is like {'string', 'number'}.
+    if type(exp_type) == 'table' then
+        local found = false
+        for _, exp_t in ipairs(exp_type) do
+            if type(data) == exp_t then
+                found = true
+                break
+            end
+        end
+        if not found then
+            local exp_type_str = ('"%s"'):format(table.concat(exp_type, '", "'))
+            local err = ('Expected one of %s, got %q'):format(exp_type_str,
+                type(data))
+            return false, err
+        end
+        return true
+    end
+
+    -- exp_type is a Lua type like 'string'.
+    assert(type(exp_type) == 'string')
+    if type(data) ~= exp_type then
+        local err = ('Expected %q, got %q'):format(exp_type, type(data))
+        return false, err
+    end
+    return true
+end
+
 -- }}} Helpers
+
+-- {{{ Scalars
+
+-- Scalar types definitions.
+--
+-- Fields:
+--
+-- * type (string) -- how the scalar is named
+-- * validate_noexc (function) -- check given data against the
+--   type constraints
+--
+--   -> true (means the data is valid)
+--   -> false, err (otherwise)
+
+scalars.string = {
+    type = 'string',
+    validate_noexc = function(data)
+        return validate_type_noexc(data, 'string')
+    end,
+}
+
+scalars.number = {
+    type = 'number',
+    validate_noexc = function(data)
+        -- TODO: Should we accept cdata<int64_t> and
+        -- cdata<uint64_t> here?
+        return validate_type_noexc(data, 'number')
+    end,
+}
+
+scalars.integer = {
+    type = 'integer',
+    validate_noexc = function(data)
+        -- TODO: Accept cdata<int64_t> and cdata<uint64_t>.
+        local ok, err = validate_type_noexc(data, 'number')
+        if not ok then
+            return false, err
+        end
+        if data - math.floor(data) ~= 0 then
+            local err = ('Expected number without a fractional part, ' ..
+                'got %d'):format(data)
+            return false, err
+        end
+        return true
+    end,
+}
+
+-- TODO: This hack is needed until schema.array() will be
+-- implemented.
+scalars['[string]'] = {
+    type = '[string]',
+    validate_noexc = function(data)
+        -- XXX: Check whether it is an array (all keys are numeric, starts
+        -- from 1, no holes)
+        -- XXX: Check that all the array items are strings.
+        return validate_type_noexc(data, 'table')
+    end,
+}
+
+-- TODO: This hack is needed until a union of scalars will be
+-- implemented.
+scalars['string, number'] = {
+    type = 'string, number',
+    validate_noexc = function(data)
+        return validate_type_noexc(data, {'string', 'number'})
+    end,
+}
+scalars['number, string'] = {
+    type = 'number, string',
+    validate_noexc = function(data)
+        return validate_type_noexc(data, {'string', 'number'})
+    end,
+}
+
+scalars.boolean = {
+    type = 'boolean',
+    validate_noexc = function(data)
+        return validate_type_noexc(data, 'boolean')
+    end,
+}
+
+-- }}} Scalars
 
 -- {{{ Instance methods
 
 local schema_pairs_impl
 schema_pairs_impl = function(schema, ctx)
-    local node_type = schema_node_type(schema, ctx)
-
-    if node_type == 'scalar' then
-        local walkthrough_node = {
+    if is_scalar(schema) then
+        local w = {
             path = table.copy(ctx.path),
-            type = 'scalar',
             schema = schema,
         }
-        table.insert(ctx.acc, walkthrough_node)
-    elseif node_type == 'record' then
+        table.insert(ctx.acc, w)
+    elseif schema.type == 'record' then
         for k, v in pairs(schema.fields) do
             walkthrough_enter(ctx, k)
             schema_pairs_impl(v, ctx)
             walkthrough_leave(ctx)
         end
-    elseif node_type == 'map' then
+    elseif schema.type == 'map' then
         assert(schema.key ~= nil)
         assert(schema.value ~= nil)
-        local walkthrough_node = {
+        local w = {
             path = table.copy(ctx.path),
-            type = 'map',
             schema = schema,
         }
-        table.insert(ctx.acc, walkthrough_node)
+        table.insert(ctx.acc, w)
     else
         assert(false)
     end
@@ -352,15 +425,14 @@ get_impl = function(schema, data, ctx)
 
     -- There are more steps in the journey (at least one).
     -- Let's dive deeper and process it per schema node type.
-    local node_type = schema_node_type(schema, ctx)
 
     local requested_field = ctx.journey[1]
     assert(requested_field ~= nil)
 
-    if node_type == 'scalar' then
+    if is_scalar(schema) then
         walkthrough_error(ctx, 'Attempt to index scalar by %q',
             requested_field)
-    elseif node_type == 'record' then
+    elseif schema.type == 'record' then
         walkthrough_enter(ctx, requested_field)
         local field_def = schema.fields[requested_field]
         if field_def == nil then
@@ -376,7 +448,7 @@ get_impl = function(schema, data, ctx)
 
         table.remove(ctx.journey, 1)
         return get_impl(field_def, field_value, ctx)
-    elseif node_type == 'map' then
+    elseif schema.type == 'map' then
         walkthrough_enter(ctx, requested_field)
         local field_def = schema.value
 
@@ -428,22 +500,17 @@ end
 
 local walkthrough_impl
 walkthrough_impl = function(schema, data, f, ctx)
-    local node_type = schema_node_type(schema, ctx)
-
-    local walkthrough_node = {
+    local w = {
         path = ctx.path,
-        -- XXX: This mix of node type and scalar type is a bit
-        -- messy.
-        type = node_type == 'scalar' and schema.type or node_type,
-        node = schema,
+        schema = schema,
         data = data,
     }
-    f(walkthrough_node, ctx.f_ctx)
+    f(w, ctx.f_ctx)
 
     -- luacheck: ignore 542 empty if branch
-    if node_type == 'scalar' then
+    if is_scalar(schema) then
         -- Nothing to do.
-    elseif node_type == 'record' then
+    elseif schema.type == 'record' then
         if type(data) ~= 'table' then
             walkthrough_error(ctx, 'Unexpected data type for a record: %q',
                 type(data))
@@ -465,7 +532,7 @@ walkthrough_impl = function(schema, data, f, ctx)
 
             walkthrough_leave(ctx)
         end
-    elseif node_type == 'map' then
+    elseif schema.type == 'map' then
         if type(data) ~= 'table' then
             walkthrough_error(ctx, 'Unexpected data type for a map: %q',
                 type(data))
@@ -473,9 +540,9 @@ walkthrough_impl = function(schema, data, f, ctx)
 
         for field_name, field_value in pairs(data) do
             walkthrough_enter(ctx, field_name)
-            -- XXX: Ignore keys? Or add them to the
-            -- walkthrough_node generated in the inner call using
-            -- the context?
+            -- XXX: Ignore keys? Or add them to the `w`
+            -- (walkthrough node) generated in the inner call
+            -- using the context?
             walkthrough_impl(schema.value, field_value, f, ctx)
             walkthrough_leave(ctx)
         end
@@ -491,55 +558,35 @@ end
 
 function methods.filter(self, data, filter_f)
     local acc = {}
-    self:walkthrough(data, function(walkthrough_node)
-        if walkthrough_node.type == 'record' then
+    self:walkthrough(data, function(w)
+        if w.schema.type == 'record' then
             return
         end
-        if walkthrough_node.type == 'map' then
+        if w.schema.type == 'map' then
             return
         end
-        if filter_f(walkthrough_node) then
-            table.insert(acc, walkthrough_node)
+        assert(is_scalar(w.schema))
+        if filter_f(w) then
+            table.insert(acc, w)
         end
     end)
     return fun.iter(acc)
 end
 
 local function validate_impl(schema, data, ctx)
-    local node_type = schema_node_type(schema, ctx)
-
-    if node_type == 'scalar' then
-        -- XXX: This fast-written type system should be refactored
-        -- at some point.
-        local matched = false
-        for _, exp_type in ipairs(schema.type:split(',')) do
-            exp_type = exp_type:strip()
-            if exp_type == '[string]' then
-                if type(data) == 'table' then
-                    -- XXX: Check whether it is an array (all keys
-                    -- are numeric, starts from 1, no holes)
-                    -- XXX: Check that all the array items are
-                    -- strings.
-                    matched = true
-                    break
-                end
-            elseif exp_type == 'integer' then
-                if type(data) == 'number' and data - math.floor(data) == 0 then
-                    matched = true
-                    break
-                end
-            elseif type(data) == exp_type then
-                matched = true
-                break
-            end
+    if is_scalar(schema) then
+        local scalar_def = scalars[schema.type]
+        assert(scalar_def ~= nil)
+        local ok, err = scalar_def.validate_noexc(data)
+        if not ok then
+            -- TODO: We'll likely allow schema.type to be a table
+            -- later. At this point the generation of the error
+            -- message should be adjusted.
+            assert(type(schema.type) == 'string')
+            walkthrough_error(ctx, "Unexpected data for scalar %q: %s",
+                schema.type, err)
         end
-        if not matched then
-            -- XXX: Better diagnostics for arrays.
-            -- XXX: And for integer.
-            walkthrough_error(ctx, "Unexpected data type %q for schema type %q",
-                type(data), schema.type)
-        end
-    elseif node_type == 'record' then
+    elseif schema.type == 'record' then
         if type(data) ~= 'table' then
             walkthrough_error(ctx, 'Unexpected data type for a record: %q',
                 type(data))
@@ -564,7 +611,7 @@ local function validate_impl(schema, data, ctx)
                 walkthrough_error(ctx, 'Unexpected field "%s"', field_name)
             end
         end
-    elseif node_type == 'map' then
+    elseif schema.type == 'map' then
         if type(data) ~= 'table' then
             walkthrough_error(ctx, 'Unexpected data type for a map: %q',
                 type(data))
@@ -631,19 +678,16 @@ function methods.merge(_self, a, b)
 end
 
 local function map_impl(schema, data, f, ctx)
-    local node_type = schema_node_type(schema, ctx)
-
-    if node_type == 'scalar' then
+    if is_scalar(schema) then
         -- TODO: Support a scalar within an array.
         local w = {
-            node_type = node_type,
             path = ctx.path,
             error = function(message, ...)
                 walkthrough_error(ctx, message, ...)
             end,
         }
         return f(schema, data, w, ctx.f_ctx)
-    elseif node_type == 'record' then
+    elseif schema.type == 'record' then
         if data ~= nil and type(data) ~= 'table' then
             walkthrough_error(ctx, 'Unexpected data type for a record: %q',
                 type(data))
@@ -665,7 +709,7 @@ local function map_impl(schema, data, f, ctx)
             return nil
         end
         return res
-    elseif node_type == 'map' then
+    elseif schema.type == 'map' then
         if data == nil then
             return nil
         end
@@ -695,10 +739,8 @@ end
 --
 -- An example of a mapping function:
 --
---  | local function m(schema, data, w)
---  |     if w.node_type == 'scalar' and
---  |             schema.type == 'string' and
---  |             data ~= nil then
+--  | local function m(schema, data, _w)
+--  |     if schema.type == 'string' and data ~= nil then
 --  |         return data:gsub('X', 'Y')
 --  |     end
 --  |     return data
@@ -712,8 +754,8 @@ function methods.map(self, data, f, f_ctx)
     return map_impl(rawget(self, 'schema'), data, f, ctx)
 end
 
-local function apply_default_f(schema, data, w)
-    if w.node_type == 'scalar' and data == nil then
+local function apply_default_f(schema, data, _w)
+    if data == nil then
         return schema.default
     end
     return data
@@ -744,10 +786,11 @@ end
 --     <..annotations..>
 -- })
 local function record(fields, annotations)
-    return setmetatable({
+    return {
+        type = 'record',
         fields = fields or {},
         annotations = annotations or {},
-    }, record_mt)
+    }
 end
 
 -- schema.scalar({
@@ -755,7 +798,8 @@ end
 --     my_annotation = <...>,
 -- })
 local function scalar(scalar_def)
-    return setmetatable(scalar_def, scalar_mt)
+    assert(scalar_def.type ~= nil)
+    return scalar_def
 end
 
 -- Create a record, which is composition of fields from two records.
@@ -771,8 +815,10 @@ local function mix(a, b)
         b = rawget(b, 'schema')
     end
 
-    assert(schema_node_type(a) == 'record')
-    assert(schema_node_type(b) == 'record')
+    assert(type(a) == 'table')
+    assert(type(b) == 'table')
+    assert(a.type == 'record')
+    assert(b.type == 'record')
 
     local fields = {}
     local annotations = {}
@@ -804,20 +850,19 @@ end
 
 local annotate_impl
 annotate_impl = function(schema, ctx)
-    local node_type = schema_node_type(schema, ctx)
     local res = table.copy(schema)
 
-    if node_type == 'scalar' then
+    if is_scalar(schema) then
         for k, v in pairs(ctx.annotations) do
             res[k] = v
         end
-    elseif node_type == 'record' then
+    elseif schema.type == 'record' then
         for field_name, field_def in pairs(schema.fields) do
             walkthrough_enter(ctx, field_name)
             res[field_name] = annotate_impl(field_def, ctx)
             walkthrough_leave(ctx)
         end
-    elseif node_type == 'map' then
+    elseif schema.type == 'map' then
         res.key = annotate_impl(schema.key, ctx)
         res.value = annotate_impl(schema.value, ctx)
     else
@@ -837,8 +882,9 @@ local function annotate(schema, annotations)
         schema = rawget(schema, 'schema')
     end
 
-    -- Call for validation, ignore result.
-    schema_node_type(schema)
+    -- Fast schema check.
+    assert(type(schema) == 'table')
+    assert(schema.type == 'record' or schema.type == 'map' or is_scalar(schema))
 
     -- Traverse over the schema and add the annotations to each
     -- scalar.
@@ -847,7 +893,13 @@ local function annotate(schema, annotations)
 end
 
 local function map(map_def)
-    return setmetatable(map_def, map_mt)
+    assert(map_def.key ~= nil)
+    assert(map_def.value ~= nil)
+    return {
+        type = 'map',
+        key = map_def.key,
+        value = map_def.value,
+    }
 end
 
 -- Union of several records.

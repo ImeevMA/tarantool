@@ -93,9 +93,9 @@ end
 
 local function apply(configdata)
     local box_cfg = configdata:filter(function(w)
-        return w.node.box_cfg ~= nil
+        return w.schema.box_cfg ~= nil
     end, {use_default = true}):map(function(w)
-        return w.node.box_cfg, w.data
+        return w.schema.box_cfg, w.data
     end):tomap()
 
     -- Construct box_cfg.replication.

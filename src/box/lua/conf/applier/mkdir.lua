@@ -2,7 +2,7 @@ local log = require('conf.utils.log')
 
 local function apply(configdata)
     configdata:filter(function(w)
-        return w.node.mkdir ~= nil
+        return w.schema.mkdir ~= nil
     end):map(function(w)
         return w.path, w.data
     end):each(function(path, dir)
