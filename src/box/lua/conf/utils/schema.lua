@@ -174,6 +174,26 @@ local function walkthrough_error(ctx, message, ...)
     error(('%s: %s'):format(error_prefix, message:format(...)), 2)
 end
 
+-- Verify that data is a table and, if it is not so, produce a
+-- nice schema-aware error.
+--
+-- Applicable for a record, a map, an array.
+--
+-- Useful as part of validation, but also as a lightweight
+-- consistency check.
+local function walkthrough_assert_table(ctx, schema, data)
+    assert(schema.type == 'record' or schema.type == 'map' or
+        schema.type == 'array')
+
+    if type(data) == 'table' then
+        return
+    end
+
+    local article = schema.type == 'array' and 'an' or 'a'
+    walkthrough_error(ctx, 'Unexpected data type for %s %s: %q', article,
+        schema.type, type(data))
+end
+
 local function is_scalar(schema)
     return scalars[schema.type] ~= nil
 end
@@ -503,10 +523,7 @@ walkthrough_impl = function(schema, data, f, ctx)
     if is_scalar(schema) then
         -- Nothing to do.
     elseif schema.type == 'record' then
-        if type(data) ~= 'table' then
-            walkthrough_error(ctx, 'Unexpected data type for a record: %q',
-                type(data))
-        end
+        walkthrough_assert_table(ctx, schema, data)
 
         for field_name, field_def in pairs(schema.fields) do
             walkthrough_enter(ctx, field_name)
@@ -525,10 +542,7 @@ walkthrough_impl = function(schema, data, f, ctx)
             walkthrough_leave(ctx)
         end
     elseif schema.type == 'map' then
-        if type(data) ~= 'table' then
-            walkthrough_error(ctx, 'Unexpected data type for a map: %q',
-                type(data))
-        end
+        walkthrough_assert_table(ctx, schema, data)
 
         for field_name, field_value in pairs(data) do
             walkthrough_enter(ctx, field_name)
@@ -539,10 +553,7 @@ walkthrough_impl = function(schema, data, f, ctx)
             walkthrough_leave(ctx)
         end
     elseif schema.type == 'array' then
-        if type(data) ~= 'table' then
-            walkthrough_error(ctx, 'Unexpected data type for an array: %q',
-                type(data))
-        end
+        walkthrough_assert_table(ctx, schema, data)
 
         for i, v in ipairs(data) do
             walkthrough_enter(ctx, i)
@@ -583,10 +594,7 @@ local function validate_impl(schema, data, ctx)
                 schema.type, err)
         end
     elseif schema.type == 'record' then
-        if type(data) ~= 'table' then
-            walkthrough_error(ctx, 'Unexpected data type for a record: %q',
-                type(data))
-        end
+        walkthrough_assert_table(ctx, schema, data)
 
         for field_name, field_def in pairs(schema.fields) do
             walkthrough_enter(ctx, field_name)
@@ -608,10 +616,7 @@ local function validate_impl(schema, data, ctx)
             end
         end
     elseif schema.type == 'map' then
-        if type(data) ~= 'table' then
-            walkthrough_error(ctx, 'Unexpected data type for a map: %q',
-                type(data))
-        end
+        walkthrough_assert_table(ctx, schema, data)
 
         for field_name, field_value in pairs(data) do
             walkthrough_enter(ctx, field_name)
@@ -620,10 +625,7 @@ local function validate_impl(schema, data, ctx)
             walkthrough_leave(ctx)
         end
     elseif schema.type == 'array' then
-        if type(data) ~= 'table' then
-            walkthrough_error(ctx, 'Unexpected data type for an array: %q',
-                type(data))
-        end
+        walkthrough_assert_table(ctx, schema, data)
 
         -- Check that all the keys are numeric.
         local key_count = 0
@@ -685,33 +687,77 @@ function methods.validate(self, data)
 end
 
 local merge_impl
-merge_impl = function(a, b)
-    if type(a) ~= 'table' then
+merge_impl = function(schema, a, b, ctx)
+    -- There is no value at one of the sides -- pick up another
+    -- one.
+    if a == nil then
         return b
     end
     if b == nil then
         return a
     end
-    assert(type(b) == 'table')
-    local res = {}
-    for k, v in pairs(a) do
-        res[k] = merge_impl(v, b[k])
+
+    -- Scalars and arrays are not to be merged.
+    --
+    -- At this point neither `a`, nor `b` is `nil`, so
+    -- return the preferred value, `b`.
+    if is_scalar(schema) then
+        return b
+    elseif schema.type == 'array' then
+        walkthrough_assert_table(ctx, schema, a)
+        walkthrough_assert_table(ctx, schema, b)
+
+        return b
     end
-    for k, v in pairs(b) do
-        if a[k] == nil then
-            res[k] = v
+
+    -- `a` and `b` are both non-nil records or maps. Perform the
+    -- deep merge.
+    if schema.type == 'record' then
+        walkthrough_assert_table(ctx, schema, a)
+        walkthrough_assert_table(ctx, schema, b)
+
+        local res = {}
+        for field_name, field_def in pairs(schema.fields) do
+            walkthrough_enter(ctx, field_name)
+            local a_field = a[field_name]
+            local b_field = b[field_name]
+            res[field_name] = merge_impl(field_def, a_field, b_field, ctx)
+            walkthrough_leave(ctx)
         end
+        return res
+    elseif schema.type == 'map' then
+        walkthrough_assert_table(ctx, schema, a)
+        walkthrough_assert_table(ctx, schema, b)
+
+        local res = {}
+        for field_name, a_field in pairs(a) do
+            walkthrough_enter(ctx, field_name)
+            local b_field = b[field_name]
+            res[field_name] = merge_impl(schema.value, a_field, b_field, ctx)
+            walkthrough_leave(ctx)
+        end
+        -- NB: No error is possible, so let's skip
+        -- walkthrough_enter()/walkthrough_leave().
+        for field_name, b_field in pairs(b) do
+            if a[field_name] == nil then
+                res[field_name] = b_field
+            end
+        end
+        return res
+    else
+        assert(false)
     end
-    return res
 end
 
--- Merge two values.
+-- Merge two hierarical values.
 --
 -- Prefer the latter.
 --
--- TODO: Don't merge arrays.
-function methods.merge(_self, a, b)
-    return merge_impl(a, b)
+-- Records and maps are deeply merged. Scalars and arrays are
+-- all-or-nothing: either one is choosen or another.
+function methods.merge(self, a, b)
+    local ctx = walkthrough_start(self)
+    return merge_impl(rawget(self, 'schema'), a, b, ctx)
 end
 
 local function map_impl(schema, data, f, ctx)
@@ -724,9 +770,8 @@ local function map_impl(schema, data, f, ctx)
         }
         return f(schema, data, w, ctx.f_ctx)
     elseif schema.type == 'record' then
-        if data ~= nil and type(data) ~= 'table' then
-            walkthrough_error(ctx, 'Unexpected data type for a record: %q',
-                type(data))
+        if data ~= nil then
+            walkthrough_assert_table(ctx, schema, data)
         end
 
         local res = {}
@@ -750,10 +795,7 @@ local function map_impl(schema, data, f, ctx)
             return nil
         end
 
-        if type(data) ~= 'table' then
-            walkthrough_error(ctx, 'Unexpected data type for a map: %q',
-                type(data))
-        end
+        walkthrough_assert_table(ctx, schema, data)
 
         local res = {}
         for field_name, field_value in pairs(data) do
@@ -769,10 +811,7 @@ local function map_impl(schema, data, f, ctx)
             return nil
         end
 
-        if data ~= nil and type(data) ~= 'table' then
-            walkthrough_error(ctx, 'Unexpected data type for an array: %q',
-                type(data))
-        end
+        walkthrough_assert_table(ctx, schema, data)
 
         local res = {}
         for i, v in ipairs(data) do
