@@ -54,8 +54,6 @@
 -- * Get/set a nested value.
 --   <schema object>:get(data, path, opts)
 --   <schema object>:set(data, path, value)
--- * Compare values.
---   <schema object>:equals(a, b)
 -- * Merge two values.
 --   <schema object>:merge(a, b)
 --
@@ -684,20 +682,6 @@ end
 function methods.validate(self, data)
     local ctx = walkthrough_start(self)
     validate_impl(rawget(self, 'schema'), data, ctx)
-end
-
--- Whether two values are equal.
---
--- It is equivalent to a simple deep compare, but placed to the
--- schema object for convenience.
---
--- May assume that both values are conform to the schema.
---
--- May use the schema knowledge for optimizations using, say, code
--- generation.
-function methods.equals(_self, _a, _b)
-    -- TODO: Implement.
-    return false
 end
 
 local merge_impl
