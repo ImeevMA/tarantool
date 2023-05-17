@@ -94,8 +94,10 @@ return schema.new('instance_config', schema.record({
                     end
                 end,
             }),
-            endpoints = schema.scalar({
-                type = '[string]',
+            endpoints = schema.array({
+                items = schema.scalar({
+                    type = 'string',
+                }),
             }),
             username = schema.scalar({
                 type = 'string',
@@ -517,8 +519,10 @@ return schema.new('instance_config', schema.record({
     }),
     replication = schema.record({
         -- XXX: needs more validation
-        peers = schema.scalar({
-            type = '[string]',
+        peers = schema.array({
+            items = schema.scalar({
+                type = 'string',
+            }),
             box_cfg = 'replication',
             default = box.NULL,
         }),
@@ -609,26 +613,36 @@ return schema.new('instance_config', schema.record({
             value = schema.record({
                 -- XXX: actually a set of enums
                 -- TODO: annotate unique array (set alike)
-                privileges = schema.scalar({
-                    type = '[string]',
-                    -- TODO: support the annotation
-                    values = {'super', 'read', 'write', 'execute', 'create',
-                              'alter', 'drop', 'usage', 'session'}
+                privileges = schema.array({
+                    items = schema.scalar({
+                        type = 'string',
+                        -- TODO: support the annotation
+                        values = {'super', 'read', 'write', 'execute', 'create',
+                                  'alter', 'drop', 'usage', 'session'},
+                    }),
                 }),
                 universe = schema.scalar({
                     type = 'boolean',
                 }),
-                spaces = schema.scalar({
-                    type = '[string]',
+                spaces = schema.array({
+                    items = schema.scalar({
+                        type = 'string',
+                    }),
                 }),
-                functions = schema.scalar({
-                    type = '[string]',
+                functions = schema.array({
+                    items = schema.scalar({
+                        type = 'string',
+                    }),
                 }),
-                sequences = schema.scalar({
-                    type = '[string]',
+                sequences = schema.array({
+                    items = schema.scalar({
+                        type = 'string',
+                    }),
                 }),
-                roles = schema.scalar({
-                    type = '[string]',
+                roles = schema.array({
+                    items = schema.scalar({
+                        type = 'string',
+                    }),
                 }),
             }),
         }),
@@ -649,8 +663,10 @@ return schema.new('instance_config', schema.record({
                     })
                 }),
                 -- XXX: actually roles, not grants.
-                grant = schema.scalar({
-                    type = '[string]',
+                grant = schema.array({
+                    items = schema.scalar({
+                        type = 'string',
+                    }),
                 }),
             }),
         }),
