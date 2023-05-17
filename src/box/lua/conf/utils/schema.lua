@@ -23,6 +23,10 @@
 --       key = schema.scalar(<...>),
 --       value = schema.scalar(<...>),
 --   })
+-- * schema.array({
+--       items = schema.scalar(<...>),
+--       <..annotations..>
+--   })
 -- * schema.union_of_records(record_1, record_2, ...)
 --
 -- There are two auxiliary functions that generate schemas:
@@ -60,10 +64,10 @@
 -- * string
 -- * number
 -- * integer
--- * [string] (yeah, that's the temporary hack)
 -- * union of scalars (say, 'string, number')
 -- * record (a dictionary with certain field names and types)
 -- * map (arbitrary key names, strict about keys and values types)
+-- * array
 --
 -- }}} Details
 
@@ -85,7 +89,6 @@
 --
 --   schema.record(def) -> {type = 'record', fields = def}
 --   schema.scalar(def) -> {type = 'scalar', scalar = def}
--- * Add schema.array(def).
 -- * Add schema.enum(def).
 --
 -- Ideas about new features that would be appreciated.
@@ -273,18 +276,6 @@ scalars.integer = {
     end,
 }
 
--- TODO: This hack is needed until schema.array() will be
--- implemented.
-scalars['[string]'] = {
-    type = '[string]',
-    validate_noexc = function(data)
-        -- XXX: Check whether it is an array (all keys are numeric, starts
-        -- from 1, no holes)
-        -- XXX: Check that all the array items are strings.
-        return validate_type_noexc(data, 'table')
-    end,
-}
-
 -- TODO: This hack is needed until a union of scalars will be
 -- implemented.
 scalars['string, number'] = {
@@ -333,12 +324,19 @@ schema_pairs_impl = function(schema, ctx)
             schema = schema,
         }
         table.insert(ctx.acc, w)
+    elseif schema.type == 'array' then
+        assert(schema.items ~= nil)
+        local w = {
+            path = table.copy(ctx.path),
+            schema = schema,
+        }
+        table.insert(ctx.acc, w)
     else
         assert(false)
     end
 end
 
--- Walk over the schema and return scalars and maps.
+-- Walk over the schema and return scalars, arrays and maps.
 --
 --  | for _, node in schema:pairs() do
 --  |     local path = node.path
@@ -461,6 +459,10 @@ get_impl = function(schema, data, ctx)
 
         table.remove(ctx.journey, 1)
         return get_impl(field_def, field_value, ctx)
+    elseif schema.type == 'array' then
+        -- TODO: Support 'foo[1]' and `{'foo', 1}` paths. See the
+        -- normalize_path() function.
+        walkthrough_error(ctx, 'Indexing an array is not supported yet')
     else
         assert(false)
     end
@@ -546,6 +548,17 @@ walkthrough_impl = function(schema, data, f, ctx)
             walkthrough_impl(schema.value, field_value, f, ctx)
             walkthrough_leave(ctx)
         end
+    elseif schema.type == 'array' then
+        if type(data) ~= 'table' then
+            walkthrough_error(ctx, 'Unexpected data type for an array: %q',
+                type(data))
+        end
+
+        for i, v in ipairs(data) do
+            walkthrough_enter(ctx, i)
+            walkthrough_impl(schema.items, v, f, ctx)
+            walkthrough_leave(ctx)
+        end
     else
         assert(false)
     end
@@ -559,13 +572,6 @@ end
 function methods.filter(self, data, filter_f)
     local acc = {}
     self:walkthrough(data, function(w)
-        if w.schema.type == 'record' then
-            return
-        end
-        if w.schema.type == 'map' then
-            return
-        end
-        assert(is_scalar(w.schema))
         if filter_f(w) then
             table.insert(acc, w)
         end
@@ -621,6 +627,46 @@ local function validate_impl(schema, data, ctx)
             walkthrough_enter(ctx, field_name)
             validate_impl(schema.key, field_name, ctx)
             validate_impl(schema.value, field_value, ctx)
+            walkthrough_leave(ctx)
+        end
+    elseif schema.type == 'array' then
+        if type(data) ~= 'table' then
+            walkthrough_error(ctx, 'Unexpected data type for an array: %q',
+                type(data))
+        end
+
+        -- Check that all the keys are numeric.
+        local key_count = 0
+        local min_key = 1/0  -- +inf
+        local max_key = -1/0 -- -inf
+        for k, _ in pairs(data) do
+            if type(k) ~= 'number' then
+                walkthrough_error(ctx, 'An array contains a non-numeric ' ..
+                    'key: %q', data)
+            end
+            key_count = key_count + 1
+            min_key = math.min(min_key, k)
+            max_key = math.max(max_key, k)
+        end
+
+        -- NB: An empty array is a valid array, so it is excluded
+        -- from the checks below.
+
+        -- Check that the array starts from 1 and has no holes.
+        if key_count ~= 0 and min_key ~= 1 then
+            walkthrough_error(ctx, 'An array must start from index 1, ' ..
+                'got min index %d', min_key)
+        end
+
+        if key_count ~= 0 and max_key ~= key_count then
+            walkthrough_error(ctx, 'An array must not have holes, got ' ..
+                'a table with %d numeric fields with max index %d', key_count,
+                max_key)
+        end
+
+        for i, v in ipairs(data) do
+            walkthrough_enter(ctx, i)
+            validate_impl(schema.items, v, ctx)
             walkthrough_leave(ctx)
         end
     else
@@ -694,7 +740,6 @@ end
 
 local function map_impl(schema, data, f, ctx)
     if is_scalar(schema) then
-        -- TODO: Support a scalar within an array.
         local w = {
             path = ctx.path,
             error = function(message, ...)
@@ -740,6 +785,24 @@ local function map_impl(schema, data, f, ctx)
             local new_field_name = map_impl(schema.key, field_name, f, ctx)
             local new_field_value = map_impl(schema.value, field_value, f, ctx)
             res[new_field_name] = new_field_value
+            walkthrough_leave(ctx)
+        end
+        return res
+    elseif schema.type == 'array' then
+        if data == nil then
+            return nil
+        end
+
+        if data ~= nil and type(data) ~= 'table' then
+            walkthrough_error(ctx, 'Unexpected data type for an array: %q',
+                type(data))
+        end
+
+        local res = {}
+        for i, v in ipairs(data) do
+            walkthrough_enter(ctx, i)
+            local new_item_value = map_impl(schema.items, v, f, ctx)
+            res[i] = new_item_value
             walkthrough_leave(ctx)
         end
         return res
@@ -887,6 +950,8 @@ annotate_impl = function(schema, ctx)
     elseif schema.type == 'map' then
         res.key = annotate_impl(schema.key, ctx)
         res.value = annotate_impl(schema.value, ctx)
+    elseif schema.type == 'array' then
+        res.items = annotate_impl(schema.items, ctx)
     else
         assert(false)
     end
@@ -917,11 +982,16 @@ end
 local function map(map_def)
     assert(map_def.key ~= nil)
     assert(map_def.value ~= nil)
-    return {
-        type = 'map',
-        key = map_def.key,
-        value = map_def.value,
-    }
+    local res = table.copy(map_def)
+    res.type = 'map'
+    return res
+end
+
+local function array(array_def)
+    assert(array_def.items ~= nil)
+    local res = table.copy(array_def)
+    res.type = 'array'
+    return res
 end
 
 -- Union of several records.
@@ -973,7 +1043,7 @@ return {
     -- TODO: add .enum()
     record = record,
     scalar = scalar,
-    -- TODO: add .array()
+    array = array,
     mix = mix,
     annotate = annotate,
     map = map,

@@ -65,7 +65,6 @@ local mt = {
 }
 
 local function apply_vars_f(schema, data, w, vars)
-    -- TODO: How about string values inside an array?
     if schema.type == 'string' and data ~= nil then
         assert(type(data) == 'string')
         return (data:gsub('{{ *(.-) *}}', function(var_name)

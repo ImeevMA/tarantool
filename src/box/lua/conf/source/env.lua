@@ -12,6 +12,12 @@ local function transform_from_env(env_var_name, schema_type)
         return nil
     end
 
+    if schema_type == 'array' then
+        -- XXX: assert that it is array of strings?
+        -- XXX: support JSON?
+        return raw_value:split(',')
+    end
+
     if schema_type == 'map' then
         -- JSON.
         if raw_value:startswith('{') then
@@ -45,8 +51,6 @@ local function transform_from_env(env_var_name, schema_type)
 
     if schema_type == 'string' then
         return raw_value
-    elseif schema_type == '[string]' then
-        return raw_value:split(',')
     elseif schema_type == 'integer' then
         -- XXX: Forbid floats.
         return tonumber64(raw_value)
