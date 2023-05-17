@@ -37,6 +37,11 @@
 -- * Annotate all (deeply) nested scalars.
 --   schema.annotate(<schema object>, {<..annotations..>})
 --
+-- And the auxiliary function to parse a value declared by a
+-- schema node from an environment variable"
+--
+-- * schema.fromenv(env_var_name, schema_node)
+--
 -- The schema object provides methods for different purposes.
 --
 -- * Traversing the schema.
@@ -126,6 +131,7 @@
 -- }}} Thoughts on future improvements
 
 local fun = require('fun')
+local json = require('json')
 
 local schema_mt = {}
 
@@ -252,11 +258,16 @@ end
 --
 --   -> true (means the data is valid)
 --   -> false, err (otherwise)
+-- * fromenv (function) -- parse data originated from an
+--   environment variable
 
 scalars.string = {
     type = 'string',
     validate_noexc = function(data)
         return validate_type_noexc(data, 'string')
+    end,
+    fromenv = function(_env_var_name, raw_value)
+        return raw_value
     end,
 }
 
@@ -266,6 +277,16 @@ scalars.number = {
         -- TODO: Should we accept cdata<int64_t> and
         -- cdata<uint64_t> here?
         return validate_type_noexc(data, 'number')
+    end,
+    fromenv = function(env_var_name, raw_value)
+        -- TODO: Accept large integers and return cdata<int64_t>
+        -- or cdata<uint64_t>?
+        local res = tonumber(raw_value)
+        if res == nil then
+            error(('Unable to decode a number value from environment ' ..
+                'variable %q, got %q'):format(env_var_name, raw_value))
+        end
+        return res
     end,
 }
 
@@ -284,6 +305,14 @@ scalars.integer = {
         end
         return true
     end,
+    fromenv = function(env_var_name, raw_value)
+        local res = tonumber64(raw_value)
+        if res == nil then
+            error(('Unable to decode an integer value from environment ' ..
+                'variable %q, got %q'):format(env_var_name, raw_value))
+        end
+        return res
+    end,
 }
 
 -- TODO: This hack is needed until a union of scalars will be
@@ -293,11 +322,17 @@ scalars['string, number'] = {
     validate_noexc = function(data)
         return validate_type_noexc(data, {'string', 'number'})
     end,
+    fromenv = function(_env_var_name, raw_value)
+        return tonumber(raw_value) or raw_value
+    end,
 }
 scalars['number, string'] = {
     type = 'number, string',
     validate_noexc = function(data)
         return validate_type_noexc(data, {'string', 'number'})
+    end,
+    fromenv = function(_env_var_name, raw_value)
+        return tonumber(raw_value) or raw_value
     end,
 }
 
@@ -305,6 +340,20 @@ scalars.boolean = {
     type = 'boolean',
     validate_noexc = function(data)
         return validate_type_noexc(data, 'boolean')
+    end,
+    fromenv = function(env_var_name, raw_value)
+        -- Accept false/true case insensitively.
+        --
+        -- Accept 0/1 as boolean values.
+        if raw_value:lower() == 'false' or raw_value == '0' then
+            return false
+        end
+        if raw_value:lower() == 'true' or raw_value == '1' then
+            return true
+        end
+
+        error(('Unable to decode a boolean value from environment ' ..
+            'variable %q, got %q'):format(env_var_name, raw_value))
     end,
 }
 
@@ -873,6 +922,18 @@ end
 
 -- {{{ Module functions
 
+-- Forward declarations.
+local mix
+
+-- schema.scalar({
+--     type = 'string',
+--     my_annotation = <...>,
+-- })
+local function scalar(scalar_def)
+    assert(scalar_def.type ~= nil)
+    return scalar_def
+end
+
 -- schema.record({
 --     foo = schema.scalar(<...>),
 -- }, {
@@ -889,17 +950,66 @@ local function record(fields, annotations)
     return res
 end
 
--- schema.scalar({
---     type = 'string',
---     my_annotation = <...>,
--- })
-local function scalar(scalar_def)
-    assert(scalar_def.type ~= nil)
-    return scalar_def
+local function map(map_def)
+    assert(map_def.key ~= nil)
+    assert(map_def.value ~= nil)
+    local res = table.copy(map_def)
+    res.type = 'map'
+    return res
+end
+
+local function array(array_def)
+    assert(array_def.items ~= nil)
+    local res = table.copy(array_def)
+    res.type = 'array'
+    return res
+end
+
+local function new(name, schema, opts)
+    opts = opts or {}
+    local instance_methods = opts.methods or {}
+
+    return setmetatable({
+        name = name,
+        schema = schema,
+        methods = instance_methods,
+    }, schema_mt)
+end
+
+-- Union of several records.
+--
+-- The data can contain either one record or another.
+--
+-- TODO: This is a stub function: it lacks validation that fields
+-- from different records are not present simultaneously. This can
+-- be implemented, but there are prerequisites:
+--
+-- 1. Modify record's representation from just...
+--
+--    {field_1 = <schema>, field_2 = <schema>}
+--
+--    ...to...
+--
+--    {
+--        fields = {field_1 = <schema>, field_2 = <schema>},
+--        constrainsts = <...>,
+--    }
+-- 2. [optional, but desirable] Add schema.record() constructor.
+-- 3. Fill the `constraints` field (or whatever it'll be named)
+--    with constraints about allowed keys in the
+--    union_of_records() function.
+-- 4. Support the `contraints` field in
+--    <schema object>:validate().
+local function union_of_records(...)
+    local res = record({})
+    for i = 1, select('#', ...) do
+        res = mix(res, (select(i, ...)))
+    end
+    return res
 end
 
 -- Create a record, which is composition of fields from two records.
-local function mix(a, b)
+mix = function(a, b)
     assert(type(a) == 'table')
     assert(type(b) == 'table')
 
@@ -994,74 +1104,116 @@ local function annotate(schema, annotations)
     return annotate_impl(schema, ctx)
 end
 
-local function map(map_def)
-    assert(map_def.key ~= nil)
-    assert(map_def.value ~= nil)
-    local res = table.copy(map_def)
-    res.type = 'map'
-    return res
-end
-
-local function array(array_def)
-    assert(array_def.items ~= nil)
-    local res = table.copy(array_def)
-    res.type = 'array'
-    return res
-end
-
--- Union of several records.
---
--- The data can contain either one record or another.
---
--- TODO: This is a stub function: it lacks validation that fields
--- from different records are not present simultaneously. This can
--- be implemented, but there are prerequisites:
---
--- 1. Modify record's representation from just...
---
---    {field_1 = <schema>, field_2 = <schema>}
---
---    ...to...
---
---    {
---        fields = {field_1 = <schema>, field_2 = <schema>},
---        constrainsts = <...>,
---    }
--- 2. [optional, but desirable] Add schema.record() constructor.
--- 3. Fill the `constraints` field (or whatever it'll be named)
---    with constraints about allowed keys in the
---    union_of_records() function.
--- 4. Support the `contraints` field in
---    <schema object>:validate().
-local function union_of_records(...)
-    local res = record({})
-    for i = 1, select('#', ...) do
-        res = mix(res, (select(i, ...)))
+local fromenv
+fromenv = function(env_var_name, raw_value, schema)
+    if raw_value == nil or raw_value == '' then
+        return nil
     end
-    return res
-end
 
-local function new(name, schema, opts)
-    opts = opts or {}
-    local instance_methods = opts.methods or {}
+    if is_scalar(schema) then
+        local scalar_def = scalars[schema.type]
+        assert(scalar_def ~= nil)
+        return scalar_def.fromenv(env_var_name, raw_value)
+    elseif schema.type == 'record' then
+        error(('Unable to get a record value from environment variable %q: ' ..
+            'records are not implemented'):format(env_var_name))
+    elseif schema.type == 'map' then
+        if schema.key.type ~= 'string' then
+            error(('Unable to get a map value from environment variable %q: ' ..
+                'non-string key types are not implemented'):format(
+                env_var_name))
+        end
 
-    return setmetatable({
-        name = name,
-        schema = schema,
-        methods = instance_methods,
-    }, schema_mt)
+        -- JSON object.
+        if raw_value:startswith('{') then
+            local ok, res = pcall(json.decode, raw_value)
+            if not ok then
+                error(('Unable to decode JSON data in environment ' ..
+                    'variable %q: %s'):format(env_var_name, res))
+            end
+            return res
+        end
+
+        -- JSON array.
+        if raw_value:startswith('[') then
+            error(('JSON array is provided for environment variable %q of ' ..
+                'type map'):format(env_var_name))
+        end
+
+        -- foo=bar,baz=fiz
+        local res = {}
+        for _, v in ipairs(raw_value:split(',')) do
+            local eq = v:find('=')
+            if eq == nil then
+                error(('Expected JSON or foo=bar,fiz=baz format for ' ..
+                    'environment variable %q'):format(env_var_name))
+            end
+            local lhs = string.sub(v, 1, eq - 1)
+            local rhs = string.sub(v, eq + 1)
+
+            if lhs == '' then
+                error(('Expected JSON or foo=bar,fiz=baz format for ' ..
+                    'environment variable %q'):format(env_var_name))
+            end
+            local subname = ('%s.%s'):format(env_var_name, lhs)
+            res[lhs] = fromenv(subname, rhs, schema.value)
+        end
+        return res
+    elseif schema.type == 'array' then
+        -- JSON array.
+        if raw_value:startswith('[') then
+            local ok, res = pcall(json.decode, raw_value)
+            if not ok then
+                error(('Unable to decode JSON data in environment ' ..
+                    'variable %q: %s'):format(env_var_name, res))
+            end
+            return res
+        end
+
+        -- JSON object.
+        if raw_value:startswith('{') then
+            error(('JSON object is provided for environment variable %q of ' ..
+                'type array'):format(env_var_name))
+        end
+
+        local res = {}
+        for i, v in ipairs(raw_value:split(',')) do
+            local subname = ('%s[%d]'):format(env_var_name, i)
+            res[i] = fromenv(subname, v, schema.items)
+        end
+        return res
+    else
+        assert(false)
+    end
 end
 
 -- }}} Module functions
 
 return {
-    -- TODO: add .enum()
-    record = record,
+    -- Schema node constructors.
     scalar = scalar,
+    record = record,
+    map = map,
     array = array,
+
+    -- Schema object constructor.
+    --
+    -- It creates an object with methods from a schema node.
+    new = new,
+
+    -- Constructors for 'derived types'.
+    --
+    -- It produces a scalar, record, map or array, but annotates
+    -- it in some specific way to, say, impose extra constraint
+    -- rules at validation.
+    --
+    -- TODO: add .enum()
+    union_of_records = union_of_records,
+
+    -- Schema/schema node modification/tranformation functions.
     mix = mix,
     annotate = annotate,
-    map = map,
-    union_of_records = union_of_records,
-    new = new,
+
+    -- Schema aware data parsers.
+    fromenv = fromenv,
 }
