@@ -36,8 +36,6 @@ local methods = {}
 --     peer: string
 function methods.get(self, path, opts)
     local data = choose_iconfig(self, opts)
-    -- NB: use_default is handled in choose_iconfig(), so it is
-    -- not passed down.
     return instance_config:get(data, path)
 end
 
@@ -48,8 +46,6 @@ end
 --     peer: string
 function methods.filter(self, f, opts)
     local data = choose_iconfig(self, opts)
-    -- NB: use_default is handled in choose_iconfig(), so it is
-    -- not passed down.
     return instance_config:filter(data, f)
 end
 

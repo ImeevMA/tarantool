@@ -57,7 +57,7 @@
 -- * Walk over the data.
 --   <schema object>:walkthrough(data, f, f_ctx)
 -- * Get/set a nested value.
---   <schema object>:get(data, path, opts)
+--   <schema object>:get(data, path)
 --   <schema object>:set(data, path, value)
 -- * Merge two values.
 --   <schema object>:merge(a, b)
@@ -202,16 +202,6 @@ end
 
 local function is_scalar(schema)
     return scalars[schema.type] ~= nil
-end
-
-local function x_or_default(x, default, opts)
-    if x ~= nil then
-        return x
-    end
-    if opts ~= nil and opts.use_default then
-        return default
-    end
-    return nil
 end
 
 -- Verify whether given value (data) has expected type and produce
@@ -468,16 +458,8 @@ end
 local get_impl
 get_impl = function(schema, data, ctx)
     -- The journey is finished. Return what is under the feet.
-    --
-    -- Note: only scalars can have a default for now. At least I
-    -- don't know for sure how to better define behavior for
-    -- defaults in composite types, which may have descendants with
-    -- its own defaults.
-    --
-    -- Anyway, we access the `schema.default` field unconditionally
-    -- with assumption that it is present only in scalars.
     if #ctx.journey == 0 then
-        return x_or_default(data, schema.default, ctx)
+        return data
     end
 
     -- There are more steps in the journey (at least one).
@@ -497,7 +479,7 @@ get_impl = function(schema, data, ctx)
         end
 
         -- Even if there is no such field in the data, continue
-        -- the descending to reach the default (if any).
+        -- the descending to validate the path against the schema.
         local field_value
         if data ~= nil then
             field_value = data[requested_field]
@@ -510,7 +492,7 @@ get_impl = function(schema, data, ctx)
         local field_def = schema.value
 
         -- Even if there is no such field in the data, continue
-        -- the descending to reach the default (if any).
+        -- the descending to validate the path against the schema.
         local field_value
         if data ~= nil then
             field_value = data[requested_field]
@@ -530,9 +512,7 @@ end
 -- local data = {foo = {bar = 'x'}}
 -- schema:get(data, 'foo.bar') -> 'x'
 -- schema:get(data, {'foo', 'bar'}) -> 'x'
-function methods.get(self, data, path, opts)
-    opts = opts or {}
-
+function methods.get(self, data, path)
     local function usage()
         error('Usage: schema:get(data: table, path: nil/string/table)')
     end
@@ -554,7 +534,6 @@ function methods.get(self, data, path, opts)
         -- passed path. Let's name the remaining path as
         -- `journey`.
         journey = path,
-        use_default = opts.use_default,
     })
     return get_impl(rawget(self, 'schema'), data, ctx)
 end
