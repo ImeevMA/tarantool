@@ -6,10 +6,6 @@ local schema = require('conf.utils.schema')
 --
 --   Scalar type.
 --
--- * required (boolean)
---
---   TODO: Not implemented yet.
---
 -- * enterprise_edition (boolean)
 --
 --   Available only in Tarantool Enterprise Edition.
@@ -41,11 +37,22 @@ end
 
 return schema.new('instance_config', schema.record({
     config = schema.record({
-        -- TODO: Not handled anywhere.
         version = schema.scalar({
             type = 'string',
-            -- TODO: Support required fields in the schema.
-            required = true,
+            -- TODO: Require the field.
+            --
+            -- We should handle it in the env source: set the
+            -- latest config version if unset.
+            --[[
+            validate = function(_schema, data, w)
+                if data == nil then
+                    w.error('config.version is mandatory')
+                end
+                if data ~= CONFIG_VERSION then
+                    w.error('config.version should be %s', CONFIG_VERSION)
+                end
+            end,
+            ]]--
         }),
         -- TODO: Not handled anywhere.
         hooks = schema.record({
