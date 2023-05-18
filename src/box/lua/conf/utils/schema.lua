@@ -28,6 +28,7 @@
 --       <..annotations..>
 --   })
 -- * schema.union_of_records(record_1, record_2, ...)
+-- * schema.enum({'foo', 'bar'})
 --
 -- There are two auxiliary functions that generate schemas:
 --
@@ -1024,6 +1025,18 @@ local function new(name, schema, opts)
     }, schema_mt)
 end
 
+-- Shortcut for a string scalar with given allowed values.
+local function enum(allowed_values, annotations)
+    local scalar_def = {
+        type = 'string',
+        allowed_values = allowed_values,
+    }
+    for k, v in pairs(annotations or {}) do
+        scalar_def[k] = v
+    end
+    return scalar(scalar_def)
+end
+
 -- Union of several records.
 --
 -- The data can contain either one record or another.
@@ -1255,7 +1268,7 @@ return {
     -- it in some specific way to, say, impose extra constraint
     -- rules at validation.
     --
-    -- TODO: add .enum()
+    enum = enum,
     union_of_records = union_of_records,
 
     -- Schema/schema node modification/tranformation functions.
