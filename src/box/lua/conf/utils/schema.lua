@@ -77,6 +77,7 @@
 --
 -- * type
 -- * validate
+-- * allowed_values
 --
 -- Others are just payload that may be used somehow: say, in the
 -- :filter() function.
@@ -744,6 +745,21 @@ validate_impl = function(schema, data, ctx)
         end
     else
         assert(false)
+    end
+
+    if schema.allowed_values ~= nil then
+        assert(type(schema.allowed_values) == 'table')
+        local found = false
+        for _, v in ipairs(schema.allowed_values) do
+            if data == v then
+                found = true
+            end
+        end
+        if not found then
+            walkthrough_error(ctx, 'Got %s, but only the following values ' ..
+                'are allowed: %s', data,
+                table.concat(schema.allowed_values, ', '))
+        end
     end
 
     -- Call user provided validation function.
