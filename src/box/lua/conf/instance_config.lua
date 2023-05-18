@@ -647,19 +647,16 @@ return schema.new('instance_config', schema.record({
                 -- XXX: actually a set of enums
                 -- TODO: annotate unique array (set alike)
                 privileges = schema.array({
-                    items = schema.scalar({
-                        type = 'string',
-                        allowed_values = {
-                            'super',
-                            'read',
-                            'write',
-                            'execute',
-                            'create',
-                            'alter',
-                            'drop',
-                            'usage',
-                            'session',
-                        },
+                    items = schema.enum({
+                        'super',
+                        'read',
+                        'write',
+                        'execute',
+                        'create',
+                        'alter',
+                        'drop',
+                        'usage',
+                        'session',
                     }),
                 }),
                 universe = schema.scalar({
