@@ -27,6 +27,10 @@ local schema = require('conf.utils.schema')
 --
 --   `true` if the option can only be set at first box.cfg() call
 --   and cannot be changed by a subsequent box.cfg() call.
+--
+-- * allowed_values
+--
+--   A list of allowed values.
 
 -- Available only in Tarantool Enterprise Edition.
 local function enterprise_edition(schema_node)
@@ -289,7 +293,17 @@ return schema.new('instance_config', schema.record({
         level = schema.scalar({
             type = 'number, string',
             box_cfg = 'log_level',
-            default = 5, -- info
+            default = 5,
+            allowed_values = {
+                0, 'fatal',
+                1, 'syserror',
+                2, 'error',
+                3, 'crit',
+                4, 'warn',
+                5, 'info',
+                6, 'verbose',
+                7, 'debug',
+            },
         }),
         format = schema.scalar({
             type = 'string',
@@ -623,9 +637,17 @@ return schema.new('instance_config', schema.record({
                 privileges = schema.array({
                     items = schema.scalar({
                         type = 'string',
-                        -- TODO: support the annotation
-                        values = {'super', 'read', 'write', 'execute', 'create',
-                                  'alter', 'drop', 'usage', 'session'},
+                        allowed_values = {
+                            'super',
+                            'read',
+                            'write',
+                            'execute',
+                            'create',
+                            'alter',
+                            'drop',
+                            'usage',
+                            'session',
+                        },
                     }),
                 }),
                 universe = schema.scalar({
