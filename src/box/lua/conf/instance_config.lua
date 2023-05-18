@@ -382,9 +382,11 @@ return schema.new('instance_config', schema.record({
             box_cfg = 'txn_timeout',
             default = 365 * 100 * 86400,
         }),
-        -- XXX: needs more validation, it is enum in fact
-        txn_isolation = schema.scalar({
-            type = 'string',
+        txn_isolation = schema.enum({
+            'read-committed',
+            'read-confirmed',
+            'best-effort',
+        }, {
             box_cfg = 'txn_isolation',
             default = 'best-effort',
         }),
@@ -407,9 +409,10 @@ return schema.new('instance_config', schema.record({
             box_cfg = 'memtx_memory',
             default = 256 * 1024 * 1024,
         }),
-        -- XXX: needs more validation, it is enum in fact
-        allocator = schema.scalar({
-            type = 'string',
+        allocator = schema.enum({
+            'small',
+            'system',
+        }, {
             box_cfg = 'memtx_allocator',
             default = 'small',
         }),
@@ -448,9 +451,11 @@ return schema.new('instance_config', schema.record({
             box_cfg = 'wal_dir',
             default = '.',
         }),
-        -- XXX: needs more validation, it is enum in fact
-        mode = schema.scalar({
-            type = 'string',
+        mode = schema.enum({
+            'none',
+            'write',
+            'fsync',
+        }, {
             box_cfg = 'wal_mode',
             default = 'write',
         }),
@@ -593,9 +598,12 @@ return schema.new('instance_config', schema.record({
             box_cfg = 'replication_skip_conflict',
             default = false,
         }),
-        -- XXX: needs more validation, it is enum in fact
-        election_mode = schema.scalar({
-            type = 'string',
+        election_mode = schema.enum({
+            'off',
+            'voter',
+            'manual',
+            'candidate',
+        }, {
             box_cfg = 'election_mode',
             default = 'off',
         }),
@@ -604,24 +612,28 @@ return schema.new('instance_config', schema.record({
             box_cfg = 'election_timeout',
             default = 5,
         }),
-        -- XXX: needs more validation, it is enum in fact
-        election_fencing_mode = schema.scalar({
-            type = 'string',
+        election_fencing_mode = schema.enum({
+            'off',
+            'soft',
+            'strict',
+        }, {
             box_cfg = 'election_fencing_mode',
             default = 'soft',
         }),
-        -- XXX: needs more validation, it is enum in fact
-        bootstrap_strategy = schema.scalar({
-            type = 'string',
+        bootstrap_strategy = schema.enum({
+            'auto',
+            'config',
+            'supervised',
+            'legacy',
+        }, {
             box_cfg = 'bootstrap_strategy',
             default = 'auto',
         }),
     }),
     credentials = schema.record({
-        -- XXX: needs more validation, it is enum in fact
-        mode = schema.scalar({
-            type = 'string',
-            values = {'create', 'sync'}
+        mode = schema.enum({
+            'create',
+            'sync',
         }),
         roles = schema.map({
             -- Rolename
