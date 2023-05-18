@@ -662,7 +662,7 @@ local function validate_impl(schema, data, ctx)
         for k, _ in pairs(data) do
             if type(k) ~= 'number' then
                 walkthrough_error(ctx, 'An array contains a non-numeric ' ..
-                    'key: %q', data)
+                    'key: %q', k)
             end
             key_count = key_count + 1
             min_key = math.min(min_key, k)
