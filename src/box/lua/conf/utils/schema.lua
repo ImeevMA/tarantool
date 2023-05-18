@@ -351,6 +351,9 @@ scalars.boolean = {
 
 -- {{{ Instance methods
 
+-- Forward declarations.
+local validate_impl
+
 local schema_pairs_impl
 schema_pairs_impl = function(schema, ctx)
     if is_scalar(schema) then
@@ -423,10 +426,56 @@ local function normalize_path(path, error_f)
     return path
 end
 
+local set_impl
+set_impl = function(schema, data, rhs, ctx)
+    -- The journey is finished. Validate and return the new value.
+    if #ctx.journey == 0 then
+        -- Call validate_impl() directly to don't construct a
+        -- schema object.
+        validate_impl(schema, rhs, ctx)
+        return rhs
+    end
+
+    local requested_field = ctx.journey[1]
+    assert(requested_field ~= nil)
+
+    if is_scalar(schema) then
+        walkthrough_error(ctx, 'Attempt to index scalar by %q',
+            requested_field)
+    elseif schema.type == 'record' then
+        walkthrough_enter(ctx, requested_field)
+        local field_def = schema.fields[requested_field]
+        if field_def == nil then
+            walkthrough_error(ctx, 'No such field in the schema')
+        end
+
+        walkthrough_assert_table(ctx, schema, data)
+        local field_value = data[requested_field] or {}
+        table.remove(ctx.journey, 1)
+        data[requested_field] = set_impl(field_def, field_value, rhs, ctx)
+        return data
+    elseif schema.type == 'map' then
+        walkthrough_enter(ctx, requested_field)
+        local field_def = schema.value
+
+        walkthrough_assert_table(ctx, schema, data)
+        local field_value = data[requested_field] or {}
+        table.remove(ctx.journey, 1)
+        data[requested_field] = set_impl(field_def, field_value, rhs, ctx)
+        return data
+    elseif schema.type == 'array' then
+        -- TODO: Support 'foo[1]' and `{'foo', 1}` paths. See the
+        -- normalize_path() function.
+        walkthrough_error(ctx, 'Indexing an array is not supported yet')
+    else
+        assert(false)
+    end
+end
+
 -- local data = {}
 -- schema:set(data, 'foo.bar', 42)
 -- print(data.foo.bar) -- 42
-function methods.set(_self, data, path, value)
+function methods.set(self, data, path, value)
     local function usage()
         error('Usage: schema:set(data: table, path: string/table, value: any)')
     end
@@ -441,18 +490,13 @@ function methods.set(_self, data, path, value)
         error('schema:set: empty path')
     end
 
-    -- TODO: Forbid paths that are not in the schema.
-    local cur = data
-    for i, component in ipairs(path) do
-        if i < #path then
-            if cur[component] == nil then
-                cur[component] = {}
-            end
-        else
-            cur[component] = value
-        end
-        cur = cur[component]
-    end
+    local ctx = walkthrough_start(self, {
+        -- The `path` field is already in the context and it means
+        -- passed path. Let's name the remaining path as
+        -- `journey`.
+        journey = path,
+    })
+    return set_impl(rawget(self, 'schema'), data, value, ctx)
 end
 
 local get_impl
@@ -608,7 +652,7 @@ function methods.filter(self, data, filter_f)
     return fun.iter(acc)
 end
 
-local function validate_impl(schema, data, ctx)
+validate_impl = function(schema, data, ctx)
     if is_scalar(schema) then
         local scalar_def = scalars[schema.type]
         assert(scalar_def ~= nil)
