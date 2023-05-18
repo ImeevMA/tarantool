@@ -72,6 +72,15 @@
 -- * map (arbitrary key names, strict about keys and values types)
 -- * array
 --
+-- The following annotations have some meaning for the module
+-- itself (affects work of the schema methods):
+--
+-- * type
+-- * validate
+--
+-- Others are just payload that may be used somehow: say, in the
+-- :filter() function.
+--
 -- }}} Details
 
 -- {{{ Thoughts on future improvements
