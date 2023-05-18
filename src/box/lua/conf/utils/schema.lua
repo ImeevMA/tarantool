@@ -29,6 +29,7 @@
 --   })
 -- * schema.union_of_records(record_1, record_2, ...)
 -- * schema.enum({'foo', 'bar'})
+-- * schema.set({'foo', 'bar'})
 --
 -- There are two auxiliary functions that generate schemas:
 --
@@ -1037,6 +1038,30 @@ local function enum(allowed_values, annotations)
     return scalar(scalar_def)
 end
 
+local function validate_no_repeat(_schema, data, w)
+    local visited = {}
+    for _, item in ipairs(data) do
+        assert(type(item) == 'string')
+        if visited[item] then
+            w.error('Values should be unique, but %q appears at ' ..
+                'least twice', item)
+        end
+        visited[item] = true
+    end
+end
+
+-- Array of unique values from given list of allowed values.
+local function set(allowed_values, annotations)
+    local array_def = {
+        items = enum(allowed_values),
+        validate = validate_no_repeat,
+    }
+    for k, v in pairs(annotations or {}) do
+        array_def[k] = v
+    end
+    return array(array_def)
+end
+
 -- Union of several records.
 --
 -- The data can contain either one record or another.
@@ -1269,6 +1294,7 @@ return {
     -- rules at validation.
     --
     enum = enum,
+    set = set,
     union_of_records = union_of_records,
 
     -- Schema/schema node modification/tranformation functions.
