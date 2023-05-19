@@ -1065,32 +1065,33 @@ end
 -- Union of several records.
 --
 -- The data can contain either one record or another.
---
--- TODO: This is a stub function: it lacks validation that fields
--- from different records are not present simultaneously. This can
--- be implemented, but there are prerequisites:
---
--- 1. Modify record's representation from just...
---
---    {field_1 = <schema>, field_2 = <schema>}
---
---    ...to...
---
---    {
---        fields = {field_1 = <schema>, field_2 = <schema>},
---        constrainsts = <...>,
---    }
--- 2. [optional, but desirable] Add schema.record() constructor.
--- 3. Fill the `constraints` field (or whatever it'll be named)
---    with constraints about allowed keys in the
---    union_of_records() function.
--- 4. Support the `contraints` field in
---    <schema object>:validate().
 local function union_of_records(...)
     local res = record({})
     for i = 1, select('#', ...) do
         res = mix(res, (select(i, ...)))
     end
+
+    local key_map = {}
+    for i = 1, select('#', ...) do
+        local record = select(i, ...)
+        for k, _ in pairs(record.fields) do
+            key_map[k] = i
+        end
+    end
+
+    res.validate = function(_schema, data, w)
+        local found_record_num
+        local found_record_field
+        for k, _ in pairs(data) do
+            if found_record_num ~= nil and key_map[k] ~= found_record_num then
+                w.error('Fields %q and %q cannot appear at the same time',
+                    found_record_field, k)
+            end
+            found_record_num = key_map[k]
+            found_record_field = k
+        end
+    end
+
     return res
 end
 
