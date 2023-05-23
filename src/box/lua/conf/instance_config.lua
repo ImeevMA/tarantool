@@ -31,6 +31,14 @@ local schema = require('conf.utils.schema')
 -- * allowed_values
 --
 --   A list of allowed values.
+--
+-- * mkdir (boolean)
+--
+--   Create the given directory before box.cfg().
+--
+-- * mk_parent_dir (booelan)
+--
+--   Create a parent directry for the given file before box.cfg().
 
 -- Available only in Tarantool Enterprise Edition.
 local function enterprise_edition(schema_node)
@@ -193,6 +201,7 @@ return schema.new('instance_config', schema.record({
         pid_file = schema.scalar({
             type = 'string',
             box_cfg = 'pid_file',
+            mk_parent_dir = true,
             default = box.NULL,
             -- TODO: There is a proposal to set the following
             -- default here.
@@ -439,6 +448,12 @@ return schema.new('instance_config', schema.record({
     }),
     vinyl = schema.record({
         -- TODO: vinyl options.
+        dir = schema.scalar({
+            type = 'string',
+            box_cfg = 'vinyl_dir',
+            mkdir = true,
+            default = '.',
+        }),
         max_tuple_size = schema.scalar({
             type = 'integer',
             box_cfg = 'vinyl_max_tuple_size',
@@ -449,6 +464,7 @@ return schema.new('instance_config', schema.record({
         dir = schema.scalar({
             type = 'string',
             box_cfg = 'wal_dir',
+            mkdir = true,
             default = '.',
         }),
         mode = schema.enum({
