@@ -597,7 +597,7 @@ end
 local walkthrough_impl
 walkthrough_impl = function(schema, data, f, ctx)
     local w = {
-        path = ctx.path,
+        path = table.copy(ctx.path),
         schema = schema,
         data = data,
     }
