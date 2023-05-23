@@ -10,10 +10,10 @@ console:
   socket: '{{ instance_name }}.control'
 
 groups:
-  group_001:
+  group-001:
     replicasets:
-      replicaset_001:
+      replicaset-001:
         instances:
-          instance_001:
+          instance-001:
             database:
               rw: true

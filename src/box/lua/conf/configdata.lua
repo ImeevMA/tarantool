@@ -56,6 +56,15 @@ function methods.peers(self)
     return rawget(self, '_peer_names')
 end
 
+-- Group, replicaset and instance names.
+function methods.names(self)
+    return {
+        group_name = rawget(self, '_group_name'),
+        replicaset_name = rawget(self, '_replicaset_name'),
+        instance_name = rawget(self, '_instance_name'),
+    }
+end
+
 local mt = {
     __index = methods,
 }
@@ -111,12 +120,22 @@ local function new(iconfig, cconfig, instance_name)
         end
     end
 
+    -- Save group and replicaset names.
+    local group_name
+    local replicaset_name
+    if found ~= nil then
+        group_name = found.group_name
+        replicaset_name = found.replicaset_name
+    end
+
     return setmetatable({
         _iconfig = iconfig,
         _iconfig_def = iconfig_def,
         _cconfig = cconfig,
         _peer_names = fun.iter(peers):totable(),
         _peers = peers,
+        _group_name = group_name,
+        _replicaset_name = replicaset_name,
         _instance_name = instance_name,
     }, mt)
 end
