@@ -21,6 +21,8 @@ local function apply(configdata)
     -- RW state. The applying should check that the data is not
     -- added/updated already (arrived from master).
     if box.info.ro then
+        log.verbose('credentials.apply: skip the credentials section, ' ..
+            'because the instance is in the read-only mode')
         return
     end
 
@@ -51,20 +53,51 @@ local function apply(configdata)
         ::continue::
     end
 
-    for username, setting in pairs(credentials.users or {}) do
+    -- TODO: Remove users that are not listed in the
+    -- configuration.
+
+    for username, user_def in pairs(credentials.users or {}) do
         if box.schema.user.exists(username) then
-            log.debug('credentials.apply: user %q already exists', username)
-            goto continue
+            log.verbose('credentials.apply: user %q already exists', username)
+        else
+            log.verbose('credentials.apply: create user %q', username)
+            box.schema.user.create(username)
         end
-        local password
-        if setting ~= nil and setting.passwd ~= nil then
-            password = setting.passwd.plain
+
+        if user_def == nil or user_def.password == nil or
+                next(user_def.password) == nil then
+            log.verbose('credentials.apply: remove password for user %q', username)
+            -- TODO: Remove the password.
+        elseif user_def ~= nil and user_def.password ~= nil and
+                user_def.password.plain ~= nil then
+            if username == 'guest' then
+                error('Setting a password for the guest user has no effect')
+            end
+            -- TODO: Should we skip this step if the password already set to
+            -- this value? I think that there is nothing good in redundant DML
+            -- operations.
+            log.verbose('credentials.apply: set a password for user %q',
+                username)
+            box.schema.user.passwd(username, user_def.password.plain)
+        --[[
+        elseif sha1() then
+        elseif sha256() then
+        ]]--
+        else
+            assert(false)
         end
-        box.schema.user.create(username, {password = password})
-        for _, grant in ipairs(setting.grant or {}) do
-            box.schema.user.grant(username, grant)
+
+        -- TODO: Remove roles that are not listed in the
+        -- configuration.
+
+        for _, role in ipairs(user_def.roles or {}) do
+            log.verbose('grant role %q to user %q (if not exists)', role,
+                username)
+            box.schema.user.grant(username, role, nil, nil,
+                {if_not_exists = true})
         end
-        ::continue::
+
+        -- TODO: Grant privileges.
     end
 end
 
