@@ -1,15 +1,38 @@
-database:
-  wal:
-    dir: '{{ instance_name }}'
-  snapshot:
-    dir: '{{ instance_name }}'
+credentials:
+  users:
+    replicator:
+      password:
+        plain: 'topsecret'
+      roles: [replication]
+    client:
+      password:
+        plain: 'secret'
+      roles: [super]
+
+wal:
+  dir: '{{ instance_name }}'
+
+snapshot:
+  dir: '{{ instance_name }}'
+
 iproto:
   listen: 'unix/:./{{ instance_name }}.iproto'
+  advertise: 'replicator:topsecret@unix/:./{{ instance_name }}.iproto'
+
+console:
+  socket: '{{ instance_name }}.control'
+
+#log:
+#  to:
+#    file: '{{ instance_name }}.log'
 
 groups:
-  g:
+  group_001:
     replicasets:
-      r:
+      replicaset_001:
         instances:
-          i: {}
-          k: {}
+          instance_001:
+            database:
+              rw: true
+          instance_002: {}
+          instance_003: {}
