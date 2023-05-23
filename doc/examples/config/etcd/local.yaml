@@ -1,0 +1,18 @@
+config:
+  etcd:
+    prefix: /foo
+    endpoints:
+    - http://localhost:2379
+
+wal:
+  dir: '{{ instance_name }}'
+
+snapshot:
+  dir: '{{ instance_name }}'
+
+iproto:
+  listen: 'unix/:./{{ instance_name }}.iproto'
+  advertise: 'replicator:topsecret@unix/:./{{ instance_name }}.iproto'
+
+console:
+  socket: '{{ instance_name }}.control'

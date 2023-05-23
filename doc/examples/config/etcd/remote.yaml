@@ -1,13 +1,13 @@
 credentials:
   users:
-    guest:
+    replicator:
+      password:
+        plain: 'topsecret'
+      roles: [replication]
+    client:
+      password:
+        plain: 'secret'
       roles: [super]
-
-iproto:
-  listen: 'unix/:./{{ instance_name }}.iproto'
-
-console:
-  socket: '{{ instance_name }}.control'
 
 groups:
   group_001:
@@ -17,3 +17,5 @@ groups:
           instance_001:
             database:
               rw: true
+          instance_002: {}
+          instance_003: {}
