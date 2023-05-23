@@ -654,7 +654,7 @@ return schema.new('instance_config', schema.record({
         roles = schema.map({
             -- Rolename
             key = schema.scalar({
-                type = 'string'
+                type = 'string',
             }),
             -- Grants
             -- XXX: should be an array of all grants
@@ -698,26 +698,26 @@ return schema.new('instance_config', schema.record({
         }),
         users = schema.map({
             key = schema.scalar({
-                type = 'string'
+                type = 'string',
             }),
             value = schema.record({
-                passwd = schema.record({
+                password = schema.record({
                     plain = schema.scalar({
-                        type = 'string'
+                        type = 'string',
                     }),
                     sha1 = schema.scalar({
-                        type = 'string'
+                        type = 'string',
                     }),
                     sha256 = schema.scalar({
-                        type = 'string'
-                    })
+                        type = 'string',
+                    }),
                 }),
-                -- XXX: actually roles, not grants.
-                grant = schema.array({
+                roles = schema.array({
                     items = schema.scalar({
                         type = 'string',
                     }),
                 }),
+                -- TODO: Add privileges.
             }),
         }),
     }),
