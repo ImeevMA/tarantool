@@ -35,7 +35,7 @@ local testcases = {
         cmd_args = '',
         stdin = '/dev/null',
         interactive = false,
-        empty_output = true
+        empty_output = false
     },
 
     {
