@@ -647,60 +647,61 @@ return schema.new('instance_config', schema.record({
         }),
     }),
     credentials = schema.record({
-        mode = schema.enum({
-            'create',
-            'sync',
-        }),
         roles = schema.map({
             -- Rolename
             key = schema.scalar({
                 type = 'string',
             }),
             -- Grants
-            -- XXX: should be an array of all grants
-            -- (privilege + entities).
             value = schema.record({
-                privileges = schema.set({
-                    'super',
-                    'read',
-                    'write',
-                    'execute',
-                    'create',
-                    'alter',
-                    'drop',
-                    'usage',
-                    'session',
-                }),
-                universe = schema.scalar({
-                    type = 'boolean',
-                }),
-                spaces = schema.array({
-                    items = schema.scalar({
-                        type = 'string',
-                    }),
-                }),
-                functions = schema.array({
-                    items = schema.scalar({
-                        type = 'string',
-                    }),
-                }),
-                sequences = schema.array({
-                    items = schema.scalar({
-                        type = 'string',
-                    }),
+                privileges = schema.array({
+                    items = schema.record({
+                        permissions = schema.set({
+                            'super',
+                            'read',
+                            'write',
+                            'execute',
+                            'create',
+                            'alter',
+                            'drop',
+                            'usage',
+                            'session',
+                        }),
+                        universe = schema.scalar({
+                            type = 'boolean',
+                        }),
+                        spaces = schema.array({
+                            items = schema.scalar({
+                                type = 'string',
+                            }),
+                        }),
+                        functions = schema.array({
+                            items = schema.scalar({
+                                type = 'string',
+                            }),
+                        }),
+                        sequences = schema.array({
+                            items = schema.scalar({
+                                type = 'string',
+                            }),
+                        })
+                    })
                 }),
                 roles = schema.array({
                     items = schema.scalar({
                         type = 'string',
                     }),
                 }),
-            }),
+            })
         }),
         users = schema.map({
+            -- Username
             key = schema.scalar({
                 type = 'string',
             }),
+            -- User settings
             value = schema.record({
+                -- TODO make a union of (hashes | password)
                 password = schema.record({
                     plain = schema.scalar({
                         type = 'string',
@@ -712,12 +713,44 @@ return schema.new('instance_config', schema.record({
                         type = 'string',
                     }),
                 }),
+                privileges = schema.array({
+                    items = schema.record({
+                        permissions = schema.set({
+                            'super',
+                            'read',
+                            'write',
+                            'execute',
+                            'create',
+                            'alter',
+                            'drop',
+                            'usage',
+                            'session',
+                        }),
+                        universe = schema.scalar({
+                            type = 'boolean',
+                        }),
+                        spaces = schema.array({
+                            items = schema.scalar({
+                                type = 'string',
+                            }),
+                        }),
+                        functions = schema.array({
+                            items = schema.scalar({
+                                type = 'string',
+                            }),
+                        }),
+                        sequences = schema.array({
+                            items = schema.scalar({
+                                type = 'string',
+                            }),
+                        })
+                    })
+                }),
                 roles = schema.array({
                     items = schema.scalar({
                         type = 'string',
                     }),
                 }),
-                -- TODO: Add privileges.
             }),
         }),
     }),
