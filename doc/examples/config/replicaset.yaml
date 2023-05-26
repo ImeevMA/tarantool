@@ -23,8 +23,8 @@ console:
   socket: '{{ instance_name }}.control'
 
 #log:
-#  to:
-#    file: '{{ instance_name }}.log'
+#  to: file
+#  file: '{{ instance_name }}.log'
 
 groups:
   group-001:
