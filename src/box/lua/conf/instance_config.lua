@@ -42,9 +42,8 @@ local schema = require('conf.utils.schema')
 
 -- Available only in Tarantool Enterprise Edition.
 local function enterprise_edition(schema_node)
-    return schema.annotate(schema_node, {
-        enterprise_edition = true,
-    })
+    schema_node.enterprise_edition = true
+    return schema_node
 end
 
 return schema.new('instance_config', schema.record({

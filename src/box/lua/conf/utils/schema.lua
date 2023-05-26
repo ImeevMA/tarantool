@@ -36,8 +36,6 @@
 -- * Create a record, which contains all the fields from two other
 --   records.
 --   schema.mix(record_1, record_2)
--- * Annotate all (deeply) nested scalars.
---   schema.annotate(<schema object>, {<..annotations..>})
 --
 -- And the auxiliary function to parse a value declared by a
 -- schema node from an environment variable"
@@ -1145,52 +1143,6 @@ mix = function(a, b)
     return record(fields, annotations)
 end
 
-local annotate_impl
-annotate_impl = function(schema, ctx)
-    local res = table.copy(schema)
-
-    if is_scalar(schema) then
-        for k, v in pairs(ctx.annotations) do
-            res[k] = v
-        end
-    elseif schema.type == 'record' then
-        for field_name, field_def in pairs(schema.fields) do
-            walkthrough_enter(ctx, field_name)
-            res[field_name] = annotate_impl(field_def, ctx)
-            walkthrough_leave(ctx)
-        end
-    elseif schema.type == 'map' then
-        res.key = annotate_impl(schema.key, ctx)
-        res.value = annotate_impl(schema.value, ctx)
-    elseif schema.type == 'array' then
-        res.items = annotate_impl(schema.items, ctx)
-    else
-        assert(false)
-    end
-
-    return res
-end
-
--- Add given annotations to each scalar in the given schema.
-local function annotate(schema, annotations)
-    assert(type(schema) == 'table')
-    assert(type(annotations) == 'table')
-
-    -- Accept a schema object as a record/scalar.
-    if getmetatable(schema) == schema_mt then
-        schema = rawget(schema, 'schema')
-    end
-
-    -- Fast schema check.
-    assert(type(schema) == 'table')
-    assert(schema.type == 'record' or schema.type == 'map' or is_scalar(schema))
-
-    -- Traverse over the schema and add the annotations to each
-    -- scalar.
-    local ctx = {path = {}, name = '<unknown>', annotations = annotations}
-    return annotate_impl(schema, ctx)
-end
-
 local fromenv
 fromenv = function(env_var_name, raw_value, schema)
     if raw_value == nil or raw_value == '' then
@@ -1300,7 +1252,6 @@ return {
 
     -- Schema/schema node modification/tranformation functions.
     mix = mix,
-    annotate = annotate,
 
     -- Schema aware data parsers.
     fromenv = fromenv,
