@@ -1,10 +1,10 @@
 local log = require('conf.utils.log')
 
-local function grant_permissions(name, privileges, grant_f)
+local function grant_privileges(name, privileges, role_or_user, grant_f)
     for _, privilege in ipairs(privileges or {}) do
+        log.verbose('credentials.apply: grant %s to %s %s (if not exists)',
+            privilege, role_or_user, name)
         for _, permission in ipairs(privilege.permissions or {}) do
-            log.verbose('credentials.apply: grant %s to %s (if not exists)',
-                permission, name)
             local opts = {if_not_exists = true}
             if privilege.universe then
                 grant_f(name, permission, 'universe', nil, opts)
@@ -52,7 +52,7 @@ local function create_roles(role_map)
     for role_name, role_def in pairs(role_map or {}) do
         if role_def ~= nil then
             create_role(role_name)
-            grant_permissions(role_name, role_def.privileges,
+            grant_privileges(role_name, role_def.privileges, 'role',
                 box.schema.role.grant)
         end
     end
@@ -131,7 +131,7 @@ local function create_users(user_map)
             create_user(user_name)
             set_password(user_name, user_def.password)
             assing_roles_to_user(user_name, user_def.roles)
-            grant_permissions(user_name, user_def.privileges,
+            grant_privileges(user_name, user_def.privileges, 'user',
                 box.schema.user.grant)
         end
     end
