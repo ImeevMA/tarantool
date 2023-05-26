@@ -293,32 +293,40 @@ return schema.new('instance_config', schema.record({
         -- box_cfg_nondynamic annotations.
         --
         -- The reason is that there is no direct-no-transform
-        -- mapping from, say, `log.to.file` to `box_cfg.log`.
+        -- mapping from, say, `log.file` to `box_cfg.log`.
         -- The applier should add the `file:` prefix.
-        to = schema.union_of_records(schema.record({
-            file = schema.scalar({
+        to = schema.enum({
+            'stderr',
+            'file',
+            'pipe',
+            'syslog',
+        }, {
+            default = 'stderr',
+        }),
+        file = schema.scalar({
+            type = 'string',
+            default = '/var/log/tarantool/{{ instance_name }}.log',
+        }),
+        pipe = schema.scalar({
+            type = 'string',
+            default = box.NULL,
+        }),
+        syslog = schema.record({
+            identity = schema.scalar({
                 type = 'string',
+                default = 'tarantool',
             }),
-        }), schema.record({
-            pipe = schema.scalar({
+            facility = schema.scalar({
                 type = 'string',
+                default = 'local7',
             }),
-        }), schema.record({
-            syslog = schema.record({
-                enabled = schema.scalar({
-                    type = 'boolean',
-                }),
-                identity = schema.scalar({
-                    type = 'string',
-                }),
-                facility = schema.scalar({
-                    type = 'string',
-                }),
-                server = schema.scalar({
-                    type = 'string',
-                }),
+            server = schema.scalar({
+                type = 'string',
+                -- The logger tries /dev/log and then
+                -- /var/run/syslog if no server is provided.
+                default = box.NULL,
             }),
-        })),
+        }),
         nonblock = schema.scalar({
             type = 'boolean',
             box_cfg = 'log_nonblock',
@@ -356,6 +364,13 @@ return schema.new('instance_config', schema.record({
             -- schema.lua, because defaults are assumed on scalars
             -- at the moment.
         }),
+    }, {
+        validate = function(_schema, log, w)
+            if log.to == 'pipe' and log.pipe == nil then
+                w.error('The pipe logger is set by the log.to parameter but ' ..
+                    'the command is not set (log.pipe parameter)')
+            end
+        end,
     }),
     iproto = schema.record({
         -- XXX: listen/advertise are specific: accept a string of

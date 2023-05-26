@@ -22,71 +22,29 @@ local function peer_uris(configdata)
     return uris
 end
 
-local function log_to(configdata)
-    local to = configdata:get('log.to', {use_default = true})
-    if to == nil then
+local function log_destination(configdata)
+    local log = configdata:get('log', {use_default = true})
+    if log.to == 'stderr' then
         return box.NULL
-    elseif to.file ~= nil then
-        return ('file:%s'):format(to.file)
-    elseif to.pipe ~= nil then
-        return ('pipe:%s'):format(to.pipe)
-    elseif to.syslog ~= nil and to.syslog.enabled then
-        -- TODO: It would be nice to move the default values into
-        -- the instance config schema, but the `default`
-        -- annotation means a kind of 'absolute default' -- it is
-        -- added to the configdata unconditionally if no data is
-        -- provided. So if a user set...
-        --
-        -- {
-        --     log = {
-        --         to = {
-        --             file = '<...>',
-        --         },
-        --     },
-        -- }
-        --
-        -- ...we'll get...
-        --
-        -- {
-        --     log = {
-        --         to = {
-        --             file = '<...>',
-        --             syslog = {<...>},
-        --         },
-        --     },
-        -- }
-        --
-        -- ...with default values in the `syslog` key. It is hard
-        -- to determine, whether to configure logger as file or as
-        -- syslog one by this configuration.
-        --
-        -- It can be solved by some sort of 'annotational
-        -- defaults', which just present in the schema and
-        -- accessible for configuration appliers.
-        --
-        -- Another variant is to implement a conditional default,
-        -- which is added to the config data only if certain
-        -- conditions are met.
-        --
-        -- Another problem is that the `server` default is
-        -- platform-dependent.
+    elseif log.to == 'file' then
+        return ('file:%s'):format(log.file)
+    elseif log.to == 'pipe' then
+        return ('pipe:%s'):format(log.pipe)
+    elseif log.to == 'syslog' then
         local res = ('syslog:identity=%s,facility=%s'):format(
-            to.syslog.identity or 'tarantool',
-            to.syslog.facility or 'local7')
+            log.syslog.identity,
+            log.syslog.facility)
         -- TODO: Syslog's URI format is different from tarantool's
         -- one for Unix domain sockets: `unix:/path/to/socket` vs
         -- `unix/:/path/to/socket`. We expect syslog's format
         -- here, but maybe it worth to accept our own one (or even
         -- just path) and transform under hood.
-        if to.syslog.server ~= nil then
-            res = res .. (',server=%s'):format(to.server)
+        if log.syslog.server ~= nil then
+            res = res .. (',server=%s'):format(log.syslog.server)
         end
         return res
     else
-        -- If no file/pipe/syslog is set, the `log.to` object
-        -- is allowed to not present or to be null or empty. All
-        -- the variants mean 'use internal defaults'.
-        assert(next(to) == nil)
+        assert(false)
     end
 end
 
@@ -109,7 +67,7 @@ local function apply(configdata)
     -- already added to `box_cfg`.
     --
     -- TODO: Forbid at non-first box.cfg().
-    box_cfg.log = log_to(configdata)
+    box_cfg.log = log_destination(configdata)
     box_cfg.log_modules = configdata:get('log.modules', {use_default = true})
 
     box_cfg.read_only = not configdata:get('database.rw', {use_default = true})
