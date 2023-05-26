@@ -54,23 +54,6 @@ local function register_applier(applier)
     table.insert(ctx.appliers, applier)
 end
 
-local function parse_args(instance_name, config_file)
-    if instance_name == nil then
-        instance_name = os.getenv('TT_INSTANCE_NAME')
-    end
-
-    if instance_name == nil then
-        error('No instance name provided')
-    end
-
-    if config_file == nil then
-        config_file = os.getenv('TT_CONFIG')
-    end
-
-    ctx.instance_name = instance_name
-    ctx.config_file = config_file
-end
-
 local function initialize()
     -- The sources are synchronized in the order of registration:
     -- env, file, etcd (the latter is present in Tarantool EE).
@@ -209,7 +192,9 @@ local function apply()
 end
 
 local function startup(instance_name, config_file)
-    parse_args(instance_name, config_file)
+    ctx.instance_name = instance_name
+    ctx.config_file = config_file
+
     initialize()
     collect()
     apply()
