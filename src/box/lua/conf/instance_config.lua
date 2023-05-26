@@ -687,13 +687,16 @@ return schema.new('instance_config', schema.record({
             default = 'auto',
         }),
     }),
+    -- Unlike other sections, credentials contains the append-only
+    -- parameters. It means that deletion of a value from the
+    -- config doesn't delete the corresponding user/role/privilege.
     credentials = schema.record({
         roles = schema.map({
-            -- Rolename
+            -- Name of the role.
             key = schema.scalar({
                 type = 'string',
             }),
-            -- Grants
+            -- Privileges granted to the role.
             value = schema.record({
                 privileges = schema.array({
                     items = schema.record({
@@ -725,35 +728,42 @@ return schema.new('instance_config', schema.record({
                             items = schema.scalar({
                                 type = 'string',
                             }),
-                        })
-                    })
+                        }),
+                    }),
                 }),
+                -- The given role has all the privileges from
+                -- these underlying roles.
                 roles = schema.array({
                     items = schema.scalar({
                         type = 'string',
                     }),
                 }),
-            })
+            }),
         }),
         users = schema.map({
-            -- Username
+            -- Name of the user.
             key = schema.scalar({
                 type = 'string',
             }),
-            -- User settings
+            -- Parameters of the user.
             value = schema.record({
-                -- TODO make a union of (hashes | password)
-                password = schema.record({
-                    plain = schema.scalar({
-                        type = 'string',
+                password = schema.union_of_records(
+                    schema.record({
+                        plain = schema.scalar({
+                            type = 'string',
+                        }),
                     }),
-                    sha1 = schema.scalar({
-                        type = 'string',
+                    schema.record({
+                        sha1 = schema.scalar({
+                            type = 'string',
+                        }),
                     }),
-                    sha256 = schema.scalar({
-                        type = 'string',
-                    }),
-                }),
+                    schema.record({
+                        sha256 = schema.scalar({
+                            type = 'string',
+                        }),
+                    })
+                ),
                 privileges = schema.array({
                     items = schema.record({
                         permissions = schema.set({
@@ -784,9 +794,11 @@ return schema.new('instance_config', schema.record({
                             items = schema.scalar({
                                 type = 'string',
                             }),
-                        })
-                    })
+                        }),
+                    }),
                 }),
+                -- The given user has all the privileges from
+                -- these underlying roles.
                 roles = schema.array({
                     items = schema.scalar({
                         type = 'string',
