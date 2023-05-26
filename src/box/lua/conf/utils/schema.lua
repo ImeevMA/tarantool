@@ -78,6 +78,7 @@
 -- * type
 -- * validate
 -- * allowed_values
+-- * apply_default_if
 --
 -- Others are just payload that may be used somehow: say, in the
 -- :filter() function.
@@ -944,10 +945,17 @@ function methods.map(self, data, f, f_ctx)
     return map_impl(rawget(self, 'schema'), data, f, ctx)
 end
 
-local function apply_default_f(schema, data, _w)
-    if data == nil then
+local function apply_default_f(schema, data, w)
+    local apply_default = true
+    if schema.apply_default_if ~= nil then
+        assert(type(schema.apply_default_if) == 'function')
+        apply_default = schema.apply_default_if(schema, data, w)
+    end
+
+    if apply_default and data == nil then
         return schema.default
     end
+
     return data
 end
 

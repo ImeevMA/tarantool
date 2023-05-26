@@ -1,3 +1,4 @@
+local tarantool = require('tarantool')
 local schema = require('conf.utils.schema')
 
 -- List of annotations:
@@ -40,9 +41,35 @@ local schema = require('conf.utils.schema')
 --
 --   Create a parent directry for the given file before box.cfg().
 
+local function enterprise_edition_validate(_schema, data, w)
+    -- OK if we're on Tarantool EE.
+    if tarantool.package == 'Tarantool Enterprise' then
+        return
+    end
+
+    assert(tarantool.package == 'Tarantool')
+
+    -- OK, if the value is null or empty.
+    if data == nil then
+        return
+    end
+    if type(data) == 'table' and next(data) == nil then
+        return
+    end
+
+    w.error('This configuration parameter is available only in Tarantool ' ..
+        'Enterprise Edition')
+end
+
+local function enterprise_edition_apply_default_if(_schema, _data, _w)
+    return tarantool.package == 'Tarantool Enterprise'
+end
+
 -- Available only in Tarantool Enterprise Edition.
 local function enterprise_edition(schema_node)
     schema_node.enterprise_edition = true
+    schema_node.validate = enterprise_edition_validate
+    schema_node.apply_default_if = enterprise_edition_apply_default_if
     return schema_node
 end
 

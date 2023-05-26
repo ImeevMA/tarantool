@@ -1,4 +1,3 @@
-local tarantool = require('tarantool')
 local log = require('conf.utils.log')
 
 local function peer_uris(configdata)
@@ -114,10 +113,6 @@ local function apply(configdata)
     box_cfg.log_modules = configdata:get('log.modules', {use_default = true})
 
     box_cfg.read_only = not configdata:get('database.rw', {use_default = true})
-
-    if tarantool.package == 'Tarantool Enterprise' then
-        box_cfg.wal_ext = configdata:get('wal.ext', {use_default = true})
-    end
 
     log.debug('box_cfg.apply: %s', box_cfg)
 
