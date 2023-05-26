@@ -37,6 +37,9 @@ local function apply(configdata)
     configdata:filter(function(w)
         return w.schema.mkdir ~= nil
     end, {use_default = true}):each(function(w)
+        if w.data == nil then
+            return
+        end
         local prefix = ('mkdir.apply[%s]'):format(table.concat(w.path, '.'))
         safe_mkdir(prefix, w.data)
     end)
@@ -44,6 +47,9 @@ local function apply(configdata)
     configdata:filter(function(w)
         return w.schema.mk_parent_dir ~= nil
     end, {use_default = true}):each(function(w)
+        if w.data == nil then
+            return
+        end
         local prefix = ('mkdir.apply[%s]'):format(table.concat(w.path, '.'))
         safe_mkdir(prefix, fio.dirname(w.data))
     end)
