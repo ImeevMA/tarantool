@@ -15,6 +15,30 @@ local ctx = {
     -- TODO: Track applied configdata as well.
 }
 
+-- Remove indent from a text.
+--
+-- Similar to Python's textwrap.dedent().
+--
+-- It strips all newlines from beginning and all whitespace
+-- characters from the end for convenience use with multiline
+-- string literals ([[ <...> ]]).
+local function dedent(s)
+    local lines = s:lstrip('\n'):rstrip():split('\n')
+
+    local indent = math.huge
+    for _, line in ipairs(lines) do
+        if #line ~= 0 then
+            indent = math.min(indent, #line:match('^ *'))
+        end
+    end
+
+    local res = {}
+    for _, line in ipairs(lines) do
+        table.insert(res, line:sub(indent + 1))
+    end
+    return table.concat(res, '\n')
+end
+
 local function register_source(source)
     assert(type(source) == 'table')
     if source.type ~= 'instance' and source.type ~= 'cluster' then
@@ -79,6 +103,9 @@ local function collect()
     local iconfig = {}
     local cconfig = {}
 
+    -- For error reporting.
+    local source_info = {}
+
     for _, source in ipairs(ctx.sources) do
         -- Gather config values.
         --
@@ -119,6 +146,57 @@ local function collect()
             assert(false)
         end
         iconfig = instance_config:merge(source_iconfig, iconfig)
+
+        -- If a source returns an empty table, mark it as ones
+        -- that provide no data.
+        local has_data = next(source.get()) ~= nil
+        table.insert(source_info, ('* %q [type: %s]%s'):format(source.name,
+            source.type, has_data and '' or ' (no data)'))
+    end
+
+    if next(cconfig) == nil then
+        error(dedent([[
+            Startup failure.
+
+            No cluster config received from the given configuration sources.
+
+            %s
+
+            The %q instance cannot find itself in the group/replicaset/instance
+            topology and it is unknown, whether it should join a replicaset or
+            create its own database.
+
+            Recipes:
+
+            * Use --config <file> command line option.
+            * Use TT_CONFIG_ETCD_* environment variables (available on Tarantool
+              Enterprise Edition).
+        ]]):format(table.concat(source_info, '\n'), ctx.instance_name), 0)
+    end
+
+    if cluster_config:find_instance(cconfig, ctx.instance_name) == nil then
+        error(dedent([[
+            Startup failure.
+
+            Unable to find instance %q in the group/replicaset/instance
+            topology provided by the given cluster configuration sources.
+
+            %s
+
+            It is unknown, whether the instance should join a replicaset or
+            create its own database.
+
+            Minimal cluster config:
+
+            groups:
+              group-001:
+                replicasets:
+                  replicaset-001:
+                    instances:
+                      instance-001:
+                        database:
+                          rw: true
+        ]]):format(ctx.instance_name, table.concat(source_info, '\n')), 0)
     end
 
     ctx.configdata = configdata.new(iconfig, cconfig, ctx.instance_name)

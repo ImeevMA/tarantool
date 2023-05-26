@@ -97,35 +97,28 @@ local function new(iconfig, cconfig, instance_name)
     iconfig_def = iconfig_apply_vars(iconfig_def, vars)
 
     -- Find myself in a cluster config, determine peers in the same
-    -- replicaset and store instance configs for the peers.
-    local peers = {}
+    -- replicaset.
     local found = cluster_config:find_instance(cconfig, instance_name)
-    if found ~= nil then
-        for peer_name, _ in pairs(found.replicaset.instances) do
-            -- Build config for each peer from the cluster config.
-            -- Build a config with applied defaults as well.
-            local peer_iconfig = cluster_config:instantiate(cconfig, peer_name)
-            local peer_iconfig_def = instance_config:apply_default(peer_iconfig)
+    assert(found ~= nil)
 
-            -- Substitute variables according to the instance name
-            -- of the peer.
-            local peer_vars = {instance_name = peer_name}
-            peer_iconfig = iconfig_apply_vars(peer_iconfig, peer_vars)
-            peer_iconfig_def = iconfig_apply_vars(peer_iconfig_def, peer_vars)
+    -- Save instance configs of the peers from the same replicaset.
+    local peers = {}
+    for peer_name, _ in pairs(found.replicaset.instances) do
+        -- Build config for each peer from the cluster config.
+        -- Build a config with applied defaults as well.
+        local peer_iconfig = cluster_config:instantiate(cconfig, peer_name)
+        local peer_iconfig_def = instance_config:apply_default(peer_iconfig)
 
-            peers[peer_name] = {
-                iconfig = peer_iconfig,
-                iconfig_def = peer_iconfig_def,
-            }
-        end
-    end
+        -- Substitute variables according to the instance name
+        -- of the peer.
+        local peer_vars = {instance_name = peer_name}
+        peer_iconfig = iconfig_apply_vars(peer_iconfig, peer_vars)
+        peer_iconfig_def = iconfig_apply_vars(peer_iconfig_def, peer_vars)
 
-    -- Save group and replicaset names.
-    local group_name
-    local replicaset_name
-    if found ~= nil then
-        group_name = found.group_name
-        replicaset_name = found.replicaset_name
+        peers[peer_name] = {
+            iconfig = peer_iconfig,
+            iconfig_def = peer_iconfig_def,
+        }
     end
 
     return setmetatable({
@@ -134,8 +127,8 @@ local function new(iconfig, cconfig, instance_name)
         _cconfig = cconfig,
         _peer_names = fun.iter(peers):totable(),
         _peers = peers,
-        _group_name = group_name,
-        _replicaset_name = replicaset_name,
+        _group_name = found.group_name,
+        _replicaset_name = found.replicaset_name,
         _instance_name = instance_name,
     }, mt)
 end
