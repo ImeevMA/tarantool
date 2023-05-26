@@ -22,6 +22,123 @@ local function grant_permissions(name, privileges, grant_f)
     end
 end
 
+-- {{{ Create roles
+
+local function create_role(role_name)
+    if box.schema.role.exists(role_name) then
+        log.verbose('credentials.apply: role %q already exists', role_name)
+    else
+        box.schema.role.create(role_name)
+    end
+end
+
+local function assign_roles_to_role(role_name, roles)
+    for _, role in ipairs(roles or {}) do
+        log.verbose('credentials.apply: add role %q as underlying for ' ..
+            'role %q (if not exists)', role, role_name)
+        box.schema.role.grant(role_name, role, nil, nil, {if_not_exists = true})
+    end
+end
+
+-- Create roles, grant them permissions and assign underlying
+-- roles.
+local function create_roles(role_map)
+    if role_map == nil then
+        return
+    end
+
+    -- Create roles and grant then permissions. Skip assigning
+    -- underlying roles till all the roles will be created.
+    for role_name, role_def in pairs(role_map or {}) do
+        if role_def ~= nil then
+            create_role(role_name)
+            grant_permissions(role_name, role_def.privileges,
+                box.schema.role.grant)
+        end
+    end
+
+    -- Assign underlying roles.
+    for role_name, role_def in pairs(role_map or {}) do
+        if role_def ~= nil then
+            assign_roles_to_role(role_name, role_def.roles)
+        end
+    end
+end
+
+-- }}} Create roles
+
+-- {{{ Create users
+
+local function create_user(user_name)
+    if box.schema.user.exists(user_name) then
+        log.verbose('credentials.apply: user %q already exists', user_name)
+    else
+        log.verbose('credentials.apply: create user %q', user_name)
+        box.schema.user.create(user_name)
+    end
+end
+
+local function set_password(user_name, password)
+    if password == nil or next(password) == nil then
+        if user_name ~= 'guest' then
+            log.verbose('credentials.apply: remove password for user %q',
+                user_name)
+            -- TODO: Check for hashes and if absent remove the password.
+        end
+    elseif password ~= nil and password.plain ~= nil then
+        if user_name == 'guest' then
+            error('Setting a password for the guest user has no effect')
+        end
+        -- TODO: Check if the password can be hashed in somewhere other then
+        --       'chap-sha1' or if the select{user_name} may return table of
+        --       a different shape.
+        local stored_user_def = box.space._user.index.name:get({user_name})
+        local stored_hash = stored_user_def[5]['chap-sha1']
+        local given_hash = box.schema.user.password(password.plain)
+        if given_hash == stored_hash then
+            log.verbose('credentials.apply: a password is already set ' ..
+                'for user %q', user_name)
+        else
+            log.verbose('credentials.apply: set a password for user %q',
+                user_name)
+            box.schema.user.passwd(user_name, password.plain)
+        end
+    --[[
+    elseif sha1() then
+    elseif sha256() then
+    ]]--
+    else
+        assert(false)
+    end
+end
+
+local function assing_roles_to_user(user_name, roles)
+    for _, role in ipairs(roles or {}) do
+        log.verbose('grant role %q to user %q (if not exists)', role, user_name)
+        box.schema.user.grant(user_name, role, nil, nil, {if_not_exists = true})
+    end
+end
+
+-- Create users, set them passwords, assign roles, grant
+-- permissions.
+local function create_users(user_map)
+    if user_map == nil then
+        return
+    end
+
+    for user_name, user_def in pairs(user_map or {}) do
+        if user_def ~= nil then
+            create_user(user_name)
+            set_password(user_name, user_def.password)
+            assing_roles_to_user(user_name, user_def.roles)
+            grant_permissions(user_name, user_def.privileges,
+                box.schema.user.grant)
+        end
+    end
+end
+
+-- }}} Create users
+
 local function apply(configdata)
     local credentials = configdata:get('credentials')
     if credentials == nil then
@@ -48,88 +165,8 @@ local function apply(configdata)
         return
     end
 
-    -- Creare roles and grant then permissions. Skip assigning
-    -- underlying roles till all the roles will be created.
-    for rolename, role_def in pairs(credentials.roles or {}) do
-        if box.schema.role.exists(rolename) then
-            log.verbose('credentials.apply: role %q already exists', rolename)
-        else
-            box.schema.role.create(rolename)
-            if role_def ~= nil then
-                grant_permissions(rolename, role_def.privileges,
-                    box.schema.role.grant)
-            end
-        end
-    end
-
-    -- Assign underlying roles.
-    for rolename, role_def in pairs(credentials.roles or {}) do
-        for _, role in ipairs(role_def.roles or {}) do
-            log.verbose('credentials.apply: add role %q as underlying for ' ..
-                'role %q (if not exists)', role, rolename)
-            box.schema.role.grant(rolename, role, nil, nil, {if_not_exists = true})
-        end
-    end
-
-    -- Create users, set them passwords, assign roles, grant
-    -- permissions.
-    for username, user_def in pairs(credentials.users or {}) do
-        -- Create a user.
-        if box.schema.user.exists(username) then
-            log.verbose('credentials.apply: user %q already exists', username)
-        else
-            log.verbose('credentials.apply: create user %q', username)
-            box.schema.user.create(username)
-        end
-
-        -- Set a password.
-        if user_def == nil or user_def.password == nil or
-                next(user_def.password) == nil then
-            if username ~= 'guest' then
-                log.verbose('credentials.apply: remove password for user %q',
-                    username)
-                -- TODO: Check for hashes and if absent remove the password.
-            end
-        elseif user_def ~= nil and user_def.password ~= nil and
-                user_def.password.plain ~= nil then
-            if username == 'guest' then
-                error('Setting a password for the guest user has no effect')
-            end
-            -- TODO: Check if the password can be hashed in somewhere other then
-            --       'chap-sha1' or if the select{username} may return table of
-            --       a different shape.
-            local stored_user_def = box.space._user.index.name:get({username})
-            local stored_hash = stored_user_def[5]['chap-sha1']
-            local given_hash = box.schema.user.password(user_def.password.plain)
-            if given_hash == stored_hash then
-                log.verbose('credentials.apply: a password is already set ' ..
-                    'for user %q', username)
-            else
-                log.verbose('credentials.apply: set a password for user %q',
-                    username)
-                box.schema.user.passwd(username, user_def.password.plain)
-            end
-        --[[
-        elseif sha1() then
-        elseif sha256() then
-        ]]--
-        else
-            assert(false)
-        end
-
-        -- Assign roles and grant permssions.
-        if user_def ~= nil then
-            for _, role in ipairs(user_def.roles or {}) do
-                log.verbose('grant role %q to user %q (if not exists)', role,
-                    username)
-                box.schema.user.grant(username, role, nil, nil,
-                    {if_not_exists = true})
-            end
-
-            grant_permissions(username, user_def.privileges,
-                box.schema.user.grant)
-        end
-    end
+    create_roles(credentials.roles)
+    create_users(credentials.users)
 end
 
 return {
