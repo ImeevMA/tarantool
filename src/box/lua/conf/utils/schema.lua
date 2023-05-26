@@ -48,8 +48,6 @@
 --   <schema object>:map(data, f, f_ctx) -> new_data
 -- * Apply default values.
 --   <schema object>:apply_default(data) -> new_data
--- * Walk over the data.
---   <schema object>:walkthrough(data, f, f_ctx)
 -- * Get/set a nested value.
 --   <schema object>:get(data, path)
 --   <schema object>:set(data, path, value)
@@ -587,14 +585,27 @@ function methods.get(self, data, path)
     return get_impl(rawget(self, 'schema'), data, ctx)
 end
 
-local walkthrough_impl
-walkthrough_impl = function(schema, data, f, ctx)
+local filter_impl
+filter_impl = function(schema, data, f, ctx)
     local w = {
         path = table.copy(ctx.path),
         schema = schema,
         data = data,
     }
-    f(w, ctx.f_ctx)
+    if f(w) then
+        table.insert(ctx.acc, w)
+    end
+
+    -- NB: The exit condition is after the table.insert(), because
+    -- we're interested in returning box.NULL values if they
+    -- satisfy the filter function.
+    --
+    -- It is important for passing box.NULL from the 'default'
+    -- annotation to the box.cfg() call for missed config values
+    -- to discard a previously applied value.
+    if data == nil then
+        return
+    end
 
     -- luacheck: ignore 542 empty if branch
     if is_scalar(schema) then
@@ -604,18 +615,7 @@ walkthrough_impl = function(schema, data, f, ctx)
 
         for field_name, field_def in pairs(schema.fields) do
             walkthrough_enter(ctx, field_name)
-
-            if type(field_def) ~= 'table' then
-                walkthrough_error(ctx, 'Unexpected schema node type %q',
-                    type(field_def))
-            end
-
-            local field = data[field_name]
-            -- Assume fields as non-required.
-            if field ~= nil then
-                walkthrough_impl(field_def, field, f, ctx)
-            end
-
+            filter_impl(field_def, data[field_name], f, ctx)
             walkthrough_leave(ctx)
         end
     elseif schema.type == 'map' then
@@ -623,10 +623,8 @@ walkthrough_impl = function(schema, data, f, ctx)
 
         for field_name, field_value in pairs(data) do
             walkthrough_enter(ctx, field_name)
-            -- XXX: Ignore keys? Or add them to the `w`
-            -- (walkthrough node) generated in the inner call
-            -- using the context?
-            walkthrough_impl(schema.value, field_value, f, ctx)
+            filter_impl(schema.key, field_name, f, ctx)
+            filter_impl(schema.value, field_value, f, ctx)
             walkthrough_leave(ctx)
         end
     elseif schema.type == 'array' then
@@ -634,7 +632,7 @@ walkthrough_impl = function(schema, data, f, ctx)
 
         for i, v in ipairs(data) do
             walkthrough_enter(ctx, i)
-            walkthrough_impl(schema.items, v, f, ctx)
+            filter_impl(schema.items, v, f, ctx)
             walkthrough_leave(ctx)
         end
     else
@@ -642,19 +640,10 @@ walkthrough_impl = function(schema, data, f, ctx)
     end
 end
 
-function methods.walkthrough(self, data, f, f_ctx)
-    local ctx = walkthrough_start(self, {f_ctx = f_ctx})
-    walkthrough_impl(rawget(self, 'schema'), data, f, ctx)
-end
-
-function methods.filter(self, data, filter_f)
-    local acc = {}
-    self:walkthrough(data, function(w)
-        if filter_f(w) then
-            table.insert(acc, w)
-        end
-    end)
-    return fun.iter(acc)
+function methods.filter(self, data, f)
+    local ctx = walkthrough_start(self, {acc = {}})
+    filter_impl(rawget(self, 'schema'), data, f, ctx)
+    return fun.iter(ctx.acc)
 end
 
 validate_impl = function(schema, data, ctx)
