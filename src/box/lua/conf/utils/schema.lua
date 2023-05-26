@@ -31,14 +31,8 @@
 -- * schema.enum({'foo', 'bar'})
 -- * schema.set({'foo', 'bar'})
 --
--- There are two auxiliary functions that generate schemas:
---
--- * Create a record, which contains all the fields from two other
---   records.
---   schema.mix(record_1, record_2)
---
--- And the auxiliary function to parse a value declared by a
--- schema node from an environment variable"
+-- The auxiliary function to parse a value declared by a schema
+-- node from an environment variable.
 --
 -- * schema.fromenv(env_var_name, schema_node)
 --
@@ -978,9 +972,6 @@ end
 
 -- {{{ Module functions
 
--- Forward declarations.
-local mix
-
 -- schema.scalar({
 --     type = 'string',
 --     my_annotation = <...>,
@@ -1072,16 +1063,44 @@ end
 --
 -- The data can contain either one record or another.
 local function union_of_records(...)
-    local res = record({})
-    for i = 1, select('#', ...) do
-        res = mix(res, (select(i, ...)))
-    end
+    local res = {
+        type = 'record',
+        fields = {},
+        -- <..annotations..>
+    }
 
+    -- A mapping from a field name to the number of the record in
+    -- the arguments list.
     local key_map = {}
+
+    -- Build the record with all the fields and annotations from
+    -- the given records.
+    --
+    -- Build the fields mapping (key_map).
     for i = 1, select('#', ...) do
         local record = select(i, ...)
-        for k, _ in pairs(record.fields) do
+        assert(type(record) == 'table')
+        assert(record.type == 'record')
+
+        -- Copy fields and build the fields mapping.
+        for k, v in pairs(record.fields) do
+            if res.fields[k] ~= nil then
+                error(('union_of_records: duplicate fields ' ..
+                    '%q'):format(k))
+            end
+            res.fields[k] = v
             key_map[k] = i
+        end
+
+        -- Copy annotations.
+        for k, v in pairs(record) do
+            if k ~= 'fields' and k ~= 'type' then
+                if res[k] ~= nil then
+                    error(('union_of_records: duplicate annotations ' ..
+                        '%q'):format(k))
+                end
+                res[k] = v
+            end
         end
     end
 
@@ -1099,56 +1118,6 @@ local function union_of_records(...)
     end
 
     return res
-end
-
--- Create a record, which is composition of fields from two records.
-mix = function(a, b)
-    assert(type(a) == 'table')
-    assert(type(b) == 'table')
-
-    -- Accept a schema object as a record.
-    if getmetatable(a) == schema_mt then
-        a = rawget(a, 'schema')
-    end
-    if getmetatable(b) == schema_mt then
-        b = rawget(b, 'schema')
-    end
-
-    assert(type(a) == 'table')
-    assert(type(b) == 'table')
-    assert(a.type == 'record')
-    assert(b.type == 'record')
-
-    local fields = {}
-    local annotations = {}
-
-    for field_name, field_def in pairs(a.fields) do
-        fields[field_name] = field_def
-    end
-    for k, v in pairs(a) do
-        if k ~= 'fields' and k ~= 'type' then
-            annotations[k] = v
-        end
-    end
-
-    for field_name, field_def in pairs(b.fields) do
-        if fields[field_name] ~= nil then
-            -- XXX: Proper error reporting.
-            error('XXX')
-        end
-        fields[field_name] = field_def
-    end
-    for k, v in pairs(b) do
-        if k ~= 'fields' and k ~= 'type' then
-            if annotations[k] ~= nil then
-                -- XXX: Proper error reporting.
-                error('XXX')
-            end
-            annotations[k] = v
-        end
-    end
-
-    return record(fields, annotations)
 end
 
 local fromenv
@@ -1257,9 +1226,6 @@ return {
     enum = enum,
     set = set,
     union_of_records = union_of_records,
-
-    -- Schema/schema node modification/tranformation functions.
-    mix = mix,
 
     -- Schema aware data parsers.
     fromenv = fromenv,
