@@ -97,11 +97,6 @@ local function collect()
             assert(false)
         end
 
-        -- TODO: We need specific validators at least for the
-        -- instance config. For example, there should be a
-        -- validator, which forbids Tarantool EE options in
-        -- Tarantool CE.
-
         -- Merge configurations from the sources.
         --
         -- Instantiate a cluster config to an instance config for
