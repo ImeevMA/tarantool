@@ -49,31 +49,101 @@ local function instantiate(_schema, data, instance_name)
     return res
 end
 
-local instances = schema.map({
-    key = schema.scalar({type = 'string'}),
-    value = schema.annotate(instance_config, {scope = 'instance'}),
-})
+-- Construct a record from other records and extra fields.
+--
+-- record_from_fields({
+--     <record foo>
+--     <record bar>
+--     extra_field_baz = <...>,
+--     extra_field_fiz = <...>,
+-- })
+--
+-- It allows to write the cluster config schema in a more readable
+-- way.
+local function record_from_fields(fields)
+    local res = {
+        type = 'record',
+        fields = {},
+        -- <..annotations..>
+    }
 
-local replicasets = schema.map({
-    key = schema.scalar({type = 'string'}),
-    value = schema.mix(
-        schema.annotate(instance_config, {scope = 'replicaset'}),
-        schema.record({instances = instances})
-    ),
-})
+    for k, v in pairs(fields) do
+        if type(k) == 'number' then
+            -- Assume that a numeric key contains a record to
+            -- copy its fields and annotations into the resulting
+            -- record.
+            assert(type(v) == 'table')
+            assert(v.type == 'record')
 
-local groups = schema.map({
-    key = schema.scalar({type = 'string'}),
-    value = schema.mix(
-        schema.annotate(instance_config, {scope = 'group'}),
-        schema.record({replicasets = replicasets})
-    ),
-})
+            -- Copy fields.
+            for kk, vv in pairs(v.fields) do
+                if res.fields[kk] ~= nil then
+                    error(('record_from_fields: duplicate fields ' ..
+                        '%q'):format(kk))
+                end
+                res.fields[kk] = vv
+            end
 
-return schema.new('cluster_config', schema.mix(
-    schema.annotate(instance_config, {scope = 'global'}),
-    schema.record({groups = groups})
-), {
+            -- Copy annotations.
+            for kk, vv in pairs(v) do
+                if kk ~= 'fields' and kk ~= 'type' then
+                    if res[kk] ~= nil then
+                        error(('record_from_fields: duplicate annotations ' ..
+                            '%q'):format(kk))
+                    end
+                    res[kk] = vv
+                end
+            end
+        else
+            -- Assume that a string key represents a field name
+            -- and the corresponding value contains a schema node
+            -- for the field.
+            assert(type(k) == 'string')
+
+            -- Copy the field.
+            if res.fields[k] ~= nil then
+                error(('record_from_fields: duplicate fields ' ..
+                    '%q'):format(k))
+            end
+            res.fields[k] = v
+        end
+    end
+
+    return res
+end
+
+-- Add scope annotation to the instance config schema.
+--
+-- Accepts a schema object, returns a record.
+local function instance_config_with_scope(scope)
+    assert(type(instance_config) == 'table')
+    assert(type(instance_config.schema) == 'table')
+    assert(instance_config.schema.type == 'record')
+
+    local schema = table.copy(instance_config.schema)
+    schema.scope = scope
+    return schema
+end
+
+return schema.new('cluster_config', record_from_fields({
+    instance_config_with_scope('global'),
+    groups = schema.map({
+        key = schema.scalar({type = 'string'}),
+        value = record_from_fields({
+            instance_config_with_scope('group'),
+            replicasets = schema.map({
+                key = schema.scalar({type = 'string'}),
+                value = record_from_fields({
+                    instance_config_with_scope('replicaset'),
+                    instances = schema.map({
+                        key = schema.scalar({type = 'string'}),
+                        value = instance_config_with_scope('instance'),
+                    }),
+                }),
+            }),
+        }),
+    }),
+}), {
     methods = {
         instantiate = instantiate,
         find_instance = find_instance,
