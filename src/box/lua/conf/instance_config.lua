@@ -127,13 +127,6 @@ return schema.new('instance_config', schema.record({
                 }),
             })),
         }),
-        -- Supported in Tarantool Entreprise Edition.
-        --
-        -- Ignored in Tarantool Community Edition.
-        --
-        -- TODO: Is it better to give an error if one of those
-        -- options arrive to CE?
-        --
         -- Defaults can't be set there, because the `validate`
         -- annotation expects either no data or data with existing
         -- prefix field. The prefix field has no default. So,
