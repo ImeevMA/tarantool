@@ -1,4 +1,5 @@
 local tarantool = require('tarantool')
+local uuid = require('uuid')
 local schema = require('conf.utils.schema')
 
 -- List of annotations:
@@ -71,6 +72,15 @@ local function enterprise_edition(schema_node)
     schema_node.validate = enterprise_edition_validate
     schema_node.apply_default_if = enterprise_edition_apply_default_if
     return schema_node
+end
+
+local function validate_uuid_str(_schema, data, w)
+    if uuid.fromstr(data) == nil then
+        w.error('Unable to parse the value as a UUID: %q', data)
+    end
+    if data == uuid.NULL:str() then
+        w.error('nil UUID is reserved')
+    end
 end
 
 return schema.new('instance_config', schema.record({
@@ -405,17 +415,17 @@ return schema.new('instance_config', schema.record({
         }),
     }),
     database = schema.record({
-        -- XXX: needs more validation
         instance_uuid = schema.scalar({
             type = 'string',
             box_cfg = 'instance_uuid',
             default = box.NULL,
+            validate = validate_uuid_str,
         }),
-        -- XXX: needs more validation
         replicaset_uuid = schema.scalar({
             type = 'string',
             box_cfg = 'replicaset_uuid',
             default = box.NULL,
+            validate = validate_uuid_str,
         }),
         hot_standby = schema.scalar({
             type = 'boolean',
