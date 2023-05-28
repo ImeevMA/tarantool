@@ -257,7 +257,6 @@ return schema.new('instance_config', schema.record({
             type = 'boolean',
             default = true,
         }),
-        -- TODO: Accept path, forbid other strings.
         socket = schema.scalar({
             type = 'string',
             -- XXX: Use TARANTOOL_RUNDIR.
