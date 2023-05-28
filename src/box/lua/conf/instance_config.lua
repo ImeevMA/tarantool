@@ -261,7 +261,7 @@ return schema.new('instance_config', schema.record({
         socket = schema.scalar({
             type = 'string',
             -- XXX: Use TARANTOOL_RUNDIR.
-            default = '/var/run/tarantool/{{ instance_name }}.socket',
+            default = '/var/run/tarantool/{{ instance_name }}.control',
         }),
     }),
     fiber = schema.record({
