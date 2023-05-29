@@ -355,6 +355,15 @@ return schema.new('instance_config', schema.record({
             box_cfg = 'log_format',
             default = 'plain',
         }),
+        -- box.cfg({log_modules = <...>}) replaces the previous
+        -- value without any merging.
+        --
+        -- If a key in this map is removed in the provided
+        -- configuration, then it will be removed in the actually
+        -- applied configuration.
+        --
+        -- It is exactly what we need there to make the
+        -- configuration independent of previously applied values.
         modules = schema.map({
             key = schema.scalar({
                 type = 'string',
@@ -362,9 +371,11 @@ return schema.new('instance_config', schema.record({
             value = schema.scalar({
                 type = 'number, string',
             }),
-            -- TODO: Add {} as default. It may need some work in
-            -- schema.lua, because defaults are assumed on scalars
-            -- at the moment.
+            box_cfg = 'log_modules',
+            -- TODO: This default doesn't work now. It needs
+            -- support of non-scalar schema nodes in
+            -- <schema object>:map().
+            default = box.NULL,
         }),
     }, {
         validate = function(_schema, log, w)
@@ -538,23 +549,26 @@ return schema.new('instance_config', schema.record({
             box_cfg = 'wal_cleanup_delay',
             default = 4 * 3600,
         }),
-        -- This option is passed to box_cfg.wal_ext by the box_cfg
-        -- configuration applier. There is no box_cfg annotation,
-        -- because it is supposed to be used in scalars and some
-        -- schema.lua changes may be needed to support it for
-        -- records.
+        -- box.cfg({wal_ext = <...>}) replaces the previous
+        -- value without any merging. See explanation why it is
+        -- important in the log.modules description.
         ext = enterprise_edition(schema.record({
             old = schema.scalar({
                 type = 'boolean',
-                default = false,
+                -- TODO: This default is applied despite the outer
+                -- apply_default_if, because the annotation has no
+                -- effect on child schema nodes.
+                --
+                -- This default is purely informational: lack of the
+                -- value doesn't break configuration applying
+                -- idempotence.
+                -- default = false,
             }),
             new = schema.scalar({
                 type = 'boolean',
-                default = false,
+                -- TODO: See wal.ext.old.
+                -- default = false,
             }),
-            -- TODO: Add {spaces = box.NULL} default to make
-            -- reconfiguration with a config without the spaces
-            -- actually remove the spaces from the configuration.
             spaces = schema.map({
                 key = schema.scalar({
                     type = 'string',
@@ -570,6 +584,12 @@ return schema.new('instance_config', schema.record({
                     }),
                 }),
             }),
+        }, {
+            box_cfg = 'wal_ext',
+            -- TODO: This default doesn't work now. It needs
+            -- support of non-scalar schema nodes in
+            -- <schema object>:map().
+            default = box.NULL,
         })),
     }),
     snapshot = schema.record({
