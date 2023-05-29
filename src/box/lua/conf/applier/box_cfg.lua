@@ -62,13 +62,12 @@ local function apply(configdata)
 
     -- Construct logger destination (box_cfg.log) and log modules.
     --
-    -- `log.nonblock`, `log.level`, `log.format` options are
-    -- marked with the `box_cfg` annotations and so they're
-    -- already added to `box_cfg`.
+    -- `log.nonblock`, `log.level`, `log.format`, 'log.modules'
+    -- options are marked with the `box_cfg` annotations and so
+    -- they're already added to `box_cfg`.
     --
     -- TODO: Forbid at non-first box.cfg().
     box_cfg.log = log_destination(configdata)
-    box_cfg.log_modules = configdata:get('log.modules', {use_default = true})
 
     box_cfg.read_only = not configdata:get('database.rw', {use_default = true})
 
