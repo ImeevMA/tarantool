@@ -13,6 +13,7 @@ local ctx = {
     -- Collected config values.
     configdata = nil,
     -- TODO: Track applied configdata as well.
+    alerts = {},
 }
 
 -- Remove indent from a text.
@@ -82,7 +83,7 @@ local function initialize()
     end
 end
 
-local function collect()
+local function collect(do_sync)
     local iconfig = {}
     local cconfig = {}
 
@@ -96,7 +97,9 @@ local function collect()
         -- pass currently collected instance config as the second
         -- argument. The 'config' section of the config may
         -- contain a configuration needed for a source.
-        source.sync(ctx, iconfig)
+        if do_sync then
+            source.sync(ctx, iconfig)
+        end
 
         -- Validate configurations gathered from the sources.
         if source.type == 'instance' then
@@ -189,14 +192,22 @@ local function apply()
     for _, applier in ipairs(ctx.appliers) do
         applier.apply(ctx.configdata)
     end
+
+    local ok, extras = pcall(require, 'conf.extras')
+    if ok then
+        extras.post_apply(ctx)
+    end
 end
+
+ctx._collect = collect
+ctx._apply = apply
 
 local function startup(instance_name, config_file)
     ctx.instance_name = instance_name
     ctx.config_file = config_file
 
     initialize()
-    collect()
+    collect(true)
     apply()
 end
 
