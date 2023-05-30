@@ -214,6 +214,8 @@ function methods._apply(self)
         applier.apply(self._configdata)
     end
 
+    self._configdata_applied = self._configdata
+
     local ok, extras = pcall(require, 'conf.extras')
     if ok then
         extras.post_apply(self)
@@ -233,10 +235,10 @@ end
 -- - use_default: boolean
 function methods.get(self, path, opts)
     selfcheck(self, 'get')
-    if self._configdata == nil then
+    if self._configdata_applied == nil then
         error('conf.get: no instance config available yet')
     end
-    return self._configdata:get(path, opts)
+    return self._configdata_applied:get(path, opts)
 end
 
 -- The object is a singleton. The constructor should be called
@@ -251,8 +253,8 @@ local function new()
         _config_file = nil,
         -- Collected config values.
         _configdata = nil,
-        -- TODO: Track applied configdata as well.
-        -- _configdata_applied = nil,
+        -- Track applied config values as well.
+        _configdata_applied = nil,
         -- Track situations when something is going wrong.
         _alerts = {},
     }, mt)
