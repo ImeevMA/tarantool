@@ -147,7 +147,6 @@ extern char session_lua[],
 	conf_instance_config_lua[],
 	conf_source_env_lua[],
 	conf_source_file_lua[],
-	conf_utils_hostname_lua[],
 	conf_utils_log_lua[],
 	conf_utils_schema_lua[]
 #if ENABLE_CONF_EXTRAS
@@ -313,10 +312,6 @@ static const char *lua_sources[] = {
 	 */
 
 	/* TODO: Rename those modules to internal.conf. */
-
-	"conf/utils/hostname",
-	"conf.utils.hostname",
-	conf_utils_hostname_lua,
 
 	"conf/utils/log",
 	"conf.utils.log",
