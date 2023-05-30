@@ -2,19 +2,7 @@ local instance_config = require('conf.instance_config')
 local cluster_config = require('conf.cluster_config')
 local configdata = require('conf.configdata')
 
--- conf module context.
-local ctx = {
-    sources = {},
-    appliers = {},
-    -- There are values the module need to hold, which are not
-    -- part of the configuration. They're stored here.
-    instance_name = nil,
-    config_file = nil,
-    -- Collected config values.
-    configdata = nil,
-    -- TODO: Track applied configdata as well.
-    alerts = {},
-}
+-- {{{ Helpers
 
 -- Remove indent from a text.
 --
@@ -40,7 +28,36 @@ local function dedent(s)
     return table.concat(res, '\n')
 end
 
-local function register_source(source)
+-- Extract all fields from a table except ones that start from
+-- the underscore.
+--
+-- Useful for __serialize.
+local function filter_out_private_fields(t)
+    local res = {}
+    for k, v in pairs(t) do
+        if not k:startswith('_') then
+            res[k] = v
+        end
+    end
+    return res
+end
+
+-- }}} Helpers
+
+local methods = {}
+local mt = {
+    __index = methods,
+    __serialize = filter_out_private_fields,
+}
+
+local function selfcheck(self, method_name)
+    if type(self) ~= 'table' or getmetatable(self) ~= mt then
+        local fmt_str = 'Use conf:%s(<...>) instead of conf.%s(<...>)'
+        error(fmt_str:format(method_name, method_name), 2)
+    end
+end
+
+function methods._register_source(self, source)
     assert(type(source) == 'table')
     if source.type ~= 'instance' and source.type ~= 'cluster' then
         error("[source %q] source.type must be 'instance' or 'cluster'",
@@ -48,14 +65,14 @@ local function register_source(source)
     end
     assert(source.sync ~= nil)
     assert(source.get ~= nil)
-    table.insert(ctx.sources, source)
+    table.insert(self._sources, source)
 end
 
-local function register_applier(applier)
-    table.insert(ctx.appliers, applier)
+function methods._register_applier(self, applier)
+    table.insert(self._appliers, applier)
 end
 
-local function initialize()
+function methods._initialize(self)
     -- The sources are synchronized in the order of registration:
     -- env, file, etcd (the latter is present in Tarantool EE).
     --
@@ -63,42 +80,45 @@ local function initialize()
     -- priority. The menthal rule here is the following: values
     -- closer to the process are preferred: env first, then file,
     -- then etcd (if available).
-    register_source(require('conf.source.env'))
+    self:_register_source(require('conf.source.env'))
 
-    if ctx.config_file ~= nil then
-        register_source(require('conf.source.file'))
+    if self._config_file ~= nil then
+        self:_register_source(require('conf.source.file'))
     end
 
-    register_applier(require('conf.applier.mkdir'))
-    register_applier(require('conf.applier.box_cfg'))
-    register_applier(require('conf.applier.credentials'))
-    register_applier(require('conf.applier.console'))
-    register_applier(require('conf.applier.fiber'))
+    self:_register_applier(require('conf.applier.mkdir'))
+    self:_register_applier(require('conf.applier.box_cfg'))
+    self:_register_applier(require('conf.applier.credentials'))
+    self:_register_applier(require('conf.applier.console'))
+    self:_register_applier(require('conf.applier.fiber'))
 
     -- Tarantool Enterprise Edition has its own additions
     -- for this module.
     local ok, extras = pcall(require, 'conf.extras')
     if ok then
-        extras.initialize(ctx)
+        extras.initialize(self)
     end
 end
 
-local function collect(do_sync)
+function methods._collect(self, opts)
+    local opts = opts or {}
+    local skip_sync = opts.skip_sync
+
     local iconfig = {}
     local cconfig = {}
 
     -- For error reporting.
     local source_info = {}
 
-    for _, source in ipairs(ctx.sources) do
+    for _, source in ipairs(self._sources) do
         -- Gather config values.
         --
         -- The configdata object is not constructed yet, so we
         -- pass currently collected instance config as the second
         -- argument. The 'config' section of the config may
         -- contain a configuration needed for a source.
-        if do_sync then
-            source.sync(ctx, iconfig)
+        if not skip_sync then
+            source.sync(self, iconfig)
         end
 
         -- Validate configurations gathered from the sources.
@@ -125,7 +145,8 @@ local function collect(do_sync)
         if source.type == 'cluster' then
             local source_cconfig = source.get()
             cconfig = cluster_config:merge(source_cconfig, cconfig)
-            source_iconfig = cluster_config:instantiate(cconfig, ctx.instance_name)
+            source_iconfig = cluster_config:instantiate(cconfig,
+                self._instance_name)
         elseif source.type == 'instance' then
             source_iconfig = source.get()
         else
@@ -157,10 +178,10 @@ local function collect(do_sync)
             * Use --config <file> command line option.
             * Use TT_CONFIG_ETCD_* environment variables (available on Tarantool
               Enterprise Edition).
-        ]]):format(table.concat(source_info, '\n'), ctx.instance_name), 0)
+        ]]):format(table.concat(source_info, '\n'), self._instance_name), 0)
     end
 
-    if cluster_config:find_instance(cconfig, ctx.instance_name) == nil then
+    if cluster_config:find_instance(cconfig, self._instance_name) == nil then
         error(dedent([[
             Startup failure.
 
@@ -182,45 +203,59 @@ local function collect(do_sync)
                       instance-001:
                         database:
                           rw: true
-        ]]):format(ctx.instance_name, table.concat(source_info, '\n')), 0)
+        ]]):format(self._instance_name, table.concat(source_info, '\n')), 0)
     end
 
-    ctx.configdata = configdata.new(iconfig, cconfig, ctx.instance_name)
+    self._configdata = configdata.new(iconfig, cconfig, self._instance_name)
 end
 
-local function apply()
-    for _, applier in ipairs(ctx.appliers) do
-        applier.apply(ctx.configdata)
+function methods._apply(self)
+    for _, applier in ipairs(self._appliers) do
+        applier.apply(self._configdata)
     end
 
     local ok, extras = pcall(require, 'conf.extras')
     if ok then
-        extras.post_apply(ctx)
+        extras.post_apply(self)
     end
 end
 
-ctx._collect = collect
-ctx._apply = apply
+function methods._startup(self, instance_name, config_file)
+    self._instance_name = instance_name
+    self._config_file = config_file
 
-local function startup(instance_name, config_file)
-    ctx.instance_name = instance_name
-    ctx.config_file = config_file
-
-    initialize()
-    collect(true)
-    apply()
+    self:_initialize()
+    self:_collect({skip_sync = false})
+    self:_apply()
 end
 
 -- opts:
 -- - use_default: boolean
-local function get(path, opts)
-    if ctx.configdata == nil then
+function methods.get(self, path, opts)
+    selfcheck(self, 'get')
+    if self._configdata == nil then
         error('conf.get: no instance config available yet')
     end
-    return ctx.configdata:get(path, opts)
+    return self._configdata:get(path, opts)
 end
 
-return {
-    startup = startup,
-    get = get,
-}
+-- The object is a singleton. The constructor should be called
+-- only once.
+local function new()
+    return setmetatable({
+        _sources = {},
+        _appliers = {},
+        -- There are values the module need to hold, which are not
+        -- part of the configuration. They're stored here.
+        _instance_name = nil,
+        _config_file = nil,
+        -- Collected config values.
+        _configdata = nil,
+        -- TODO: Track applied configdata as well.
+        -- _configdata_applied = nil,
+        -- Track situations when something is going wrong.
+        _alerts = {},
+    }, mt)
+end
+
+return new()
