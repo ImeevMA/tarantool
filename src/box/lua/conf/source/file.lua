@@ -4,6 +4,7 @@ local fio = require('fio')
 local yaml = require('yaml')
 
 local values = {}
+local current_file_name = ''
 
 -- Read the file block by block till EOF.
 local function stream_read(fh)
@@ -33,6 +34,7 @@ local function universal_read(file_name, file_kind)
     if fh == nil then
         error(('Unable to open %s %q: %s'):format(file_kind, file_name, err))
     end
+    current_file_name = file_name
 
     -- A FIFO file has zero size in the stat(2) file information.
     --
@@ -75,6 +77,10 @@ local function get()
     return values
 end
 
+local function info()
+    return 'File: ' .. current_file_name
+end
+
 return {
     name = 'file',
     -- The type is either 'instance' or 'cluster'.
@@ -85,4 +91,6 @@ return {
     --
     -- source.get()
     get = get,
+    -- Information about the source.
+    info = info,
 }
