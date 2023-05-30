@@ -58,14 +58,14 @@ local function universal_read(file_name, file_kind)
     return data
 end
 
-local function sync(ctx, _iconfig)
-    assert(ctx.config_file ~= nil)
+local function sync(conf, _iconfig)
+    assert(conf._config_file ~= nil)
 
-    local data = universal_read(ctx.config_file, 'config file')
+    local data = universal_read(conf._config_file, 'config file')
     local ok, res = pcall(yaml.decode, data)
     if not ok then
         error(('Unable to parse config file %q as YAML: %s'):format(
-            ctx.config_file, res))
+            conf._config_file, res))
     end
 
     values = res

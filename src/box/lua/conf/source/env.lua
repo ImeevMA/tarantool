@@ -3,7 +3,7 @@ local instance_config = require('conf.instance_config')
 
 local values = {}
 
-local function sync(_ctx, _iconfig)
+local function sync(_conf, _iconfig)
     for _, w in instance_config:pairs() do
         local env_var_name = 'TT_' .. table.concat(w.path, '_'):upper()
         local raw_value = os.getenv(env_var_name)

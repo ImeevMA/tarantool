@@ -1119,13 +1119,15 @@ run_script_f(va_list ap)
 	int is_a_tty = isatty(STDIN_FILENO);
 
 	if (instance->name) {
+		/* require('conf'):_startup(name, config) */
 		if (lua_require_lib(L, "conf") != 0)
 			goto error;
-		lua_pushstring(L, "startup");
+		lua_pushstring(L, "_startup");
 		lua_gettable(L, -2);
+		lua_pushvalue(L, -2);
 		lua_pushstring(L, instance->name);
 		lua_pushstring(L, instance->config);
-		if (luaT_call(L, 2, 1) != 0)
+		if (luaT_call(L, 3, 0) != 0)
 			goto error;
 		lua_settop(L, 0);
 		goto end;
