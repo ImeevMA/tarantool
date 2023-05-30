@@ -55,6 +55,14 @@ local function apply(configdata)
         return w.schema.box_cfg, w.data
     end):tomap()
 
+    -- box.NULL -> nil, see gh-8714.
+    if box_cfg.instance_uuid == nil then
+        box_cfg.instance_uuid = nil
+    end
+    if box_cfg.replicaset_uuid == nil then
+        box_cfg.replicaset_uuid = nil
+    end
+
     -- Construct box_cfg.replication.
     if box_cfg.replication == nil then
         box_cfg.replication = peer_uris(configdata)
