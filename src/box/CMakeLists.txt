@@ -48,7 +48,6 @@ lua_source(lua_sources lua/conf/init.lua                conf_init_lua)
 lua_source(lua_sources lua/conf/instance_config.lua     conf_instance_config_lua)
 lua_source(lua_sources lua/conf/source/env.lua          conf_source_env_lua)
 lua_source(lua_sources lua/conf/source/file.lua         conf_source_file_lua)
-lua_source(lua_sources lua/conf/utils/hostname.lua      conf_utils_hostname_lua)
 lua_source(lua_sources lua/conf/utils/log.lua           conf_utils_log_lua)
 lua_source(lua_sources lua/conf/utils/schema.lua        conf_utils_schema_lua)
 
