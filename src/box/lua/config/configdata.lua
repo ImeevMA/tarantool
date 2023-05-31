@@ -4,8 +4,8 @@
 -- Intended to be used as an immutable object.
 
 local fun = require('fun')
-local instance_config = require('internal.conf.instance_config')
-local cluster_config = require('internal.conf.cluster_config')
+local instance_config = require('internal.config.instance_config')
+local cluster_config = require('internal.config.cluster_config')
 
 local function choose_iconfig(self, opts)
     if opts ~= nil and opts.peer ~= nil then

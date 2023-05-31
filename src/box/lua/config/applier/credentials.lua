@@ -1,4 +1,4 @@
-local log = require('internal.conf.utils.log')
+local log = require('internal.config.utils.log')
 
 local function grant_privileges(name, privileges, role_or_user, grant_f)
     for _, privilege in ipairs(privileges or {}) do

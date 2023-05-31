@@ -1119,8 +1119,8 @@ run_script_f(va_list ap)
 	int is_a_tty = isatty(STDIN_FILENO);
 
 	if (instance->name) {
-		/* require('conf'):_startup(name, config) */
-		if (lua_require_lib(L, "conf") != 0)
+		/* require('config'):_startup(name, config) */
+		if (lua_require_lib(L, "config") != 0)
 			goto error;
 		lua_pushstring(L, "_startup");
 		lua_gettable(L, -2);

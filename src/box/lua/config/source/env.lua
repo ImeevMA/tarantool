@@ -1,9 +1,9 @@
-local schema = require('internal.conf.utils.schema')
-local instance_config = require('internal.conf.instance_config')
+local schema = require('internal.config.utils.schema')
+local instance_config = require('internal.config.instance_config')
 
 local values = {}
 
-local function sync(_conf, _iconfig)
+local function sync(_config_module, _iconfig)
     for _, w in instance_config:pairs() do
         local env_var_name = 'TT_' .. table.concat(w.path, '_'):upper()
         local raw_value = os.getenv(env_var_name)

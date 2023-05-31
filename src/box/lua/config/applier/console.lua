@@ -1,5 +1,5 @@
 local console = require('console')
-local log = require('internal.conf.utils.log')
+local log = require('internal.config.utils.log')
 
 local function socket_file_to_listen_uri(file)
     if file:startswith('/') or file:startswith('./') then
@@ -34,7 +34,7 @@ local function apply(configdata)
     -- TODO: Ignore EACCES, report other errors.
     local ok, res = pcall(console.listen, listen_uri)
     if not ok then
-        -- TODO: Add a warning into conf.issues(), when it will
+        -- TODO: Add a warning into config.alerts(), when it will
         -- be implemented.
         local msg = 'unable to bind console socket %q: %s'
         log.warn('console.apply: ' .. msg, listen_uri, res)

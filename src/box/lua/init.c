@@ -134,28 +134,28 @@ extern char session_lua[],
 	metrics_tarantool_lua[],
 	metrics_utils_lua[],
 	metrics_version_lua[],
-	/* {{{ conf */
-	conf_applier_box_cfg_lua[],
-	conf_applier_console_lua[],
-	conf_applier_credentials_lua[],
-	conf_applier_fiber_lua[],
-	conf_applier_mkdir_lua[],
-	conf_args_lua[],
-	conf_cluster_config_lua[],
-	conf_configdata_lua[],
-	conf_init_lua[],
-	conf_instance_config_lua[],
-	conf_source_env_lua[],
-	conf_source_file_lua[],
-	conf_utils_log_lua[],
-	conf_utils_schema_lua[]
-#if ENABLE_CONF_EXTRAS
+	/* {{{ config */
+	config_applier_box_cfg_lua[],
+	config_applier_console_lua[],
+	config_applier_credentials_lua[],
+	config_applier_fiber_lua[],
+	config_applier_mkdir_lua[],
+	config_args_lua[],
+	config_cluster_config_lua[],
+	config_configdata_lua[],
+	config_init_lua[],
+	config_instance_config_lua[],
+	config_source_env_lua[],
+	config_source_file_lua[],
+	config_utils_log_lua[],
+	config_utils_schema_lua[]
+#if ENABLE_CONFIG_EXTRAS
 	,
-	conf_source_etcd_lua[],
-	conf_extras_lua[]
+	config_source_etcd_lua[],
+	config_extras_lua[]
 #endif
 	;
-	/* }}} conf */
+	/* }}} config */
 
 /**
  * List of box's built-in modules written using Lua.
@@ -295,7 +295,7 @@ static const char *lua_sources[] = {
 	"third_party/metrics/metrics/plugins/json",
 	"metrics.plugins.json", metrics_plugins_json_lua,
 
-	/* {{{ conf */
+	/* {{{ config */
 
 	/*
 	 * The order is important: we should load base modules
@@ -311,71 +311,69 @@ static const char *lua_sources[] = {
 	 * - the entrypoint
 	 */
 
-	/* TODO: Rename those modules to internal.conf. */
+	"config/utils/log",
+	"internal.config.utils.log",
+	config_utils_log_lua,
 
-	"conf/utils/log",
-	"internal.conf.utils.log",
-	conf_utils_log_lua,
+	"config/utils/schema",
+	"internal.config.utils.schema",
+	config_utils_schema_lua,
 
-	"conf/utils/schema",
-	"internal.conf.utils.schema",
-	conf_utils_schema_lua,
+	"config/instance_config",
+	"internal.config.instance_config",
+	config_instance_config_lua,
 
-	"conf/instance_config",
-	"internal.conf.instance_config",
-	conf_instance_config_lua,
+	"config/cluster_config",
+	"internal.config.cluster_config",
+	config_cluster_config_lua,
 
-	"conf/cluster_config",
-	"internal.conf.cluster_config",
-	conf_cluster_config_lua,
+	"config/configdata",
+	"internal.config.configdata",
+	config_configdata_lua,
 
-	"conf/configdata",
-	"internal.conf.configdata",
-	conf_configdata_lua,
+	"config/source/env",
+	"internal.config.source.env",
+	config_source_env_lua,
 
-	"conf/source/env",
-	"internal.conf.source.env",
-	conf_source_env_lua,
+	"config/source/file",
+	"internal.config.source.file",
+	config_source_file_lua,
 
-	"conf/source/file",
-	"internal.conf.source.file",
-	conf_source_file_lua,
+#if ENABLE_CONFIG_EXTRAS
+	"config/source/etcd",
+	"internal.config.source.etcd",
+	config_source_etcd_lua,
 
-#if ENABLE_CONF_EXTRAS
-	"conf/source/etcd",
-	"internal.conf.source.etcd",
-	conf_source_etcd_lua,
-
-	"conf/extras",
-	"internal.conf.extras",
-	conf_extras_lua,
+	"config/extras",
+	"internal.config.extras",
+	config_extras_lua,
 #endif
 
-	"conf/applier/box_cfg",
-	"internal.conf.applier.box_cfg",
-	conf_applier_box_cfg_lua,
+	"config/applier/box_cfg",
+	"internal.config.applier.box_cfg",
+	config_applier_box_cfg_lua,
 
-	"conf/applier/console",
-	"internal.conf.applier.console",
-	conf_applier_console_lua,
+	"config/applier/console",
+	"internal.config.applier.console",
+	config_applier_console_lua,
 
-	"conf/applier/credentials",
-	"internal.conf.applier.credentials",
-	conf_applier_credentials_lua,
+	"config/applier/credentials",
+	"internal.config.applier.credentials",
+	config_applier_credentials_lua,
 
-	"conf/applier/fiber",
-	"internal.conf.applier.fiber",
-	conf_applier_fiber_lua,
+	"config/applier/fiber",
+	"internal.config.applier.fiber",
+	config_applier_fiber_lua,
 
-	"conf/applier/mkdir",
-	"internal.conf.applier.mkdir",
-	conf_applier_mkdir_lua,
+	"config/applier/mkdir",
+	"internal.config.applier.mkdir",
+	config_applier_mkdir_lua,
 
-	"conf/init",
-	"conf",
-	conf_init_lua,
+	"config/init",
+	"config",
+	config_init_lua,
 
-	/* }}} conf */
+	/* }}} config */
 
 	NULL
 };

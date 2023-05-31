@@ -1,5 +1,5 @@
-local schema = require('internal.conf.utils.schema')
-local instance_config = require('internal.conf.instance_config')
+local schema = require('internal.config.utils.schema')
+local instance_config = require('internal.config.instance_config')
 
 local function find_instance(_schema, data, instance_name)
     -- Find group, replicaset, instance configuration for the

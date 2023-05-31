@@ -1,12 +1,12 @@
 -- Logger wrapper with a few enhancements.
 --
 -- 1. Encode tables into JSON.
--- 2. Enable all the messages on TT_CONF_DEBUG=1.
+-- 2. Enable all the messages on TT_CONFIG_DEBUG=1.
 
 local json_noexc = require('json').new()
 json_noexc.cfg({encode_use_tostring = true})
 
-local logger_name = 'tarantool.conf'
+local logger_name = 'tarantool.config'
 local log = require('log').new(logger_name)
 
 local func2level = {
@@ -44,7 +44,7 @@ local function say_closure(log_f)
     -- Just setting of...
     --
     -- ```
-    -- TT_LOG_MODULES='{"tarantool.conf": "debug"}'
+    -- TT_LOG_MODULES='{"tarantool.config": "debug"}'
     -- ```
     --
     -- ...is not suitable due to gh-8092: messages before first
@@ -53,7 +53,7 @@ local function say_closure(log_f)
     -- Explicit calling of...
     --
     -- ```
-    -- log.cfg({modules = {['tarantool.conf'] = 'debug'}})
+    -- log.cfg({modules = {['tarantool.config'] = 'debug'}})
     -- ```
     --
     -- is not suitable as well, because it makes the logger
@@ -62,7 +62,7 @@ local function say_closure(log_f)
     -- invocation.
     --
     -- So just prefix our log messages and use log.info().
-    local envvar = os.getenv('TT_CONF_DEBUG')
+    local envvar = os.getenv('TT_CONFIG_DEBUG')
     if envvar ~= nil and envvar ~= '0' and envvar ~= 'false' then
         prefix = func2prefix[log_f]
         log_f = log.info
@@ -91,7 +91,7 @@ local function say_closure(log_f)
         -- Encode tables into JSON.
         --
         -- Ignores presence of __serialize and __tostring in the
-        -- metatatable. It is suitable for the conf module needs.
+        -- metatatable. It is suitable for the config module needs.
         local args = {...}
         for i = 1, argc do
             if type(args[i]) == 'table' then

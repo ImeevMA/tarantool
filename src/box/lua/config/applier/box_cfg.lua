@@ -1,4 +1,4 @@
-local log = require('internal.conf.utils.log')
+local log = require('internal.config.utils.log')
 
 local function peer_uris(configdata)
     local peers = configdata:peers()
