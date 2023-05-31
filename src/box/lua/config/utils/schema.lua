@@ -59,6 +59,7 @@
 -- * string
 -- * number
 -- * integer
+-- * boolean
 -- * union of scalars (say, 'string, number')
 -- * record (a dictionary with certain field names and types)
 -- * map (arbitrary key names, strict about keys and values types)
@@ -70,6 +71,7 @@
 -- * type
 -- * validate
 -- * allowed_values
+-- * default
 -- * apply_default_if
 --
 -- Others are just payload that may be used somehow: say, in the
