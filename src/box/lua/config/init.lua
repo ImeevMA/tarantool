@@ -1,6 +1,6 @@
-local instance_config = require('internal.conf.instance_config')
-local cluster_config = require('internal.conf.cluster_config')
-local configdata = require('internal.conf.configdata')
+local instance_config = require('internal.config.instance_config')
+local cluster_config = require('internal.config.cluster_config')
+local configdata = require('internal.config.configdata')
 
 -- {{{ Helpers
 
@@ -52,7 +52,7 @@ local mt = {
 
 local function selfcheck(self, method_name)
     if type(self) ~= 'table' or getmetatable(self) ~= mt then
-        local fmt_str = 'Use conf:%s(<...>) instead of conf.%s(<...>)'
+        local fmt_str = 'Use config:%s(<...>) instead of config.%s(<...>)'
         error(fmt_str:format(method_name, method_name), 2)
     end
 end
@@ -80,21 +80,21 @@ function methods._initialize(self)
     -- priority. The menthal rule here is the following: values
     -- closer to the process are preferred: env first, then file,
     -- then etcd (if available).
-    self:_register_source(require('internal.conf.source.env'))
+    self:_register_source(require('internal.config.source.env'))
 
     if self._config_file ~= nil then
-        self:_register_source(require('internal.conf.source.file'))
+        self:_register_source(require('internal.config.source.file'))
     end
 
-    self:_register_applier(require('internal.conf.applier.mkdir'))
-    self:_register_applier(require('internal.conf.applier.box_cfg'))
-    self:_register_applier(require('internal.conf.applier.credentials'))
-    self:_register_applier(require('internal.conf.applier.console'))
-    self:_register_applier(require('internal.conf.applier.fiber'))
+    self:_register_applier(require('internal.config.applier.mkdir'))
+    self:_register_applier(require('internal.config.applier.box_cfg'))
+    self:_register_applier(require('internal.config.applier.credentials'))
+    self:_register_applier(require('internal.config.applier.console'))
+    self:_register_applier(require('internal.config.applier.fiber'))
 
     -- Tarantool Enterprise Edition has its own additions
     -- for this module.
-    local ok, extras = pcall(require, 'internal.conf.extras')
+    local ok, extras = pcall(require, 'internal.config.extras')
     if ok then
         extras.initialize(self)
     end
@@ -216,7 +216,7 @@ function methods._apply(self)
 
     self._configdata_applied = self._configdata
 
-    local ok, extras = pcall(require, 'internal.conf.extras')
+    local ok, extras = pcall(require, 'internal.config.extras')
     if ok then
         extras.post_apply(self)
     end
@@ -236,7 +236,7 @@ end
 function methods.get(self, path, opts)
     selfcheck(self, 'get')
     if self._configdata_applied == nil then
-        error('conf.get: no instance config available yet')
+        error('config:get(): no instance config available yet')
     end
     return self._configdata_applied:get(path, opts)
 end

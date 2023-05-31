@@ -1,7 +1,7 @@
 local compat = require('compat')
 local tarantool = require('tarantool')
 local uuid = require('uuid')
-local schema = require('internal.conf.utils.schema')
+local schema = require('internal.config.utils.schema')
 
 -- List of annotations:
 --

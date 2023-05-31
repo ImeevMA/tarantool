@@ -1,5 +1,5 @@
 local fio = require('fio')
-local log = require('internal.conf.utils.log')
+local log = require('internal.config.utils.log')
 
 -- Create a directory if it doesn't exist.
 local function safe_mkdir(prefix, dir)
