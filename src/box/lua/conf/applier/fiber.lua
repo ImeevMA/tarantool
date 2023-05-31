@@ -1,5 +1,5 @@
 local fiber = require('fiber')
-local log = require('conf.utils.log')
+local log = require('internal.conf.utils.log')
 
 local function apply(configdata)
     local slice = configdata:get('fiber.slice', {use_default = true})

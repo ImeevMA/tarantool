@@ -1,6 +1,6 @@
-local instance_config = require('conf.instance_config')
-local cluster_config = require('conf.cluster_config')
-local configdata = require('conf.configdata')
+local instance_config = require('internal.conf.instance_config')
+local cluster_config = require('internal.conf.cluster_config')
+local configdata = require('internal.conf.configdata')
 
 -- {{{ Helpers
 
@@ -80,21 +80,21 @@ function methods._initialize(self)
     -- priority. The menthal rule here is the following: values
     -- closer to the process are preferred: env first, then file,
     -- then etcd (if available).
-    self:_register_source(require('conf.source.env'))
+    self:_register_source(require('internal.conf.source.env'))
 
     if self._config_file ~= nil then
-        self:_register_source(require('conf.source.file'))
+        self:_register_source(require('internal.conf.source.file'))
     end
 
-    self:_register_applier(require('conf.applier.mkdir'))
-    self:_register_applier(require('conf.applier.box_cfg'))
-    self:_register_applier(require('conf.applier.credentials'))
-    self:_register_applier(require('conf.applier.console'))
-    self:_register_applier(require('conf.applier.fiber'))
+    self:_register_applier(require('internal.conf.applier.mkdir'))
+    self:_register_applier(require('internal.conf.applier.box_cfg'))
+    self:_register_applier(require('internal.conf.applier.credentials'))
+    self:_register_applier(require('internal.conf.applier.console'))
+    self:_register_applier(require('internal.conf.applier.fiber'))
 
     -- Tarantool Enterprise Edition has its own additions
     -- for this module.
-    local ok, extras = pcall(require, 'conf.extras')
+    local ok, extras = pcall(require, 'internal.conf.extras')
     if ok then
         extras.initialize(self)
     end
@@ -216,7 +216,7 @@ function methods._apply(self)
 
     self._configdata_applied = self._configdata
 
-    local ok, extras = pcall(require, 'conf.extras')
+    local ok, extras = pcall(require, 'internal.conf.extras')
     if ok then
         extras.post_apply(self)
     end

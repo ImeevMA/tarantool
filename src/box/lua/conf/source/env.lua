@@ -1,5 +1,5 @@
-local schema = require('conf.utils.schema')
-local instance_config = require('conf.instance_config')
+local schema = require('internal.conf.utils.schema')
+local instance_config = require('internal.conf.instance_config')
 
 local values = {}
 

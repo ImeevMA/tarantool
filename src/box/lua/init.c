@@ -314,61 +314,61 @@ static const char *lua_sources[] = {
 	/* TODO: Rename those modules to internal.conf. */
 
 	"conf/utils/log",
-	"conf.utils.log",
+	"internal.conf.utils.log",
 	conf_utils_log_lua,
 
 	"conf/utils/schema",
-	"conf.utils.schema",
+	"internal.conf.utils.schema",
 	conf_utils_schema_lua,
 
 	"conf/instance_config",
-	"conf.instance_config",
+	"internal.conf.instance_config",
 	conf_instance_config_lua,
 
 	"conf/cluster_config",
-	"conf.cluster_config",
+	"internal.conf.cluster_config",
 	conf_cluster_config_lua,
 
 	"conf/configdata",
-	"conf.configdata",
+	"internal.conf.configdata",
 	conf_configdata_lua,
 
 	"conf/source/env",
-	"conf.source.env",
+	"internal.conf.source.env",
 	conf_source_env_lua,
 
 	"conf/source/file",
-	"conf.source.file",
+	"internal.conf.source.file",
 	conf_source_file_lua,
 
 #if ENABLE_CONF_EXTRAS
 	"conf/source/etcd",
-	"conf.source.etcd",
+	"internal.conf.source.etcd",
 	conf_source_etcd_lua,
 
 	"conf/extras",
-	"conf.extras",
+	"internal.conf.extras",
 	conf_extras_lua,
 #endif
 
 	"conf/applier/box_cfg",
-	"conf.applier.box_cfg",
+	"internal.conf.applier.box_cfg",
 	conf_applier_box_cfg_lua,
 
 	"conf/applier/console",
-	"conf.applier.console",
+	"internal.conf.applier.console",
 	conf_applier_console_lua,
 
 	"conf/applier/credentials",
-	"conf.applier.credentials",
+	"internal.conf.applier.credentials",
 	conf_applier_credentials_lua,
 
 	"conf/applier/fiber",
-	"conf.applier.fiber",
+	"internal.conf.applier.fiber",
 	conf_applier_fiber_lua,
 
 	"conf/applier/mkdir",
-	"conf.applier.mkdir",
+	"internal.conf.applier.mkdir",
 	conf_applier_mkdir_lua,
 
 	"conf/init",

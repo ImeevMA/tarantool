@@ -1,5 +1,5 @@
 local console = require('console')
-local log = require('conf.utils.log')
+local log = require('internal.conf.utils.log')
 
 local function socket_file_to_listen_uri(file)
     if file:startswith('/') or file:startswith('./') then
