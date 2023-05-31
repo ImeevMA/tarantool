@@ -65,11 +65,27 @@ local function apply(configdata)
     -- `log.nonblock`, `log.level`, `log.format`, 'log.modules'
     -- options are marked with the `box_cfg` annotations and so
     -- they're already added to `box_cfg`.
-    --
-    -- TODO: Forbid at non-first box.cfg().
     box_cfg.log = log_destination(configdata)
 
     box_cfg.read_only = not configdata:get('database.rw', {use_default = true})
+
+    assert(type(box.cfg) == 'function' or type(box.cfg) == 'table')
+    if type(box.cfg) == 'table' then
+        local box_cfg_nondynamic = configdata:filter(function(w)
+            return w.schema.box_cfg ~= nil and w.schema.box_cfg_nondynamic
+        end, {use_default = true}):map(function(w)
+            return w.schema.box_cfg, w.data
+        end):tomap()
+        box_cfg_nondynamic.log = box_cfg.log
+        for k, v in pairs(box_cfg_nondynamic) do
+            if v ~= box.cfg[k] then
+                log.warn('box_cfg.apply: non-dynamic option '..k..' will not '..
+                         'be set until the instance is restarted')
+                -- TODO: save the warning in alerts.
+                box_cfg[k] = nil
+            end
+        end
+    end
 
     log.debug('box_cfg.apply: %s', box_cfg)
 

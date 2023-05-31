@@ -201,16 +201,19 @@ return schema.new('instance_config', schema.record({
         strip_core = schema.scalar({
             type = 'boolean',
             box_cfg = 'strip_core',
+            box_cfg_nondynamic = true,
             default = true,
         }),
         coredump = schema.scalar({
             type = 'boolean',
             box_cfg = 'coredump',
+            box_cfg_nondynamic = true,
             default = false,
         }),
         background = schema.scalar({
             type = 'boolean',
             box_cfg = 'background',
+            box_cfg_nondynamic = true,
             default = false,
         }),
         title = schema.scalar({
@@ -221,16 +224,19 @@ return schema.new('instance_config', schema.record({
         username = schema.scalar({
             type = 'string',
             box_cfg = 'username',
+            box_cfg_nondynamic = true,
             default = box.NULL,
         }),
         work_dir = schema.scalar({
             type = 'string',
             box_cfg = 'work_dir',
+            box_cfg_nondynamic = true,
             default = box.NULL,
         }),
         pid_file = schema.scalar({
             type = 'string',
             box_cfg = 'pid_file',
+            box_cfg_nondynamic = true,
             mk_parent_dir = true,
             default = box.NULL,
             -- TODO: There is a proposal to set the following
@@ -339,6 +345,7 @@ return schema.new('instance_config', schema.record({
         level = schema.scalar({
             type = 'number, string',
             box_cfg = 'log_level',
+            box_cfg_nondynamic = true,
             default = 5,
             allowed_values = {
                 0, 'fatal',
@@ -354,6 +361,7 @@ return schema.new('instance_config', schema.record({
         format = schema.scalar({
             type = 'string',
             box_cfg = 'log_format',
+            box_cfg_nondynamic = true,
             default = 'plain',
         }),
         -- box.cfg({log_modules = <...>}) replaces the previous
@@ -405,6 +413,7 @@ return schema.new('instance_config', schema.record({
         threads = schema.scalar({
             type = 'integer',
             box_cfg = 'iproto_threads',
+            box_cfg_nondynamic = true,
             default = 1,
         }),
         net_msg_max = schema.scalar({
@@ -422,18 +431,21 @@ return schema.new('instance_config', schema.record({
         instance_uuid = schema.scalar({
             type = 'string',
             box_cfg = 'instance_uuid',
+            box_cfg_nondynamic = true,
             default = box.NULL,
             validate = validate_uuid_str,
         }),
         replicaset_uuid = schema.scalar({
             type = 'string',
             box_cfg = 'replicaset_uuid',
+            box_cfg_nondynamic = true,
             default = box.NULL,
             validate = validate_uuid_str,
         }),
         hot_standby = schema.scalar({
             type = 'boolean',
             box_cfg = 'hot_standby',
+            box_cfg_nondynamic = true,
             default = false,
         }),
         -- Reversed and applied to box_cfg.read_only.
@@ -457,6 +469,7 @@ return schema.new('instance_config', schema.record({
         use_mvcc_engine = schema.scalar({
             type = 'boolean',
             box_cfg = 'memtx_use_mvcc_engine',
+            box_cfg_nondynamic = true,
             default = false,
         }),
     }),
@@ -478,21 +491,25 @@ return schema.new('instance_config', schema.record({
             'system',
         }, {
             box_cfg = 'memtx_allocator',
+            box_cfg_nondynamic = true,
             default = 'small',
         }),
         slab_alloc_granularity = schema.scalar({
             type = 'integer',
             box_cfg = 'slab_alloc_granularity',
+            box_cfg_nondynamic = true,
             default = 8,
         }),
         slab_alloc_factor = schema.scalar({
             type = 'number',
             box_cfg = 'slab_alloc_factor',
+            box_cfg_nondynamic = true,
             default = 1.05,
         }),
         min_tuple_size = schema.scalar({
             type = 'integer',
             box_cfg = 'memtx_min_tuple_size',
+            box_cfg_nondynamic = true,
             default = 16,
         }),
         max_tuple_size = schema.scalar({
@@ -506,6 +523,7 @@ return schema.new('instance_config', schema.record({
         dir = schema.scalar({
             type = 'string',
             box_cfg = 'vinyl_dir',
+            box_cfg_nondynamic = true,
             mkdir = true,
             default = '.',
         }),
@@ -519,6 +537,7 @@ return schema.new('instance_config', schema.record({
         dir = schema.scalar({
             type = 'string',
             box_cfg = 'wal_dir',
+            box_cfg_nondynamic = true,
             mkdir = true,
             default = '.',
         }),
@@ -528,11 +547,13 @@ return schema.new('instance_config', schema.record({
             'fsync',
         }, {
             box_cfg = 'wal_mode',
+            box_cfg_nondynamic = true,
             default = 'write',
         }),
         max_size = schema.scalar({
             type = 'integer',
             box_cfg = 'wal_max_size',
+            box_cfg_nondynamic = true,
             default = 256 * 1024 * 1024,
         }),
         dir_rescan_delay = schema.scalar({
@@ -597,6 +618,7 @@ return schema.new('instance_config', schema.record({
         dir = schema.scalar({
             type = 'string',
             box_cfg = 'memtx_dir',
+            box_cfg_nondynamic = true,
             mkdir = true,
             default = '.',
         }),
@@ -640,6 +662,7 @@ return schema.new('instance_config', schema.record({
         threads = schema.scalar({
             type = 'integer',
             box_cfg = 'replication_threads',
+            box_cfg_nondynamic = true,
             default = 1,
         }),
         timeout = schema.scalar({
