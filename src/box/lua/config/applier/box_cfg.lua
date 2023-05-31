@@ -81,6 +81,22 @@ local function apply(configdata)
 
     log.debug('box_cfg.apply: %s', box_cfg)
 
+    assert(type(box.cfg) == 'function' or type(box.cfg) == 'table')
+    if type(box.cfg) == 'table' then
+        local box_cfg_nondynamic = configdata:filter(function(w)
+            return w.schema.box_cfg ~= nil and w.schema.box_cfg_nondynamic
+        end, {use_default = true}):map(function(w)
+            return w.schema.box_cfg, w.data
+        end):tomap()
+        for k,v in pairs(box_cfg_nondynamic) do
+            if v ~= box.cfg[k] then
+                log.warn('box_cfg.apply: non-dynamic option '..k..' will not '..
+                         'be set until the instance is restarted')
+                box_cfg[k] = nil
+            end
+        end
+    end
+
     box.cfg(box_cfg)
 
     -- Add instance, replicaset and group (cluster) names.
