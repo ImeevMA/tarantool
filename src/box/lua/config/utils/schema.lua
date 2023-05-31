@@ -60,6 +60,7 @@
 -- * number
 -- * integer
 -- * boolean
+-- * any
 -- * union of scalars (say, 'string, number')
 -- * record (a dictionary with certain field names and types)
 -- * map (arbitrary key names, strict about keys and values types)
@@ -349,6 +350,23 @@ scalars.boolean = {
 
         error(('Unable to decode a boolean value from environment ' ..
             'variable %q, got %q'):format(env_var_name, raw_value))
+    end,
+}
+
+scalars.any = {
+    type = 'any',
+    validate_noexc = function(_data)
+        -- No validation.
+        return true
+    end,
+    fromenv = function(env_var_name, raw_value)
+        -- Don't autoguess type. Accept JSON only.
+        local ok, res = pcall(json.decode, raw_value)
+        if not ok then
+            error(('Unable to decode JSON data in environment ' ..
+                'variable %q: %s'):format(env_var_name, res))
+        end
+        return res
     end,
 }
 
