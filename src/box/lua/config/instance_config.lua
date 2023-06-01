@@ -858,5 +858,19 @@ return schema.new('instance_config', schema.record({
     -- TODO: feedback
     -- TODO: flightrec
     -- TODO: metrics
-    -- TODO: app
+    -- TODO: app.cfg
+    app = schema.union_of_records(
+        schema.record({
+            file = schema.scalar({
+                type = 'string',
+                default = nil,
+            }),
+        }),
+        schema.record({
+            module = schema.scalar({
+                type = 'string',
+                default = nil,
+            }),
+        })
+    ),
 }))
