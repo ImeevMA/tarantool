@@ -51,13 +51,17 @@ local function enterprise_edition_validate(_schema, data, w)
 
     assert(tarantool.package == 'Tarantool')
 
-    -- OK, if the value is null or empty.
+    -- OK, if the value is nil or box.NULL.
     if data == nil then
         return
     end
-    if type(data) == 'table' and next(data) == nil then
-        return
-    end
+
+    -- NB: Let's fail the validation for an empty table, because
+    -- otherwise we will get a less descriptive error from a lower
+    -- level API. For example, box.cfg({wal_ext = {}}) on Tarantool
+    -- Community Edition says the following:
+    --
+    -- > Incorrect value for option 'wal_ext': unexpected option
 
     w.error('This configuration parameter is available only in Tarantool ' ..
         'Enterprise Edition')
