@@ -1,7 +1,8 @@
 local fiber = require('fiber')
 local log = require('internal.config.utils.log')
 
-local function apply(configdata)
+local function apply(config)
+    local configdata = config._configdata
     local slice = configdata:get('fiber.slice', {use_default = true})
     assert(slice ~= nil)
     log.verbose('fiber.apply: fiber.set_max_slice: %s', slice)

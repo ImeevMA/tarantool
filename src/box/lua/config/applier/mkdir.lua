@@ -33,7 +33,8 @@ local function safe_mkdir(prefix, dir)
     end
 end
 
-local function apply(configdata)
+local function apply(config)
+    local configdata = config._configdata
     configdata:filter(function(w)
         return w.schema.mkdir ~= nil
     end, {use_default = true}):each(function(w)

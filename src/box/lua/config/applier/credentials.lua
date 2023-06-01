@@ -139,7 +139,8 @@ end
 
 -- }}} Create users
 
-local function apply(configdata)
+local function apply(config)
+    local configdata = config._configdata
     local credentials = configdata:get('credentials')
     if credentials == nil then
         return

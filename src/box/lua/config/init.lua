@@ -1,6 +1,8 @@
 local instance_config = require('internal.config.instance_config')
 local cluster_config = require('internal.config.cluster_config')
 local configdata = require('internal.config.configdata')
+local log = require('internal.config.utils.log')
+local datetime = require('datetime')
 
 -- {{{ Helpers
 
@@ -55,6 +57,17 @@ local function selfcheck(self, method_name)
         local fmt_str = 'Use config:%s(<...>) instead of config.%s(<...>)'
         error(fmt_str:format(method_name, method_name), 2)
     end
+end
+
+function methods._alert(self, alert)
+    assert(alert.type == 'error' or alert.type == 'warn')
+    if alert.type == 'error' then
+        log.error(alert.error)
+    else
+        log.warn(alert.error)
+    end
+    alert.timestamp = datetime.now()
+    table.insert(self._alerts, alert)
 end
 
 function methods._register_source(self, source)
@@ -212,7 +225,7 @@ end
 
 function methods._apply(self)
     for _, applier in ipairs(self._appliers) do
-        applier.apply(self._configdata)
+        applier.apply(self)
     end
 
     self._configdata_applied = self._configdata
@@ -242,6 +255,30 @@ function methods.get(self, path, opts)
     return self._configdata_applied:get(path, opts)
 end
 
+function methods.reload(self)
+    selfcheck(self, 'reload')
+    if self._configdata_applied == nil then
+        error('config:reload(): no instance config available yet')
+    end
+    self._alerts = {}
+    local ok, err = pcall(self._collect, self)
+    if ok then
+        ok, err = pcall(self._apply, self)
+    end
+    if not ok then
+        self:_alert({type = 'error', error = err})
+        self._alerts_applied = self._alerts
+        error(err)
+    end
+    self._alerts_applied = self._alerts
+end
+
+function methods.info(self)
+    return {
+        alerts = self._alerts_applied,
+    }
+end
+
 -- The object is a singleton. The constructor should be called
 -- only once.
 local function new()
@@ -258,6 +295,8 @@ local function new()
         _configdata_applied = nil,
         -- Track situations when something is going wrong.
         _alerts = {},
+        -- Alerts from the last successful application of the configuration.
+        _alerts_applied = {},
     }, mt)
 end
 

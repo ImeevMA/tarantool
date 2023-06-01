@@ -8,7 +8,8 @@ local function socket_file_to_listen_uri(file)
     return ('unix/:./%s'):format(file)
 end
 
-local function apply(configdata)
+local function apply(config)
+    local configdata = config._configdata
     local enabled = configdata:get('console.enabled', {use_default = true})
     if not enabled then
         log.debug('console.apply: console is disabled by the ' ..

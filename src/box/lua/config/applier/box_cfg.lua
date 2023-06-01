@@ -48,7 +48,8 @@ local function log_destination(configdata)
     end
 end
 
-local function apply(configdata)
+local function apply(config)
+    local configdata = config._configdata
     local box_cfg = configdata:filter(function(w)
         return w.schema.box_cfg ~= nil
     end, {use_default = true}):map(function(w)
@@ -79,9 +80,9 @@ local function apply(configdata)
         box_cfg_nondynamic.log = box_cfg.log
         for k, v in pairs(box_cfg_nondynamic) do
             if v ~= box.cfg[k] then
-                log.warn('box_cfg.apply: non-dynamic option '..k..' will not '..
-                         'be set until the instance is restarted')
-                -- TODO: save the warning in alerts.
+                local warning = 'box_cfg.apply: non-dynamic option '..k..
+                    ' will not be set until the instance is restarted'
+                config:_alert({type = 'warn', error = warning})
                 box_cfg[k] = nil
             end
         end

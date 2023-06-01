@@ -1,6 +1,7 @@
 local log = require('internal.config.utils.log')
 
-local function apply(configdata)
+local function apply(config)
+    local configdata = config._configdata
     local file = configdata:get('app.file', {use_default = true})
     local module = configdata:get('app.module', {use_default = true})
     if file ~= nil then
