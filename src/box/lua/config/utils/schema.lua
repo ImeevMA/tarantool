@@ -6,7 +6,7 @@
 --
 -- {{{ Details
 --
--- Provides several utility function to costruct a schema
+-- Provides several utility function to construct a schema
 -- definition:
 --
 -- * schema.new(<record>)
@@ -855,7 +855,7 @@ end
 -- Prefer the latter.
 --
 -- Records and maps are deeply merged. Scalars and arrays are
--- all-or-nothing: either one is choosen or another.
+-- all-or-nothing: either one is chosen or another.
 function methods.merge(self, a, b)
     local ctx = walkthrough_start(self)
     return merge_impl(rawget(self, 'schema'), a, b, ctx)
