@@ -349,7 +349,6 @@ return schema.new('instance_config', schema.record({
         level = schema.scalar({
             type = 'number, string',
             box_cfg = 'log_level',
-            box_cfg_nondynamic = true,
             default = 5,
             allowed_values = {
                 0, 'fatal',
@@ -365,7 +364,6 @@ return schema.new('instance_config', schema.record({
         format = schema.scalar({
             type = 'string',
             box_cfg = 'log_format',
-            box_cfg_nondynamic = true,
             default = 'plain',
         }),
         -- box.cfg({log_modules = <...>}) replaces the previous
@@ -435,14 +433,12 @@ return schema.new('instance_config', schema.record({
         instance_uuid = schema.scalar({
             type = 'string',
             box_cfg = 'instance_uuid',
-            box_cfg_nondynamic = true,
             default = box.NULL,
             validate = validate_uuid_str,
         }),
         replicaset_uuid = schema.scalar({
             type = 'string',
             box_cfg = 'replicaset_uuid',
-            box_cfg_nondynamic = true,
             default = box.NULL,
             validate = validate_uuid_str,
         }),
