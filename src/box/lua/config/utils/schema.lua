@@ -773,12 +773,13 @@ validate_impl = function(schema, data, ctx)
     if schema.validate ~= nil then
         assert(type(schema.validate) == 'function')
         local w = {
+            schema = schema,
             path = ctx.path,
             error = function(message, ...)
                 walkthrough_error(ctx, message, ...)
             end,
         }
-        schema.validate(schema, data, w)
+        schema.validate(data, w)
     end
 end
 

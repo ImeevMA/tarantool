@@ -43,7 +43,7 @@ local schema = require('internal.config.utils.schema')
 --
 --   Create a parent directry for the given file before box.cfg().
 
-local function enterprise_edition_validate(_schema, data, w)
+local function enterprise_edition_validate(data, w)
     -- OK if we're on Tarantool EE.
     if tarantool.package == 'Tarantool Enterprise' then
         return
@@ -79,7 +79,7 @@ local function enterprise_edition(schema_node)
     return schema_node
 end
 
-local function validate_uuid_str(_schema, data, w)
+local function validate_uuid_str(data, w)
     if uuid.fromstr(data) == nil then
         w.error('Unable to parse the value as a UUID: %q', data)
     end
@@ -97,7 +97,7 @@ return schema.new('instance_config', schema.record({
             -- We should handle it in the env source: set the
             -- latest config version if unset.
             --[[
-            validate = function(_schema, data, w)
+            validate = function(data, w)
                 if data == nil then
                     w.error('config.version is mandatory')
                 end
@@ -140,7 +140,7 @@ return schema.new('instance_config', schema.record({
         etcd = enterprise_edition(schema.record({
             prefix = schema.scalar({
                 type = 'string',
-                validate = function(_schema, data, w)
+                validate = function(data, w)
                     if not data:startswith('/') then
                         w.error(('config.etcd.prefix should be a path alike ' ..
                             'value, got %q'):format(data))
@@ -189,7 +189,7 @@ return schema.new('instance_config', schema.record({
                 }),
             }),
         }, {
-            validate = function(_schema, data, w)
+            validate = function(data, w)
                 -- No config.etcd section at all -- OK.
                 if data == nil or next(data) == nil then
                     return
@@ -391,7 +391,7 @@ return schema.new('instance_config', schema.record({
             default = box.NULL,
         }),
     }, {
-        validate = function(_schema, log, w)
+        validate = function(log, w)
             if log.to == 'pipe' and log.pipe == nil then
                 w.error('The pipe logger is set by the log.to parameter but ' ..
                     'the command is not set (log.pipe parameter)')
