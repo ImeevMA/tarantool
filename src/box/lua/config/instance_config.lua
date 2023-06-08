@@ -132,6 +132,12 @@ return schema.new('instance_config', schema.record({
                 }),
             })),
         }),
+        reload = schema.enum({
+            'auto',
+            'manual',
+        }, {
+            default = 'auto',
+        }),
         -- Defaults can't be set there, because the `validate`
         -- annotation expects either no data or data with existing
         -- prefix field. The prefix field has no default. So,
