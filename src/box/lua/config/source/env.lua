@@ -18,6 +18,10 @@ local function get()
     return values
 end
 
+local function meta()
+    return nil
+end
+
 return {
     name = 'env',
     -- The type is either 'instance' or 'cluster'.
@@ -28,4 +32,6 @@ return {
     --
     -- source.get()
     get = get,
+    -- Metadata of the current configuration from the source.
+    meta = meta,
 }

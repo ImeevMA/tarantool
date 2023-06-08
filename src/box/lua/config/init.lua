@@ -123,6 +123,7 @@ function methods._collect(self, opts)
 
     -- For error reporting.
     local source_info = {}
+    local meta = {}
 
     for _, source in ipairs(self._sources) do
         -- Gather config values.
@@ -173,6 +174,8 @@ function methods._collect(self, opts)
         local has_data = next(source.get()) ~= nil
         table.insert(source_info, ('* %q [type: %s]%s'):format(source.name,
             source.type, has_data and '' or ' (no data)'))
+
+        meta[source.name] = source.meta()
     end
 
     if next(cconfig) == nil then
@@ -221,6 +224,7 @@ function methods._collect(self, opts)
     end
 
     self._configdata = configdata.new(iconfig, cconfig, self._instance_name)
+    self._meta = meta
 end
 
 function methods._apply(self)
@@ -229,6 +233,7 @@ function methods._apply(self)
     end
 
     self._configdata_applied = self._configdata
+    self._meta_applied = self._meta
 
     local ok, extras = pcall(require, 'internal.config.extras')
     if ok then
@@ -276,6 +281,7 @@ end
 function methods.info(self)
     return {
         alerts = self._alerts_applied,
+        meta = self._meta_applied,
     }
 end
 
@@ -297,6 +303,10 @@ local function new()
         _alerts = {},
         -- Alerts from the last successful application of the configuration.
         _alerts_applied = {},
+        -- Metadata from sources.
+        _meta = {},
+        -- Metadata from the last successful application of the configuration.
+        _meta_applied = {},
     }, mt)
 end
 
