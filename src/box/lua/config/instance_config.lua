@@ -494,7 +494,7 @@ return schema.new('instance_config', schema.record({
             box_cfg = 'vinyl_dir',
             box_cfg_nondynamic = true,
             mkdir = true,
-            default = '.',
+            default = '{{ instance_name }}',
         }),
         max_tuple_size = schema.scalar({
             type = 'integer',
@@ -508,7 +508,7 @@ return schema.new('instance_config', schema.record({
             box_cfg = 'wal_dir',
             box_cfg_nondynamic = true,
             mkdir = true,
-            default = '.',
+            default = '{{ instance_name }}',
         }),
         mode = schema.enum({
             'none',
@@ -589,7 +589,7 @@ return schema.new('instance_config', schema.record({
             box_cfg = 'memtx_dir',
             box_cfg_nondynamic = true,
             mkdir = true,
-            default = '.',
+            default = '{{ instance_name }}',
         }),
         by = schema.record({
             interval = schema.scalar({
