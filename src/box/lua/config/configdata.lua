@@ -121,11 +121,16 @@ local function new(iconfig, cconfig, instance_name)
         }
     end
 
+    -- Make the order of the peers predictable and the same on all
+    -- instances in the replicaset.
+    local peer_names = fun.iter(peers):totable()
+    table.sort(peer_names)
+
     return setmetatable({
         _iconfig = iconfig,
         _iconfig_def = iconfig_def,
         _cconfig = cconfig,
-        _peer_names = fun.iter(peers):totable(),
+        _peer_names = peer_names,
         _peers = peers,
         _group_name = found.group_name,
         _replicaset_name = found.replicaset_name,
