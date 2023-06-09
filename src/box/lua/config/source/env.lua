@@ -12,6 +12,14 @@ local function sync(_config_module, _iconfig)
             instance_config:set(values, w.path, value)
         end
     end
+
+    -- Set the latest config version if unset. This behavior is
+    -- specific for the env source.
+    if instance_config:get(values, 'config.version') == nil then
+        local latest_version = instance_config.schema.config_version
+        assert(latest_version ~= nil)
+        instance_config:set(values, 'config.version', latest_version)
+    end
 end
 
 local function get()

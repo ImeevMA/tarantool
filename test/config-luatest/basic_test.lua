@@ -26,6 +26,9 @@ end)
 g.test_basic = function(g)
     local dir = treegen.prepare_directory(g, {}, {})
     local config = {
+        config = {
+            version = '3.0.0',
+        },
         credentials = {
             users = {
                 guest = {
