@@ -1,5 +1,5 @@
 local t = require('luatest')
-local instance_config = require('internal.config.cluster_config')
+local instance_config = require('internal.config.instance_config')
 
 local g = t.group()
 
