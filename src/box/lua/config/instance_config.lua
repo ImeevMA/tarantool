@@ -107,31 +107,6 @@ return schema.new('instance_config', schema.record({
             end,
             ]]--
         }),
-        -- TODO: Not handled anywhere.
-        hooks = schema.record({
-            pre_cfg = schema.union_of_records(schema.record({
-                file = schema.scalar({
-                    type = 'string',
-                    default = nil,
-                }),
-            }), schema.record({
-                module = schema.scalar({
-                    type = 'string',
-                    default = nil,
-                }),
-            })),
-            post_cfg = schema.union_of_records(schema.record({
-                file = schema.scalar({
-                    type = 'string',
-                    default = nil,
-                }),
-            }), schema.record({
-                module = schema.scalar({
-                    type = 'string',
-                    default = nil,
-                }),
-            })),
-        }),
         reload = schema.enum({
             'auto',
             'manual',
