@@ -88,51 +88,15 @@ local function apply(config)
         end
     end
 
+    -- Add instance, replicaset and group (cluster) names.
+    local names = configdata:names()
+    box_cfg.cluster_name = names.group_name
+    box_cfg.replicaset_name = names.replicaset_name
+    box_cfg.instance_name = names.instance_name
+
     log.debug('box_cfg.apply: %s', box_cfg)
 
     box.cfg(box_cfg)
-
-    -- Add instance, replicaset and group (cluster) names.
-    --
-    -- The names can't be passed to the first box.cfg() call,
-    -- because it would break a scenario with upgrading from a
-    -- snapshot without those names.
-    --
-    -- Second box.cfg() call, however, accept the names if there
-    -- were no ones before.
-    --
-    -- At the same time, first box.cfg() allows to omit the names
-    -- and start from a snapshot with the names.
-    --
-    -- So, all the scerarios look working, when we omit the
-    -- options at first box.cfg() call, but pass them to the
-    -- second call:
-    --
-    -- * Upgrade from a snapshot without names.
-    -- * Start from a snapshot with the names.
-    --
-    -- However, there are downsides:
-    --
-    -- * If one of the names doesn't correspond to one written to
-    --   a snapshot (a real mistake occurs), the user will get the
-    --   mismatch error only after full (and possibly incorrect)
-    --   startup, including synchronization with replication
-    --   peers.
-    -- * There is no check on a read-only instance.
-    if box.info.ro then
-        log.verbose('box_cfg.apply (second phase): skip ' ..
-            'cluster/replicaset/instance names applying: the instance is in ' ..
-            'the read-only mode')
-    else
-        local names = configdata:names()
-        local box_cfg_2 = {
-            cluster_name = names.group_name,
-            replicaset_name = names.replicaset_name,
-            instance_name = names.instance_name,
-        }
-        log.debug('box_cfg.apply (second phase): %s', box_cfg_2)
-        box.cfg(box_cfg_2)
-    end
 end
 
 return {
