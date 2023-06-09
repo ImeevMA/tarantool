@@ -176,14 +176,14 @@ end
 
 local function walkthrough_error_prefix(ctx)
     if ctx.path == nil or next(ctx.path) == nil then
-        return ('[%s] <no path>'):format(ctx.name)
+        return ('[%s] '):format(ctx.name)
     end
-    return ('[%s] %s'):format(ctx.name, walkthrough_path(ctx))
+    return ('[%s] %s: '):format(ctx.name, walkthrough_path(ctx))
 end
 
 local function walkthrough_error(ctx, message, ...)
     local error_prefix = walkthrough_error_prefix(ctx)
-    error(('%s: %s'):format(error_prefix, message:format(...)), 2)
+    error(('%s%s'):format(error_prefix, message:format(...)), 0)
 end
 
 -- Verify that data is a table and, if it is not so, produce a
