@@ -223,18 +223,7 @@ return schema.new('instance_config', schema.record({
             box_cfg = 'pid_file',
             box_cfg_nondynamic = true,
             mk_parent_dir = true,
-            default = box.NULL,
-            -- TODO: There is a proposal to set the following
-            -- default here.
-            --
-            -- default = '/var/run/tarantool/{{ instance_name }}.pid',
-            --
-            -- But we should handle permission denied for running
-            -- as a regular user.
-            --
-            -- BTW, it seems better to use something like
-            -- {{ TARANTOOL_RUNDIR }} instead of hardcoded
-            -- /var/run.
+            default = '{{ instance_name }}.pid',
         }),
     }),
     console = schema.record({
@@ -244,8 +233,7 @@ return schema.new('instance_config', schema.record({
         }),
         socket = schema.scalar({
             type = 'string',
-            -- XXX: Use TARANTOOL_RUNDIR.
-            default = '/var/run/tarantool/{{ instance_name }}.control',
+            default = '{{ instance_name }}.control',
         }),
     }),
     fiber = schema.record({
@@ -299,7 +287,7 @@ return schema.new('instance_config', schema.record({
         }),
         file = schema.scalar({
             type = 'string',
-            default = '/var/log/tarantool/{{ instance_name }}.log',
+            default = '{{ instance_name }}.log',
         }),
         pipe = schema.scalar({
             type = 'string',

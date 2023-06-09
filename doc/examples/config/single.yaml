@@ -6,9 +6,6 @@ credentials:
 iproto:
   listen: 'unix/:./{{ instance_name }}.iproto'
 
-console:
-  socket: '{{ instance_name }}.control'
-
 groups:
   group-001:
     replicasets:

@@ -19,12 +19,8 @@ iproto:
   listen: 'unix/:./{{ instance_name }}.iproto'
   advertise: 'replicator:topsecret@unix/:./{{ instance_name }}.iproto'
 
-console:
-  socket: '{{ instance_name }}.control'
-
 #log:
 #  to: file
-#  file: '{{ instance_name }}.log'
 
 groups:
   group-001:

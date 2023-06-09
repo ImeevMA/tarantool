@@ -1,3 +1,4 @@
+local errno = require('errno')
 local console = require('console')
 local log = require('internal.config.utils.log')
 
@@ -23,22 +24,13 @@ local function apply(config)
     local listen_uri = socket_file_to_listen_uri(socket_file)
     log.debug('console.apply: %s', listen_uri)
 
-    -- The default value points to a system directory and it is
-    -- fine if we got a permission denied error at attempt to
-    -- bind to a Unix domain socket in the system directory.
-    --
-    -- There is no good way to differentiate errors (except
-    -- matching strerror() strings, which may vary between
-    -- libc implementations). Let's assume any error as
-    -- non-fatal.
-    --
-    -- TODO: Ignore EACCES, report other errors.
+    -- Ignore 'Address already in use' error, because it is
+    -- natural effect of reloading the configuration. All others
+    -- errors are re-raised and lead to failure of apply of the
+    -- configuration.
     local ok, res = pcall(console.listen, listen_uri)
-    if not ok then
-        -- TODO: Add a warning into config.alerts(), when it will
-        -- be implemented.
-        local msg = 'unable to bind console socket %q: %s'
-        log.warn('console.apply: ' .. msg, listen_uri, res)
+    if not ok and errno() ~= errno.EADDRINUSE then
+        error(res)
     end
 end
 

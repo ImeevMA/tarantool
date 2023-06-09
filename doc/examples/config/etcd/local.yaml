@@ -13,6 +13,3 @@ snapshot:
 iproto:
   listen: 'unix/:./{{ instance_name }}.iproto'
   advertise: 'replicator:topsecret@unix/:./{{ instance_name }}.iproto'
-
-console:
-  socket: '{{ instance_name }}.control'
