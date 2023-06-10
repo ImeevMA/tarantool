@@ -49,7 +49,6 @@ local function find_advertise_uri(config, instance_name, dir)
     if dir ~= nil then
         uri = uri:gsub('unix/:%./', ('unix/:%s/'):format(dir))
     end
-    print(uri)
 
     return uri
 end
