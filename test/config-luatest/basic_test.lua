@@ -7,6 +7,41 @@ local server = require('test.luatest_helpers.server')
 
 local g = t.group()
 
+local function start_replicaset(g, dir, config_file)
+    local credentials = {
+        user = 'client',
+        password = 'secret',
+    }
+    local opts = {config_file = config_file, chdir = dir,
+        net_box_credentials = credentials}
+    g.server_1 = server:new(fun.chain(opts, {alias = 'instance-001'}):tomap())
+    g.server_2 = server:new(fun.chain(opts, {alias = 'instance-002'}):tomap())
+    g.server_3 = server:new(fun.chain(opts, {alias = 'instance-003'}):tomap())
+
+    g.server_1:start({wait_until_ready = false})
+    g.server_2:start({wait_until_ready = false})
+    g.server_3:start({wait_until_ready = false})
+
+    g.server_1:wait_until_ready()
+    g.server_2:wait_until_ready()
+    g.server_3:wait_until_ready()
+
+    local info = g.server_1:eval('return box.info')
+    t.assert_equals(info.name, 'instance-001')
+    t.assert_equals(info.replicaset.name, 'replicaset-001')
+    t.assert_equals(info.cluster.name, 'group-001')
+
+    local info = g.server_2:eval('return box.info')
+    t.assert_equals(info.name, 'instance-002')
+    t.assert_equals(info.replicaset.name, 'replicaset-001')
+    t.assert_equals(info.cluster.name, 'group-001')
+
+    local info = g.server_3:eval('return box.info')
+    t.assert_equals(info.name, 'instance-003')
+    t.assert_equals(info.replicaset.name, 'replicaset-001')
+    t.assert_equals(info.cluster.name, 'group-001')
+end
+
 g.before_all(function(g)
     treegen.init(g)
 end)
@@ -62,7 +97,7 @@ g.test_basic = function(g)
     t.assert_equals(g.server:eval('return box.info.name'), g.server.alias)
 end
 
-g.test_example_single = function()
+g.test_example_single = function(g)
     local dir = treegen.prepare_directory(g, {}, {})
     local config_file = fio.abspath('doc/examples/config/single.yaml')
     local opts = {config_file = config_file, chdir = dir}
@@ -71,40 +106,22 @@ g.test_example_single = function()
     t.assert_equals(g.server:eval('return box.info.name'), g.server.alias)
 end
 
-g.test_example_replicaset = function()
+g.test_example_replicaset = function(g)
     local dir = treegen.prepare_directory(g, {}, {})
     local config_file = fio.abspath('doc/examples/config/replicaset.yaml')
-
-    local credentials = {
-        user = 'client',
-        password = 'secret',
-    }
-    local opts = {config_file = config_file, chdir = dir,
-        net_box_credentials = credentials}
-    g.server_1 = server:new(fun.chain(opts, {alias = 'instance-001'}):tomap())
-    g.server_2 = server:new(fun.chain(opts, {alias = 'instance-002'}):tomap())
-    g.server_3 = server:new(fun.chain(opts, {alias = 'instance-003'}):tomap())
-
-    g.server_1:start({wait_until_ready = false})
-    g.server_2:start({wait_until_ready = false})
-    g.server_3:start({wait_until_ready = false})
-
-    g.server_1:wait_until_ready()
-    g.server_2:wait_until_ready()
-    g.server_3:wait_until_ready()
-
-    local info = g.server_1:eval('return box.info')
-    t.assert_equals(info.name, 'instance-001')
-    t.assert_equals(info.replicaset.name, 'replicaset-001')
-    t.assert_equals(info.cluster.name, 'group-001')
-
-    -- box.info.name is not set on a read-only instance.
-    local info = g.server_2:eval('return box.info')
-    t.assert_equals(info.replicaset.name, 'replicaset-001')
-    t.assert_equals(info.cluster.name, 'group-001')
-
-    -- box.info.name is not set on a read-only instance.
-    local info = g.server_3:eval('return box.info')
-    t.assert_equals(info.replicaset.name, 'replicaset-001')
-    t.assert_equals(info.cluster.name, 'group-001')
+    start_replicaset(g, dir, config_file)
 end
+
+-- XXX: See comments at top of the config file. This test doesn't
+-- work currently.
+--[[
+g.test_example_credentials = function(g)
+    local dir = treegen.prepare_directory(g, {}, {})
+    local config_file = fio.abspath('doc/examples/config/credentials.yaml')
+    start_replicaset(g, dir, config_file)
+
+    -- XXX: Verify that given users and roles are created.
+    -- XXX: Verify that given privileges are granted.
+    -- XXX: Verify passwords.
+end
+]]--
