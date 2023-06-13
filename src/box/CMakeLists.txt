@@ -35,6 +35,11 @@ lua_source(lua_sources lua/console.lua console_lua)
 lua_source(lua_sources lua/xlog.lua xlog_lua)
 lua_source(lua_sources lua/key_def.lua key_def_lua)
 lua_source(lua_sources lua/merger.lua merger_lua)
+
+# {{{ config
+lua_source(lua_sources lua/config/utils/schema.lua        config_utils_schema_lua)
+# }}} config
+
 set(bin_sources)
 bin_source(bin_sources bootstrap.snap bootstrap.h bootstrap_bin)
 
