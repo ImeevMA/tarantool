@@ -169,3 +169,51 @@ g.test_iproto = function()
     t.assert(ok)
     validate_fields(iconfig.iproto, instance_config.schema.fields.iproto)
 end
+
+g.test_database = function()
+    local iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        database = {
+            instance_uuid = '11111111-1111-1111-1111-111111111111',
+            replicaset_uuid = '11111111-1111-1111-1111-111111111111',
+            hot_standby = true,
+            rw = true,
+            txn_timeout = 1,
+            txn_isolation = 'best-effort',
+            use_mvcc_engine = true,
+        }
+    }
+    local ok = pcall(instance_config.validate, instance_config, iconfig)
+    t.assert(ok)
+    validate_fields(iconfig.database, instance_config.schema.fields.database)
+
+    iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        database = {
+            instance_uuid = '1',
+        }
+    }
+    local err = '[instance_config] database.instance_uuid: Unable to parse '..
+                'the value as a UUID: "1"'
+    t.assert_error_msg_content_equals(err, function()
+        instance_config:validate(iconfig)
+    end)
+
+    iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        database = {
+            replicaset_uuid = '1',
+        }
+    }
+    err = '[instance_config] database.replicaset_uuid: Unable to parse the '..
+          'value as a UUID: "1"'
+    t.assert_error_msg_content_equals(err, function()
+        instance_config:validate(iconfig)
+    end)
+end
