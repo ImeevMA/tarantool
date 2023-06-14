@@ -95,7 +95,7 @@ local function enterprise_edition_validate(data, w)
         'Enterprise Edition')
 end
 
-local function enterprise_edition_apply_default_if(_schema, _data, _w)
+local function enterprise_edition_apply_default_if(_data, _w)
     return tarantool.package == 'Tarantool Enterprise'
 end
 

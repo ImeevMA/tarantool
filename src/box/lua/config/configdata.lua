@@ -69,8 +69,8 @@ local mt = {
     __index = methods,
 }
 
-local function apply_vars_f(schema, data, w, vars)
-    if schema.type == 'string' and data ~= nil then
+local function apply_vars_f(data, w, vars)
+    if w.schema.type == 'string' and data ~= nil then
         assert(type(data) == 'string')
         return (data:gsub('{{ *(.-) *}}', function(var_name)
             if vars[var_name] ~= nil then

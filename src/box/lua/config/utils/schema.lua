@@ -865,12 +865,13 @@ end
 local function map_impl(schema, data, f, ctx)
     if is_scalar(schema) then
         local w = {
-            path = ctx.path,
+            schema = schema,
+            path = table.copy(ctx.path),
             error = function(message, ...)
                 walkthrough_error(ctx, message, ...)
             end,
         }
-        return f(schema, data, w, ctx.f_ctx)
+        return f(data, w, ctx.f_ctx)
     elseif schema.type == 'record' then
         if data ~= nil then
             walkthrough_assert_table(ctx, schema, data)
@@ -889,12 +890,12 @@ local function map_impl(schema, data, f, ctx)
             walkthrough_leave(ctx)
         end
         if next(res) == nil and data == nil then
-            return nil
+            return data
         end
         return res
     elseif schema.type == 'map' then
         if data == nil then
-            return nil
+            return data
         end
 
         walkthrough_assert_table(ctx, schema, data)
@@ -910,7 +911,7 @@ local function map_impl(schema, data, f, ctx)
         return res
     elseif schema.type == 'array' then
         if data == nil then
-            return nil
+            return data
         end
 
         walkthrough_assert_table(ctx, schema, data)
@@ -949,15 +950,15 @@ function methods.map(self, data, f, f_ctx)
     return map_impl(rawget(self, 'schema'), data, f, ctx)
 end
 
-local function apply_default_f(schema, data, w)
+local function apply_default_f(data, w)
     local apply_default = true
-    if schema.apply_default_if ~= nil then
-        assert(type(schema.apply_default_if) == 'function')
-        apply_default = schema.apply_default_if(schema, data, w)
+    if w.schema.apply_default_if ~= nil then
+        assert(type(w.schema.apply_default_if) == 'function')
+        apply_default = w.schema.apply_default_if(data, w)
     end
 
     if apply_default and data == nil then
-        return schema.default
+        return w.schema.default
     end
 
     return data
