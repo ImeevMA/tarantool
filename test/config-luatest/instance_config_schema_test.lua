@@ -151,3 +151,21 @@ g.test_log = function()
         instance_config:validate(iconfig)
     end)
 end
+
+g.test_iproto = function()
+    local iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        iproto = {
+            listen = 'one',
+            advertise = 'two',
+            threads = 1,
+            net_msg_max = 1,
+            readahead = 1,
+        }
+    }
+    local ok = pcall(instance_config.validate, instance_config, iconfig)
+    t.assert(ok)
+    validate_fields(iconfig.iproto, instance_config.schema.fields.iproto)
+end
