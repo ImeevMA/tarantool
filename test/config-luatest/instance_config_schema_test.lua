@@ -231,3 +231,22 @@ g.test_sql = function()
     t.assert(ok)
     validate_fields(iconfig.sql, instance_config.schema.fields.sql)
 end
+
+g.test_memtx = function()
+    local iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        memtx = {
+            memory = 1,
+            allocator = 'small',
+            slab_alloc_granularity = 1,
+            slab_alloc_factor = 1,
+            min_tuple_size = 1,
+            max_tuple_size = 1,
+        }
+    }
+    local ok = pcall(instance_config.validate, instance_config, iconfig)
+    t.assert(ok)
+    validate_fields(iconfig.memtx, instance_config.schema.fields.memtx)
+end
