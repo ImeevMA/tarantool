@@ -317,3 +317,22 @@ g.test_memtx = function()
     }
     t.assert_equals(iconfig.memtx, instance_config:apply_default().memtx)
 end
+
+g.test_vinyl = function()
+    local iconfig = {
+        vinyl = {
+            dir = 'one',
+            max_tuple_size = 1,
+        },
+    }
+    instance_config:validate(iconfig)
+    validate_fields(iconfig.vinyl, instance_config.schema.fields.vinyl)
+
+    iconfig = {
+        vinyl = {
+            dir = '{{ instance_name }}',
+            max_tuple_size = 1048576,
+        },
+    }
+    t.assert_equals(iconfig.vinyl, instance_config:apply_default().vinyl)
+end
