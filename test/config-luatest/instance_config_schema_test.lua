@@ -222,3 +222,54 @@ g.test_iproto = function()
     }
     t.assert_equals(iconfig.iconfig, instance_config:apply_default().iconfig)
 end
+
+g.test_database = function()
+    local iconfig = {
+        database = {
+            instance_uuid = '11111111-1111-1111-1111-111111111111',
+            replicaset_uuid = '11111111-1111-1111-1111-111111111111',
+            hot_standby = true,
+            rw = true,
+            txn_timeout = 1,
+            txn_isolation = 'best-effort',
+            use_mvcc_engine = true,
+        },
+    }
+    instance_config:validate(iconfig)
+    validate_fields(iconfig.database, instance_config.schema.fields.database)
+
+    iconfig = {
+        database = {
+            instance_uuid = '1',
+        },
+    }
+    local err = '[instance_config] database.instance_uuid: Unable to parse '..
+                'the value as a UUID: "1"'
+    t.assert_error_msg_content_equals(err, function()
+        instance_config:validate(iconfig)
+    end)
+
+    iconfig = {
+        database = {
+            replicaset_uuid = '1',
+        },
+    }
+    err = '[instance_config] database.replicaset_uuid: Unable to parse the '..
+          'value as a UUID: "1"'
+    t.assert_error_msg_content_equals(err, function()
+        instance_config:validate(iconfig)
+    end)
+
+    iconfig = {
+        database = {
+            instance_uuid = box.NULL,
+            replicaset_uuid = box.NULL,
+            hot_standby = false,
+            rw = false,
+            txn_timeout = 3153600000,
+            txn_isolation = 'best-effort',
+            use_mvcc_engine = false,
+        },
+    }
+    t.assert_equals(iconfig.database, instance_config:apply_default().database)
+end
