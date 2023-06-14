@@ -139,3 +139,61 @@ g.test_fiber = function()
     }
     t.assert_equals(iconfig.fiber, instance_config:apply_default().fiber)
 end
+
+g.test_log = function()
+    local iconfig = {
+        log = {
+            to = 'stderr',
+            file = 'one',
+            pipe = 'two',
+            syslog = {
+                identity = 'three',
+                facility = 'four',
+                server = 'five',
+            },
+            nonblock = true,
+            level = 'debug',
+            format = 'json',
+            modules = {
+                seven = 'debug',
+            },
+        },
+    }
+    instance_config:validate(iconfig)
+    validate_fields(iconfig.log, instance_config.schema.fields.log)
+
+    iconfig = {
+        log = {
+            level = 5,
+        },
+    }
+    instance_config:validate(iconfig)
+
+    iconfig = {
+        log = {
+            to = 'pipe',
+        },
+    }
+    local err = '[instance_config] log: The pipe logger is set by the log.to '..
+                'parameter but the command is not set (log.pipe parameter)'
+    t.assert_error_msg_equals(err, function()
+        instance_config:validate(iconfig)
+    end)
+
+    iconfig = {
+        log = {
+            to = 'stderr',
+            file = '{{ instance_name }}.log',
+            pipe = box.NULL,
+            syslog = {
+                identity = 'tarantool',
+                facility = 'local7',
+                server = box.NULL,
+            },
+            nonblock = false,
+            level = 5,
+            format = 'plain',
+        },
+    }
+    t.assert_equals(iconfig.log, instance_config:apply_default().log)
+end
