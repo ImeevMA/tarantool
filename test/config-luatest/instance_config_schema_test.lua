@@ -14,6 +14,9 @@ local function validate_fields(config, record)
 
     local record_fields = {}
     for k, v in pairs(record.fields) do
+        if v.type == 'record' then
+            validate_fields(config[k], v)
+        end
         table.insert(record_fields, k)
     end
 
@@ -100,4 +103,39 @@ g.test_console = function()
         },
     }
     t.assert_equals(iconfig.console, instance_config:apply_default().console)
+end
+
+g.test_fiber = function()
+    local iconfig = {
+        fiber = {
+            io_collect_interval = 1,
+            too_long_threshold = 1,
+            worker_pool_threads = 1,
+            slice = {
+                warn = 1,
+                err = 1,
+            },
+            top = {
+                enabled = true,
+            },
+        },
+    }
+    instance_config:validate(iconfig)
+    validate_fields(iconfig.fiber, instance_config.schema.fields.fiber)
+
+    iconfig = {
+        fiber = {
+            io_collect_interval = box.NULL,
+            too_long_threshold = 0.5,
+            worker_pool_threads = 4,
+            slice = {
+                err = 1,
+                warn = 0.5,
+            },
+            top = {
+                enabled = false,
+            },
+        },
+    }
+    t.assert_equals(iconfig.fiber, instance_config:apply_default().fiber)
 end
