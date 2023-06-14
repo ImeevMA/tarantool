@@ -305,3 +305,32 @@ g.test_snapshot = function()
     t.assert(ok)
     validate_fields(iconfig.snapshot, instance_config.schema.fields.snapshot)
 end
+
+g.test_replication = function()
+    local iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        replication = {
+            peers = {'one', 'two'},
+            anon = true,
+            threads = 1,
+            timeout = 1,
+            synchro_timeout = 1,
+            connect_timeout = 1,
+            sync_timeout = 1,
+            sync_lag = 1,
+            synchro_quorum = 1,
+            skip_conflict = true,
+            election_mode = 'off',
+            election_timeout = 1,
+            election_fencing_mode = 'off',
+            bootstrap_strategy = 'auto',
+        }
+    }
+
+    local ok = pcall(instance_config.validate, instance_config, iconfig)
+    t.assert(ok)
+    validate_fields(iconfig.replication,
+                    instance_config.schema.fields.replication)
+end
