@@ -58,3 +58,18 @@ g.test_process = function()
     t.assert(ok)
     validate_fields(iconfig.process, instance_config.schema.fields.process)
 end
+
+g.test_console = function()
+    local iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        console = {
+            enabled = true,
+            socket = 'one',
+        }
+    }
+    local ok = pcall(instance_config.validate, instance_config, iconfig)
+    t.assert(ok)
+    validate_fields(iconfig.console, instance_config.schema.fields.console)
+end
