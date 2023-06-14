@@ -250,3 +250,18 @@ g.test_memtx = function()
     t.assert(ok)
     validate_fields(iconfig.memtx, instance_config.schema.fields.memtx)
 end
+
+g.test_vinyl = function()
+    local iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        vinyl = {
+            dir = 'one',
+            max_tuple_size = 1,
+        }
+    }
+    local ok = pcall(instance_config.validate, instance_config, iconfig)
+    t.assert(ok)
+    validate_fields(iconfig.vinyl, instance_config.schema.fields.vinyl)
+end
