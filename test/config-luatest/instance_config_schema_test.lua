@@ -82,3 +82,22 @@ g.test_process = function()
     }
     t.assert_equals(iconfig.process, instance_config:apply_default().process)
 end
+
+g.test_console = function()
+    local iconfig = {
+        console = {
+            enabled = true,
+            socket = 'one',
+        },
+    }
+    instance_config:validate(iconfig)
+    validate_fields(iconfig.console, instance_config.schema.fields.console)
+
+    iconfig = {
+        console = {
+            enabled = true,
+            socket = '{{ instance_name }}.control',
+        },
+    }
+    t.assert_equals(iconfig.console, instance_config:apply_default().console)
+end
