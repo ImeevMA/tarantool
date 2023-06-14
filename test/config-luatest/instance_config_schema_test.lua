@@ -284,3 +284,24 @@ g.test_wal = function()
     t.assert(ok)
     validate_fields(iconfig.wal, instance_config.schema.fields.wal)
 end
+
+g.test_snapshot = function()
+    local iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        snapshot = {
+            dir = 'one',
+            by = {
+                interval = 1,
+                wal_size = 1,
+                rows_per_wal = 1,
+            },
+            count = 1,
+            snap_io_rate_limit = 1,
+        }
+    }
+    local ok = pcall(instance_config.validate, instance_config, iconfig)
+    t.assert(ok)
+    validate_fields(iconfig.snapshot, instance_config.schema.fields.snapshot)
+end
