@@ -363,3 +363,32 @@ g.test_wal = function()
     }
     t.assert_equals(iconfig.wal, instance_config:apply_default().wal)
 end
+
+g.test_snapshot = function()
+    local iconfig = {
+        snapshot = {
+            dir = 'one',
+            by = {
+                interval = 1,
+                wal_size = 1,
+            },
+            count = 1,
+            snap_io_rate_limit = 1,
+        },
+    }
+    instance_config:validate(iconfig)
+    validate_fields(iconfig.snapshot, instance_config.schema.fields.snapshot)
+
+    iconfig = {
+        snapshot = {
+            dir = '{{ instance_name }}',
+            by = {
+                interval = 3600,
+                wal_size = 1000000000000000000,
+            },
+            count = 2,
+            snap_io_rate_limit = box.NULL,
+        },
+    }
+    t.assert_equals(iconfig.snapshot, instance_config:apply_default().snapshot)
+end
