@@ -217,3 +217,17 @@ g.test_database = function()
         instance_config:validate(iconfig)
     end)
 end
+
+g.test_sql = function()
+    local iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        sql = {
+            cache_size = 1,
+        }
+    }
+    local ok = pcall(instance_config.validate, instance_config, iconfig)
+    t.assert(ok)
+    validate_fields(iconfig.sql, instance_config.schema.fields.sql)
+end
