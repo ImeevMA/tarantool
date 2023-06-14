@@ -99,3 +99,55 @@ g.test_fiber = function()
     t.assert(ok)
     validate_fields(iconfig.fiber, instance_config.schema.fields.fiber)
 end
+
+g.test_log = function()
+    local iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        log = {
+            to = 'stderr',
+            file = 'one',
+            pipe = 'two',
+            syslog = {
+                identity = 'three',
+                facility = 'four',
+                server = 'five',
+            },
+            nonblock = true,
+            level = 'debug',
+            format = 'six',
+            modules = {
+                seven = 'debug',
+            },
+        }
+    }
+    local ok = pcall(instance_config.validate, instance_config, iconfig)
+    t.assert(ok)
+    validate_fields(iconfig.log, instance_config.schema.fields.log)
+
+    iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        log = {
+            level = 5,
+        }
+    }
+    ok = pcall(instance_config.validate, instance_config, iconfig)
+    t.assert(ok)
+
+    iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        log = {
+            to = 'pipe',
+        }
+    }
+    local err = '[instance_config] log: The pipe logger is set by the log.to '..
+                'parameter but the command is not set (log.pipe parameter)'
+    t.assert_error_msg_equals(err, function()
+        instance_config:validate(iconfig)
+    end)
+end
