@@ -38,3 +38,23 @@ g.test_config = function()
     t.assert(ok)
     validate_fields(iconfig.config, instance_config.schema.fields.config)
 end
+
+g.test_process = function()
+    local iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        process = {
+            strip_core = true,
+            coredump = true,
+            background = true,
+            title = 'one',
+            username = 'two',
+            work_dir = 'three',
+            pid_file = 'four',
+        }
+    }
+    local ok = pcall(instance_config.validate, instance_config, iconfig)
+    t.assert(ok)
+    validate_fields(iconfig.process, instance_config.schema.fields.process)
+end
