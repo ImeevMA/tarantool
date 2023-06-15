@@ -9,15 +9,20 @@ local function grant_privileges(name, privileges, role_or_user, grant_f)
             if privilege.universe then
                 grant_f(name, permission, 'universe', nil, opts)
             end
-            for _, space in ipairs(privileges.spaces or {}) do
+            -- TODO: It is not possible to grant a permission for
+            -- a non-existing object. It blocks ability to set it
+            -- from a config. Disabled for now.
+            --[[
+            for _, space in ipairs(privilege.spaces or {}) do
                 grant_f(name, permission, 'space', space, opts)
             end
-            for _, func in ipairs(privileges.functions or {}) do
+            for _, func in ipairs(privilege.functions or {}) do
                 grant_f(name, permission, 'function', func, opts)
             end
-            for _, seq in ipairs(privileges.sequences or {}) do
+            for _, seq in ipairs(privilege.sequences or {}) do
                 grant_f(name, permission, 'sequence', seq, opts)
             end
+            ]]--
         end
     end
 end

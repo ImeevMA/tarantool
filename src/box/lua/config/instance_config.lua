@@ -730,7 +730,6 @@ return schema.new('instance_config', schema.record({
                 privileges = schema.array({
                     items = schema.record({
                         permissions = schema.set({
-                            'super',
                             'read',
                             'write',
                             'execute',
@@ -743,6 +742,11 @@ return schema.new('instance_config', schema.record({
                         universe = schema.scalar({
                             type = 'boolean',
                         }),
+                        -- TODO: It is not possible to grant a
+                        -- permission for a non-existing object.
+                        -- It blocks ability to set it from a
+                        -- config. Disabled for now.
+                        --[[
                         spaces = schema.array({
                             items = schema.scalar({
                                 type = 'string',
@@ -758,6 +762,7 @@ return schema.new('instance_config', schema.record({
                                 type = 'string',
                             }),
                         }),
+                        ]]--
                     }),
                 }),
                 -- The given role has all the privileges from
@@ -796,7 +801,6 @@ return schema.new('instance_config', schema.record({
                 privileges = schema.array({
                     items = schema.record({
                         permissions = schema.set({
-                            'super',
                             'read',
                             'write',
                             'execute',
@@ -809,6 +813,11 @@ return schema.new('instance_config', schema.record({
                         universe = schema.scalar({
                             type = 'boolean',
                         }),
+                        -- TODO: It is not possible to grant a
+                        -- permission for a non-existing object.
+                        -- It blocks ability to set it from a
+                        -- config. Disabled for now.
+                        --[[
                         spaces = schema.array({
                             items = schema.scalar({
                                 type = 'string',
@@ -824,6 +833,7 @@ return schema.new('instance_config', schema.record({
                                 type = 'string',
                             }),
                         }),
+                        ]]--
                     }),
                 }),
                 -- The given user has all the privileges from
