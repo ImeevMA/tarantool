@@ -336,3 +336,30 @@ g.test_vinyl = function()
     }
     t.assert_equals(iconfig.vinyl, instance_config:apply_default().vinyl)
 end
+
+g.test_wal = function()
+    local iconfig = {
+        wal = {
+            dir = 'one',
+            mode = 'none',
+            max_size = 1,
+            dir_rescan_delay = 1,
+            queue_max_size = 1,
+            cleanup_delay = 1,
+        },
+    }
+    instance_config:validate(iconfig)
+    validate_fields(iconfig.wal, instance_config.schema.fields.wal)
+
+    iconfig = {
+        wal = {
+            dir = '{{ instance_name }}',
+            mode = 'write',
+            max_size = 268435456,
+            dir_rescan_delay = 2,
+            queue_max_size = 16777216,
+            cleanup_delay = 14400,
+        },
+    }
+    t.assert_equals(iconfig.wal, instance_config:apply_default().wal)
+end
