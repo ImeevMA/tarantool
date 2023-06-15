@@ -12,10 +12,31 @@ local function validate_fields(config, record)
         end
     end
 
+    --
+    -- If we are checking union_of_records instead of a simple record, we need
+    -- to check that there is only one field in the table and that this field is
+    -- described in union_of_records. However, there is no proper way to check
+    -- if a given record is indeed a union_of_records. We can only check that
+    -- that validate is not nil and number of elements in config_fields is
+    -- exactly one.
+    --
+    if record.validate ~= nil and #config_fields == 1 then
+        t.assert(record.fields[config_fields[1]] ~= nil)
+        return
+    end
+
     local record_fields = {}
     for k, v in pairs(record.fields) do
         if v.type == 'record' then
             validate_fields(config[k], v)
+        elseif v.type == 'map' and v.value.type == 'record' then
+            for k1, v1 in pairs(config[k]) do
+                validate_fields(v1, v.value)
+            end
+        elseif v.type == 'array' and v.items.type == 'record' then
+            for k1, v1 in pairs(config[k]) do
+                validate_fields(v1, v.items)
+            end
         end
         table.insert(record_fields, k)
     end
@@ -333,4 +354,55 @@ g.test_replication = function()
     t.assert(ok)
     validate_fields(iconfig.replication,
                     instance_config.schema.fields.replication)
+end
+
+g.test_credentials = function()
+    local iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        credentials = {
+            roles = {
+                one = {
+                    privileges = {
+                        {
+                            permissions = {
+                                'super',
+                                'read',
+                            },
+                            universe = true,
+                            spaces = {'one', 'two'},
+                            functions = {'three', 'four'},
+                            sequences = {'five', 'six'},
+                        },
+                    },
+                    roles = {'one', 'two'},
+                },
+            },
+            users = {
+                two = {
+                    password = {
+                        plain = 'one',
+                    },
+                    privileges = {
+                        {
+                            permissions = {
+                                'super',
+                                'read',
+                            },
+                            universe = true,
+                            spaces = {'one', 'two'},
+                            functions = {'three', 'four'},
+                            sequences = {'five', 'six'},
+                        },
+                    },
+                    roles = {'one', 'two'},
+                },
+            },
+        }
+    }
+    local ok = pcall(instance_config.validate, instance_config, iconfig)
+    t.assert(ok)
+    validate_fields(iconfig.credentials,
+                    instance_config.schema.fields.credentials)
 end
