@@ -406,3 +406,20 @@ g.test_credentials = function()
     validate_fields(iconfig.credentials,
                     instance_config.schema.fields.credentials)
 end
+
+g.test_app = function()
+    local iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        app = {
+            source = {
+                file = 'one',
+            },
+            cfg = {two = 'three'},
+        }
+    }
+    local ok = pcall(instance_config.validate, instance_config, iconfig)
+    t.assert(ok)
+    validate_fields(iconfig.app, instance_config.schema.fields.app)
+end

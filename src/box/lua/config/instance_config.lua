@@ -694,6 +694,31 @@ return schema.new('instance_config', schema.record({
             }),
         }),
     }),
+    app = schema.record{
+        source = schema.union_of_records(
+            schema.record({
+                file = schema.scalar({
+                    type = 'string',
+                    default = nil,
+                }),
+            }),
+            schema.record({
+                module = schema.scalar({
+                    type = 'string',
+                    default = nil,
+                }),
+            })
+        ),
+        cfg = schema.map({
+            key = schema.scalar({
+                type = 'string',
+            }),
+            value = schema.scalar({
+                type = 'any',
+                default = nil,
+            }),
+        })
+    },
 }, {
     -- Any configuration data should contain a version of the
     -- config schema for which it is written.
