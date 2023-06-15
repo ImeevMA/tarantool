@@ -265,3 +265,22 @@ g.test_vinyl = function()
     t.assert(ok)
     validate_fields(iconfig.vinyl, instance_config.schema.fields.vinyl)
 end
+
+g.test_wal = function()
+    local iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        wal = {
+            dir = 'one',
+            mode = 'none',
+            max_size = 1,
+            dir_rescan_delay = 1,
+            queue_max_size = 1,
+            cleanup_delay = 1,
+        }
+    }
+    local ok = pcall(instance_config.validate, instance_config, iconfig)
+    t.assert(ok)
+    validate_fields(iconfig.wal, instance_config.schema.fields.wal)
+end
