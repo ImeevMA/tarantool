@@ -3,8 +3,13 @@ local instance_config = require('internal.config.instance_config')
 
 local g = t.group()
 
+local is_enterprise = require('tarantool').package == 'Tarantool Enterprise'
+
 -- Check that all record element names can be found in the table and vice versa.
 local function validate_fields(config, record)
+    if record.enterprise_edition and not is_enterprise then
+        return
+    end
     local config_fields = {}
     if type(config) == 'table' then
         for k in pairs(config) do
@@ -38,7 +43,9 @@ local function validate_fields(config, record)
                 validate_fields(v1, v.items)
             end
         end
-        table.insert(record_fields, k)
+        if v.type ~= 'record' or not v.enterprise_edition or is_enterprise then
+            table.insert(record_fields, k)
+        end
     end
 
     t.assert_equals(config_fields, record_fields)
@@ -49,6 +56,7 @@ g.test_general = function()
 end
 
 g.test_config = function()
+    t.tarantool.skip_if_enterprise()
     local err = '[instance_config] config.version is mandatory'
     t.assert_error_msg_equals(err, function() instance_config:validate({}) end)
 
@@ -56,6 +64,41 @@ g.test_config = function()
         config = {
             version = '3.0.0',
             reload = 'auto',
+        },
+    }
+    local ok = pcall(instance_config.validate, instance_config, iconfig)
+    t.assert(ok)
+    validate_fields(iconfig.config, instance_config.schema.fields.config)
+end
+
+g.test_config_enterprise = function()
+    t.tarantool.skip_if_not_enterprise()
+    local err = '[instance_config] config.version is mandatory'
+    t.assert_error_msg_equals(err, function() instance_config:validate({}) end)
+
+    local iconfig = {
+        config = {
+            version = '3.0.0',
+            reload = 'auto',
+            etcd = {
+                prefix = '/one',
+                endpoints = {'two', 'three'},
+                username = 'four',
+                password = 'five',
+                http = {
+                    request = {
+                        timeout = 1,
+                        unix_socket = 'six',
+                    }
+                },
+                ssl = {
+                    ssl_key = 'seven',
+                    ca_path = 'eight',
+                    ca_file = 'nine',
+                    verify_peer = true,
+                    verify_host = false,
+                },
+            }
         },
     }
     local ok = pcall(instance_config.validate, instance_config, iconfig)
@@ -288,6 +331,7 @@ g.test_vinyl = function()
 end
 
 g.test_wal = function()
+    t.tarantool.skip_if_enterprise()
     local iconfig = {
         config = {
             version = '3.0.0',
@@ -299,6 +343,36 @@ g.test_wal = function()
             dir_rescan_delay = 1,
             queue_max_size = 1,
             cleanup_delay = 1,
+        }
+    }
+    local ok = pcall(instance_config.validate, instance_config, iconfig)
+    t.assert(ok)
+    validate_fields(iconfig.wal, instance_config.schema.fields.wal)
+end
+
+g.test_wal_enterprise = function()
+    t.tarantool.skip_if_not_enterprise()
+    local iconfig = {
+        config = {
+            version = '3.0.0',
+        },
+        wal = {
+            dir = 'one',
+            mode = 'none',
+            max_size = 1,
+            dir_rescan_delay = 1,
+            queue_max_size = 1,
+            cleanup_delay = 1,
+            ext = {
+                old = true,
+                new = false,
+                spaces = {
+                    one = {
+                        old = false,
+                        new = true,
+                    },
+                },
+            },
         }
     }
     local ok = pcall(instance_config.validate, instance_config, iconfig)
