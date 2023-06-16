@@ -250,14 +250,12 @@ function methods._startup(self, instance_name, config_file)
     self:_apply()
 end
 
--- opts:
--- - use_default: boolean
-function methods.get(self, path, opts)
+function methods.get(self, path)
     selfcheck(self, 'get')
     if self._configdata_applied == nil then
         error('config:get(): no instance config available yet')
     end
-    return self._configdata_applied:get(path, opts)
+    return self._configdata_applied:get(path, {use_default = true})
 end
 
 function methods.reload(self)
