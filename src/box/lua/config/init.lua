@@ -55,7 +55,7 @@ local mt = {
 local function selfcheck(self, method_name)
     if type(self) ~= 'table' or getmetatable(self) ~= mt then
         local fmt_str = 'Use config:%s(<...>) instead of config.%s(<...>)'
-        error(fmt_str:format(method_name, method_name), 2)
+        error(fmt_str:format(method_name, method_name), 0)
     end
 end
 
