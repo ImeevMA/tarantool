@@ -5,9 +5,6 @@ local g = t.group()
 
 g.test_basic = function()
     local iconfig = {
-        config = {
-            version = '3.0.0',
-        },
         credentials = {
             users = {
                 guest = {
@@ -25,6 +22,9 @@ g.test_basic = function()
     instance_config:validate(iconfig)
 end
 
+-- TODO: Enable these test cases closer to the 3.0.0 release, when
+-- the schema will be frozen.
+--[[
 local bad_config_cases = {
     -- Verify config.version.
     no_config = {
@@ -49,3 +49,4 @@ for case_name, case in pairs(bad_config_cases) do
         end)
     end
 end
+]]--

@@ -43,12 +43,18 @@ local schema = require('internal.config.utils.schema')
 --
 --   Create a parent directry for the given file before box.cfg().
 
-local CONFIG_VERSION = '3.0.0'
+local CONFIG_VERSION = 'dev'
 
 -- Verify the config.version field.
 --
 -- * In the instance config: must be present.
+--
+--   TODO: This check is disabled for the early config schema
+--   version, because the schema is often changed and there is no
+--   schema evolution support yet.
 -- * In the cluster config: must be present in the global scope.
+--
+--   TODO: This check is disabled as well, see above.
 -- * In the cluster config: must not be present in the other
 --   scopes (group, replicaset, instance).
 -- * If present, must correspond to one of supported config
@@ -60,7 +66,9 @@ local function validate_config_version(data, w)
     if scope == nil or scope == 'global' then
         -- Must be present.
         if data.config == nil or data.config.version == nil then
-            w.error('config.version is mandatory')
+            -- TODO: Enable this check closer to 3.0.0 release.
+            -- w.error('config.version is mandatory')
+            return
         end
     else
         -- Must not be present.

@@ -1,5 +1,4 @@
 config:
-  version: 3.0.0
   etcd:
     prefix: /foo
     endpoints:
