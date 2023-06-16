@@ -277,6 +277,7 @@ function methods.reload(self)
 end
 
 function methods.info(self)
+    selfcheck(self, 'info')
     return {
         alerts = self._alerts_applied,
         meta = self._meta_applied,
