@@ -1122,7 +1122,6 @@ run_script_f(va_list ap)
 		if (luaT_call(L, 3, 0) != 0)
 			goto error;
 		lua_settop(L, 0);
-		goto end;
 	}
 
 	/*
