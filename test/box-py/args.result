@@ -1,13 +1,10 @@
 tarantool --help
-Tarantool 3.<minor>.<patch>-<suffix>
+Tarantool - a Lua application server
 
-Start an instance: tarantool --config <path> --name <instance_name>
-Connect to an instance: tt connect <uri>
+Usage: tarantool script.lua [OPTIONS] [SCRIPT [ARGS]]
 
-Usage: tarantool [OPTIONS]
-
-  -c, --config <path>		set a path to config file
-  -n, --name <instance_name>	set an instance name
+All command line options are passed to the interpreted script.
+When no script name is provided, the server responds to:
   -h, --help			display this help and exit
   -v, --version			print program version and exit
   -e EXPR			execute string 'EXPR'
@@ -23,15 +20,12 @@ Please visit project home page at https://tarantool.org
 to see online documentation, submit bugs or contribute a patch.
 
 tarantool -h
-Tarantool 3.<minor>.<patch>-<suffix>
+Tarantool - a Lua application server
 
-Start an instance: tarantool --config <path> --name <instance_name>
-Connect to an instance: tt connect <uri>
+Usage: tarantool script.lua [OPTIONS] [SCRIPT [ARGS]]
 
-Usage: tarantool [OPTIONS]
-
-  -c, --config <path>		set a path to config file
-  -n, --name <instance_name>	set an instance name
+All command line options are passed to the interpreted script.
+When no script name is provided, the server responds to:
   -h, --help			display this help and exit
   -v, --version			print program version and exit
   -e EXPR			execute string 'EXPR'

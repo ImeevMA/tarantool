@@ -1031,7 +1031,6 @@ run_script_f(va_list ap)
 {
 	struct lua_State *L = va_arg(ap, struct lua_State *);
 	const char *path = va_arg(ap, const char *);
-	struct instance_state *instance = va_arg(ap, struct instance_state *);
 	uint32_t opt_mask = va_arg(ap, uint32_t);
 	int optc = va_arg(ap, int);
 	const char **optv = va_arg(ap, const char **);
@@ -1118,20 +1117,6 @@ run_script_f(va_list ap)
 
 	int is_a_tty = isatty(STDIN_FILENO);
 
-	if (instance->name) {
-		/* require('config'):_startup(name, config) */
-		if (lua_require_lib(L, "config") != 0)
-			goto error;
-		lua_pushstring(L, "_startup");
-		lua_gettable(L, -2);
-		lua_pushvalue(L, -2);
-		lua_pushstring(L, instance->name);
-		lua_pushstring(L, instance->config);
-		if (luaT_call(L, 3, 0) != 0)
-			goto error;
-		lua_settop(L, 0);
-		goto end;
-	}
 	if (bytecode) {
 		if (lua_require_lib(L, "internal.dobytecode") != 0)
 			goto error;
@@ -1211,9 +1196,8 @@ error:
 }
 
 int
-tarantool_lua_run_script(char *path, const struct instance_state *instance,
-			 uint32_t opt_mask, int optc, const char **optv,
-			 int argc, char **argv)
+tarantool_lua_run_script(char *path, uint32_t opt_mask,
+			 int optc, const char **optv, int argc, char **argv)
 {
 	const char *title = path ? basename(path) : "interactive";
 	/*
@@ -1236,7 +1220,7 @@ tarantool_lua_run_script(char *path, const struct instance_state *instance,
 	 */
 	struct diag script_diag;
 	diag_create(&script_diag);
-	fiber_start(script_fiber, tarantool_L, path, instance, opt_mask,
+	fiber_start(script_fiber, tarantool_L, path, opt_mask,
 		    optc, optv, argc, argv, &script_diag);
 
 	/*
