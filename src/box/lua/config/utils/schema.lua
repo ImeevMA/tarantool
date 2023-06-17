@@ -1,151 +1,26 @@
--- Schema manipulations and schema-aware data manipulations.
---
--- The module is fast-written, poorly designed, untested,
--- undocumented. It exists to concentrate schema-aware data
--- manipulations in one place and go forward with other code.
---
--- {{{ Details
---
--- Provides several utility function to construct a schema
--- definition:
---
--- * schema.new(<record>)
--- * schema.record({
---       foo = <...>,
---   }, {
---       my_annotation = <...>,
---   })
--- * schema.scalar({
---       type = <...>,
---       my_annotation = <...>,
---   })
--- * schema.map({
---       key = schema.scalar(<...>),
---       value = schema.scalar(<...>),
---   })
--- * schema.array({
---       items = schema.scalar(<...>),
---       <..annotations..>
---   })
--- * schema.union_of_records(record_1, record_2, ...)
--- * schema.enum({'foo', 'bar'})
--- * schema.set({'foo', 'bar'})
---
--- The auxiliary function to parse a value declared by a schema
--- node from an environment variable.
---
--- * schema.fromenv(env_var_name, schema_node)
---
--- The schema object provides methods for different purposes.
---
--- * Traversing the schema.
---   <schema object>:pairs() (luafun iterator)
--- * Validate data against the schema.
---   <schema object>:validate(data)
--- * Filter data based on the schema annotations.
---   <schema object>:filter(data, f) (luafun iterator)
--- * Map data based on the schema annotations.
---   <schema object>:map(data, f, f_ctx) -> new_data
--- * Apply default values.
---   <schema object>:apply_default(data) -> new_data
--- * Get/set a nested value.
---   <schema object>:get(data, path)
---   <schema object>:set(data, path, value)
--- * Merge two values.
---   <schema object>:merge(a, b)
---
--- Schema node types (possible `schema.type` values):
---
--- * string
--- * number
--- * integer
--- * boolean
--- * any
--- * union of scalars (say, 'string, number')
--- * record (a dictionary with certain field names and types)
--- * map (arbitrary key names, strict about keys and values types)
--- * array
+-- Schema-aware data manipulations.
 --
 -- The following annotations have some meaning for the module
 -- itself (affects work of the schema methods):
 --
--- * type
--- * validate
 -- * allowed_values
+-- * validate
 -- * default
 -- * apply_default_if
 --
--- Others are just payload that may be used somehow: say, in the
--- :filter() function.
---
--- }}} Details
-
--- {{{ Thoughts on future improvements
---
--- Ideas how to improve the module in terms of refactoring of
--- existing functionality.
---
--- * Generalize traversal code and use it for :pairs(), :filter(),
---   :validate().
--- * Some schemas are schema objects (ones produced by
---   schema.new()), while some are not (such as scalars). This is
---   counter-intuitive.
--- * Add schema.enum(def).
---
--- Ideas about new features that would be appreciated.
---
--- * Data shape unaware accessors.
---
---   <schema object>:set(data, {id = <...>}, value)
---   <schema object>:get(data, {id = <...>})
---
---   It allows to write a code that is immutable to data field
---   renames/moves, while IDs are the same.
---
---   Looks as simple to implement, while seems to solve quite
---   big bunch of schema evolution problems.
---
--- * JSON schema generation.
---
---   This is the industry standard and it may be useful for
---   integrations of various kinds.
---
---   It may be also worthful to align schema definition language
---   with the standard to expand reusability of this module.
---
--- Of course, there are a lot of optimization opportunities.
---
--- * Use code generation for at least validation.
--- * Eliminate accumulating of a list to traverse over the schema
---   (:pairs(), :filter()).
--- * Eliminate or replace temporary tables whose only purpose is
---   to pass a couple of values to an external loop (search for
---   `w`).
--- * Prepare data+schema object, which allows to get particular
---   value using <schema object>:get('foo.bar') at one hop.
---
---   local sdata = <schema object>:fill(data)
---   sdata:get('foo.bar') -- one table lookup
---
---   Basically it just flattening of the data like:
---
---   {foo = {bar = 42}} -> {'foo.bar' = 42}
---
---   sdata:get('foo') OTOH involves a table reconstruction. So
---   there are cons and pros.
---
--- }}} Thoughts on future improvements
+-- Others are just stored.
 
 local fun = require('fun')
 local json = require('json')
 
+local methods = {}
 local schema_mt = {}
 
 local scalars = {}
-local methods = {}
 
--- {{{ Helpers
+-- {{{ Walkthrough helpers
 
+-- Create walkthrough context.
 local function walkthrough_start(self, params)
     local ctx = {path = {}, name = rawget(self, 'name')}
     for k, v in pairs(params or {}) do
@@ -154,14 +29,17 @@ local function walkthrough_start(self, params)
     return ctx
 end
 
+-- Step down to a field.
 local function walkthrough_enter(ctx, name)
     table.insert(ctx.path, name)
 end
 
+-- Step up from the last field.
 local function walkthrough_leave(ctx)
     table.remove(ctx.path)
 end
 
+-- Construct a string that describes the current path.
 local function walkthrough_path(ctx)
     local res = ''
     for _, name in ipairs(ctx.path) do
@@ -171,9 +49,14 @@ local function walkthrough_path(ctx)
             res = res .. '.' .. name
         end
     end
-    return res:sub(2)
+    if res:startswith('.') then
+        res = res:sub(2)
+    end
+    return res
 end
 
+-- Generate a prefix for an error message based on the given
+-- walkthrough context.
 local function walkthrough_error_prefix(ctx)
     if ctx.path == nil or next(ctx.path) == nil then
         return ('[%s] '):format(ctx.name)
@@ -181,12 +64,25 @@ local function walkthrough_error_prefix(ctx)
     return ('[%s] %s: '):format(ctx.name, walkthrough_path(ctx))
 end
 
+-- Generate an error supplemented by details from the given
+-- walkthrough context.
 local function walkthrough_error(ctx, message, ...)
     local error_prefix = walkthrough_error_prefix(ctx)
     error(('%s%s'):format(error_prefix, message:format(...)), 0)
 end
 
--- Verify that data is a table and, if it is not so, produce a
+-- Return a function that raises an error with a prefix formed
+-- from the given context.
+--
+-- The context information is gathered before the capturing.
+local function walkthrough_error_capture(ctx)
+    local error_prefix = walkthrough_error_prefix(ctx)
+    return function(message, ...)
+        error(('%s%s'):format(error_prefix, message:format(...)), 0)
+    end
+end
+
+-- Verify that the data is a table and, if it is not so, produce a
 -- nice schema-aware error.
 --
 -- Applicable for a record, a map, an array.
@@ -206,12 +102,33 @@ local function walkthrough_assert_table(ctx, schema, data)
         schema.type, type(data))
 end
 
-local function is_scalar(schema)
-    return scalars[schema.type] ~= nil
-end
+-- }}} Walkthrough helpers
 
--- Verify whether given value (data) has expected type and produce
--- a human readable error message otherwise.
+-- {{{ Scalar definitions
+
+-- A scalar definition:
+--
+-- {
+--     -- How the scalar is named.
+--     type = <string>,
+--     -- Check given data against the type constraints.
+--
+--     -> true (means the data is valid)
+--     -> false, err (otherwise)
+--     validate_noexc = <function>,
+--
+--     -- Parse data originated from an environment variable.
+--     --
+--     -- Should raise an error it is not possible to interpret
+--     -- the data as a value of the given scalar type.
+--     --
+--     -- Return a parsed/typecasted value of the given scalar
+--     -- type otherwise.
+--     fromenv = <function>,
+-- }
+
+-- Verify whether the given value (data) has expected type and
+-- produce a human readable error message otherwise.
 local function validate_type_noexc(data, exp_type)
     -- exp_type is like {'string', 'number'}.
     if type(exp_type) == 'table' then
@@ -240,23 +157,6 @@ local function validate_type_noexc(data, exp_type)
     return true
 end
 
--- }}} Helpers
-
--- {{{ Scalars
-
--- Scalar types definitions.
---
--- Fields:
---
--- * type (string) -- how the scalar is named
--- * validate_noexc (function) -- check given data against the
---   type constraints
---
---   -> true (means the data is valid)
---   -> false, err (otherwise)
--- * fromenv (function) -- parse data originated from an
---   environment variable
-
 scalars.string = {
     type = 'string',
     validate_noexc = function(data)
@@ -280,38 +180,13 @@ scalars.number = {
         local res = tonumber(raw_value)
         if res == nil then
             error(('Unable to decode a number value from environment ' ..
-                'variable %q, got %q'):format(env_var_name, raw_value))
+                'variable %q, got %q'):format(env_var_name, raw_value), 0)
         end
         return res
     end,
 }
 
-scalars.integer = {
-    type = 'integer',
-    validate_noexc = function(data)
-        -- TODO: Accept cdata<int64_t> and cdata<uint64_t>.
-        local ok, err = validate_type_noexc(data, 'number')
-        if not ok then
-            return false, err
-        end
-        if data - math.floor(data) ~= 0 then
-            local err = ('Expected number without a fractional part, ' ..
-                'got %d'):format(data)
-            return false, err
-        end
-        return true
-    end,
-    fromenv = function(env_var_name, raw_value)
-        local res = tonumber64(raw_value)
-        if res == nil then
-            error(('Unable to decode an integer value from environment ' ..
-                'variable %q, got %q'):format(env_var_name, raw_value))
-        end
-        return res
-    end,
-}
-
--- TODO: This hack is needed until a union of scalars will be
+-- TODO: This hack is needed until a union schema node will be
 -- implemented.
 scalars['string, number'] = {
     type = 'string, number',
@@ -332,6 +207,34 @@ scalars['number, string'] = {
     end,
 }
 
+scalars.integer = {
+    type = 'integer',
+    validate_noexc = function(data)
+        -- TODO: Accept cdata<int64_t> and cdata<uint64_t>.
+        local ok, err = validate_type_noexc(data, 'number')
+        if not ok then
+            return false, err
+        end
+        if data - math.floor(data) ~= 0 then
+            -- NB: %s is chosen deliberately: it formats a
+            -- floating-point number in a more human friendly way
+            -- than %f. For example, 5.5 vs 5.500000.
+            local err = ('Expected number without a fractional part, ' ..
+                'got %s'):format(data)
+            return false, err
+        end
+        return true
+    end,
+    fromenv = function(env_var_name, raw_value)
+        local res = tonumber64(raw_value)
+        if res == nil then
+            error(('Unable to decode an integer value from environment ' ..
+                'variable %q, got %q'):format(env_var_name, raw_value), 0)
+        end
+        return res
+    end,
+}
+
 scalars.boolean = {
     type = 'boolean',
     validate_noexc = function(data)
@@ -349,7 +252,7 @@ scalars.boolean = {
         end
 
         error(('Unable to decode a boolean value from environment ' ..
-            'variable %q, got %q'):format(env_var_name, raw_value))
+            'variable %q, got %q'):format(env_var_name, raw_value), 0)
     end,
 }
 
@@ -364,636 +267,63 @@ scalars.any = {
         local ok, res = pcall(json.decode, raw_value)
         if not ok then
             error(('Unable to decode JSON data in environment ' ..
-                'variable %q: %s'):format(env_var_name, res))
+                'variable %q: %s'):format(env_var_name, res), 0)
         end
         return res
     end,
 }
 
--- }}} Scalars
-
--- {{{ Instance methods
-
--- Forward declarations.
-local validate_impl
-
-local schema_pairs_impl
-schema_pairs_impl = function(schema, ctx)
-    if is_scalar(schema) then
-        local w = {
-            path = table.copy(ctx.path),
-            schema = schema,
-        }
-        table.insert(ctx.acc, w)
-    elseif schema.type == 'record' then
-        for k, v in pairs(schema.fields) do
-            walkthrough_enter(ctx, k)
-            schema_pairs_impl(v, ctx)
-            walkthrough_leave(ctx)
-        end
-    elseif schema.type == 'map' then
-        assert(schema.key ~= nil)
-        assert(schema.value ~= nil)
-        local w = {
-            path = table.copy(ctx.path),
-            schema = schema,
-        }
-        table.insert(ctx.acc, w)
-    elseif schema.type == 'array' then
-        assert(schema.items ~= nil)
-        local w = {
-            path = table.copy(ctx.path),
-            schema = schema,
-        }
-        table.insert(ctx.acc, w)
-    else
-        assert(false)
-    end
+local function is_scalar(schema)
+    return scalars[schema.type] ~= nil
 end
 
--- Walk over the schema and return scalars, arrays and maps.
+-- }}} Scalar definitions
+
+-- {{{ Schema node constructors: scalar, record, map, array
+
+-- A schema node:
 --
---  | for _, node in schema:pairs() do
---  |     local path = node.path
---  |     local type = node.type
---  |     <...>
---  | end
+-- {
+--     -- One of scalar types, 'record', 'map' or 'array'.
+--     type = <string>,
+--     -- For a record.
+--     fields = <table>,
+--     -- For a map.
+--     key = <table>,
+--     value = <table>,
+--     -- For an array.
+--     items = <table>,
+--     -- Arbitrary user specified annotations.
+--     <..annotations..>
+-- }
+
+-- Create a scalar.
 --
--- TODO: Rewrite it without collecting a list beforehand.
-function methods.pairs(self)
-    local ctx = walkthrough_start(self, {acc = {}})
-    schema_pairs_impl(rawget(self, 'schema'), ctx)
-    return fun.iter(ctx.acc)
-end
-
--- The path can be passed as a string in dot notation or as a
--- table representing an array of components. This function
--- converts the path into the array if necessary.
-local function normalize_path(path, error_f)
-    if type(path) ~= 'string' and type(path) ~= 'table' then
-        return error_f()
-    end
-
-    -- Dot notation/JSON path alike.
-    --
-    -- TODO: Support numeric indexing: [1], [2] and so on.
-    if type(path) == 'string' then
-        if path == '' then
-            -- XXX: Is it right way to handle the empty string?
-            path = {}
-        else
-            path = path:split('.')
-        end
-    end
-
-    return path
-end
-
-local set_impl
-set_impl = function(schema, data, rhs, ctx)
-    -- The journey is finished. Validate and return the new value.
-    if #ctx.journey == 0 then
-        -- Call validate_impl() directly to don't construct a
-        -- schema object.
-        validate_impl(schema, rhs, ctx)
-        return rhs
-    end
-
-    local requested_field = ctx.journey[1]
-    assert(requested_field ~= nil)
-
-    if is_scalar(schema) then
-        walkthrough_error(ctx, 'Attempt to index scalar by %q',
-            requested_field)
-    elseif schema.type == 'record' then
-        walkthrough_enter(ctx, requested_field)
-        local field_def = schema.fields[requested_field]
-        if field_def == nil then
-            walkthrough_error(ctx, 'No such field in the schema')
-        end
-
-        walkthrough_assert_table(ctx, schema, data)
-        local field_value = data[requested_field] or {}
-        table.remove(ctx.journey, 1)
-        data[requested_field] = set_impl(field_def, field_value, rhs, ctx)
-        return data
-    elseif schema.type == 'map' then
-        walkthrough_enter(ctx, requested_field)
-        local field_def = schema.value
-
-        walkthrough_assert_table(ctx, schema, data)
-        local field_value = data[requested_field] or {}
-        table.remove(ctx.journey, 1)
-        data[requested_field] = set_impl(field_def, field_value, rhs, ctx)
-        return data
-    elseif schema.type == 'array' then
-        -- TODO: Support 'foo[1]' and `{'foo', 1}` paths. See the
-        -- normalize_path() function.
-        walkthrough_error(ctx, 'Indexing an array is not supported yet')
-    else
-        assert(false)
-    end
-end
-
--- local data = {}
--- schema:set(data, 'foo.bar', 42)
--- print(data.foo.bar) -- 42
-function methods.set(self, data, path, value)
-    local function usage()
-        error('Usage: schema:set(data: table, path: string/table, value: any)')
-    end
-
-    if type(data) ~= 'table' then
-        return usage()
-    end
-
-    path = normalize_path(path, usage)
-
-    if path == nil or next(path) == nil then
-        error('schema:set: empty path')
-    end
-
-    local ctx = walkthrough_start(self, {
-        -- The `path` field is already in the context and it means
-        -- passed path. Let's name the remaining path as
-        -- `journey`.
-        journey = path,
-    })
-    return set_impl(rawget(self, 'schema'), data, value, ctx)
-end
-
-local get_impl
-get_impl = function(schema, data, ctx)
-    -- The journey is finished. Return what is under the feet.
-    if #ctx.journey == 0 then
-        return data
-    end
-
-    -- There are more steps in the journey (at least one).
-    -- Let's dive deeper and process it per schema node type.
-
-    local requested_field = ctx.journey[1]
-    assert(requested_field ~= nil)
-
-    if is_scalar(schema) then
-        walkthrough_error(ctx, 'Attempt to index scalar by %q',
-            requested_field)
-    elseif schema.type == 'record' then
-        walkthrough_enter(ctx, requested_field)
-        local field_def = schema.fields[requested_field]
-        if field_def == nil then
-            walkthrough_error(ctx, 'No such field in the schema')
-        end
-
-        -- Even if there is no such field in the data, continue
-        -- the descending to validate the path against the schema.
-        local field_value
-        if data ~= nil then
-            field_value = data[requested_field]
-        end
-
-        table.remove(ctx.journey, 1)
-        return get_impl(field_def, field_value, ctx)
-    elseif schema.type == 'map' then
-        walkthrough_enter(ctx, requested_field)
-        local field_def = schema.value
-
-        -- Even if there is no such field in the data, continue
-        -- the descending to validate the path against the schema.
-        local field_value
-        if data ~= nil then
-            field_value = data[requested_field]
-        end
-
-        table.remove(ctx.journey, 1)
-        return get_impl(field_def, field_value, ctx)
-    elseif schema.type == 'array' then
-        -- TODO: Support 'foo[1]' and `{'foo', 1}` paths. See the
-        -- normalize_path() function.
-        walkthrough_error(ctx, 'Indexing an array is not supported yet')
-    else
-        assert(false)
-    end
-end
-
--- local data = {foo = {bar = 'x'}}
--- schema:get(data, 'foo.bar') -> 'x'
--- schema:get(data, {'foo', 'bar'}) -> 'x'
-function methods.get(self, data, path)
-    local function usage()
-        error('Usage: schema:get(data: table, path: nil/string/table)')
-    end
-
-    if type(data) ~= 'table' then
-        return usage()
-    end
-
-    if path ~= nil then
-        path = normalize_path(path, usage)
-    end
-
-    if path == nil or next(path) == nil then
-        return data
-    end
-
-    local ctx = walkthrough_start(self, {
-        -- The `path` field is already in the context and it means
-        -- passed path. Let's name the remaining path as
-        -- `journey`.
-        journey = path,
-    })
-    return get_impl(rawget(self, 'schema'), data, ctx)
-end
-
-local filter_impl
-filter_impl = function(schema, data, f, ctx)
-    local w = {
-        path = table.copy(ctx.path),
-        schema = schema,
-        data = data,
-    }
-    if f(w) then
-        table.insert(ctx.acc, w)
-    end
-
-    -- NB: The exit condition is after the table.insert(), because
-    -- we're interested in returning box.NULL values if they
-    -- satisfy the filter function.
-    --
-    -- It is important for passing box.NULL from the 'default'
-    -- annotation to the box.cfg() call for missed config values
-    -- to discard a previously applied value.
-    if data == nil then
-        return
-    end
-
-    -- luacheck: ignore 542 empty if branch
-    if is_scalar(schema) then
-        -- Nothing to do.
-    elseif schema.type == 'record' then
-        walkthrough_assert_table(ctx, schema, data)
-
-        for field_name, field_def in pairs(schema.fields) do
-            walkthrough_enter(ctx, field_name)
-            filter_impl(field_def, data[field_name], f, ctx)
-            walkthrough_leave(ctx)
-        end
-    elseif schema.type == 'map' then
-        walkthrough_assert_table(ctx, schema, data)
-
-        for field_name, field_value in pairs(data) do
-            walkthrough_enter(ctx, field_name)
-            filter_impl(schema.key, field_name, f, ctx)
-            filter_impl(schema.value, field_value, f, ctx)
-            walkthrough_leave(ctx)
-        end
-    elseif schema.type == 'array' then
-        walkthrough_assert_table(ctx, schema, data)
-
-        for i, v in ipairs(data) do
-            walkthrough_enter(ctx, i)
-            filter_impl(schema.items, v, f, ctx)
-            walkthrough_leave(ctx)
-        end
-    else
-        assert(false)
-    end
-end
-
-function methods.filter(self, data, f)
-    local ctx = walkthrough_start(self, {acc = {}})
-    filter_impl(rawget(self, 'schema'), data, f, ctx)
-    return fun.iter(ctx.acc)
-end
-
-validate_impl = function(schema, data, ctx)
-    if is_scalar(schema) then
-        local scalar_def = scalars[schema.type]
-        assert(scalar_def ~= nil)
-        local ok, err = scalar_def.validate_noexc(data)
-        if not ok then
-            -- TODO: We'll likely allow schema.type to be a table
-            -- later. At this point the generation of the error
-            -- message should be adjusted.
-            assert(type(schema.type) == 'string')
-            walkthrough_error(ctx, "Unexpected data for scalar %q: %s",
-                schema.type, err)
-        end
-    elseif schema.type == 'record' then
-        walkthrough_assert_table(ctx, schema, data)
-
-        for field_name, field_def in pairs(schema.fields) do
-            walkthrough_enter(ctx, field_name)
-
-            local field = data[field_name]
-            -- Assume fields as non-required.
-            if field ~= nil then
-                validate_impl(field_def, field, ctx)
-            end
-
-            walkthrough_leave(ctx)
-        end
-
-        -- Walk over the data to catch unknown fields.
-        for field_name, _ in pairs(data) do
-            local field_def = schema.fields[field_name]
-            if field_def == nil then
-                walkthrough_error(ctx, 'Unexpected field "%s"', field_name)
-            end
-        end
-    elseif schema.type == 'map' then
-        walkthrough_assert_table(ctx, schema, data)
-
-        for field_name, field_value in pairs(data) do
-            walkthrough_enter(ctx, field_name)
-            validate_impl(schema.key, field_name, ctx)
-            validate_impl(schema.value, field_value, ctx)
-            walkthrough_leave(ctx)
-        end
-    elseif schema.type == 'array' then
-        walkthrough_assert_table(ctx, schema, data)
-
-        -- Check that all the keys are numeric.
-        local key_count = 0
-        local min_key = 1/0  -- +inf
-        local max_key = -1/0 -- -inf
-        for k, _ in pairs(data) do
-            if type(k) ~= 'number' then
-                walkthrough_error(ctx, 'An array contains a non-numeric ' ..
-                    'key: %q', k)
-            end
-            key_count = key_count + 1
-            min_key = math.min(min_key, k)
-            max_key = math.max(max_key, k)
-        end
-
-        -- NB: An empty array is a valid array, so it is excluded
-        -- from the checks below.
-
-        -- Check that the array starts from 1 and has no holes.
-        if key_count ~= 0 and min_key ~= 1 then
-            walkthrough_error(ctx, 'An array must start from index 1, ' ..
-                'got min index %d', min_key)
-        end
-
-        if key_count ~= 0 and max_key ~= key_count then
-            walkthrough_error(ctx, 'An array must not have holes, got ' ..
-                'a table with %d numeric fields with max index %d', key_count,
-                max_key)
-        end
-
-        for i, v in ipairs(data) do
-            walkthrough_enter(ctx, i)
-            validate_impl(schema.items, v, ctx)
-            walkthrough_leave(ctx)
-        end
-    else
-        assert(false)
-    end
-
-    if schema.allowed_values ~= nil then
-        assert(type(schema.allowed_values) == 'table')
-        local found = false
-        for _, v in ipairs(schema.allowed_values) do
-            if data == v then
-                found = true
-            end
-        end
-        if not found then
-            walkthrough_error(ctx, 'Got %s, but only the following values ' ..
-                'are allowed: %s', data,
-                table.concat(schema.allowed_values, ', '))
-        end
-    end
-
-    -- Call user provided validation function.
-    --
-    -- Important: it is called when all the type validation is
-    -- already done, including nested nodes.
-    if schema.validate ~= nil then
-        assert(type(schema.validate) == 'function')
-        local w = {
-            schema = schema,
-            path = ctx.path,
-            error = function(message, ...)
-                walkthrough_error(ctx, message, ...)
-            end,
-        }
-        schema.validate(data, w)
-    end
-end
-
-function methods.validate(self, data)
-    local ctx = walkthrough_start(self)
-    validate_impl(rawget(self, 'schema'), data, ctx)
-end
-
-local merge_impl
-merge_impl = function(schema, a, b, ctx)
-    -- There is no value at one of the sides -- pick up another
-    -- one.
-    if a == nil then
-        return b
-    end
-    if b == nil then
-        return a
-    end
-
-    -- Scalars and arrays are not to be merged.
-    --
-    -- At this point neither `a`, nor `b` is `nil`, so
-    -- return the preferred value, `b`.
-    if is_scalar(schema) then
-        return b
-    elseif schema.type == 'array' then
-        walkthrough_assert_table(ctx, schema, a)
-        walkthrough_assert_table(ctx, schema, b)
-
-        return b
-    end
-
-    -- `a` and `b` are both non-nil records or maps. Perform the
-    -- deep merge.
-    if schema.type == 'record' then
-        walkthrough_assert_table(ctx, schema, a)
-        walkthrough_assert_table(ctx, schema, b)
-
-        local res = {}
-        for field_name, field_def in pairs(schema.fields) do
-            walkthrough_enter(ctx, field_name)
-            local a_field = a[field_name]
-            local b_field = b[field_name]
-            res[field_name] = merge_impl(field_def, a_field, b_field, ctx)
-            walkthrough_leave(ctx)
-        end
-        return res
-    elseif schema.type == 'map' then
-        walkthrough_assert_table(ctx, schema, a)
-        walkthrough_assert_table(ctx, schema, b)
-
-        local res = {}
-        for field_name, a_field in pairs(a) do
-            walkthrough_enter(ctx, field_name)
-            local b_field = b[field_name]
-            res[field_name] = merge_impl(schema.value, a_field, b_field, ctx)
-            walkthrough_leave(ctx)
-        end
-        -- NB: No error is possible, so let's skip
-        -- walkthrough_enter()/walkthrough_leave().
-        for field_name, b_field in pairs(b) do
-            if a[field_name] == nil then
-                res[field_name] = b_field
-            end
-        end
-        return res
-    else
-        assert(false)
-    end
-end
-
--- Merge two hierarical values.
+-- Example:
 --
--- Prefer the latter.
---
--- Records and maps are deeply merged. Scalars and arrays are
--- all-or-nothing: either one is chosen or another.
-function methods.merge(self, a, b)
-    local ctx = walkthrough_start(self)
-    return merge_impl(rawget(self, 'schema'), a, b, ctx)
-end
-
-local function map_impl(schema, data, f, ctx)
-    if is_scalar(schema) then
-        local w = {
-            schema = schema,
-            path = table.copy(ctx.path),
-            error = function(message, ...)
-                walkthrough_error(ctx, message, ...)
-            end,
-        }
-        return f(data, w, ctx.f_ctx)
-    elseif schema.type == 'record' then
-        if data ~= nil then
-            walkthrough_assert_table(ctx, schema, data)
-        end
-
-        local res = {}
-        for field_name, field_def in pairs(schema.fields) do
-            walkthrough_enter(ctx, field_name)
-
-            local field
-            if data ~= nil then
-                field = data[field_name]
-            end
-            res[field_name] = map_impl(field_def, field, f, ctx)
-
-            walkthrough_leave(ctx)
-        end
-        if next(res) == nil and data == nil then
-            return data
-        end
-        return res
-    elseif schema.type == 'map' then
-        if data == nil then
-            return data
-        end
-
-        walkthrough_assert_table(ctx, schema, data)
-
-        local res = {}
-        for field_name, field_value in pairs(data) do
-            walkthrough_enter(ctx, field_name)
-            local new_field_name = map_impl(schema.key, field_name, f, ctx)
-            local new_field_value = map_impl(schema.value, field_value, f, ctx)
-            res[new_field_name] = new_field_value
-            walkthrough_leave(ctx)
-        end
-        return res
-    elseif schema.type == 'array' then
-        if data == nil then
-            return data
-        end
-
-        walkthrough_assert_table(ctx, schema, data)
-
-        local res = {}
-        for i, v in ipairs(data) do
-            walkthrough_enter(ctx, i)
-            local new_item_value = map_impl(schema.items, v, f, ctx)
-            res[i] = new_item_value
-            walkthrough_leave(ctx)
-        end
-        return res
-    else
-        assert(false)
-    end
-end
-
--- Transform data by the given function.
---
--- Leave the shape of the data unchanged.
---
--- An example of a mapping function:
---
---  | local function m(schema, data, _w)
---  |     if schema.type == 'string' and data ~= nil then
---  |         return data:gsub('X', 'Y')
---  |     end
---  |     return data
---  | end
---
--- Nuances:
---
--- * The function is called only for scalars.
-function methods.map(self, data, f, f_ctx)
-    local ctx = walkthrough_start(self, {f_ctx = f_ctx})
-    return map_impl(rawget(self, 'schema'), data, f, ctx)
-end
-
-local function apply_default_f(data, w)
-    local apply_default = true
-    if w.schema.apply_default_if ~= nil then
-        assert(type(w.schema.apply_default_if) == 'function')
-        apply_default = w.schema.apply_default_if(data, w)
-    end
-
-    if apply_default and data == nil then
-        return w.schema.default
-    end
-
-    return data
-end
-
-function methods.apply_default(self, data)
-    return self:map(data, apply_default_f)
-end
-
-function schema_mt.__index(self, key)
-    local instance_methods = rawget(self, 'methods')
-    if instance_methods[key] ~= nil then
-        return instance_methods[key]
-    end
-    if methods[key] ~= nil then
-        return methods[key]
-    end
-    return rawget(self, key)
-end
-
--- }}} Instance methods
-
--- {{{ Module functions
-
 -- schema.scalar({
 --     type = 'string',
---     my_annotation = <...>,
+--     <..annotations..>,
 -- })
 local function scalar(scalar_def)
     assert(scalar_def.type ~= nil)
+    assert(is_scalar(scalar_def))
     return scalar_def
 end
 
+-- Create a record.
+--
+-- A record node describes an object with the following properties:
+--
+-- * string keys
+-- * certain keys (listed)
+-- * certain value types (listed)
+--
+-- Example:
+--
 -- schema.record({
---     foo = schema.scalar(<...>),
+--     foo = <schema node>,
+--     bar = <schema node>,
 -- }, {
 --     <..annotations..>
 -- })
@@ -1003,50 +333,57 @@ local function record(fields, annotations)
         fields = fields or {},
     }
     for k, v in pairs(annotations or {}) do
+        assert(k ~= 'type' and k ~= 'fields')
         res[k] = v
     end
     return res
 end
 
+-- Create a map.
+--
+-- A map node describes an object with the following properties:
+--
+-- * arbitrary keys
+-- * all keys have the same certain type
+-- * all values have the same certain type
+--
+-- Example:
+--
+-- schema.map({
+--     key = <schema node>,
+--     value = <schema node>,
+--     <..annotations..>
+-- })
 local function map(map_def)
     assert(map_def.key ~= nil)
     assert(map_def.value ~= nil)
+    assert(map_def.type == nil)
     local res = table.copy(map_def)
     res.type = 'map'
     return res
 end
 
+-- Create an array.
+--
+-- Example:
+--
+-- schema.array({
+--     items = <schema node>,
+--     <..annotations..>
+-- })
 local function array(array_def)
     assert(array_def.items ~= nil)
+    assert(array_def.type == nil)
     local res = table.copy(array_def)
     res.type = 'array'
     return res
 end
 
-local function new(name, schema, opts)
-    opts = opts or {}
-    local instance_methods = opts.methods or {}
+-- }}} Schema node constructors: scalar, record, map, array
 
-    return setmetatable({
-        name = name,
-        schema = schema,
-        methods = instance_methods,
-    }, schema_mt)
-end
+-- {{{ Derived schema node type constructors: enum, set
 
--- Shortcut for a string scalar with given allowed values.
-local function enum(allowed_values, annotations)
-    local scalar_def = {
-        type = 'string',
-        allowed_values = allowed_values,
-    }
-    for k, v in pairs(annotations or {}) do
-        scalar_def[k] = v
-    end
-    return scalar(scalar_def)
-end
-
-local function validate_no_repeat(_schema, data, w)
+local function validate_no_repeat(data, w)
     local visited = {}
     for _, item in ipairs(data) do
         assert(type(item) == 'string')
@@ -1058,21 +395,44 @@ local function validate_no_repeat(_schema, data, w)
     end
 end
 
--- Array of unique values from given list of allowed values.
+-- Shortcut for a string scalar with given allowed values.
+local function enum(allowed_values, annotations)
+    local scalar_def = {
+        type = 'string',
+        allowed_values = allowed_values,
+    }
+    for k, v in pairs(annotations or {}) do
+        assert(k ~= 'type' and k ~= 'allowed_values')
+        scalar_def[k] = v
+    end
+    return scalar(scalar_def)
+end
+
+-- Shortcut for array of unique string values from the given list
+-- of allowed values.
 local function set(allowed_values, annotations)
     local array_def = {
         items = enum(allowed_values),
         validate = validate_no_repeat,
     }
     for k, v in pairs(annotations or {}) do
+        assert(k ~= 'type' and k ~= 'items' and k ~= 'validate')
         array_def[k] = v
     end
     return array(array_def)
 end
 
+-- }}} Derived schema node type constructors: enum, set
+
+-- {{{ Temporary schema node constructor: union_of_records
+
 -- Union of several records.
 --
 -- The data can contain either one record or another.
+--
+-- TODO: This function is planned for removal in the final version
+-- of the module, because it is easier to achieve the same effect
+-- using a record with a custom `validate` annotation.
 local function union_of_records(...)
     local res = {
         type = 'record',
@@ -1131,7 +491,1180 @@ local function union_of_records(...)
     return res
 end
 
+-- }}} Temporary schema node constructor: union_of_records
+
+-- {{{ <schema object>:validate()
+
+-- Verify that the given table adheres array requirements.
+--
+-- It accepts an array without holes.
+--
+-- Strictly speaking,
+--
+-- * If the table is empty it is OK.
+-- * If the table is non-empty, the constraints are the following:
+--   * all keys are numeric, without a fractional part
+--   * the lower key is 1
+--   * the higher key is equal to the number of items
+local function validate_table_is_array(data, ctx)
+    assert(type(data) == 'table')
+
+    -- Check that all the keys are numeric.
+    local key_count = 0
+    local min_key = 1/0  -- +inf
+    local max_key = -1/0 -- -inf
+    for k, _ in pairs(data) do
+        if type(k) ~= 'number' then
+            walkthrough_error(ctx, 'An array contains a non-numeric ' ..
+                'key: %q', k)
+        end
+        if k - math.floor(k) ~= 0 then
+            walkthrough_error(ctx, 'An array contains a non-integral ' ..
+                'numeric key: %s', k)
+        end
+        key_count = key_count + 1
+        min_key = math.min(min_key, k)
+        max_key = math.max(max_key, k)
+    end
+
+    -- An empty array is a valid array.
+    if key_count == 0 then
+        return
+    end
+
+    -- Check that the array starts from 1 and has no holes.
+    if min_key ~= 1 then
+        walkthrough_error(ctx, 'An array must start from index 1, ' ..
+            'got min index %d', min_key)
+    end
+
+    -- Check that the array has no holes.
+    if max_key ~= key_count then
+        walkthrough_error(ctx, 'An array must not have holes, got ' ..
+            'a table with %d integer fields with max index %d', key_count,
+            max_key)
+    end
+end
+
+-- Verify the given data against the `allowed_values` annotation
+-- in the schema node (if present).
+local function validate_by_allowed_values(schema, data, ctx)
+    if schema.allowed_values == nil then
+        return
+    end
+
+    assert(type(schema.allowed_values) == 'table')
+    local found = false
+    for _, v in ipairs(schema.allowed_values) do
+        if data == v then
+            found = true
+            break
+        end
+    end
+    if not found then
+        walkthrough_error(ctx, 'Got %s, but only the following values ' ..
+            'are allowed: %s', data, table.concat(schema.allowed_values, ', '))
+    end
+end
+
+-- Call schema node specific validation function.
+local function validate_by_node_function(schema, data, ctx)
+    if schema.validate == nil then
+        return
+    end
+
+    assert(type(schema.validate) == 'function')
+    local w = {
+        schema = schema,
+        -- ctx.path is modified during the traversal, so an
+        -- attempt to store it and use later would give
+        -- an unexpected result. Let's copy it to avoid the
+        -- confusion.
+        path = table.copy(ctx.path),
+        error = walkthrough_error_capture(ctx),
+    }
+    schema.validate(data, w)
+end
+
+local function validate_impl(schema, data, ctx)
+    if is_scalar(schema) then
+        local scalar_def = scalars[schema.type]
+        assert(scalar_def ~= nil)
+
+        local ok, err = scalar_def.validate_noexc(data)
+        if not ok then
+            walkthrough_error(ctx, 'Unexpected data for scalar %q: %s',
+                schema.type, err)
+        end
+    elseif schema.type == 'record' then
+        walkthrough_assert_table(ctx, schema, data)
+
+        for field_name, field_def in pairs(schema.fields) do
+            walkthrough_enter(ctx, field_name)
+            local field = data[field_name]
+            -- Assume fields as non-required.
+            if field ~= nil then
+                validate_impl(field_def, field, ctx)
+            end
+            walkthrough_leave(ctx)
+        end
+
+        -- Walk over the data to catch unknown fields.
+        for field_name, _ in pairs(data) do
+            local field_def = schema.fields[field_name]
+            if field_def == nil then
+                walkthrough_error(ctx, 'Unexpected field %q', field_name)
+            end
+        end
+    elseif schema.type == 'map' then
+        walkthrough_assert_table(ctx, schema, data)
+
+        for field_name, field_value in pairs(data) do
+            walkthrough_enter(ctx, field_name)
+            validate_impl(schema.key, field_name, ctx)
+            validate_impl(schema.value, field_value, ctx)
+            walkthrough_leave(ctx)
+        end
+    elseif schema.type == 'array' then
+        walkthrough_assert_table(ctx, schema, data)
+        validate_table_is_array(data, ctx)
+
+        for i, v in ipairs(data) do
+            walkthrough_enter(ctx, i)
+            validate_impl(schema.items, v, ctx)
+            walkthrough_leave(ctx)
+        end
+    else
+        assert(false)
+    end
+
+    validate_by_allowed_values(schema, data, ctx)
+
+    -- Call schema node specific validation function.
+    --
+    -- Important: it is called when all the type validation is
+    -- already done, including nested nodes.
+    validate_by_node_function(schema, data, ctx)
+end
+
+-- Validate the given data against the given schema.
+--
+-- Nuances:
+--
+-- * `schema.new('<...>', schema.scalar(<...>))` doesn't accept
+--   `nil` and `box.NULL`. However,
+-- * All fields in a record are optional: they accept `nil` and
+--   `box.NULL`.
+-- * The record/map/array determination is purely schema based.
+--   mt.__serialize marks in the data are not involved anyhow.
+-- * An array shouldn't have any holes (nil values in a middle).
+--
+-- Annotations taken into accounts:
+--
+-- * allowed_values (table) -- whitelist of values
+-- * validate (function) -- schema node specific validator
+--
+--   validate = function(data, w)
+--       -- w.schema -- current schema node
+--       -- w.path -- path to the node
+--       -- w.error -- function that prepends a caller provided
+--       --            error message with context information;
+--       --            use it for nice error messages
+--   end
+function methods.validate(self, data)
+    local ctx = walkthrough_start(self)
+    validate_impl(rawget(self, 'schema'), data, ctx)
+end
+
+-- }}} <schema object>:validate()
+
+-- {{{ :get()/:set() helpers
+
+-- The path can be passed as a string in the dot notation or as a
+-- table representing an array of components. This function
+-- converts the path into the array if necessary.
+local function normalize_path(path, error_f)
+    if type(path) ~= 'string' and type(path) ~= 'table' then
+        return error_f()
+    end
+
+    -- Dot notation/JSON path alike.
+    --
+    -- TODO: Support numeric indexing: 'foo[1]' and `{'foo', 1}`.
+    if type(path) == 'string' then
+        -- NB: string.split('') returns {''}.
+        if path == '' then
+            path = {}
+        else
+            path = path:split('.')
+        end
+    end
+
+    return path
+end
+
+-- }}} :get()/:set() helpers
+
+-- {{{ <schema object>:get()
+
+local function get_usage()
+    error('Usage: schema:get(data: <as defined by the schema>, ' ..
+        'path: nil/string/table)', 0)
+end
+
+local function get_impl(schema, data, ctx)
+    -- The journey is finished. Return what is under the feet.
+    if #ctx.journey == 0 then
+        return data
+    end
+
+    -- There are more steps in the journey (at least one).
+    -- Let's dive deeper and process it per schema node type.
+
+    local requested_field = ctx.journey[1]
+    assert(requested_field ~= nil)
+
+    if is_scalar(schema) then
+        walkthrough_error(ctx, 'Attempt to index a scalar value of type %s ' ..
+            'by field %q', schema.type, requested_field)
+    elseif schema.type == 'record' then
+        walkthrough_enter(ctx, requested_field)
+        local field_def = schema.fields[requested_field]
+        if field_def == nil then
+            walkthrough_error(ctx, 'No such field in the schema')
+        end
+
+        -- Even if there is no such field in the data, continue
+        -- the descending to validate the path against the schema.
+        local field_value
+        if data ~= nil then
+            field_value = data[requested_field]
+        end
+
+        table.remove(ctx.journey, 1)
+        return get_impl(field_def, field_value, ctx)
+    elseif schema.type == 'map' then
+        walkthrough_enter(ctx, requested_field)
+        local field_def = schema.value
+
+        -- Even if there is no such field in the data, continue
+        -- the descending to validate the path against the schema.
+        local field_value
+        if data ~= nil then
+            field_value = data[requested_field]
+        end
+
+        table.remove(ctx.journey, 1)
+        return get_impl(field_def, field_value, ctx)
+    elseif schema.type == 'array' then
+        -- TODO: Support 'foo[1]' and `{'foo', 1}` paths. See the
+        -- normalize_path() function.
+        walkthrough_error(ctx, 'Indexing an array is not supported yet')
+    else
+        assert(false)
+    end
+end
+
+-- Get nested data that is pointed by the given path.
+--
+-- Important: the data is assumed as already validated against
+-- the given schema.
+--
+-- The indexing is performed in the optional chaining manner
+-- ('foo.bar' works like foo?.bar in TypeScript).
+--
+-- The function checks the path against the schema: it doesn't
+-- allow to use a non-existing field or index a scalar value.
+--
+-- The path is either array-like table or a string in the dot
+-- notation.
+--
+-- local data = {foo = {bar = 'x'}}
+-- schema:get(data, 'foo.bar') -> 'x'
+-- schema:get(data, {'foo', 'bar'}) -> 'x'
+--
+-- local data = {}
+-- schema:get(data, 'foo.bar') -> nil
+--
+-- Nuances:
+--
+-- * Array indexing is not supported yet.
+-- * A scalar of the 'any' type can't be indexed, even when it is
+--   a table. It is OK to acquire the whole value of the 'any'
+--   type.
+function methods.get(self, data, path)
+    local schema = rawget(self, 'schema')
+
+    -- It is easy to forget about the `data` argument or misorder
+    -- the `data` and the `path` arguments. Let's add a fast check
+    -- for the most common scenario: a record schema and a string
+    -- path.
+    if schema.type == 'record' and type(data) ~= 'table' then
+        return get_usage()
+    end
+
+    if path ~= nil then
+        path = normalize_path(path, get_usage)
+    end
+
+    if path == nil or next(path) == nil then
+        return data
+    end
+
+    local ctx = walkthrough_start(self, {
+        -- The `path` field is already in the context and it means
+        -- the passed path. Let's name the remaining path as
+        -- `journey`.
+        journey = path,
+    })
+    return get_impl(schema, data, ctx)
+end
+
+-- }}} <schema object>:get()
+
+-- {{{ <schema object>:set()
+
+local function set_usage()
+    error('Usage: schema:set(data: <as defined by the schema>, ' ..
+        'path: string/table, rhs: <as defined by the schema>)', 0)
+end
+
+local function set_impl(schema, data, rhs, ctx)
+    -- The journey is finished. Validate and return the new value.
+    if #ctx.journey == 0 then
+        -- Call validate_impl() directly to don't construct a
+        -- schema object.
+        validate_impl(schema, rhs, ctx)
+        return rhs
+    end
+
+    local requested_field = ctx.journey[1]
+    assert(requested_field ~= nil)
+
+    if is_scalar(schema) then
+        walkthrough_error(ctx, 'Attempt to index a scalar value of type %s ' ..
+            'by field %q', schema.type, requested_field)
+    elseif schema.type == 'record' then
+        walkthrough_enter(ctx, requested_field)
+        local field_def = schema.fields[requested_field]
+        if field_def == nil then
+            walkthrough_error(ctx, 'No such field in the schema')
+        end
+
+        walkthrough_assert_table(ctx, schema, data)
+        local field_value = data[requested_field] or {}
+        table.remove(ctx.journey, 1)
+        data[requested_field] = set_impl(field_def, field_value, rhs, ctx)
+        return data
+    elseif schema.type == 'map' then
+        walkthrough_enter(ctx, requested_field)
+        local field_def = schema.value
+
+        walkthrough_assert_table(ctx, schema, data)
+        local field_value = data[requested_field] or {}
+        table.remove(ctx.journey, 1)
+        data[requested_field] = set_impl(field_def, field_value, rhs, ctx)
+        return data
+    elseif schema.type == 'array' then
+        -- TODO: Support 'foo[1]' and `{'foo', 1}` paths. See the
+        -- normalize_path() function.
+        walkthrough_error(ctx, 'Indexing an array is not supported yet')
+    else
+        assert(false)
+    end
+end
+
+-- Set the given `rhs` value at the given path in the `data`.
+--
+-- Important: `data` is assumed as already validated against the
+-- given schema, but `rhs` is validated by the method before the
+-- assignment.
+--
+-- The function checks the path against the schema: it doesn't
+-- allow to use a non-existing field or index a scalar value.
+--
+-- The path is either array-like table or a string in the dot
+-- notation.
+--
+-- local data = {}
+-- schema:set(data, 'foo.bar', 42)
+-- print(data.foo.bar) -- 42
+--
+-- local data = {}
+-- schema:set(data, {'foo', 'bar'}, 42)
+-- print(data.foo.bar) -- 42
+--
+-- Nuances:
+--
+-- * Array indexing is not supported yet.
+-- * A scalar of the 'any' type can't be indexed, even when it is
+--   a table. It is OK to set the whole value of the 'any'
+--   type.
+function methods.set(self, data, path, rhs)
+    local schema = rawget(self, 'schema')
+
+    -- Detect `data` and `path` misordering for the most common
+    -- scenario: a record schema and a string path.
+    if schema.type == 'record' and type(data) ~= 'table' then
+        return set_usage()
+    end
+
+    if path ~= nil then
+        path = normalize_path(path, set_usage)
+    end
+
+    if path == nil or next(path) == nil then
+        error('schema:set: empty path', 0)
+    end
+
+    local ctx = walkthrough_start(self, {
+        -- The `path` field is already in the context and it means
+        -- the passed path. Let's name the remaining path as
+        -- `journey`.
+        journey = path,
+    })
+    return set_impl(schema, data, rhs, ctx)
+end
+
+-- }}} <schema object>:set()
+
+-- {{{ <schema object>:filter()
+
+local filter_impl
+filter_impl = function(schema, data, f, ctx)
+    local w = {
+        path = table.copy(ctx.path),
+        schema = schema,
+        data = data,
+    }
+    if f(w) then
+        table.insert(ctx.acc, w)
+    end
+
+    -- The exit condition is after the table.insert(), because a
+    -- caller may want to handle box.NULL values somehow.
+    if data == nil then
+        return
+    end
+
+    -- luacheck: ignore 542 empty if branch
+    if is_scalar(schema) then
+        -- Nothing to do.
+    elseif schema.type == 'record' then
+        walkthrough_assert_table(ctx, schema, data)
+
+        for field_name, field_def in pairs(schema.fields) do
+            walkthrough_enter(ctx, field_name)
+            local field_value = data[field_name]
+            -- Step down if the field exists in the data. box.NULL
+            -- field value is interpreted here as an existing
+            -- field.
+            if type(field_value) ~= 'nil' then
+                filter_impl(field_def, field_value, f, ctx)
+            end
+            walkthrough_leave(ctx)
+        end
+    elseif schema.type == 'map' then
+        walkthrough_assert_table(ctx, schema, data)
+
+        for field_name, field_value in pairs(data) do
+            walkthrough_enter(ctx, field_name)
+            filter_impl(schema.key, field_name, f, ctx)
+            filter_impl(schema.value, field_value, f, ctx)
+            walkthrough_leave(ctx)
+        end
+    elseif schema.type == 'array' then
+        walkthrough_assert_table(ctx, schema, data)
+
+        for i, v in ipairs(data) do
+            walkthrough_enter(ctx, i)
+            filter_impl(schema.items, v, f, ctx)
+            walkthrough_leave(ctx)
+        end
+    else
+        assert(false)
+    end
+end
+
+-- Filter data based on the schema annotations.
+--
+-- Important: the data is assumed as already validated against
+-- the given schema. (A fast type check is performed on composite
+-- types, but it is not recommended to lean on it.)
+--
+-- The user-provided filter function `f` receives the following
+-- table as the argument:
+--
+-- w = {
+--     path = <array-like table>,
+--     schema = <schema node>,
+--     data = <data at the given path>,
+-- }
+--
+-- And returns a boolean value that is interpreted as 'accepted'
+-- or 'not accepted'.
+--
+-- The user-provided function `f` is called for each schema node,
+-- including ones that have box.NULL value (but not nil). A node
+-- of a composite type (record/map/array) is not traversed down
+-- if it has nil or box.NULL value.
+--
+-- The `:filter()` function returns a luafun iterator by all `w`
+-- values accepted by the `f` function.
+--
+-- A composite node that is not accepted still traversed down.
+--
+-- Examples:
+--
+-- -- Do something for each piece of data that is marked by the
+-- -- given annotation.
+-- s:filter(function(w)
+--     return w.schema.my_annotation ~= nil
+-- end):each(function(w)
+--     do_something(w.data)
+-- end)
+--
+-- -- Group data by a value of an annotation.
+-- local group_by_my_annotation = s:filter(function(w)
+--     return w.schema.my_annotation ~= nil
+-- end):map(function(w)
+--     return w.schema.my_annotation, w.data
+-- end):tomap()
+--
+-- Nuances:
+--
+-- * box.NULL is assumed as an existing value, so the
+--   user-provided filter function `f` is called for it. However,
+--   it is not called for `nil` values. See details below.
+-- * While it is technically possible to pass information about
+--   a field name for record/map field values and about an item
+--   index for an array item value, it is not implemented for
+--   simplicity (and because it is not needed in config's code).
+-- * `w.path` for a map key and a map value are the same. It
+--   seems, we should introduce some syntax to point a key in a
+--   map, but the config module doesn't need it, so it is not
+--   implemented.
+--
+-- nil/box.NULL nuances explanation
+-- --------------------------------
+--
+-- Let's assume that a record defines three scalar fields: 'foo',
+-- 'bar' and 'baz'. Let's name a schema object that wraps the
+-- record as `s`.
+--
+-- * `s:filter(nil, f)` calls `f` only for the record itself.
+-- * `s:filter(box.NULL, f` works in the same way.
+-- * `s:filter({foo = box.NULL, bar = nil}, f)` calls `f` two
+--   times: for the record and for the 'foo' field.
+--
+-- This behavior is needed to provide ability to handle box.NULL
+-- values in the data somehow. It reflects the pairs() behavior on
+-- a usual table, so it looks quite natural.
+function methods.filter(self, data, f)
+    local ctx = walkthrough_start(self, {acc = {}})
+    filter_impl(rawget(self, 'schema'), data, f, ctx)
+    return fun.iter(ctx.acc)
+end
+
+-- }}} <schema object>:filter()
+
+-- {{{ <schema object>:map()
+
+local function map_impl(schema, data, f, ctx)
+    if is_scalar(schema) then
+        -- We're reached a scalar: let's call the user-provided
+        -- transformation function.
+        local w = {
+            schema = schema,
+            path = table.copy(ctx.path),
+            error = walkthrough_error_capture(ctx),
+        }
+        return f(data, w, ctx.f_ctx)
+    elseif schema.type == 'record' then
+        -- Traverse record's fields unconditionally: if the record
+        -- itself is nil/box.NULL, if the fields are nil/box.NULL.
+        --
+        -- Missed values may be transformed to something non-nil.
+        if data ~= nil then
+            walkthrough_assert_table(ctx, schema, data)
+        end
+
+        -- Collect the new field values.
+        local res = {}
+        for field_name, field_def in pairs(schema.fields) do
+            walkthrough_enter(ctx, field_name)
+
+            local field
+            if data ~= nil then
+                field = data[field_name]
+            end
+            res[field_name] = map_impl(field_def, field, f, ctx)
+
+            walkthrough_leave(ctx)
+        end
+
+        -- If the original value is nil/box.NULL and all the new
+        -- fields are nil, let's preserve the original value as
+        -- is: return nil/box.NULL instead of an empty table.
+        if next(res) == nil and data == nil then
+            return data -- nil or box.NULL
+        end
+        return res
+    elseif schema.type == 'map' then
+        -- If a map is nil/box.NULL, there is nothing to traverse.
+        --
+        -- Let's just return the original value.
+        if data == nil then
+            return data -- nil or box.NULL
+        end
+
+        walkthrough_assert_table(ctx, schema, data)
+
+        local res = {}
+        for field_name, field_value in pairs(data) do
+            walkthrough_enter(ctx, field_name)
+            local new_field_name = map_impl(schema.key, field_name, f, ctx)
+            local new_field_value = map_impl(schema.value, field_value, f, ctx)
+            res[new_field_name] = new_field_value
+            walkthrough_leave(ctx)
+        end
+        return res
+    elseif schema.type == 'array' then
+        -- If an array is nil/box.NULL, there is nothing to
+        -- traverse.
+        --
+        -- Just return the original value.
+        if data == nil then
+            return data -- nil or box.NULL
+        end
+
+        walkthrough_assert_table(ctx, schema, data)
+
+        local res = {}
+        for i, v in ipairs(data) do
+            walkthrough_enter(ctx, i)
+            local new_item_value = map_impl(schema.items, v, f, ctx)
+            res[i] = new_item_value
+            walkthrough_leave(ctx)
+        end
+        return res
+    else
+        assert(false)
+    end
+end
+
+-- Transform data by the given function.
+--
+-- Leave the shape of the data unchanged.
+--
+-- Important: the data is assumed as already validated against
+-- the given schema. (A fast type check is performed on composite
+-- types, but it is not recommended to lean on it.)
+--
+-- The user-provided transformation function receives the
+-- following three arguments in the given order:
+--
+-- * data -- value at the given path
+-- * w -- walkthrough node, described below
+-- * ctx -- user-provided context for the transformation function
+--
+-- The walkthrough node `w` has the following fields:
+--
+-- * w.schema -- schema node at the given path
+-- * w.path -- path to the schema node
+-- * w.error -- function that prepends a caller provided error
+--   message with context information; use it for nice error
+--   messages
+--
+-- An example of the mapping function:
+--
+-- local function f(data, w, ctx)
+--     if w.schema.type == 'string' and data ~= nil then
+--         return data:gsub('{{ *foo *}}', ctx.foo)
+--     end
+--     return data
+-- end
+--
+-- The :map() method is recursive with certain rules:
+--
+-- * All record fields are traversed unconditionally, including
+--   ones with nil/box.NULL values. Even if the record itself is
+--   nil/box.NULL, its fields are traversed down (assuming their
+--   values as nil).
+--
+--   It is important when the original data should be extended
+--   using some information from the schema: say, default values.
+-- * It is not the case for a map and an array: nil/box.NULL
+--   fields and items are preserved as is, they're not traversed
+--   down. If the map/the array itself is nil/box.NULL, it is
+--   preserved as well.
+--
+--   A map has no list of fields in the schema, so it is not
+--   possible to traverse it down. Similarly, an array has no
+--   items count in the schema.
+--
+-- The method attempts to preserve the original shape of values
+-- of a composite type:
+--
+-- * nil/box.NULL record is traversed down, but if all the new
+--   field values are nil, the return value is the original one
+--   (nil/box.NULL), not an empty table.
+-- * nil/box.NULL values for a map and an array are preserved.
+--
+-- Nuances:
+--
+-- * The user-provided transformation function is called only for
+--   scalars.
+-- * nil/box.NULL handling for composite types. Described above.
+-- * `w.path` for a map key and a map value are the same. It
+--   seems, we should introduce some syntax to point a key in a
+--   map, but the config module doesn't need it, so it is not
+--   implemented.
+function methods.map(self, data, f, f_ctx)
+    local ctx = walkthrough_start(self, {f_ctx = f_ctx})
+    return map_impl(rawget(self, 'schema'), data, f, ctx)
+end
+
+-- }}} <schema object>:map()
+
+-- {{{ <schema object>:apply_default()
+
+local function apply_default_f(data, w)
+    -- The value is present, keep it.
+    --
+    -- box.NULL is assumed as a missed value.
+    if data ~= nil then
+        return data
+    end
+
+    -- Don't replace box.NULL in the original data with nil if
+    -- there is no 'default' annotation.
+    if type(w.schema.default) == 'nil' then
+        return data
+    end
+
+    -- Determine whether to apply the default.
+    --
+    -- Perform the apply if the apply_default_if annotation
+    -- returns true or if there is no such an annotation.
+    --
+    -- Keep the original value otherwise.
+    local apply_default = true
+    if w.schema.apply_default_if ~= nil then
+        assert(type(w.schema.apply_default_if) == 'function')
+        apply_default = w.schema.apply_default_if(data, w)
+    end
+
+    if apply_default then
+        return w.schema.default
+    end
+
+    return data
+end
+
+-- Apply default values from the schema.
+--
+-- Important: the data is assumed as already validated against
+-- the given schema. (A fast type check is performed on composite
+-- types, but it is not recommended to lean on it.)
+--
+-- Nuances:
+--
+-- * Defaults are taken into account only for scalars.
+--
+-- Annotations taken into accounts:
+--
+-- * default -- the value to be placed instead of a missed one
+-- * apply_default_if (function) -- whether to apply the default
+--
+--   apply_default_if = function(data, w)
+--       -- w.schema -- current schema node
+--       -- w.path -- path to the node
+--       -- w.error -- for nice error messages
+--   end
+--
+--   If there is no apply_default_if annotation, the default is
+--   assumed as to be applied.
+function methods.apply_default(self, data)
+    return self:map(data, apply_default_f)
+end
+
+-- }}} <schema object>:apply_default()
+
+-- {{{ <schema object>:merge()
+
+local function merge_impl(schema, a, b, ctx)
+    -- Prefer box.NULL over nil.
+    if a == nil and b == nil then
+        if type(a) == 'nil' then
+            return b
+        else
+            return a
+        end
+    end
+
+    -- Prefer X ~= nil over nil/box.NULL.
+    if a == nil then
+        return b
+    elseif b == nil then
+        return a
+    end
+
+    assert(a ~= nil and b ~= nil)
+
+    -- Scalars and arrays are not to be merged.
+    --
+    -- At this point neither a == nil, nor b == nil, so return the
+    -- preferred value, `b`.
+    if is_scalar(schema) then
+        return b
+    elseif schema.type == 'array' then
+        walkthrough_assert_table(ctx, schema, a)
+        walkthrough_assert_table(ctx, schema, b)
+
+        return b
+    end
+
+    -- `a` and `b` are both non-nil non-box.NULL records or maps.
+    -- Perform the deep merge.
+    if schema.type == 'record' then
+        walkthrough_assert_table(ctx, schema, a)
+        walkthrough_assert_table(ctx, schema, b)
+
+        local res = {}
+        for field_name, field_def in pairs(schema.fields) do
+            walkthrough_enter(ctx, field_name)
+            local a_field = a[field_name]
+            local b_field = b[field_name]
+            res[field_name] = merge_impl(field_def, a_field, b_field, ctx)
+            walkthrough_leave(ctx)
+        end
+        return res
+    elseif schema.type == 'map' then
+        walkthrough_assert_table(ctx, schema, a)
+        walkthrough_assert_table(ctx, schema, b)
+
+        local res = {}
+        for field_name, a_field in pairs(a) do
+            walkthrough_enter(ctx, field_name)
+            local b_field = b[field_name]
+            res[field_name] = merge_impl(schema.value, a_field, b_field, ctx)
+            walkthrough_leave(ctx)
+        end
+        -- NB: No error is possible, so let's skip
+        -- walkthrough_enter()/walkthrough_leave().
+        for field_name, b_field in pairs(b) do
+            if type(a[field_name]) == 'nil' then
+                res[field_name] = b_field
+            end
+        end
+        return res
+    else
+        assert(false)
+    end
+end
+
+-- Merge two hierarical values (prefer the latter).
+--
+-- Important: the data is assumed as already validated against
+-- the given schema. (A fast type check is performed on composite
+-- types, but it is not recommended to lean on it.)
+--
+-- box.NULL is preferred over nil, any X where X ~= nil is
+-- preferred over nil/box.NULL.
+--
+-- Records and maps are deeply merged. Scalars and arrays are
+-- all-or-nothing: the right hand one is chosen if both are
+-- not nil/box.NULL.
+--
+-- The formal rules are below.
+--
+-- Let's define the merge result for nil and box.NULL values:
+--
+-- 1. merge(nil, nil) -> nil
+-- 2. merge(nil, box.NULL) -> box.NULL
+-- 3. merge(box.NULL, nil) -> box.NULL
+-- 4. merge(box.NULL, box.NULL) -> box.NULL
+--
+-- Let's define X as a value that is not nil and is not box.NULL.
+--
+-- 5. merge(X, nil) -> X
+-- 6. merge(X, box.NULL) -> X
+-- 7. merge(nil, X) -> X
+-- 8. merge(box.NULL, X) -> X
+--
+-- If the above conditions are not meet, the following type
+-- specific rules are is effect.
+--
+-- 9. merge(<scalar A>, <scalar B>) -> <scalar B>
+-- 10. merge(<array A>, <array B>) -> <array B>
+-- 11. merge(<record A>, <record B>) -> deep-merge(A, B)
+-- 12. merge(<map A>, <map B>) -> deep-merge(A, B)
+--
+-- For each key K in A and each key K in B: deep-merge(A, B)[K] is
+-- merge(A[K], B[K]).
+function methods.merge(self, a, b)
+    local ctx = walkthrough_start(self)
+    return merge_impl(rawget(self, 'schema'), a, b, ctx)
+end
+
+-- }}} <schema object>:merge()
+
+-- {{{ <schema object>:pairs()
+
+local function schema_pairs_append_node(schema, ctx)
+    table.insert(ctx.acc, {
+        path = table.copy(ctx.path),
+        schema = schema,
+    })
+end
+
+local function schema_pairs_impl(schema, ctx)
+    if is_scalar(schema) then
+        schema_pairs_append_node(schema, ctx)
+    elseif schema.type == 'record' then
+        for k, v in pairs(schema.fields) do
+            walkthrough_enter(ctx, k)
+            schema_pairs_impl(v, ctx)
+            walkthrough_leave(ctx)
+        end
+    elseif schema.type == 'map' then
+        schema_pairs_append_node(schema, ctx)
+    elseif schema.type == 'array' then
+        schema_pairs_append_node(schema, ctx)
+    else
+        assert(false)
+    end
+end
+
+-- Walk over the schema and return scalar, array and map schema
+-- nodes.
+--
+-- Usage example:
+--
+-- for _, w in schema:pairs() do
+--     local path = w.path
+--     local schema = w.schema
+--     <...>
+-- end
+--
+-- TODO: Rewrite it without collecting a list beforehand.
+function methods.pairs(self)
+    local ctx = walkthrough_start(self, {acc = {}})
+    schema_pairs_impl(rawget(self, 'schema'), ctx)
+    return fun.iter(ctx.acc)
+end
+
+-- }}} <schema object>:pairs()
+
+-- {{{ Schema object constructor: new
+
+-- Define a field lookup function on a schema object.
+--
+-- `<schema object>.foo` performs the following:
+--
+-- * search for a user-provided method
+-- * search for a method defined in this module
+-- * if 'name', 'schema' or 'methods' -- return the given field
+-- * otherwise return nil
+function schema_mt.__index(self, key)
+    local instance_methods = rawget(self, 'methods')
+    if instance_methods[key] ~= nil then
+        return instance_methods[key]
+    end
+    if methods[key] ~= nil then
+        return methods[key]
+    end
+    return rawget(self, key)
+end
+
+-- Create a schema object.
+--
+-- Unlike a schema node it has a name, has methods defined in this
+-- module and user-provided methods.
+local function new(name, schema, opts)
+    local opts = opts or {}
+    local instance_methods = opts.methods or {}
+
+    assert(type(name) == 'string')
+    assert(type(schema) == 'table')
+
+    return setmetatable({
+        name = name,
+        schema = schema,
+        methods = instance_methods,
+    }, schema_mt)
+end
+
+-- }}} Schema object constructor: new
+
+-- {{{ schema.fromenv()
+
+-- Forward declaration.
 local fromenv
+
+-- Decode a map value from an environment variable data.
+--
+-- Accepts two formats:
+--
+-- 1. JSON format (if data starts from "{").
+-- 2. Simple foo=bar,baz=fiz object format (otherwise).
+--
+-- The simple format is applicable for a map with string keys and
+-- scalar values of any type except 'any'.
+local function map_from_env(env_var_name, raw_value, schema)
+    local can_have_simple_format = schema.key.type == 'string' and
+        is_scalar(schema.value) and schema.value.type ~= 'any'
+
+    local recommendation = can_have_simple_format and
+        'Use either the simple "foo=bar,baz=fiz" object format or the JSON ' ..
+        'object format (starts from "{").' or
+        'Use the JSON object format (starts from "{").'
+
+    -- JSON object -> try to decode.
+    if raw_value:startswith('{') then
+        local ok, res = pcall(json.decode, raw_value)
+        if not ok then
+            error(('Unable to decode JSON data in environment ' ..
+                'variable %q: %s'):format(env_var_name, res), 0)
+        end
+        return res
+    end
+
+    -- JSON array -> error.
+    if raw_value:startswith('[') then
+        error(('A JSON array is provided for environment variable %q of ' ..
+            'type map, an object is expected. %s'):format(env_var_name,
+            recommendation), 0)
+    end
+
+    -- Check several prerequisites for the simple foo=bar,baz=fiz
+    -- object format. If any check is not passed, suggest to use
+    -- the JSON object format and describe why.
+
+    -- Allow only string keys.
+    if schema.key.type ~= 'string' then
+        error(('Use the JSON object format for environment variable %q: the ' ..
+            'keys are supposed to have a non-string type (%q) that is not ' ..
+            'supported by the simple "foo=bar,baz=fiz" object format. ' ..
+            'A JSON object value starts from "{".'):format(env_var_name,
+            schema.key.type), 0)
+    end
+
+    -- Allow only scalar field values. Forbid composite ones.
+    if not is_scalar(schema.value) then
+        error(('Use the JSON object format for environment variable %q: the ' ..
+            'field values are supposed to have a composite type (%q) that ' ..
+            'is not supported by the simple "foo=bar,baz=fiz" object ' ..
+            'format. A JSON object value starts from "{".'):format(env_var_name,
+            schema.value.type), 0)
+    end
+
+    -- Forbid scalar field values of the 'any' type.
+    if schema.value.type == 'any' then
+        error(('Use the JSON object format for environment variable %q: the ' ..
+            'field values are supposed to have an arbitrary type ("any") ' ..
+            'that is not supported by the simple "foo=bar,baz=fiz" object ' ..
+            'format. A JSON object value starts from "{".'):format(
+            env_var_name), 0)
+    end
+
+    -- Assume the simple foo=bar,baz=fiz object format.
+    local err_msg_prefix = ('Unable to decode data in environment variable ' ..
+        '%q assuming the simple "foo=bar,baz=fiz" object format'):format(
+        env_var_name)
+    local res = {}
+    for _, v in ipairs(raw_value:split(',')) do
+        local eq = v:find('=')
+        if eq == nil then
+            error(('%s: no "=" is found in a key-value pair. %s'):format(
+                err_msg_prefix, recommendation), 0)
+        end
+        local lhs = string.sub(v, 1, eq - 1)
+        local rhs = string.sub(v, eq + 1)
+
+        if lhs == '' then
+            error(('%s: no value before "=" is found in a key-value pair. ' ..
+                '%s'):format(err_msg_prefix, recommendation), 0)
+        end
+        local subname = ('%s.%s'):format(env_var_name, lhs)
+        res[lhs] = fromenv(subname, rhs, schema.value)
+    end
+    return res
+end
+
+-- Decode an array from an environment variable data.
+--
+-- Accepts two formats:
+--
+-- 1. JSON format (if data starts from "[").
+-- 2. Simple foo,bar,baz array format (otherwise).
+--
+-- The simple format is applicable for an array with scalar item
+-- values of any type except 'any'.
+local function array_from_env(env_var_name, raw_value, schema)
+    local can_have_simple_format = is_scalar(schema.items) and
+        schema.items.type ~= 'any'
+
+    local recommendation = can_have_simple_format and
+        'Use either the simple "foo,bar,baz" array format or the JSON ' ..
+        'array format (starts from "[").' or
+        'Use the JSON array format (starts from "[").'
+
+    -- JSON array -> try to decode.
+    if raw_value:startswith('[') then
+        local ok, res = pcall(json.decode, raw_value)
+        if not ok then
+            error(('Unable to decode JSON data in environment ' ..
+                'variable %q: %s'):format(env_var_name, res), 0)
+        end
+        return res
+    end
+
+    -- JSON object -> error.
+    if raw_value:startswith('{') then
+        error(('A JSON object is provided for environment variable %q of ' ..
+            'type array, an array is expected. %s'):format(env_var_name,
+            recommendation), 0)
+    end
+
+    -- Check several prerequisites for the simple foo,bar,baz
+    -- array format. If any check is not passed, suggest to use
+    -- the JSON array format and describe why.
+
+    -- Allow only scalar item values. Forbid composite ones.
+    if not is_scalar(schema.items) then
+        error(('Use the JSON array format for environment variable %q: the ' ..
+            'item values are supposed to have a composite type (%q) that ' ..
+            'is not supported by the simple "foo,bar,baz" array format. ' ..
+            'A JSON array value starts from "[".'):format(env_var_name,
+            schema.items.type), 0)
+    end
+
+    -- Forbid scalar field values of the 'any' type.
+    if schema.items.type == 'any' then
+        error(('Use the JSON array format for environment variable %q: the ' ..
+            'item values are supposed to have an arbitrary type ("any") ' ..
+            'that is not supported by the simple "foo,bar,baz" array ' ..
+            'format. A JSON array value starts from "[".'):format(
+            env_var_name), 0)
+    end
+
+    -- Assume the simple foo,bar,baz array format.
+    local res = {}
+    for i, v in ipairs(raw_value:split(',')) do
+        local subname = ('%s[%d]'):format(env_var_name, i)
+        res[i] = fromenv(subname, v, schema.items)
+    end
+    return res
+end
+
+-- Parse data from an environment variable as a value of the given
+-- type.
+--
+-- Important: the result is not necessarily valid against the given
+-- schema node. It should be validated using the
+-- <schema object>:validate() method before further processing.
 fromenv = function(env_var_name, raw_value, schema)
     if raw_value == nil or raw_value == '' then
         return nil
@@ -1142,79 +1675,24 @@ fromenv = function(env_var_name, raw_value, schema)
         assert(scalar_def ~= nil)
         return scalar_def.fromenv(env_var_name, raw_value)
     elseif schema.type == 'record' then
-        error(('Unable to get a record value from environment variable %q: ' ..
-            'records are not implemented'):format(env_var_name))
+        -- TODO: It is technically possible to implement parsing
+        -- of records similarly how it is done for maps, but it is
+        -- not needed for the config module and left unimplemented
+        -- for now.
+        error(('Attempt to parse environment variable %q as a ' ..
+            'record value: this is not supported yet and likely ' ..
+            'caused by an internal error in the config module'):format(
+            env_var_name), 0)
     elseif schema.type == 'map' then
-        if schema.key.type ~= 'string' then
-            error(('Unable to get a map value from environment variable %q: ' ..
-                'non-string key types are not implemented'):format(
-                env_var_name))
-        end
-
-        -- JSON object.
-        if raw_value:startswith('{') then
-            local ok, res = pcall(json.decode, raw_value)
-            if not ok then
-                error(('Unable to decode JSON data in environment ' ..
-                    'variable %q: %s'):format(env_var_name, res))
-            end
-            return res
-        end
-
-        -- JSON array.
-        if raw_value:startswith('[') then
-            error(('JSON array is provided for environment variable %q of ' ..
-                'type map'):format(env_var_name))
-        end
-
-        -- foo=bar,baz=fiz
-        local res = {}
-        for _, v in ipairs(raw_value:split(',')) do
-            local eq = v:find('=')
-            if eq == nil then
-                error(('Expected JSON or foo=bar,fiz=baz format for ' ..
-                    'environment variable %q'):format(env_var_name))
-            end
-            local lhs = string.sub(v, 1, eq - 1)
-            local rhs = string.sub(v, eq + 1)
-
-            if lhs == '' then
-                error(('Expected JSON or foo=bar,fiz=baz format for ' ..
-                    'environment variable %q'):format(env_var_name))
-            end
-            local subname = ('%s.%s'):format(env_var_name, lhs)
-            res[lhs] = fromenv(subname, rhs, schema.value)
-        end
-        return res
+        return map_from_env(env_var_name, raw_value, schema)
     elseif schema.type == 'array' then
-        -- JSON array.
-        if raw_value:startswith('[') then
-            local ok, res = pcall(json.decode, raw_value)
-            if not ok then
-                error(('Unable to decode JSON data in environment ' ..
-                    'variable %q: %s'):format(env_var_name, res))
-            end
-            return res
-        end
-
-        -- JSON object.
-        if raw_value:startswith('{') then
-            error(('JSON object is provided for environment variable %q of ' ..
-                'type array'):format(env_var_name))
-        end
-
-        local res = {}
-        for i, v in ipairs(raw_value:split(',')) do
-            local subname = ('%s[%d]'):format(env_var_name, i)
-            res[i] = fromenv(subname, v, schema.items)
-        end
-        return res
+        return array_from_env(env_var_name, raw_value, schema)
     else
         assert(false)
     end
 end
 
--- }}} Module functions
+-- }}} schema.fromenv()
 
 return {
     -- Schema node constructors.
@@ -1223,21 +1701,18 @@ return {
     map = map,
     array = array,
 
-    -- Schema object constructor.
-    --
-    -- It creates an object with methods from a schema node.
-    new = new,
-
     -- Constructors for 'derived types'.
     --
     -- It produces a scalar, record, map or array, but annotates
     -- it in some specific way to, say, impose extra constraint
     -- rules at validation.
-    --
     enum = enum,
     set = set,
     union_of_records = union_of_records,
 
-    -- Schema aware data parsers.
+    -- Schema object constructor.
+    new = new,
+
+    -- Parse data from an environment variable.
     fromenv = fromenv,
 }
