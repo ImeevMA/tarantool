@@ -9,10 +9,10 @@ local cluster_config = require('internal.config.cluster_config')
 
 local function choose_iconfig(self, opts)
     if opts ~= nil and opts.peer ~= nil then
-        local peers = rawget(self, '_peers')
+        local peers = self._peers
         local peer = peers[opts.peer]
         if peer == nil then
-            error(('Unknown peer %q'):format(opts.peer))
+            error(('Unknown peer %q'):format(opts.peer), 0)
         end
         if opts ~= nil and opts.use_default then
             return peer.iconfig_def
@@ -21,9 +21,9 @@ local function choose_iconfig(self, opts)
     end
 
     if opts ~= nil and opts.use_default then
-        return rawget(self, '_iconfig_def')
+        return self._iconfig_def
     else
-        return rawget(self, '_iconfig')
+        return self._iconfig
     end
 end
 
@@ -53,15 +53,15 @@ end
 --
 -- The names are useful to pass to other methods as opts.peer.
 function methods.peers(self)
-    return rawget(self, '_peer_names')
+    return self._peer_names
 end
 
 -- Group, replicaset and instance names.
 function methods.names(self)
     return {
-        group_name = rawget(self, '_group_name'),
-        replicaset_name = rawget(self, '_replicaset_name'),
-        instance_name = rawget(self, '_instance_name'),
+        group_name = self._group_name,
+        replicaset_name = self._replicaset_name,
+        instance_name = self._instance_name,
     }
 end
 
