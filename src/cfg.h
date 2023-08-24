@@ -71,6 +71,14 @@ cfg_geti64(const char *param);
 const char *
 cfg_gets(const char *param);
 
+/**
+ * Returns a dynamically allocated string. Unlike the result of cfg_gets(), the
+ * result of this function should be freed. This string may be longer than
+ * MAX_OPT_VAL_LEN.
+ */
+char *
+cfg_gets_dynamic(const char *param);
+
 double
 cfg_getd(const char *param);
 

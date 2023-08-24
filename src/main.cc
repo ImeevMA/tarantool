@@ -362,7 +362,7 @@ load_cfg(void)
 	if (work_dir != NULL && chdir(work_dir) == -1)
 		panic_syserror("can't chdir to `%s'", work_dir);
 
-	const char *username = cfg_gets("username");
+	char *username = cfg_gets_dynamic("username");
 	if (username != NULL) {
 		if (getuid() == 0 || geteuid() == 0) {
 			struct passwd *pw;
@@ -387,6 +387,7 @@ load_cfg(void)
 				  username);
 		}
 	}
+	free(username);
 
 	if (cfg_geti("coredump")) {
 		struct rlimit c = { 0, 0 };

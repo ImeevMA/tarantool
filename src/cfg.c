@@ -121,6 +121,20 @@ cfg_gets(const char *param)
 	return val;
 }
 
+char *
+cfg_gets_dynamic(const char *param)
+{
+	cfg_get(param);
+	if (lua_isnil(tarantool_L, -1))
+		return NULL;
+	const char *str = lua_tostring(tarantool_L, -1);
+	size_t size = strlen(str) + 1;
+	char *res = xmalloc(size);
+	memcpy(res, str, size);
+	lua_pop(tarantool_L, 1);
+	return res;
+}
+
 double
 cfg_getd(const char *param)
 {
