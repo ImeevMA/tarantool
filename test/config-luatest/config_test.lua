@@ -779,3 +779,45 @@ g.test_metrics_options = function()
         t.assert_equals(box.cfg.metrics.labels, {foo = 'bar'})
     end)
 end
+
+g.test_audit_options = function()
+    t.tarantool.skip_if_not_enterprise()
+    local dir = treegen.prepare_directory(g, {}, {})
+    local config = [[
+        credentials:
+          users:
+            guest:
+              roles:
+              - super
+
+        iproto:
+          listen: unix/:./{{ instance_name }}.iproto
+
+        audit_log:
+            to: devnull
+            nonblock: true
+            format: csv
+            filter: [space_select, role_grant_rights]
+
+        groups:
+          group-001:
+            replicasets:
+              replicaset-001:
+                instances:
+                  instance-001: {}
+    ]]
+    local config_file = treegen.write_script(dir, 'config.yaml', config)
+    local opts = {
+        config_file = config_file,
+        alias = 'instance-001',
+        chdir = dir,
+    }
+    g.server = server:new(opts)
+    g.server:start()
+    g.server:exec(function()
+        t.assert_equals(box.cfg.audit_log, nil)
+        t.assert_equals(box.cfg.audit_nonblock, true)
+        t.assert_equals(box.cfg.audit_format, 'csv')
+        t.assert_equals(box.cfg.audit_filter, 'space_select,role_grant_rights')
+    end)
+end
