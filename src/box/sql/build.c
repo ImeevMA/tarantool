@@ -2364,12 +2364,6 @@ sql_create_index(struct Parse *parse) {
 			goto exit_create_index;
 		}
 	} else {
-		char *constraint_name = NULL;
-		if (create_entity_def->name.n > 0) {
-			constraint_name =
-				sql_name_from_token(&create_entity_def->name);
-		}
-
 	       /*
 		* This naming is temporary. Now it's not
 		* possible (since we implement UNIQUE
@@ -2381,7 +2375,7 @@ sql_create_index(struct Parse *parse) {
 		assert(idx_type == SQL_INDEX_TYPE_CONSTRAINT_UNIQUE ||
 		       idx_type == SQL_INDEX_TYPE_CONSTRAINT_PK);
 		uint32_t idx_count = space->index_count;
-		if (constraint_name == NULL) {
+		if (create_entity_def->name.n == 0) {
 			if (idx_type == SQL_INDEX_TYPE_CONSTRAINT_UNIQUE) {
 				name = sqlMPrintf("unique_unnamed_%s_%d",
 						  def->name, idx_count + 1);
@@ -2390,9 +2384,8 @@ sql_create_index(struct Parse *parse) {
 						  def->name, idx_count + 1);
 			}
 		} else {
-			name = sql_xstrdup(constraint_name);
+			name = sql_name_from_token(&create_entity_def->name);
 		}
-		sql_xfree(constraint_name);
 	}
 
 	assert(name != NULL);
@@ -2612,7 +2605,6 @@ sql_drop_index(struct Parse *parse_context)
 	struct SrcList *table_list = drop_def->base.entity_name;
 	assert(table_list->nSrc == 1);
 	const char *table_name = table_list->a[0].id.name;
-	char *index_name = NULL;
 	sqlVdbeCountChanges(v);
 	struct space *space = space_by_name0(table_name);
 	bool if_exists = drop_def->if_exist;
@@ -2621,16 +2613,17 @@ sql_drop_index(struct Parse *parse_context)
 			diag_set(ClientError, ER_NO_SUCH_SPACE, table_name);
 			parse_context->is_aborted = true;
 		}
-		goto exit_drop_index;
+		sqlSrcListDelete(table_list);
+		return;
 	}
-	index_name = sql_name_from_token(&drop_def->name);
-
+	struct sql_id id;
+	sql_id_create_from_token(&id, &drop_def->name);
+	const char *index_name = id.name;
 	vdbe_emit_index_drop(parse_context, index_name, space->def,
 			     ER_NO_SUCH_INDEX_NAME, if_exists);
 	sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
- exit_drop_index:
+	sql_id_destroy(&id);
 	sqlSrcListDelete(table_list);
-	sql_xfree(index_name);
 }
 
 void *
@@ -2940,7 +2933,10 @@ sql_transaction_rollback(Parse *pParse)
 void
 sqlSavepoint(Parse * pParse, int op, Token * pName)
 {
-	char *zName = sql_name_from_token(pName);
+	struct sql_id id;
+	sql_id_create_from_token(&id, pName);
+	char *zName = sql_xstrdup(id.name);
+	sql_id_destroy(&id);
 	Vdbe *v = sqlGetVdbe(pParse);
 	if (op == SAVEPOINT_BEGIN &&
 	    sqlCheckIdentifierName(pParse, zName) != 0) {
@@ -2975,11 +2971,15 @@ sqlWithAdd(Parse * pParse,	/* Parsing context */
 {
 	With *pNew;
 
+	struct sql_id id;
+	sql_id_create_from_token(&id, pName);
+	char *name = sql_xstrdup(id.name);
+	sql_id_destroy(&id);
+
 	/*
 	 * Check that the CTE name is unique within this WITH
 	 * clause. If not, store an error in the Parse structure.
 	 */
-	char *name = sql_name_from_token(pName);
 	if (pWith != NULL) {
 		int i;
 		const char *err = "Ambiguous table name in WITH query: %s";
