@@ -203,19 +203,19 @@ sql_space_primary_key(const struct space *space)
 struct space *
 sqlStartTable(Parse *pParse, Token *pName)
 {
-	char *zName = 0;	/* The name of the new table */
 	struct space *new_space = NULL;
 	struct Vdbe *v = sqlGetVdbe(pParse);
 	sqlVdbeCountChanges(v);
 
-	zName = sql_name_from_token(pName);
-	if (sqlCheckIdentifierName(pParse, zName) != 0) {
-		sql_xfree(zName);
+	struct sql_id id;
+	sql_id_create_from_token(&id, pName);
+	if (sqlCheckIdentifierName(pParse, id.name) != 0) {
+		sql_id_destroy(&id);
 		return NULL;
 	}
 
-	new_space = sql_template_space_new(pParse, zName);
-	sql_xfree(zName);
+	new_space = sql_template_space_new(pParse, id.name);
+	sql_id_destroy(&id);
 	strlcpy(new_space->def->engine_name,
 		sql_storage_engine_strs[current_session()->sql_default_engine],
 		ENGINE_NAME_MAX + 1);
@@ -656,12 +656,12 @@ sql_create_check_contraint(struct Parse *parser, bool is_field_ck)
 
 	/* Prepare payload for ck constraint definition. */
 	struct Token *name_token = &create_ck_def->base.base.name;
-	char *name;
+	struct sql_id id;
 	if (name_token->n != 0)
-		name = sql_name_from_token(name_token);
+		sql_id_create_from_token(&id, name_token);
 	else
-		name = sql_ck_unique_name_new(parser, is_field_ck);
-	assert(name != NULL);
+		sql_id_set(&id, sql_ck_unique_name_new(parser, is_field_ck));
+	const char *name = id.name;
 	size_t name_len = strlen(name);
 
 	uint32_t expr_str_len = (uint32_t)(expr_span->zEnd - expr_span->zStart);
@@ -702,9 +702,8 @@ sql_create_check_contraint(struct Parse *parser, bool is_field_ck)
 	ck_def->expr_str = (char *)ck_def + expr_str_offset;
 	ck_def->space_id = BOX_ID_NIL;
 	trim_space_snprintf(ck_def->expr_str, expr_str, expr_str_len);
-	memcpy(ck_def->name, name, name_len);
-	sql_xfree(name);
-	ck_def->name[name_len] = '\0';
+	memcpy(ck_def->name, name, name_len + 1);
+	sql_id_destroy(&id);
 	if (is_alter_add_constr) {
 		const char *space_name = alter_def->entity_name->a[0].id.name;
 		struct space *space = space_by_name0(space_name);
@@ -735,9 +734,10 @@ sqlAddCollateType(Parse * pParse, Token * pToken)
 	struct space *space = pParse->create_column_def.space;
 	assert(space != NULL);
 	uint32_t i = space->def->field_count - 1;
-	char *coll_name = sql_name_from_token(pToken);
+	struct sql_id id;
+	sql_id_create_from_token(&id, pToken);
 	uint32_t *coll_id = &space->def->fields[i].coll_id;
-	if (sql_get_coll_seq(pParse, coll_name, coll_id) != NULL) {
+	if (sql_get_coll_seq(pParse, id.name, coll_id) != NULL) {
 		/* If the column is declared as "<name> PRIMARY KEY COLLATE <type>",
 		 * then an index may have been created on this column before the
 		 * collation type was added. Correct this if it is the case.
@@ -751,7 +751,7 @@ sqlAddCollateType(Parse * pParse, Token * pToken)
 			}
 		}
 	}
-	sql_xfree(coll_name);
+	sql_id_destroy(&id);
 }
 
 struct coll *
@@ -1357,10 +1357,11 @@ sql_create_view(struct Parse *parse_context)
 	assert(alter_entity_def->alter_action == ALTER_ACTION_CREATE);
 	(void) alter_entity_def;
 	if (parse_context->nVar > 0) {
-		char *name = sql_name_from_token(&create_entity_def->name);
-		diag_set(ClientError, ER_CREATE_SPACE, name,
+		struct sql_id id;
+		sql_id_create_from_token(&id, &create_entity_def->name);
+		diag_set(ClientError, ER_CREATE_SPACE, id.name,
 			 "parameters are not allowed in views");
-		sql_xfree(name);
+		sql_xfree(id.name);
 		parse_context->is_aborted = true;
 		goto create_view_fail;
 	}
@@ -1415,7 +1416,10 @@ sql_create_view(struct Parse *parse_context)
 		parse_context->is_aborted = true;
 		goto create_view_fail;
 	}
-	const char *space_name = sql_name_from_token(&create_entity_def->name);
+	struct sql_id id;
+	sql_id_create_from_token(&id, &create_entity_def->name);
+	const char *space_name = sql_xstrdup(id.name);
+	sql_id_destroy(&id);
 	int name_reg = ++parse_context->nMem;
 	sqlVdbeAddOp4(parse_context->pVdbe, OP_String8, 0, name_reg, 0,
 		      space_name, P4_DYNAMIC);
@@ -1818,10 +1822,12 @@ sql_create_foreign_key(struct Parse *parse_context)
 	}
 	struct ExprList *parent_cols = create_fk_def->parent_cols;
 	struct space *child_space = NULL;
+	struct sql_id id;
 	if (create_def->name.n != 0)
-		constraint_name = sql_name_from_token(&create_def->name);
+		sql_id_create_from_token(&id, &create_def->name);
 	else
-		constraint_name = sql_fk_unique_name_new(parse_context);
+		sql_id_set(&id, sql_fk_unique_name_new(parse_context));
+	constraint_name = id.name;
 	assert(constraint_name != NULL);
 	if (is_alter_add_constr) {
 		const char *child_name = alter_def->entity_name->a[0].id.name;
@@ -1845,9 +1851,10 @@ sql_create_foreign_key(struct Parse *parse_context)
 			&parse_context->create_fk_constraint_parse_def.fkeys;
 		rlist_add_entry(fkeys, fk_parse, link);
 	}
-	struct Token *parent = create_fk_def->parent_name;
-	assert(parent != NULL);
-	parent_name = sql_name_from_token(parent);
+	struct sql_id parent_id;
+	assert(create_fk_def->parent_name != NULL);
+	sql_id_create_from_token(&parent_id, create_fk_def->parent_name);
+	parent_name = parent_id.name;
 	/*
 	 * Within ALTER TABLE ADD CONSTRAINT FK also can be
 	 * self-referenced, but in this case parent (which is
@@ -1977,8 +1984,8 @@ exit_create_fk:
 	sql_expr_list_delete(child_cols);
 	if (!is_self_referenced)
 		sql_expr_list_delete(parent_cols);
-	sql_xfree(parent_name);
-	sql_xfree(constraint_name);
+	sql_id_destroy(&parent_id);
+	sql_id_destroy(&id);
 	return;
 tnt_error:
 	parse_context->is_aborted = true;
@@ -2313,10 +2320,11 @@ sql_create_index(struct Parse *parse) {
 	struct space_def *def = space->def;
 
 	if (def->opts.is_view) {
-		char *name = sql_name_from_token(&token);
-		diag_set(ClientError, ER_MODIFY_INDEX, name, def->name,
+		struct sql_id id;
+		sql_id_create_from_token(&id, &token);
+		diag_set(ClientError, ER_MODIFY_INDEX, id.name, def->name,
 			 "views can not be indexed");
-		sql_xfree(name);
+		sql_id_destroy(&id);
 		parse->is_aborted = true;
 		goto exit_create_index;
 	}
