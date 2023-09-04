@@ -252,6 +252,10 @@ struct sql_vfs {
 	*/
 };
 
+struct sql_id {
+	const char *name;
+};
+
 /**
  * Canonical string representation of SQL BOOLEAN values.
  * According to the standard it should be uppercase. See the 2011
@@ -1363,6 +1367,8 @@ struct Expr {
 	union {
 		char *zToken;	/* Token value. Zero terminated and dequoted */
 		int iValue;	/* Non-negative integer value if EP_IntValue */
+		/** ID value. */
+		struct sql_id id;
 	} u;
 
 	/* If the EP_TokenOnly flag is set in the Expr.flags mask, then no
