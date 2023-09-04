@@ -1416,10 +1416,8 @@ sql_create_view(struct Parse *parse_context)
 		parse_context->is_aborted = true;
 		goto create_view_fail;
 	}
-	struct sql_id id;
-	sql_id_create_from_token(&id, &create_entity_def->name);
-	const char *space_name = sql_xstrdup(id.name);
-	sql_id_destroy(&id);
+	const char *space_name =
+		sql_id_default_from_token(&create_entity_def->name);
 	int name_reg = ++parse_context->nMem;
 	sqlVdbeAddOp4(parse_context->pVdbe, OP_String8, 0, name_reg, 0,
 		      space_name, P4_DYNAMIC);
@@ -2354,7 +2352,7 @@ sql_create_index(struct Parse *parse) {
 	 */
 	if (!is_create_table_or_add_col) {
 		assert(token.z != NULL);
-		name = sql_name_from_token(&token);
+		name = sql_id_default_from_token(&token);
 		if (space_index_by_name0(space, name) != NULL) {
 			if (! create_entity_def->if_not_exist) {
 				diag_set(ClientError, ER_INDEX_EXISTS_IN_SPACE,
@@ -2384,7 +2382,8 @@ sql_create_index(struct Parse *parse) {
 						  def->name, idx_count + 1);
 			}
 		} else {
-			name = sql_name_from_token(&create_entity_def->name);
+			struct Token *t = &create_entity_def->name;
+			name = sql_id_default_from_token(t);
 		}
 	}
 
@@ -2652,7 +2651,7 @@ sql_id_list_append(struct IdList *list, struct Token *name_token)
 	assert(list->nId >= 0);
 	list->a = sqlArrayAllocate(list->a, sizeof(list->a[0]), &list->nId, &i);
 	assert(i >= 0);
-	list->a[i].zName = sql_name_from_token(name_token);
+	list->a[i].zName = sql_id_default_from_token(name_token);
 	return list;
 }
 
@@ -2815,7 +2814,7 @@ sqlSrcListAppendFromTerm(struct Parse *pParse, struct SrcList *p,
 	pItem = &p->a[p->nSrc - 1];
 	assert(pAlias != 0);
 	if (pAlias->n != 0) {
-		pItem->zAlias = sql_name_from_token(pAlias);
+		pItem->zAlias = sql_id_default_from_token(pAlias);
 	}
 	pItem->pSelect = pSubquery;
 	pItem->pOn = pOn;
@@ -2850,7 +2849,8 @@ sqlSrcListIndexedBy(struct SrcList *p, struct Token *pIndexedBy)
 			 */
 			pItem->fg.notIndexed = 1;
 		} else if (pIndexedBy->z != NULL) {
-			pItem->u1.zIndexedBy = sql_name_from_token(pIndexedBy);
+			pItem->u1.zIndexedBy =
+				sql_id_default_from_token(pIndexedBy);
 			pItem->fg.isIndexedBy = true;
 		}
 	}
@@ -2933,10 +2933,7 @@ sql_transaction_rollback(Parse *pParse)
 void
 sqlSavepoint(Parse * pParse, int op, Token * pName)
 {
-	struct sql_id id;
-	sql_id_create_from_token(&id, pName);
-	char *zName = sql_xstrdup(id.name);
-	sql_id_destroy(&id);
+	char *zName = sql_id_default_from_token(pName);
 	Vdbe *v = sqlGetVdbe(pParse);
 	if (op == SAVEPOINT_BEGIN &&
 	    sqlCheckIdentifierName(pParse, zName) != 0) {
@@ -2971,15 +2968,11 @@ sqlWithAdd(Parse * pParse,	/* Parsing context */
 {
 	With *pNew;
 
-	struct sql_id id;
-	sql_id_create_from_token(&id, pName);
-	char *name = sql_xstrdup(id.name);
-	sql_id_destroy(&id);
-
 	/*
 	 * Check that the CTE name is unique within this WITH
 	 * clause. If not, store an error in the Parse structure.
 	 */
+	char *name = sql_id_default_from_token(pName);
 	if (pWith != NULL) {
 		int i;
 		const char *err = "Ambiguous table name in WITH query: %s";
@@ -3264,7 +3257,7 @@ sql_setting_set(struct Parse *parse_context, struct Token *name,
 {
 	struct Vdbe *vdbe = sqlGetVdbe(parse_context);
 	sqlVdbeCountChanges(vdbe);
-	char *key = sql_name_from_token(name);
+	char *key = sql_id_default_from_token(name);
 	int target = ++parse_context->nMem;
 	sqlExprCode(parse_context, expr, target);
 	sqlVdbeAddOp4(vdbe, OP_SetSession, target, 0, 0, key, P4_DYNAMIC);
@@ -3276,7 +3269,7 @@ void
 sql_emit_show_create_table_one(struct Parse *parse, struct Token *name)
 {
 	struct Vdbe *v = sqlGetVdbe(parse);
-	char *space_name = sql_name_from_token(name);
+	char *space_name = sql_id_default_from_token(name);
 	sqlVdbeSetNumCols(v, 2);
 	vdbe_metadata_set_col_name(v, 0, "STATEMENTS");
 	vdbe_metadata_set_col_type(v, 0, "array");

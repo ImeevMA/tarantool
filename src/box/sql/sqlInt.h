@@ -3114,11 +3114,21 @@ sql_id_create(struct sql_id *id, const char *str, size_t len);
 void
 sql_id_destroy(struct sql_id *id);
 
+char *
+sql_id_default(const char *str, size_t len);
+
 static inline void
 sql_id_create_from_token(struct sql_id *id, struct Token *t)
 {
 	assert(t != NULL && t->z != NULL);
 	sql_id_create(id, t->z, t->n);
+}
+
+static inline char *
+sql_id_default_from_token(struct Token *t)
+{
+	assert(t != NULL && t->z != NULL);
+	return sql_id_default(t->z, t->n);
 }
 
 int sqlExprCompare(Expr *, Expr *, int);

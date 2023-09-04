@@ -165,6 +165,17 @@ sql_id_destroy(struct sql_id *id)
 }
 
 char *
+sql_id_default(const char *str, size_t len)
+{
+	struct sql_id id;
+	sql_id_create(&id, str, len);
+	char *res = id.name;
+	id.name = NULL;
+	sql_id_destroy(&id);
+	return res;
+}
+
+char *
 sql_normalized_name_region_new(struct region *r, const char *name, int len)
 {
 	int size = len + 1;
