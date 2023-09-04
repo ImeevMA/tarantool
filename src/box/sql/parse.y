@@ -199,10 +199,11 @@ engine_opts ::= ENGINE EQ STRING(A). {
     return;
   }
   /* Need to dequote name. */
-  char *normalized_name = sql_name_from_token(&A);
-  memcpy(pParse->create_table_def.new_space->def->engine_name, normalized_name,
-         strlen(normalized_name) + 1);
-  sql_xfree(normalized_name);
+  struct sql_id id;
+  sql_id_create_from_token(&id, &A);
+  size_t size = strlen(id.name) + 1;
+  memcpy(pParse->create_table_def.new_space->def->engine_name, id.name, size);
+  sql_id_destroy(&id);
 }
 
 create_table_end ::= . { sqlEndTable(pParse); }

@@ -45,7 +45,7 @@ sql_alter_table_rename(struct Parse *parse)
 	assert(rename_def->base.entity_type == ENTITY_TYPE_TABLE);
 	assert(rename_def->base.alter_action == ALTER_ACTION_RENAME);
 	assert(src_tab->nSrc == 1);
-	char *new_name = sql_name_from_token(&rename_def->new_name);
+	char *new_name = sql_id_default_from_token(&rename_def->new_name);
 	/* Check that new name isn't occupied by another table. */
 	if (space_by_name0(new_name) != NULL) {
 		diag_set(ClientError, ER_SPACE_EXISTS, new_name);

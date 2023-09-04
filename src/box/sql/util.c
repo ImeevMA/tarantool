@@ -175,24 +175,6 @@ sql_id_default(const char *str, size_t len)
 	return res;
 }
 
-char *
-sql_normalized_name_region_new(struct region *r, const char *name, int len)
-{
-	int size = len + 1;
-	size_t region_svp = region_used(r);
-	char *res = xregion_alloc(r, size);
-	int rc = sql_normalize_name(res, size, name, len);
-	if (rc <= size)
-		return res;
-
-	size = rc;
-	region_truncate(r, region_svp);
-	res = xregion_alloc(r, size);
-	if (sql_normalize_name(res, size, name, len) > size)
-		unreachable();
-	return res;
-}
-
 /* Convenient short-hand */
 #define UpperToLower sqlUpperToLower
 

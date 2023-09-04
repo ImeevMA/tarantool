@@ -2501,16 +2501,6 @@ char *
 sql_normalized_name_new(const char *name, int len);
 
 /**
- * Duplicate a normalized version of @a name onto a region @a r.
- * For normalization rules @sa sql_normalize_name().
- * @param r Region allocator.
- * @param name Source string.
- * @param len Length of @a name.
- */
-char *
-sql_normalized_name_region_new(struct region *r, const char *name, int len);
-
-/**
  * Return an escaped version of the original name in memory allocated with
  * sql_xmalloc().
  */
@@ -3080,27 +3070,6 @@ int sqlExprCodeExprList(Parse *, ExprList *, int, int, u8);
 #define SQL_ECEL_OMITREF  0x08	/* Omit if ExprList.u.x.iOrderByCol */
 void sqlExprIfTrue(Parse *, Expr *, int, int);
 void sqlExprIfFalse(Parse *, Expr *, int, int);
-
-/**
- * Given a token, return a string that consists of the text of
- * that token. Space to hold the returned string is obtained
- * from sql_xmalloc() and must be freed by the calling function.
- *
- * Any quotation marks (ex:  "name", 'name', [name], or `name`)
- * that surround the body of the token are removed.
- *
- * Tokens are often just pointers into the original SQL text and
- * so are not \000 terminated and are not persistent. The returned
- * string is \000 terminated and is persistent.
- *
- * Does not return NULL.
- */
-static inline char *
-sql_name_from_token(struct Token *t)
-{
-	assert(t != NULL && t->z != NULL);
-	return sql_normalized_name_new(t->z, t->n);
-}
 
 static inline void
 sql_id_set(struct sql_id *id, char *name)

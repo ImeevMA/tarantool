@@ -326,10 +326,13 @@ sql_create_column_start(struct Parse *parse)
 	}
 #endif
 
+	struct sql_id id;
+	sql_id_create_from_token(&id, &create_column_def->base.name);
 	struct region *region = &parse->region;
-	struct Token *name = &create_column_def->base.name;
-	char *column_name =
-		sql_normalized_name_region_new(region, name->z, name->n);
+	size_t size = strlen(id.name) + 1;
+	char *column_name = xregion_alloc(region, size);
+	memcpy(column_name, id.name, size);
+	sql_id_destroy(&id);
 
 	/*
 	 * Format can be set in Lua, then exact_field_count can be
@@ -2009,16 +2012,16 @@ sql_drop_constraint(struct Parse *parse_context)
 		parse_context->is_aborted = true;
 		return;
 	}
-	char *name = sql_normalized_name_region_new(&parse_context->region,
-						    drop_def->name.z,
-						    drop_def->name.n);
+	struct sql_id cid;
+	sql_id_create_from_token(&cid, &drop_def->name);
 	struct Vdbe *v = sqlGetVdbe(parse_context);
 	assert(v != NULL);
-	struct constraint_id *id = space_find_constraint_id(space, name);
+	struct constraint_id *id = space_find_constraint_id(space, cid.name);
 	if (id == NULL) {
 		sqlVdbeCountChanges(v);
 		sqlVdbeAddOp4(v, OP_DropTupleConstraint, space->def->id, 0, 0,
-			      sql_xstrdup(name), P4_DYNAMIC);
+			      sql_xstrdup(cid.name), P4_DYNAMIC);
+		sql_id_destroy(&cid);
 		return;
 	}
 	/*
@@ -2029,8 +2032,9 @@ sql_drop_constraint(struct Parse *parse_context)
 	 */
 	assert(id->type == CONSTRAINT_TYPE_PK ||
 	       id->type == CONSTRAINT_TYPE_UNIQUE);
-	vdbe_emit_index_drop(parse_context, name, space->def,
+	vdbe_emit_index_drop(parse_context, cid.name, space->def,
 			     ER_NO_SUCH_CONSTRAINT, false);
+	sql_id_destroy(&cid);
 	sqlVdbeCountChanges(v);
 	sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
 }
