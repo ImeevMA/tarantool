@@ -3102,6 +3102,9 @@ sql_name_from_token(struct Token *t)
 	return sql_normalized_name_new(t->z, t->n);
 }
 
+void
+sql_id_create(struct sql_id *id, const char *str, size_t len);
+
 int sqlExprCompare(Expr *, Expr *, int);
 int sqlExprListCompare(ExprList *, ExprList *, int);
 int sqlExprImpliesExpr(Expr *, Expr *, int);

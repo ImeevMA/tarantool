@@ -152,6 +152,12 @@ sql_normalized_name_new(const char *name, int len)
 	return res;
 }
 
+void
+sql_id_create(struct sql_id *id, const char *str, size_t len)
+{
+	id->name = sql_normalized_name_new(str, len);
+}
+
 char *
 sql_normalized_name_region_new(struct region *r, const char *name, int len)
 {

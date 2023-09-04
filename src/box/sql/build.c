@@ -2742,7 +2742,7 @@ sql_src_list_append(struct SrcList *list, struct Token *name_token)
 	}
 	struct SrcList_item *item = &list->a[list->nSrc - 1];
 	if (name_token != NULL)
-		item->id.name = sql_name_from_token(name_token);
+		sql_id_create(&item->id, name_token->z, name_token->n);
 	return list;
 }
 
