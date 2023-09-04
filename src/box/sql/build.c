@@ -306,7 +306,7 @@ sql_create_column_start(struct Parse *parse)
 	bool is_alter = space == NULL;
 	if (is_alter) {
 		const char *space_name =
-			alter_entity_def->entity_name->a[0].zName;
+			alter_entity_def->entity_name->a[0].id.name;
 		space = space_by_name0(space_name);
 		if (space == NULL) {
 			diag_set(ClientError, ER_NO_SUCH_SPACE, space_name);
@@ -706,7 +706,7 @@ sql_create_check_contraint(struct Parse *parser, bool is_field_ck)
 	sql_xfree(name);
 	ck_def->name[name_len] = '\0';
 	if (is_alter_add_constr) {
-		const char *space_name = alter_def->entity_name->a[0].zName;
+		const char *space_name = alter_def->entity_name->a[0].id.name;
 		struct space *space = space_by_name0(space_name);
 		if (space == NULL) {
 			diag_set(ClientError, ER_NO_SUCH_SPACE, space_name);
@@ -1663,7 +1663,7 @@ sql_drop_table(struct Parse *parse_context)
 	sqlVdbeCountChanges(v);
 	assert(!parse_context->is_aborted);
 	assert(table_name_list->nSrc == 1);
-	const char *space_name = table_name_list->a[0].zName;
+	const char *space_name = table_name_list->a[0].id.name;
 	struct space *space = space_by_name0(space_name);
 	if (space == NULL) {
 		if (!drop_def.if_exist) {
@@ -1824,7 +1824,7 @@ sql_create_foreign_key(struct Parse *parse_context)
 		constraint_name = sql_fk_unique_name_new(parse_context);
 	assert(constraint_name != NULL);
 	if (is_alter_add_constr) {
-		const char *child_name = alter_def->entity_name->a[0].zName;
+		const char *child_name = alter_def->entity_name->a[0].id.name;
 		child_space = space_by_name0(child_name);
 		if (child_space == NULL) {
 			diag_set(ClientError, ER_NO_SUCH_SPACE, child_name);
@@ -1996,7 +1996,7 @@ sql_drop_constraint(struct Parse *parse_context)
 		&parse_context->drop_constraint_def.base;
 	assert(drop_def->base.entity_type == ENTITY_TYPE_CONSTRAINT);
 	assert(drop_def->base.alter_action == ALTER_ACTION_DROP);
-	const char *table_name = drop_def->base.entity_name->a[0].zName;
+	const char *table_name = drop_def->base.entity_name->a[0].id.name;
 	assert(table_name != NULL);
 	struct space *space = space_by_name0(table_name);
 	if (space == NULL) {
@@ -2298,7 +2298,7 @@ sql_create_index(struct Parse *parse) {
 	struct Token token = create_entity_def->name;
 	if (tbl_name != NULL) {
 		assert(token.n > 0 && token.z != NULL);
-		const char *name = tbl_name->a[0].zName;
+		const char *name = tbl_name->a[0].id.name;
 		space = space_by_name0(name);
 		if (space == NULL) {
 			if (! create_entity_def->if_not_exist) {
@@ -2603,7 +2603,7 @@ sql_drop_index(struct Parse *parse_context)
 	assert(!parse_context->is_aborted);
 	struct SrcList *table_list = drop_def->base.entity_name;
 	assert(table_list->nSrc == 1);
-	char *table_name = table_list->a[0].zName;
+	const char *table_name = table_list->a[0].id.name;
 	char *index_name = NULL;
 	sqlVdbeCountChanges(v);
 	struct space *space = space_by_name0(table_name);
@@ -2742,7 +2742,7 @@ sql_src_list_append(struct SrcList *list, struct Token *name_token)
 	}
 	struct SrcList_item *item = &list->a[list->nSrc - 1];
 	if (name_token != NULL)
-		item->zName = sql_name_from_token(name_token);
+		item->id.name = sql_name_from_token(name_token);
 	return list;
 }
 
@@ -2772,7 +2772,7 @@ sqlSrcListDelete(struct SrcList *pList)
 	if (pList == 0)
 		return;
 	for (pItem = pList->a, i = 0; i < pList->nSrc; i++, pItem++) {
-		sql_xfree(pItem->zName);
+		sql_xfree(pItem->id.name);
 		sql_xfree(pItem->zAlias);
 		if (pItem->fg.isIndexedBy)
 			sql_xfree(pItem->u1.zIndexedBy);

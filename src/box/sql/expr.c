@@ -1056,7 +1056,7 @@ sql_expr_new_dequoted(int op, const struct Token *token)
 	} else {
 		char *buf = e->u.zToken;
 		const char *str = token->z;
-		const char *len = token->n;
+		size_t len = token->n;
 		int new_size = sql_normalize_name(buf, extra_size, str, len);
 		if (new_size > extra_size) {
 			extra_size = new_size;
@@ -1667,7 +1667,7 @@ sqlSrcListDup(struct SrcList *p, int flags)
 	for (i = 0; i < p->nSrc; i++) {
 		struct SrcList_item *pNewItem = &pNew->a[i];
 		struct SrcList_item *pOldItem = &p->a[i];
-		pNewItem->zName = sql_xstrdup(pOldItem->zName);
+		pNewItem->id.name = sql_xstrdup(pOldItem->id.name);
 		pNewItem->zAlias = sql_xstrdup(pOldItem->zAlias);
 		pNewItem->fg = pOldItem->fg;
 		pNewItem->iCursor = pOldItem->iCursor;

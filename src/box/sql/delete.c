@@ -39,9 +39,9 @@ sql_lookup_space(struct Parse *parse, struct SrcList_item *space_name)
 {
 	assert(space_name != NULL);
 	assert(space_name->space == NULL);
-	struct space *space = space_by_name0(space_name->zName);
+	struct space *space = space_by_name0(space_name->id.name);
 	if (space == NULL) {
-		diag_set(ClientError, ER_NO_SUCH_SPACE, space_name->zName);
+		diag_set(ClientError, ER_NO_SUCH_SPACE, space_name->id.name);
 		parse->is_aborted = true;
 		return NULL;
 	}
@@ -69,7 +69,7 @@ sql_materialize_view(struct Parse *parse, const char *name, struct Expr *where,
 	struct SrcList *from = sql_src_list_append(NULL, NULL);
 	where = sqlExprDup(where, 0);
 	assert(from->nSrc == 1);
-	from->a[0].zName = sql_xstrdup(name);
+	from->a[0].id.name = sql_xstrdup(name);
 	assert(from->a[0].pOn == NULL);
 	assert(from->a[0].pUsing == NULL);
 	struct Select *select = sqlSelectNew(parse, NULL, from, where, NULL,
@@ -86,7 +86,7 @@ sql_table_truncate(struct Parse *parse, struct SrcList *tab_list)
 	assert(tab_list->nSrc == 1);
 
 	struct Vdbe *v = sqlGetVdbe(parse);
-	const char *tab_name = tab_list->a->zName;
+	const char *tab_name = tab_list->a->id.name;
 	struct space *space = space_by_name0(tab_name);
 	if (space == NULL) {
 		diag_set(ClientError, ER_NO_SUCH_SPACE, tab_name);

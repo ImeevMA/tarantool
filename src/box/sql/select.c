@@ -446,7 +446,7 @@ sql_src_list_entry_name(const struct SrcList *list, int i)
 {
 	assert(list != NULL);
 	assert(i >= 0 && i < list->nSrc);
-	return list->a[i].zName;
+	return list->a[i].id.name;
 }
 
 /*
@@ -479,13 +479,13 @@ src_list_append_unique(struct SrcList *list, const char *new_name)
 	assert(new_name != NULL);
 
 	for (int i = 0; i < list->nSrc; ++i) {
-		const char *name = list->a[i].zName;
+		const char *name = list->a[i].id.name;
 		if (strcmp(new_name, name) == 0)
 			return list;
 	}
 	list = sql_src_list_enlarge(list, 1, list->nSrc);
 	struct SrcList_item *pItem = &list->a[list->nSrc - 1];
-	pItem->zName = sql_xstrdup(new_name);
+	pItem->id.name = sql_xstrdup(new_name);
 	return list;
 }
 
@@ -495,11 +495,11 @@ select_collect_table_names(struct Walker *walker, struct Select *select)
 	assert(walker != NULL);
 	assert(select != NULL);
 	for (int i = 0; i < select->pSrc->nSrc; ++i) {
-		if (select->pSrc->a[i].zName == NULL)
+		if (select->pSrc->a[i].id.name == NULL)
 			continue;
 		walker->u.pSrcList =
 			src_list_append_unique(walker->u.pSrcList,
-					       select->pSrc->a[i].zName);
+					       select->pSrc->a[i].id.name);
 		assert(walker->u.pSrcList != NULL);
 	}
 	return WRC_Continue;
@@ -4165,9 +4165,9 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 	/* Delete the transient table structure associated with the
 	 * subquery
 	 */
-	sql_xfree(pSubitem->zName);
+	sql_xfree(pSubitem->id.name);
 	sql_xfree(pSubitem->zAlias);
-	pSubitem->zName = 0;
+	pSubitem->id.name = NULL;
 	pSubitem->zAlias = 0;
 	pSubitem->pSelect = 0;
 
@@ -4612,8 +4612,8 @@ searchWith(With * pWith,		/* Current innermost WITH clause */
 	   struct SrcList_item *pItem,	/* FROM clause element to resolve */
 	   With ** ppContext)		/* OUT: WITH clause return value belongs to */
 {
-	const char *zName;
-	if ((zName = pItem->zName) != 0) {
+	const char *zName = pItem->id.name;
+	if (zName != NULL) {
 		With *p;
 		for (p = pWith; p; p = p->pOuter) {
 			int i;
@@ -4697,7 +4697,7 @@ withExpand(Walker * pWalker, struct SrcList_item *pFrom)
 		if (pFrom->fg.isTabFunc) {
 			const char *err = "'%s' is not a function";
 			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-				 tt_sprintf(err, pFrom->zName));
+				 tt_sprintf(err, pFrom->id.name));
 			pParse->is_aborted = true;
 			return -1;
 		}
@@ -4716,10 +4716,9 @@ withExpand(Walker * pWalker, struct SrcList_item *pFrom)
 			SrcList *pSrc = pFrom->pSelect->pSrc;
 			for (i = 0; i < pSrc->nSrc; i++) {
 				struct SrcList_item *pItem = &pSrc->a[i];
-				if (pItem->zName != 0
-				    && 0 == sqlStrICmp(pItem->zName,
-							   pCte->zName)
-				    ) {
+				if (pItem->id.name != NULL &&
+				    sqlStrICmp(pItem->id.name,
+					       pCte->zName) == 0) {
 					pItem->space = pFrom->space;
 					pItem->fg.isRecursive = 1;
 					ref_counter++;
@@ -4882,7 +4881,7 @@ selectExpander(Walker * pWalker, Select * p)
 		if (pFrom->space != NULL) {
 		} else
 
-		if (pFrom->zName == 0) {
+		if (pFrom->id.name == 0) {
 			Select *pSel = pFrom->pSelect;
 			/* A sub-query in the FROM clause of a SELECT */
 			assert(pSel != 0);
@@ -4920,7 +4919,7 @@ selectExpander(Walker * pWalker, Select * p)
 			if (pFrom->fg.isTabFunc) {
 				const char *err =
 					tt_sprintf("'%s' is not a function",
-						   pFrom->zName);
+						   pFrom->id.name);
 				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
 					 err);
 				pParse->is_aborted = true;
