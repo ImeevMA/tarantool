@@ -582,10 +582,9 @@ resolveExprStep(Walker * pWalker, Expr * pExpr)
 			ExprList *pList = pExpr->x.pList;	/* The argument list */
 			int n = pList ? pList->nExpr : 0;	/* Number of arguments */
 			int nId;	/* Number of characters in function name */
-			const char *zId;	/* The function name. */
 
 			assert(!ExprHasProperty(pExpr, EP_xIsSelect));
-			zId = pExpr->u.zToken;
+			char *zId = sql_name_new0(pExpr->u.zToken);
 			nId = sqlStrlen30(zId);
 			uint32_t flags = sql_func_flags(zId);
 			bool is_agg = (flags & SQL_FUNC_AGG) != 0;
@@ -600,6 +599,7 @@ resolveExprStep(Walker * pWalker, Expr * pExpr)
 						"constant between 0.0 and 1.0");
 					pParse->is_aborted = true;
 					pNC->nErr++;
+					sql_xfree(zId);
 					return WRC_Abort;
 				}
 			} else if ((flags & SQL_FUNC_UNLIKELY) != 0) {
@@ -620,6 +620,7 @@ resolveExprStep(Walker * pWalker, Expr * pExpr)
 				pNC->nErr++;
 				is_agg = 0;
 			}
+			sql_xfree(zId);
 			if (is_agg)
 				pNC->ncFlags &= ~NC_AllowAgg;
 			sqlWalkExprList(pWalker, pList);
@@ -659,8 +660,9 @@ resolveExprStep(Walker * pWalker, Expr * pExpr)
 			 */
 			if (func->def->language != FUNC_LANGUAGE_SQL_BUILTIN &&
 			    func->def->aggregate == FUNC_AGGREGATE_GROUP) {
-				const char *name = pExpr->u.zToken;
+				char *name = sql_name_new0(pExpr->u.zToken);
 				struct func *finalize = sql_func_finalize(name);
+				sql_xfree(name);
 				if (finalize != NULL)
 					pExpr->type = finalize->def->returns;
 			}

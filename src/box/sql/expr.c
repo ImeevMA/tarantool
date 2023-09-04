@@ -363,7 +363,9 @@ sql_expr_coll(Parse *parse, Expr *p, bool *is_explicit_coll, uint32_t *coll_id,
 		if (op == TK_FUNCTION) {
 			uint32_t arg_count = p->x.pList == NULL ? 0 :
 					     p->x.pList->nExpr;
-			uint32_t flags = sql_func_flags(p->u.zToken);
+			char *name = sql_name_new0(p->u.zToken);
+			uint32_t flags = sql_func_flags(name);
+			sql_xfree(name);
 			if (((flags & SQL_FUNC_DERIVEDCOLL) != 0) &&
 			    arg_count > 0 && p->type == FIELD_TYPE_STRING) {
 				/*
@@ -1175,7 +1177,7 @@ Expr *
 sqlExprFunction(Parse * pParse, ExprList * pList, Token * pToken)
 {
 	assert(pToken != NULL);
-	struct Expr *new_expr = sql_expr_new_dequoted(TK_FUNCTION, pToken);
+	struct Expr *new_expr = sql_expr_new(TK_FUNCTION, pToken);
 	new_expr->x.pList = pList;
 	assert(!ExprHasProperty(new_expr, EP_xIsSelect));
 	sqlExprSetHeightAndFlags(pParse, new_expr);
@@ -3879,8 +3881,12 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			if (pInfo == 0) {
 				assert(!ExprHasProperty(pExpr, EP_IntValue));
 				const char *err = "misuse of aggregate: %s()";
+				const char *str = pExpr->u.zToken;
+				size_t len = strlen(str);
+				char *name = sql_normalized_name_new(str, len);
 				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-					 tt_sprintf(err, pExpr->u.zToken));
+					 tt_sprintf(err, name));
+				sql_xfree(name);
 				pParse->is_aborted = true;
 			} else {
 				return pInfo->aFunc[pExpr->iAgg].iMem;

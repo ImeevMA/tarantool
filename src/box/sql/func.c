@@ -2199,7 +2199,6 @@ find_compatible(struct Expr *expr, struct sql_func_dictionary *dict,
 static struct func *
 find_built_in_func(struct Expr *expr, struct sql_func_dictionary *dict)
 {
-	const char *name = expr->u.zToken;
 	int n = expr->x.pList != NULL ? expr->x.pList->nExpr : 0;
 	int argc_min = dict->argc_min;
 	int argc_max = dict->argc_max;
@@ -2211,7 +2210,10 @@ find_built_in_func(struct Expr *expr, struct sql_func_dictionary *dict)
 			str = tt_sprintf("at least %d", argc_min);
 		else
 			str = tt_sprintf("from %d to %d", argc_min, argc_max);
+		char *name = sql_normalized_name_new(expr->u.zToken,
+						     strlen(expr->u.zToken));
 		diag_set(ClientError, ER_FUNC_WRONG_ARG_COUNT, name, str, n);
+		sql_xfree(name);
 		return NULL;
 	}
 	struct func *func = find_compatible(expr, dict, CHECK_TYPE_EXACT);
@@ -2223,28 +2225,34 @@ find_built_in_func(struct Expr *expr, struct sql_func_dictionary *dict)
 	func = find_compatible(expr, dict, CHECK_TYPE_CASTABLE);
 	if (func != NULL)
 		return func;
+	char *name = sql_normalized_name_new(expr->u.zToken,
+					     strlen(expr->u.zToken));
 	diag_set(ClientError, ER_SQL_EXECUTE,
 		 tt_sprintf("wrong arguments for function %s()", name));
+	sql_xfree(name);
 	return NULL;
 }
 
 struct func *
 sql_func_find(struct Expr *expr)
 {
-	const char *name = expr->u.zToken;
+	char *name = sql_normalized_name_new(expr->u.zToken,
+					     strlen(expr->u.zToken));
 	struct sql_func_dictionary *dict = built_in_func_get(name);
-	if (dict != NULL)
+	if (dict != NULL) {
+		sql_xfree(name);
 		return find_built_in_func(expr, dict);
+	}
 	struct func *func = func_by_name(name, strlen(name));
 	if (func == NULL) {
 		diag_set(ClientError, ER_NO_SUCH_FUNCTION, name);
-		return NULL;
+		goto error;
 	}
 	if (!func->def->exports.sql) {
 		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
 			 tt_sprintf("function %s() is not available in SQL",
 				     name));
-		return NULL;
+		goto error;
 	}
 	int n = expr->x.pList != NULL ? expr->x.pList->nExpr : 0;
 	int argc = func->def->aggregate == FUNC_AGGREGATE_GROUP ?
@@ -2253,9 +2261,13 @@ sql_func_find(struct Expr *expr)
 	if (argc != n) {
 		diag_set(ClientError, ER_FUNC_WRONG_ARG_COUNT, name,
 			 tt_sprintf("%d", argc), n);
-		return NULL;
+		goto error;
 	}
+	sql_xfree(name);
 	return func;
+error:
+	sql_xfree(name);
+	return NULL;
 }
 
 struct func *

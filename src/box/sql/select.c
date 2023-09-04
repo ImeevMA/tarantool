@@ -5340,9 +5340,11 @@ finalize_agg_function(struct Vdbe *vdbe, const struct AggInfo_func *agg_func)
 		sqlVdbeAppendP4(vdbe, agg_func->func, P4_FUNC);
 		return;
 	}
-	if (sql_func_finalize(agg_func->pExpr->u.zToken) == NULL)
+	char *func_name = sql_name_new0(agg_func->pExpr->u.zToken);
+	if (sql_func_finalize(func_name) == NULL)
 		return;
-	const char *name = tt_sprintf("%s_finalize", agg_func->pExpr->u.zToken);
+	const char *name = tt_sprintf("%s_finalize", func_name);
+	sql_xfree(func_name);
 	const char *str = sql_xstrdup(name);
 	sqlVdbeAddOp4(vdbe, OP_FunctionByName, 1, agg_func->iMem,
 		      agg_func->iMem, str, P4_DYNAMIC);

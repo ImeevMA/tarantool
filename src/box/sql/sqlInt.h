@@ -2503,6 +2503,13 @@ sql_normalized_name_new(const char *name, int len);
 char *
 sql_normalized_name_region_new(struct region *r, const char *name, int len);
 
+static inline char *
+sql_name_new0(const char *str)
+{
+	size_t len = strlen(str);
+	return sql_normalized_name_new(str, len);
+}
+
 /**
  * Return an escaped version of the original name in memory allocated with
  * sql_xmalloc().
