@@ -1878,7 +1878,7 @@ sqlExprListSetName(Parse * pParse,	/* Parsing context */
 	struct ExprList_item *item = &pList->a[pList->nExpr - 1];
 	assert(item->zName == NULL);
 	if (dequote) {
-		item->zName = sql_normalized_name_new(pName->z, pName->n);
+		item->zName = sql_id_default_from_token(pName);
 	} else {
 		item->zName = sql_xstrndup(pName->z, pName->n);
 	}

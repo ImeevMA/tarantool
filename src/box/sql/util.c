@@ -136,7 +136,15 @@ sql_normalize_name(char *dst, int dst_size, const char *src, int src_len)
 	return len + 1;
 }
 
-char *
+/**
+ * Duplicate a normalized version of @a name onto an sql_xmalloc().
+ * For normalization rules @sa sql_normalize_name().
+ *
+ * @param name Source string.
+ * @param len Length of @a name.
+ * @retval Not NULL Success. A normalized string is returned.
+ */
+static char *
 sql_normalized_name_new(const char *name, int len)
 {
 	int size = len + 1;
