@@ -317,7 +317,9 @@ like_optimization_is_valid(Parse *pParse, Expr *pExpr, Expr **ppPrefix,
 			Expr *pPrefix;
 			*pisComplete = c == MATCH_ALL_WILDCARD &&
 				       z[cnt + 1] == 0;
-			pPrefix = sql_expr_new_named(TK_STRING, z);
+			struct Token t;
+			sqlTokenInit(&t, z);
+			pPrefix = sql_expr_new(TK_STRING, &t);
 			pPrefix->u.zToken[cnt] = 0;
 			*ppPrefix = pPrefix;
 			if (op == TK_VARIABLE) {

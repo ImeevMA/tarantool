@@ -561,23 +561,11 @@ resolveExprStep(Walker * pWalker, Expr * pExpr)
 		 * Or a database, table and column:  ID.ID.ID
 		 */
 	case TK_DOT:{
-			const char *zColumn;
-			const char *zTable;
-			Expr *pRight;
-
-			/* if( pSrcList==0 ) break; */
-			pRight = pExpr->pRight;
-			if (pRight->op == TK_ID) {
-				zTable = pExpr->pLeft->u.zToken;
-				zColumn = pRight->u.zToken;
-			} else {
-				assert(pRight->op == TK_DOT);
-				zTable = pRight->pLeft->u.zToken;
-				zColumn = pRight->pRight->u.zToken;
-			}
-			return lookupName(pParse, zTable, zColumn, pNC,
-					  pExpr);
-		}
+		assert(pExpr->pRight->op == TK_ID);
+		char *table_name = sql_normalized_name_new(pExpr->pLeft->u.zToken, strlen(pExpr->pLeft->u.zToken));
+		char *column_name = sql_normalized_name_new(pExpr->pRight->u.zToken, strlen(pExpr->pRight->u.zToken));
+		return lookupName(pParse, table_name, column_name, pNC, pExpr);
+	}
 
 		/* Resolve function names
 		 */
@@ -743,7 +731,7 @@ resolveAsName(Parse * pParse,	/* Parsing context for error messages */
 	UNUSED_PARAMETER(pParse);
 
 	if (pE->op == TK_ID) {
-		char *zCol = pE->u.zToken;
+		char *zCol = sql_normalized_name_new(pE->u.zToken, strlen(pE->u.zToken));
 		for (i = 0; i < pEList->nExpr; i++) {
 			char *zAs = pEList->a[i].zName;
 			if (zAs != 0 && strcmp(zAs, zCol) == 0) {

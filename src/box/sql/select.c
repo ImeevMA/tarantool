@@ -5069,13 +5069,13 @@ selectExpander(Walker * pWalker, Select * p)
 				if (i > 0 && zTName == NULL &&
 				    sqlIdListIndex(pFrom->pUsing, zName) >= 0)
 					continue;
-				pRight = sql_expr_new_named(TK_ID, zName);
+				pRight = sql_expr_new_id(TK_ID, zName);
 				zColname = zName;
 				zToFree = NULL;
 				if (longNames != 0 || pTabList->nSrc > 1) {
 					struct Expr *pLeft;
-					pLeft = sql_expr_new_named(TK_ID,
-								   zTabName);
+					pLeft = sql_expr_new_id(TK_ID,
+								zTabName);
 					pExpr = sqlPExpr(pParse, TK_DOT, pLeft,
 							 pRight);
 					if (longNames != 0) {

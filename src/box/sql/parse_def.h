@@ -123,7 +123,7 @@ extern const struct Token sqlIntTokens[];
 
 /** Generate a Token object from a string. */
 void
-sqlTokenInit(struct Token *p, char *z);
+sqlTokenInit(struct Token *p, const char *z);
 
 #define Token_nil ((struct Token) {NULL, 0, false})
 

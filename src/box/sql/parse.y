@@ -980,8 +980,8 @@ term(A) ::= NULL(X).        {span_value(&A, @X, X);/*A-overwrites-X*/}
 expr(A) ::= id(X).          {span_id(&A, X); /*A-overwrites-X*/}
 expr(A) ::= JOIN_KW(X).     {span_id(&A, X); /*A-overwrites-X*/}
 expr(A) ::= nm(X) DOT nm(Y). {
-  struct Expr *temp1 = sql_expr_new_dequoted(TK_ID, &X);
-  struct Expr *temp2 = sql_expr_new_dequoted(TK_ID, &Y);
+  struct Expr *temp1 = sql_expr_new(TK_ID, &X);
+  struct Expr *temp2 = sql_expr_new(TK_ID, &Y);
   spanSet(&A,&X,&Y); /*A-overwrites-X*/
   A.pExpr = sqlPExpr(pParse, TK_DOT, temp1, temp2);
 }

@@ -2405,10 +2405,9 @@ sql_create_index(struct Parse *parse) {
 	 * So create a fake list to simulate this.
 	 */
 	if (col_list == NULL) {
-		struct Token prev_col;
 		uint32_t last_field = def->field_count - 1;
-		sqlTokenInit(&prev_col, def->fields[last_field].name);
-		struct Expr *expr = sql_expr_new(TK_ID, &prev_col);
+		struct Expr *expr =
+			sql_expr_new_id(TK_ID, def->fields[last_field].name);
 		col_list = sql_expr_list_append(NULL, expr);
 		assert(col_list->nExpr == 1);
 		sqlExprListSetSortOrder(col_list, create_idx_def->sort_order);
@@ -3066,22 +3065,25 @@ sql_fieldno_by_name(struct Parse *parse_context, struct Expr *field_name,
 		    uint32_t *fieldno)
 {
 	struct space_def *def = parse_context->create_table_def.new_space->def;
-	struct Expr *name = sqlExprSkipCollate(field_name);
-	if (name->op != TK_ID) {
+	struct Expr *name_expr = sqlExprSkipCollate(field_name);
+	if (name_expr->op != TK_ID) {
 		diag_set(ClientError, ER_INDEX_DEF_UNSUPPORTED, "Expressions");
 		parse_context->is_aborted = true;
 		return -1;
 	}
 	uint32_t i;
+	char *name = sql_normalized_name_new(name_expr->u.zToken, strlen(name_expr->u.zToken));
 	for (i = 0; i < def->field_count; ++i) {
-		if (strcmp(def->fields[i].name, name->u.zToken) == 0)
+		if (strcmp(def->fields[i].name, name) == 0)
 			break;
 	}
 	if (i == def->field_count) {
-		diag_set(ClientError, ER_SQL_CANT_RESOLVE_FIELD, name->u.zToken);
+		diag_set(ClientError, ER_SQL_CANT_RESOLVE_FIELD, name);
 		parse_context->is_aborted = true;
+		sql_xfree(name);
 		return -1;
 	}
+	sql_xfree(name);
 	*fieldno = i;
 	return 0;
 }

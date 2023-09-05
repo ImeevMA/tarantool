@@ -40,7 +40,7 @@ const struct Token sqlIntTokens[] = {
 };
 
 void
-sqlTokenInit(struct Token *p, char *z)
+sqlTokenInit(struct Token *p, const char *z)
 {
 	p->z = z;
 	p->n = z == NULL ? 0 : strlen(z);
