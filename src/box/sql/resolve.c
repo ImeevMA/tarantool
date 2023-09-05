@@ -553,31 +553,22 @@ resolveExprStep(Walker * pWalker, Expr * pExpr)
 	case TK_ID:{
 			if ((pNC->ncFlags & NC_AllowAgg) != 0)
 				pNC->ncFlags |= NC_HasUnaggregatedId;
-			return lookupName(pParse, 0, pExpr->u.zToken, pNC,
-					  pExpr);
+			char *zColumn = sql_name_new0(pExpr->u.zToken);
+			int rc = lookupName(pParse, 0, zColumn, pNC, pExpr);
+			sql_xfree(zColumn);
+			return rc;
 		}
 
-		/* A table name and column name:     ID.ID
-		 * Or a database, table and column:  ID.ID.ID
-		 */
+	/* A table name and column name:     ID.ID */
 	case TK_DOT:{
-			const char *zColumn;
-			const char *zTable;
-			Expr *pRight;
-
-			/* if( pSrcList==0 ) break; */
-			pRight = pExpr->pRight;
-			if (pRight->op == TK_ID) {
-				zTable = pExpr->pLeft->u.zToken;
-				zColumn = pRight->u.zToken;
-			} else {
-				assert(pRight->op == TK_DOT);
-				zTable = pRight->pLeft->u.zToken;
-				zColumn = pRight->pRight->u.zToken;
-			}
-			return lookupName(pParse, zTable, zColumn, pNC,
-					  pExpr);
-		}
+		assert(pExpr->pRight->op == TK_ID);
+		char *zTable = sql_name_new0(pExpr->pLeft->u.zToken);
+		char *zColumn = sql_name_new0(pExpr->pRight->u.zToken);
+		int rc = lookupName(pParse, zTable, zColumn, pNC, pExpr);
+		sql_xfree(zTable);
+		sql_xfree(zColumn);
+		return rc;
+	}
 
 		/* Resolve function names
 		 */

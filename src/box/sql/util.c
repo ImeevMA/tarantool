@@ -99,7 +99,7 @@ sqlDequote(char *z)
 	if (z == 0)
 		return;
 	quote = z[0];
-	if (!sqlIsquote(quote))
+	if (quote == '\'')
 		return;
 	for (i = 1, j = 0;; i++) {
 		if (z[i] == quote) {
@@ -122,7 +122,7 @@ sql_normalize_name(char *dst, int dst_size, const char *src, int src_len)
 {
 	assert(src != NULL);
 	assert(dst != NULL && dst_size > 0);
-	if (sqlIsquote(src[0])){
+	if (src[0] == '"'){
 		memcpy(dst, src, src_len);
 		dst[src_len] = '\0';
 		sqlDequote(dst);

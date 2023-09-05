@@ -2084,17 +2084,19 @@ sqlColumnsFromExprList(Parse * parse, ExprList * expr_list,
 				int iCol = pColExpr->iColumn;
 				assert(iCol >= 0);
 				space_def = pColExpr->space_def;
-				name = space_def->fields[iCol].name;
+				const char *field_name =
+					space_def->fields[iCol].name;
+				name = sql_xstrdup(field_name);
 			} else if (pColExpr->op == TK_ID) {
 				assert(!ExprHasProperty(pColExpr, EP_IntValue));
-				name = pColExpr->u.zToken;
+				name = sql_name_new0(pColExpr->u.zToken);
 			}
+		} else {
+			name = sql_xstrdup(name);
 		}
 		if (name == NULL) {
 			uint32_t idx = ++parse->autoname_i;
 			name = sql_xstrdup(sql_generate_column_name(idx));
-		} else {
-			name = sql_xstrdup(name);
 		}
 		size_t len = strlen(name);
 
@@ -4893,17 +4895,19 @@ selectExpander(Walker * pWalker, Select * p)
 			 * Will be overwritten with pointer as
 			 * unique identifier.
 			 */
-			const char *name = "sql_sq_DEADBEAFDEADBEAF";
+			const char *tmp_name = "sql_sq_DEADBEAFDEADBEAF";
 			struct space *space =
 				sql_template_space_new(sqlParseToplevel(pParse),
-						       name);
+						       tmp_name);
 			pFrom->space = space;
 			/*
 			 * Rewrite old name with correct pointer.
 			 */
-			name = tt_sprintf("sql_sq_%llX", (long long)space);
+			tmp_name = tt_sprintf("sql_sq_%llX", (long long)space);
+			char *name = sql_name_new0(tmp_name);
 			snprintf(space->def->name, strlen(space->def->name) + 1,
 				 "%s", name);
+			sql_xfree(name);
 			while (pSel->pPrior) {
 				pSel = pSel->pPrior;
 			}

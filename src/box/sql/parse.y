@@ -937,13 +937,9 @@ idlist(A) ::= nm(Y). {
     p->flags = EP_Leaf;
     p->iAgg = -1;
     p->u.zToken = (char*)&p[1];
-    int rc = sql_normalize_name(p->u.zToken, name_sz, t.z, t.n);
-    if (rc > name_sz) {
-      name_sz = rc;
-      p = sql_xrealloc(p, sizeof(*p) + name_sz);
-      p->u.zToken = (char *)&p[1];
-      sql_normalize_name(p->u.zToken, name_sz, t.z, t.n);
-    }
+    memcpy(p->u.zToken, t.z, t.n);
+    p->u.zToken[t.n] = '\0';
+    sqlDequote(p->u.zToken);
 #if SQL_MAX_EXPR_DEPTH>0
     p->nHeight = 1;
 #endif  
@@ -961,8 +957,8 @@ term(A) ::= NULL(X).        {spanExpr(&A, @X, X);/*A-overwrites-X*/}
 expr(A) ::= id(X).          {spanExpr(&A, TK_ID, X); /*A-overwrites-X*/}
 expr(A) ::= JOIN_KW(X).     {spanExpr(&A, TK_ID, X); /*A-overwrites-X*/}
 expr(A) ::= nm(X) DOT nm(Y). {
-  struct Expr *temp1 = sql_expr_new_dequoted(TK_ID, &X);
-  struct Expr *temp2 = sql_expr_new_dequoted(TK_ID, &Y);
+  struct Expr *temp1 = sql_expr_new(TK_ID, &X);
+  struct Expr *temp2 = sql_expr_new(TK_ID, &Y);
   spanSet(&A,&X,&Y); /*A-overwrites-X*/
   A.pExpr = sqlPExpr(pParse, TK_DOT, temp1, temp2);
 }
