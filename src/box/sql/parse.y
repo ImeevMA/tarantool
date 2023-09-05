@@ -974,7 +974,7 @@ term(A) ::= UNKNOWN(X) . {spanExpr(&A, @X, X);/*A-overwrites-X*/}
 term(A) ::= DECIMAL(X) . {spanExpr(&A, @X, X);/*A-overwrites-X*/}
 
 term(A) ::= INTEGER(X). {
-  A.pExpr = sql_expr_new_dequoted(TK_INTEGER, &X);
+  A.pExpr = sql_expr_new(TK_INTEGER, &X);
   A.pExpr->type = FIELD_TYPE_INTEGER;
   A.zStart = X.z;
   A.zEnd = X.z + X.n;
@@ -999,7 +999,7 @@ expr(A) ::= expr(A) COLLATE id(C). {
 
 expr(A) ::= CAST(X) LP expr(E) AS typedef(T) RP(Y). {
   spanSet(&A,&X,&Y); /*A-overwrites-X*/
-  A.pExpr = sql_expr_new_dequoted(TK_CAST, NULL);
+  A.pExpr = sql_expr_new(TK_CAST, NULL);
   A.pExpr->type = T.type;
   sqlExprAttachSubtrees(A.pExpr, E.pExpr, 0);
 }
@@ -1071,27 +1071,27 @@ expr(A) ::= TRIM(X) LP trim_operands(Y) RP(E). {
 
 trim_operands(A) ::= trim_specification(N) expr(Z) FROM expr(Y). {
   A = sql_expr_list_append(NULL, Y.pExpr);
-  struct Expr *p = sql_expr_new_dequoted(TK_INTEGER, &sqlIntTokens[N]);
+  struct Expr *p = sql_expr_new(TK_INTEGER, &sqlIntTokens[N]);
   A = sql_expr_list_append(A, p);
   A = sql_expr_list_append(A, Z.pExpr);
 }
 
 trim_operands(A) ::= trim_specification(N) FROM expr(Y). {
   A = sql_expr_list_append(NULL, Y.pExpr);
-  struct Expr *p = sql_expr_new_dequoted(TK_INTEGER, &sqlIntTokens[N]);
+  struct Expr *p = sql_expr_new(TK_INTEGER, &sqlIntTokens[N]);
   A = sql_expr_list_append(A, p);
 }
 
 trim_operands(A) ::= expr(Z) FROM expr(Y). {
   A = sql_expr_list_append(NULL, Y.pExpr);
-  struct Expr *p = sql_expr_new_dequoted(TK_INTEGER, &sqlIntTokens[TRIM_BOTH]);
+  struct Expr *p = sql_expr_new(TK_INTEGER, &sqlIntTokens[TRIM_BOTH]);
   A = sql_expr_list_append(A, p);
   A = sql_expr_list_append(A, Z.pExpr);
 }
 
 trim_operands(A) ::= expr(Y). {
   A = sql_expr_list_append(NULL, Y.pExpr);
-  struct Expr *p = sql_expr_new_dequoted(TK_INTEGER, &sqlIntTokens[TRIM_BOTH]);
+  struct Expr *p = sql_expr_new(TK_INTEGER, &sqlIntTokens[TRIM_BOTH]);
   A = sql_expr_list_append(A, p);
 }
 
