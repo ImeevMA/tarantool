@@ -903,10 +903,9 @@ idlist(A) ::= nm(Y). {
   ** new Expr to populate pOut.  Set the span of pOut to be the identifier
   ** that created the expression.
   */
-  static void spanExpr(struct ExprSpan *pOut, int op, Token t){
+  static void span_value(struct ExprSpan *pOut, int op, Token t){
     struct Expr *p = NULL;
-    int name_sz = t.n + 1;
-    p = sql_xmalloc(sizeof(Expr) + name_sz);
+    p = sql_xmalloc(sizeof(Expr) + t.n + 1);
     memset(p, 0, sizeof(Expr));
     switch (op) {
     case TK_STRING:
@@ -930,23 +929,43 @@ idlist(A) ::= nm(Y). {
       p->type = FIELD_TYPE_BOOLEAN;
       break;
     default:
+      assert(op == TK_NULL);
       p->type = FIELD_TYPE_SCALAR;
-      break;
     }
     p->op = (u8)op;
     p->flags = EP_Leaf;
     p->iAgg = -1;
     p->u.zToken = (char*)&p[1];
-    int rc = sql_normalize_name(p->u.zToken, name_sz, t.z, t.n);
-    if (rc > name_sz) {
-      name_sz = rc;
-      p = sql_xrealloc(p, sizeof(*p) + name_sz);
-      p->u.zToken = (char *)&p[1];
-      sql_normalize_name(p->u.zToken, name_sz, t.z, t.n);
-    }
+    memcpy(p->u.zToken, t.z, t.n);
+    p->u.zToken[t.n] = '\0';
+    sqlDequote(p->u.zToken);
 #if SQL_MAX_EXPR_DEPTH>0
     p->nHeight = 1;
-#endif  
+#endif
+    pOut->pExpr = p;
+    pOut->zStart = t.z;
+    pOut->zEnd = &t.z[t.n];
+    return;
+  }
+
+  /* Construct a new Expr object from a single identifier.  Use the
+  ** new Expr to populate pOut.  Set the span of pOut to be the identifier
+  ** that created the expression.
+  */
+  static void span_id(struct ExprSpan *pOut, Token t){
+    int size = t.n + 1;
+    struct Expr *p = sql_xmalloc(sizeof(Expr) + size);
+    memset(p, 0, sizeof(Expr));
+    p->type = FIELD_TYPE_SCALAR;
+    p->op = TK_ID;
+    p->flags = EP_Leaf;
+    p->iAgg = -1;
+    p->u.zToken = (char *)&p[1];
+    memcpy(p->u.zToken, t.z, t.n);
+    p->u.zToken[t.n] = '\0';
+#if SQL_MAX_EXPR_DEPTH>0
+    p->nHeight = 1;
+#endif
     pOut->pExpr = p;
     pOut->zStart = t.z;
     pOut->zEnd = &t.z[t.n];
@@ -957,21 +976,21 @@ idlist(A) ::= nm(Y). {
 expr(A) ::= term(A).
 expr(A) ::= LP(B) expr(X) RP(E).
             {spanSet(&A,&B,&E); /*A-overwrites-B*/  A.pExpr = X.pExpr;}
-term(A) ::= NULL(X).        {spanExpr(&A, @X, X);/*A-overwrites-X*/}
-expr(A) ::= id(X).          {spanExpr(&A, TK_ID, X); /*A-overwrites-X*/}
-expr(A) ::= JOIN_KW(X).     {spanExpr(&A, TK_ID, X); /*A-overwrites-X*/}
+term(A) ::= NULL(X).        {span_value(&A, @X, X);/*A-overwrites-X*/}
+expr(A) ::= id(X).          {span_id(&A, X); /*A-overwrites-X*/}
+expr(A) ::= JOIN_KW(X).     {span_id(&A, X); /*A-overwrites-X*/}
 expr(A) ::= nm(X) DOT nm(Y). {
   struct Expr *temp1 = sql_expr_new_dequoted(TK_ID, &X);
   struct Expr *temp2 = sql_expr_new_dequoted(TK_ID, &Y);
   spanSet(&A,&X,&Y); /*A-overwrites-X*/
   A.pExpr = sqlPExpr(pParse, TK_DOT, temp1, temp2);
 }
-term(A) ::= FLOAT|BLOB(X). {spanExpr(&A, @X, X);/*A-overwrites-X*/}
-term(A) ::= STRING(X).     {spanExpr(&A, @X, X);/*A-overwrites-X*/}
-term(A) ::= FALSE(X) . {spanExpr(&A, @X, X);/*A-overwrites-X*/}
-term(A) ::= TRUE(X) . {spanExpr(&A, @X, X);/*A-overwrites-X*/}
-term(A) ::= UNKNOWN(X) . {spanExpr(&A, @X, X);/*A-overwrites-X*/}
-term(A) ::= DECIMAL(X) . {spanExpr(&A, @X, X);/*A-overwrites-X*/}
+term(A) ::= FLOAT|BLOB(X). {span_value(&A, @X, X);/*A-overwrites-X*/}
+term(A) ::= STRING(X).     {span_value(&A, @X, X);/*A-overwrites-X*/}
+term(A) ::= FALSE(X) . {span_value(&A, @X, X);/*A-overwrites-X*/}
+term(A) ::= TRUE(X) . {span_value(&A, @X, X);/*A-overwrites-X*/}
+term(A) ::= UNKNOWN(X) . {span_value(&A, @X, X);/*A-overwrites-X*/}
+term(A) ::= DECIMAL(X) . {span_value(&A, @X, X);/*A-overwrites-X*/}
 
 term(A) ::= INTEGER(X). {
   A.pExpr = sql_expr_new_dequoted(TK_INTEGER, &X);

@@ -550,8 +550,11 @@ resolveExprStep(Walker * pWalker, Expr * pExpr)
 	case TK_ID:{
 			if ((pNC->ncFlags & NC_AllowAgg) != 0)
 				pNC->ncFlags |= NC_HasUnaggregatedId;
-			return lookupName(pParse, 0, pExpr->u.zToken, pNC,
-					  pExpr);
+			char *name = sql_normalized_name_new(pExpr->u.zToken,
+				strlen(pExpr->u.zToken));
+			int rc = lookupName(pParse, 0, name, pNC, pExpr);
+			sql_xfree(name);
+			return rc;
 		}
 
 		/* A table name and column name:     ID.ID

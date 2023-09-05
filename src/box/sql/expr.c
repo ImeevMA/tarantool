@@ -3673,7 +3673,7 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 		assert(pParse->vdbe_field_ref_reg > 0);
 		int reg = pParse->vdbe_field_ref_reg;
 		sqlVdbeAddOp4(v, OP_FetchByName, reg, 0, target,
-			      sql_xstrdup(pExpr->u.zToken), P4_DYNAMIC);
+			      sql_normalized_name_new(pExpr->u.zToken, strlen(pExpr->u.zToken)), P4_DYNAMIC);
 		return target;
 	case TK_DOT:
 		assert(pParse->vdbe_field_ref_reg > 0);
