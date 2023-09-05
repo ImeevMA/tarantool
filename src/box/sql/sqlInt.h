@@ -3959,16 +3959,9 @@ int sqlResolveOrderGroupBy(Parse *, Select *, ExprList *, const char *);
 char *
 rename_trigger(char const *sql_stmt, char const *table_name, bool *is_quoted);
 
-/**
- * Find a collation by name. Set error in @a parser if not found.
- * @param parser Parser.
- * @param name Collation name.
- * @param[out] Collation identifier.
- *
- * @retval Collation object. NULL on error or not found.
- */
+/** Find a collation by name. Set error in @a parser if not found. */
 struct coll *
-sql_get_coll_seq(Parse *parser, const char *name, uint32_t *coll_id);
+sql_get_coll_seq(Parse *parser, struct Expr *expr, uint32_t *coll_id);
 
 /**
  * This function returns average size of tuple in given index.

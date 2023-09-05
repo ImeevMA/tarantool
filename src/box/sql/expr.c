@@ -207,7 +207,7 @@ sqlExprAddCollateToken(struct Expr *pExpr, const Token *pCollName)
 {
 	if (pCollName->n == 0)
 		return pExpr;
-	struct Expr *new_expr = sql_expr_new_dequoted(TK_COLLATE, pCollName);
+	struct Expr *new_expr = sql_expr_new(TK_COLLATE, pCollName);
 	new_expr->pLeft = pExpr;
 	new_expr->flags |= EP_Collate | EP_Skip;
 	return new_expr;
@@ -290,7 +290,7 @@ sql_expr_coll(Parse *parse, Expr *p, bool *is_explicit_coll, uint32_t *coll_id,
 		}
 		if (op == TK_COLLATE ||
 		    (op == TK_REGISTER && p->op2 == TK_COLLATE)) {
-			*coll = sql_get_coll_seq(parse, p->u.zToken, coll_id);
+			*coll = sql_get_coll_seq(parse, p, coll_id);
 			if (*coll == NULL)
 				return -1;
 			*is_explicit_coll = true;

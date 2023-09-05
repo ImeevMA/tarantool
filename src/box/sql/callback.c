@@ -40,8 +40,9 @@
 #include "box/session.h"
 
 struct coll *
-sql_get_coll_seq(Parse *parser, const char *name, uint32_t *coll_id)
+sql_get_coll_seq(struct Parse *parser, struct Expr *expr, uint32_t *coll_id)
 {
+	char *name = sql_name_new0(expr->u.zToken);
 	if (name == NULL) {
 		*coll_id = COLL_NONE;
 		return coll_by_id(COLL_NONE)->coll;
