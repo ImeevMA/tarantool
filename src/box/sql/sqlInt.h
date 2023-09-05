@@ -3843,7 +3843,7 @@ sql_expr_coll(Parse *parse, Expr *p, bool *is_explicit_coll, uint32_t *coll_id,
  * COLLATE operator.
  */
 struct Expr *
-sqlExprAddCollateToken(struct Expr *pExpr, const Token *pCollName, int dequote);
+sqlExprAddCollateToken(struct Expr *pExpr, const Token *pCollName);
 
 /**
  * Set the collating sequence for expression pExpr to be the collating sequence

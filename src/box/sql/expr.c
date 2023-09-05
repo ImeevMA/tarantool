@@ -203,15 +203,11 @@ field_type_sequence_dup(enum field_type *types, uint32_t len)
 }
 
 struct Expr *
-sqlExprAddCollateToken(struct Expr *pExpr, const Token *pCollName, int dequote)
+sqlExprAddCollateToken(struct Expr *pExpr, const Token *pCollName)
 {
 	if (pCollName->n == 0)
 		return pExpr;
-	struct Expr *new_expr;
-	if (dequote)
-		new_expr = sql_expr_new_dequoted(TK_COLLATE, pCollName);
-	else
-		new_expr = sql_expr_new(TK_COLLATE, pCollName);
+	struct Expr *new_expr = sql_expr_new_dequoted(TK_COLLATE, pCollName);
 	new_expr->pLeft = pExpr;
 	new_expr->flags |= EP_Collate | EP_Skip;
 	return new_expr;
@@ -222,8 +218,11 @@ sqlExprAddCollateString(struct Expr *pExpr, const char *zC)
 {
 	Token s;
 	assert(zC != 0);
-	sqlTokenInit(&s, (char *)zC);
-	return sqlExprAddCollateToken(pExpr, &s, 0);
+	char *escaped_name = sql_escaped_name_new(zC);
+	sqlTokenInit(&s, escaped_name);
+	struct Expr *e = sqlExprAddCollateToken(pExpr, &s);
+	sql_xfree(escaped_name);
+	return e;
 }
 
 /*

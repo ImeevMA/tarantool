@@ -993,7 +993,7 @@ expr(A) ::= COLON|VARIABLE(X) INTEGER(Y).     {
   spanSet(&A, &X, &Y);
 }
 expr(A) ::= expr(A) COLLATE id(C). {
-  A.pExpr = sqlExprAddCollateToken(A.pExpr, &C, 1);
+  A.pExpr = sqlExprAddCollateToken(A.pExpr, &C);
   A.zEnd = &C.z[C.n];
 }
 
