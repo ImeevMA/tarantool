@@ -574,7 +574,7 @@ selcollist(A) ::= sclp(A) STAR. {
   A = sql_expr_list_append(A, sql_expr_new_anon(TK_ASTERISK));
 }
 selcollist(A) ::= sclp(A) nm(X) DOT STAR. {
-  struct Expr *pLeft = sql_expr_new_dequoted(TK_ID, &X);
+  struct Expr *pLeft = sql_expr_new(TK_ID, &X);
   Expr *pRight = sqlPExpr(pParse, TK_ASTERISK, 0, 0);
   Expr *pDot = sqlPExpr(pParse, TK_DOT, pLeft, pRight);
   A = sql_expr_list_append(A, pDot);

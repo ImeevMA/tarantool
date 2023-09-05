@@ -5021,7 +5021,7 @@ selectExpander(Walker * pWalker, Select * p)
 		if (pE->op == TK_DOT) {
 			assert(pE->pLeft != NULL);
 			assert(!ExprHasProperty(pE->pLeft, EP_IntValue));
-			zTName = pE->pLeft->u.zToken;
+			zTName = sql_name_new0(pE->pLeft->u.zToken);
 		}
 		for (i = 0, pFrom = pTabList->a;
 		     i < pTabList->nSrc; i++, pFrom++) {
@@ -5116,6 +5116,7 @@ selectExpander(Walker * pWalker, Select * p)
 				diag_set(ClientError, ER_SQL_SELECT_WILDCARD);
 			pParse->is_aborted = true;
 		}
+		sql_xfree(zTName);
 	}
 	sql_expr_list_delete(pEList);
 	p->pEList = pNew;
