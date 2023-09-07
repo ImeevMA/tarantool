@@ -21,11 +21,11 @@ box.execute([[SET SESSION "sql_seq_scan" = true;]])
 --
 -- gh-3273: Move Triggers to server
 --
-box.execute("CREATE TABLE t1(x INTEGER PRIMARY KEY);")
+box.execute("CREATE TABLE T1(X INTEGER PRIMARY KEY);")
 ---
 - row_count: 1
 ...
-box.execute("CREATE TABLE t2(x INTEGER PRIMARY KEY);")
+box.execute("CREATE TABLE T2(X INTEGER PRIMARY KEY);")
 ---
 - row_count: 1
 ...
@@ -81,7 +81,7 @@ immutable_part(box.space._trigger:select())
 ---
 - []
 ...
-box.execute("CREATE TABLE t1(x INTEGER PRIMARY KEY);")
+box.execute("CREATE TABLE T1(X INTEGER PRIMARY KEY);")
 ---
 - row_count: 1
 ...
@@ -237,7 +237,7 @@ immutable_part(box.space._trigger:select())
 - []
 ...
 -- Test target tables restricts.
-box.execute("CREATE TABLE t1(a INT PRIMARY KEY,b INT);")
+box.execute("CREATE TABLE T1(A INT PRIMARY KEY, B INT);")
 ---
 - row_count: 1
 ...
@@ -299,7 +299,7 @@ box.space._session_settings:update('sql_default_engine', {{'=', 2, 'vinyl'}})
 ---
 - ['sql_default_engine', 'vinyl']
 ...
-box.execute("CREATE TABLE m (s0 INT PRIMARY KEY, s1 TEXT UNIQUE);")
+box.execute("CREATE TABLE M (S0 INT PRIMARY KEY, S1 TEXT UNIQUE);")
 ---
 - row_count: 1
 ...
@@ -311,7 +311,7 @@ box.space._session_settings:update('sql_default_engine', {{'=', 2, 'memtx'}})
 ---
 - ['sql_default_engine', 'memtx']
 ...
-box.execute("CREATE TABLE n (s0 INT PRIMARY KEY, s1 TEXT UNIQUE, s2 NUMBER);")
+box.execute("CREATE TABLE N (S0 INT PRIMARY KEY, S1 TEXT UNIQUE, S2 NUMBER);")
 ---
 - row_count: 1
 ...
@@ -343,7 +343,7 @@ box.space._session_settings:update('sql_default_engine', {{'=', 2, 'memtx'}})
 ---
 - ['sql_default_engine', 'memtx']
 ...
-box.execute("CREATE TABLE m (s0 INT PRIMARY KEY, s1 TEXT UNIQUE);")
+box.execute("CREATE TABLE M (S0 INT PRIMARY KEY, S1 TEXT UNIQUE);")
 ---
 - row_count: 1
 ...
@@ -355,7 +355,7 @@ box.space._session_settings:update('sql_default_engine', {{'=', 2, 'vinyl'}})
 ---
 - ['sql_default_engine', 'vinyl']
 ...
-box.execute("CREATE TABLE n (s0 INT PRIMARY KEY, s1 TEXT UNIQUE, s2 NUMBER);")
+box.execute("CREATE TABLE N (S0 INT PRIMARY KEY, S1 TEXT UNIQUE, S2 NUMBER);")
 ---
 - row_count: 1
 ...
@@ -387,7 +387,7 @@ box.space._session_settings:update('sql_default_engine', {{'=', 2, 'memtx'}})
 ---
 - ['sql_default_engine', 'memtx']
 ...
-box.execute("CREATE TABLE test (id INT PRIMARY KEY)")
+box.execute("CREATE TABLE TEST (ID INT PRIMARY KEY)")
 ---
 - row_count: 1
 ...
@@ -395,7 +395,7 @@ box.space._session_settings:update('sql_default_engine', {{'=', 2, 'vinyl'}})
 ---
 - ['sql_default_engine', 'vinyl']
 ...
-box.execute("CREATE TABLE test2 (id INT PRIMARY KEY)")
+box.execute("CREATE TABLE TEST2 (ID INT PRIMARY KEY)")
 ---
 - row_count: 1
 ...
@@ -431,7 +431,7 @@ box.execute("DROP TABLE test2;")
 --
 -- gh-3536: Some triggers cause error messages and/or half-finished updates
 --
-box.execute("CREATE TABLE t (s1 INT, s2 INT, s3 INT, s4 INT PRIMARY KEY);")
+box.execute("CREATE TABLE T (S1 INT, S2 INT, S3 INT, S4 INT PRIMARY KEY);")
 ---
 - row_count: 1
 ...
@@ -480,7 +480,7 @@ box.execute("DROP TABLE t;")
 --
 -- gh-3653: Dissallow bindings for DDL
 --
-box.execute("CREATE TABLE t1(a INT PRIMARY KEY, b INT);")
+box.execute("CREATE TABLE T1(A INT PRIMARY KEY, B INT);")
 ---
 - row_count: 1
 ...
@@ -506,7 +506,7 @@ box.execute("DROP TABLE t1;")
 -- 
 -- Check that FOR EACH ROW clause is moandatory
 --
-box.execute("CREATE TABLE t1(a INT PRIMARY KEY, b INT);")
+box.execute("CREATE TABLE T1(A INT PRIMARY KEY, B INT);")
 ---
 - row_count: 1
 ...
@@ -533,7 +533,7 @@ box.schema.user.create('tester')
 box.schema.user.grant('tester','read,write,create,execute', 'space', '_trigger')
 ---
 ...
-box.execute("CREATE TABLE t1(x INTEGER PRIMARY KEY AUTOINCREMENT);")
+box.execute("CREATE TABLE T1(X INTEGER PRIMARY KEY AUTOINCREMENT);")
 ---
 - row_count: 1
 ...
@@ -564,15 +564,15 @@ box.execute("DROP TABLE t1;")
 -- gh-4188: make sure that the identifiers that were generated
 -- during the INSERT performed by the triggers are not returned.
 --
-box.execute('CREATE TABLE t1 (i INT PRIMARY KEY AUTOINCREMENT);')
+box.execute('CREATE TABLE T1 (I INT PRIMARY KEY AUTOINCREMENT);')
 ---
 - row_count: 1
 ...
-box.execute('CREATE TABLE t2 (i INT PRIMARY KEY AUTOINCREMENT);')
+box.execute('CREATE TABLE T2 (I INT PRIMARY KEY AUTOINCREMENT);')
 ---
 - row_count: 1
 ...
-box.execute('CREATE TABLE t3 (i INT PRIMARY KEY AUTOINCREMENT);')
+box.execute('CREATE TABLE T3 (I INT PRIMARY KEY AUTOINCREMENT);')
 ---
 - row_count: 1
 ...

@@ -51,7 +51,7 @@ box.info:sql()
 
 -- Test local interface and basic capabilities of prepared statements.
 --
-execute('CREATE TABLE test (id INT PRIMARY KEY, a NUMBER, b TEXT)')
+execute('CREATE TABLE TEST (ID INT PRIMARY KEY, A NUMBER, B TEXT);')
 space = box.space.TEST
 space:replace{1, 2, '3'}
 space:replace{4, 5, '6'}
@@ -112,7 +112,7 @@ execute(s.stmt_id)
 execute(s.stmt_id)
 unprepare(s.stmt_id)
 
-box.execute("CREATE TABLE test2 (id INT PRIMARY KEY);")
+box.execute("CREATE TABLE TEST2 (ID INT PRIMARY KEY);")
 s = prepare("ALTER TABLE test2 ADD CONSTRAINT fk1 FOREIGN KEY (id) REFERENCES test2")
 execute(s.stmt_id)
 execute(s.stmt_id)
@@ -136,7 +136,7 @@ unprepare(s.stmt_id)
 
 -- DQL
 --
-execute('CREATE TABLE test (id INT PRIMARY KEY, a NUMBER, b TEXT)')
+execute('CREATE TABLE TEST (ID INT PRIMARY KEY, A NUMBER, B TEXT);')
 space = box.space.TEST
 space:replace{1, 2, '3'}
 space:replace{4, 5, '6'}

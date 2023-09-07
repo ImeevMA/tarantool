@@ -17,7 +17,7 @@ box.space._session_settings:update('sql_default_engine', {{'=', 2, 'vinyl'}})
 ---
 - ['sql_default_engine', 'vinyl']
 ...
-box.execute('CREATE TABLE v1 (id INT PRIMARY KEY, b INT);')
+box.execute('CREATE TABLE V1 (ID INT PRIMARY KEY, B INT);')
 ---
 - row_count: 1
 ...

@@ -13,7 +13,7 @@ box.execute([[SET SESSION "sql_seq_scan" = true;]])
 ...
 -- Test cases concerning row count calculations.
 --
-box.execute("CREATE TABLE t1 (s1 VARCHAR(10) PRIMARY KEY);")
+box.execute("CREATE TABLE T1 (S1 VARCHAR(10) PRIMARY KEY);")
 ---
 - row_count: 1
 ...
@@ -33,7 +33,7 @@ box.execute("SELECT ROW_COUNT();")
   rows:
   - [0]
 ...
-box.execute("CREATE TABLE t2 (s1 VARCHAR(10) PRIMARY KEY, s2 VARCHAR(10));")
+box.execute("CREATE TABLE T2 (S1 VARCHAR(10) PRIMARY KEY, S2 VARCHAR(10));")
 ---
 - row_count: 1
 ...
@@ -45,7 +45,7 @@ box.execute("SELECT ROW_COUNT();")
   rows:
   - [1]
 ...
-box.execute("CREATE TABLE t3 (i1 INT UNIQUE, i2 INT, i3 INT PRIMARY KEY);")
+box.execute("CREATE TABLE T3 (I1 INT UNIQUE, I2 INT, I3 INT PRIMARY KEY);")
 ---
 - row_count: 1
 ...
@@ -199,11 +199,11 @@ box.execute("SELECT ROW_COUNT();")
 ...
 -- But triggers still should't be accounted.
 --
-box.execute("CREATE TABLE tt1 (id INT PRIMARY KEY);")
+box.execute("CREATE TABLE TT1 (ID INT PRIMARY KEY);")
 ---
 - row_count: 1
 ...
-box.execute("CREATE TABLE tt2 (id INT PRIMARY KEY);")
+box.execute("CREATE TABLE TT2 (ID INT PRIMARY KEY);")
 ---
 - row_count: 1
 ...
@@ -338,7 +338,8 @@ box.execute("DROP TABLE t1;")
 -- gh-4188: make sure that in case of INSERT OR IGNORE only
 -- successful inserts are counted.
 --
-box.execute("CREATE TABLE t (i INT PRIMARY KEY AUTOINCREMENT, a INT check (a > 0));")
+box.execute("CREATE TABLE T(I INT PRIMARY KEY AUTOINCREMENT, "..\
+            "A INT CHECK (A > 0));")
 ---
 - row_count: 1
 ...
@@ -371,7 +372,7 @@ box.func.check_T_ck_unnamed_T_A_1:drop()
 -- gh-4363: make sure that row_count has increased in the case of
 -- ALTER TABLE <table> ADD CONSTRAINT <constraint> CHECK(<expr>);
 --
-box.execute('CREATE TABLE t1(id INTEGER PRIMARY KEY);')
+box.execute('CREATE TABLE T1(ID INTEGER PRIMARY KEY);')
 ---
 - row_count: 1
 ...

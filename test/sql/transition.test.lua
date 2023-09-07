@@ -4,7 +4,7 @@ _ = box.space._session_settings:update('sql_default_engine', {{'=', 2, engine}})
 box.execute([[SET SESSION "sql_seq_scan" = true;]])
 
 -- create space
-box.execute("CREATE TABLE foobar (foo INT PRIMARY KEY, bar TEXT)")
+box.execute("CREATE TABLE FOOBAR (FOO INT PRIMARY KEY, BAR TEXT);")
 
 -- prepare data
 box.execute("INSERT INTO foobar VALUES (1, 'foo')")
@@ -41,7 +41,7 @@ box.execute("SELECT COUNT(*) FROM foobar WHERE bar='cacodaemon'")
 -- multi-index
 
 -- create space
-box.execute("CREATE TABLE barfoo (bar TEXT, foo NUMBER PRIMARY KEY)")
+box.execute("CREATE TABLE BARFOO (BAR TEXT, FOO NUMBER PRIMARY KEY);")
 box.execute("CREATE UNIQUE INDEX barfoo2 ON barfoo(bar)")
 
 -- prepare data
@@ -64,8 +64,9 @@ box.execute("DROP TABLE foobar")
 box.execute("DROP TABLE barfoo")
 
 -- attempt to create a table lacking PRIMARY KEY
-box.execute("CREATE TABLE without_rowid_lacking_primary_key(x SCALAR)")
+box.execute("CREATE TABLE WITHOUT_ROWID_LACKING_PRIMARY_KEY(X SCALAR);")
 
 -- create a table with implicit indices (used to SEGFAULT)
-box.execute("CREATE TABLE implicit_indices(a INT PRIMARY KEY,b INT,c INT,d TEXT UNIQUE)")
+box.execute("CREATE TABLE IMPLICIT_INDICES(A INT PRIMARY KEY, B INT, C INT,"..\
+            "D TEXT UNIQUE);")
 box.execute("DROP TABLE implicit_indices")

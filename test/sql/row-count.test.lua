@@ -5,12 +5,12 @@ box.execute([[SET SESSION "sql_seq_scan" = true;]])
 
 -- Test cases concerning row count calculations.
 --
-box.execute("CREATE TABLE t1 (s1 VARCHAR(10) PRIMARY KEY);")
+box.execute("CREATE TABLE T1 (S1 VARCHAR(10) PRIMARY KEY);")
 box.execute("SELECT ROW_COUNT();")
 box.execute("SELECT ROW_COUNT();")
-box.execute("CREATE TABLE t2 (s1 VARCHAR(10) PRIMARY KEY, s2 VARCHAR(10));")
+box.execute("CREATE TABLE T2 (S1 VARCHAR(10) PRIMARY KEY, S2 VARCHAR(10));")
 box.execute("SELECT ROW_COUNT();")
-box.execute("CREATE TABLE t3 (i1 INT UNIQUE, i2 INT, i3 INT PRIMARY KEY);")
+box.execute("CREATE TABLE T3 (I1 INT UNIQUE, I2 INT, I3 INT PRIMARY KEY);")
 box.execute("INSERT INTO t3 VALUES (0, 0, 0);")
 box.execute("SELECT ROW_COUNT();")
 box.execute("CREATE TRIGGER x AFTER DELETE ON t1 FOR EACH ROW BEGIN UPDATE t3 SET i1 = i1 + ROW_COUNT(); END;")
@@ -42,8 +42,8 @@ box.execute("DELETE FROM t3")
 box.execute("SELECT ROW_COUNT();")
 -- But triggers still should't be accounted.
 --
-box.execute("CREATE TABLE tt1 (id INT PRIMARY KEY);")
-box.execute("CREATE TABLE tt2 (id INT PRIMARY KEY);")
+box.execute("CREATE TABLE TT1 (ID INT PRIMARY KEY);")
+box.execute("CREATE TABLE TT2 (ID INT PRIMARY KEY);")
 box.execute("CREATE TRIGGER tr1 AFTER DELETE ON tt1 FOR EACH ROW BEGIN DELETE FROM tt2; END;")
 box.execute("INSERT INTO tt1 VALUES (1), (2), (3);")
 box.execute("INSERT INTO tt2 VALUES (1), (2), (3);")
@@ -78,7 +78,8 @@ box.execute("DROP TABLE t1;")
 -- gh-4188: make sure that in case of INSERT OR IGNORE only
 -- successful inserts are counted.
 --
-box.execute("CREATE TABLE t (i INT PRIMARY KEY AUTOINCREMENT, a INT check (a > 0));")
+box.execute("CREATE TABLE T(I INT PRIMARY KEY AUTOINCREMENT, "..\
+            "A INT CHECK (A > 0));")
 box.execute("INSERT OR IGNORE INTO t VALUES (null, 1), (null, -1), (null, 2);")
 box.execute("SELECT * FROM t;")
 box.execute("DROP TABLE t;")
@@ -88,7 +89,7 @@ box.func.check_T_ck_unnamed_T_A_1:drop()
 -- gh-4363: make sure that row_count has increased in the case of
 -- ALTER TABLE <table> ADD CONSTRAINT <constraint> CHECK(<expr>);
 --
-box.execute('CREATE TABLE t1(id INTEGER PRIMARY KEY);')
+box.execute('CREATE TABLE T1(ID INTEGER PRIMARY KEY);')
 box.execute('ALTER TABLE t1 ADD CONSTRAINT ck1 CHECK(id > 0);')
 box.execute('DROP TABLE t1;')
 box.func.check_T1_CK1:drop()

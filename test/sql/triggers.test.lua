@@ -11,8 +11,8 @@ box.execute([[SET SESSION "sql_seq_scan" = true;]])
 -- gh-3273: Move Triggers to server
 --
 
-box.execute("CREATE TABLE t1(x INTEGER PRIMARY KEY);")
-box.execute("CREATE TABLE t2(x INTEGER PRIMARY KEY);")
+box.execute("CREATE TABLE T1(X INTEGER PRIMARY KEY);")
+box.execute("CREATE TABLE T2(X INTEGER PRIMARY KEY);")
 box.execute([[CREATE TRIGGER t1t AFTER INSERT ON t1 FOR EACH ROW BEGIN INSERT INTO t2 VALUES(1); END; ]])
 immutable_part(box.space._trigger:select())
 
@@ -32,7 +32,7 @@ immutable_part(box.space._trigger:select())
 box.execute("DROP TABLE T1;")
 immutable_part(box.space._trigger:select())
 
-box.execute("CREATE TABLE t1(x INTEGER PRIMARY KEY);")
+box.execute("CREATE TABLE T1(X INTEGER PRIMARY KEY);")
 box.execute([[CREATE TRIGGER t1t AFTER INSERT ON t1 FOR EACH ROW BEGIN INSERT INTO t2 VALUES(1); END; ]])
 immutable_part(box.space._trigger:select())
 
@@ -75,7 +75,7 @@ box.execute("DROP TABLE t2;")
 immutable_part(box.space._trigger:select())
 
 -- Test target tables restricts.
-box.execute("CREATE TABLE t1(a INT PRIMARY KEY,b INT);")
+box.execute("CREATE TABLE T1(A INT PRIMARY KEY, B INT);")
 space_id = box.space.T1.id
 
 tuple = {"T1T", space_id, {sql = [[create trigger t1t instead of update on t1 for each row begin delete from t1 WHERE a=old.a+2; end;]]}}
@@ -102,10 +102,10 @@ box.execute("DROP TABLE T1;")
 --
 -- Case 1: Src 'vinyl' table; Dst 'memtx' table
 box.space._session_settings:update('sql_default_engine', {{'=', 2, 'vinyl'}})
-box.execute("CREATE TABLE m (s0 INT PRIMARY KEY, s1 TEXT UNIQUE);")
+box.execute("CREATE TABLE M (S0 INT PRIMARY KEY, S1 TEXT UNIQUE);")
 box.execute("CREATE TRIGGER m1 BEFORE UPDATE ON m FOR EACH ROW BEGIN UPDATE n SET s2 = 'now'; END;")
 box.space._session_settings:update('sql_default_engine', {{'=', 2, 'memtx'}})
-box.execute("CREATE TABLE n (s0 INT PRIMARY KEY, s1 TEXT UNIQUE, s2 NUMBER);")
+box.execute("CREATE TABLE N (S0 INT PRIMARY KEY, S1 TEXT UNIQUE, S2 NUMBER);")
 box.execute("INSERT INTO m VALUES (0, '0');")
 box.execute("INSERT INTO n VALUES (0, '',null);")
 box.execute("UPDATE m SET s1 = 'The Rain In Spain';")
@@ -118,10 +118,10 @@ box.execute("DROP TABLE n;")
 
 -- Case 2: Src 'memtx' table; Dst 'vinyl' table
 box.space._session_settings:update('sql_default_engine', {{'=', 2, 'memtx'}})
-box.execute("CREATE TABLE m (s0 INT PRIMARY KEY, s1 TEXT UNIQUE);")
+box.execute("CREATE TABLE M (S0 INT PRIMARY KEY, S1 TEXT UNIQUE);")
 box.execute("CREATE TRIGGER m1 BEFORE UPDATE ON m FOR EACH ROW BEGIN UPDATE n SET s2 = 'now'; END;")
 box.space._session_settings:update('sql_default_engine', {{'=', 2, 'vinyl'}})
-box.execute("CREATE TABLE n (s0 INT PRIMARY KEY, s1 TEXT UNIQUE, s2 NUMBER);")
+box.execute("CREATE TABLE N (S0 INT PRIMARY KEY, S1 TEXT UNIQUE, S2 NUMBER);")
 box.execute("INSERT INTO m VALUES (0, '0');")
 box.execute("INSERT INTO n VALUES (0, '',null);")
 box.execute("UPDATE m SET s1 = 'The Rain In Spain';")
@@ -133,9 +133,9 @@ box.execute("DROP TABLE n;")
 
 -- Test SQL Transaction with LUA
 box.space._session_settings:update('sql_default_engine', {{'=', 2, 'memtx'}})
-box.execute("CREATE TABLE test (id INT PRIMARY KEY)")
+box.execute("CREATE TABLE TEST (ID INT PRIMARY KEY)")
 box.space._session_settings:update('sql_default_engine', {{'=', 2, 'vinyl'}})
-box.execute("CREATE TABLE test2 (id INT PRIMARY KEY)")
+box.execute("CREATE TABLE TEST2 (ID INT PRIMARY KEY)")
 box.execute("INSERT INTO test VALUES (2)")
 box.execute("START TRANSACTION")
 box.execute("INSERT INTO test2 VALUES (1)")
@@ -147,7 +147,7 @@ box.execute("DROP TABLE test2;")
 --
 -- gh-3536: Some triggers cause error messages and/or half-finished updates
 --
-box.execute("CREATE TABLE t (s1 INT, s2 INT, s3 INT, s4 INT PRIMARY KEY);")
+box.execute("CREATE TABLE T (S1 INT, S2 INT, S3 INT, S4 INT PRIMARY KEY);")
 box.execute("CREATE VIEW v AS SELECT s1, s2 FROM t;")
 box.execute("CREATE TRIGGER tv INSTEAD OF UPDATE ON v FOR EACH ROW BEGIN UPDATE t SET s3 = new.s1 WHERE s1 = old.s1; END;")
 box.execute("INSERT INTO t VALUES (1,1,1,1);")
@@ -160,7 +160,7 @@ box.execute("DROP TABLE t;")
 --
 -- gh-3653: Dissallow bindings for DDL
 --
-box.execute("CREATE TABLE t1(a INT PRIMARY KEY, b INT);")
+box.execute("CREATE TABLE T1(A INT PRIMARY KEY, B INT);")
 space_id = box.space.T1.id
 box.execute("CREATE TRIGGER tr1 AFTER INSERT ON t1 FOR EACH ROW WHEN new.a = ? BEGIN SELECT 1; END;")
 tuple = {"TR1", space_id, {sql = [[CREATE TRIGGER tr1 AFTER INSERT ON t1 FOR EACH ROW WHEN new.a = ? BEGIN SELECT 1; END;]]}}
@@ -170,7 +170,7 @@ box.execute("DROP TABLE t1;")
 -- 
 -- Check that FOR EACH ROW clause is moandatory
 --
-box.execute("CREATE TABLE t1(a INT PRIMARY KEY, b INT);")
+box.execute("CREATE TABLE T1(A INT PRIMARY KEY, B INT);")
 space_id = box.space.T1.id
 box.execute("CREATE TRIGGER tr1 AFTER INSERT ON t1 BEGIN ; END;")
 box.execute("DROP TABLE t1;")
@@ -181,7 +181,7 @@ box.execute("DROP TABLE t1;")
 --
 box.schema.user.create('tester')
 box.schema.user.grant('tester','read,write,create,execute', 'space', '_trigger')
-box.execute("CREATE TABLE t1(x INTEGER PRIMARY KEY AUTOINCREMENT);")
+box.execute("CREATE TABLE T1(X INTEGER PRIMARY KEY AUTOINCREMENT);")
 box.session.su('tester')
 --
 -- Ensure that the CREATE TRIGGER statement cannot be executed if
@@ -197,9 +197,9 @@ box.execute("DROP TABLE t1;")
 -- gh-4188: make sure that the identifiers that were generated
 -- during the INSERT performed by the triggers are not returned.
 --
-box.execute('CREATE TABLE t1 (i INT PRIMARY KEY AUTOINCREMENT);')
-box.execute('CREATE TABLE t2 (i INT PRIMARY KEY AUTOINCREMENT);')
-box.execute('CREATE TABLE t3 (i INT PRIMARY KEY AUTOINCREMENT);')
+box.execute('CREATE TABLE T1 (I INT PRIMARY KEY AUTOINCREMENT);')
+box.execute('CREATE TABLE T2 (I INT PRIMARY KEY AUTOINCREMENT);')
+box.execute('CREATE TABLE T3 (I INT PRIMARY KEY AUTOINCREMENT);')
 
 box.execute('CREATE TRIGGER r1 AFTER INSERT ON t2 FOR EACH ROW BEGIN INSERT INTO t1 VALUES (null); END')
 box.execute('INSERT INTO t1 VALUES (100);')

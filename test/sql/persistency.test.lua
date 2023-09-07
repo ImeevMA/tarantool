@@ -5,7 +5,7 @@ _ = box.space._session_settings:update('sql_default_engine', {{'=', 2, engine}})
 box.execute([[SET SESSION "sql_seq_scan" = true;]])
 
 -- create space
-box.execute("CREATE TABLE foobar (foo INT PRIMARY KEY, bar TEXT)")
+box.execute("CREATE TABLE FOOBAR (FOO INT PRIMARY KEY, BAR TEXT)")
 
 -- prepare data
 box.execute("INSERT INTO foobar VALUES (1, 'foo')")
@@ -42,7 +42,7 @@ box.execute("SELECT COUNT(*) FROM foobar WHERE bar='cacodaemon'")
 -- multi-index
 
 -- create space
-box.execute("CREATE TABLE barfoo (bar TEXT, foo NUMBER PRIMARY KEY)")
+box.execute("CREATE TABLE BARFOO (BAR TEXT, FOO NUMBER PRIMARY KEY)")
 box.execute("CREATE UNIQUE INDEX barfoo2 ON barfoo(bar)")
 
 -- prepare data
@@ -55,7 +55,7 @@ box.execute("CREATE TRIGGER tfoobar AFTER INSERT ON foobar FOR EACH ROW BEGIN IN
 box.execute("SELECT \"name\", \"opts\" FROM \"_trigger\"");
 
 -- Many entries
-box.execute("CREATE TABLE t1(a INT,b INT,c INT,PRIMARY KEY(b,c));")
+box.execute("CREATE TABLE T1(A INT, B INT, C INT,PRIMARY KEY(B, C));")
 box.execute("WITH RECURSIVE cnt(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM cnt WHERE x<1000) INSERT INTO t1 SELECT x, x%40, x/40 FROM cnt;")
 box.execute("SELECT a FROM t1 ORDER BY b, a LIMIT 10 OFFSET 20;");
 

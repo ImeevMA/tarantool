@@ -53,11 +53,11 @@ box.space._index:get({box.space._space.index['name']:get('T1').id, 0})
 - [512, 0, 'primary', 'tree', {'unique': true}, [[0, 'unsigned']]]
 ...
 -- test system tables functionality
-box.execute("CREATE TABLE t(x INTEGER PRIMARY KEY);")
+box.execute("CREATE TABLE T(X INTEGER PRIMARY KEY);")
 ---
 - row_count: 1
 ...
-box.execute("CREATE TABLE t_out(x INTEGER PRIMARY KEY);")
+box.execute("CREATE TABLE T_OUT(X INTEGER PRIMARY KEY);")
 ---
 - row_count: 1
 ...

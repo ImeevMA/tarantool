@@ -15,7 +15,7 @@ fiber = require('fiber')
 -- it is impossible to drop a space referenced by a created, but
 -- *still* not yet committed view.
 --
-box.execute('CREATE TABLE t1(id INT PRIMARY KEY)')
+box.execute('CREATE TABLE T1(ID INT PRIMARY KEY);')
 ---
 - row_count: 1
 ...
@@ -61,7 +61,7 @@ box.space.V1 ~= nil
 -- dropping view, since view reference counter of space to be
 -- dropped is checked before firing on_commit trigger.
 --
-box.execute('CREATE TABLE t2 (id INT PRIMARY KEY)')
+box.execute('CREATE TABLE T2 (ID INT PRIMARY KEY);')
 ---
 - row_count: 1
 ...

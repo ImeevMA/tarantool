@@ -15,7 +15,7 @@ box.execute([[SET SESSION "sql_seq_scan" = true;]])
 - row_count: 1
 ...
 -- create space
-box.execute("CREATE TABLE foobar (foo INT PRIMARY KEY, bar TEXT)")
+box.execute("CREATE TABLE FOOBAR (FOO INT PRIMARY KEY, BAR TEXT)")
 ---
 - row_count: 1
 ...
@@ -295,7 +295,7 @@ box.execute("SELECT COUNT(*) FROM foobar WHERE bar='cacodaemon'")
 ...
 -- multi-index
 -- create space
-box.execute("CREATE TABLE barfoo (bar TEXT, foo NUMBER PRIMARY KEY)")
+box.execute("CREATE TABLE BARFOO (BAR TEXT, FOO NUMBER PRIMARY KEY)")
 ---
 - row_count: 1
 ...
@@ -333,7 +333,7 @@ box.execute("SELECT \"name\", \"opts\" FROM \"_trigger\"");
         BEGIN INSERT INTO barfoo VALUES (''trigger test'', 9999); END'}]
 ...
 -- Many entries
-box.execute("CREATE TABLE t1(a INT,b INT,c INT,PRIMARY KEY(b,c));")
+box.execute("CREATE TABLE T1(A INT, B INT, C INT,PRIMARY KEY(B, C));")
 ---
 - row_count: 1
 ...

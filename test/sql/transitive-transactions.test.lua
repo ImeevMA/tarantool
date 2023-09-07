@@ -10,7 +10,7 @@ test_run:cmd("setopt delimiter ';'")
 -- gh-4157: autoincrement within transaction started in SQL
 -- leads to seagfault.
 --
-box.execute('CREATE TABLE t (id INT PRIMARY KEY AUTOINCREMENT);');
+box.execute('CREATE TABLE T (ID INT PRIMARY KEY AUTOINCREMENT);');
 box.execute('START TRANSACTION')
 box.execute('INSERT INTO t VALUES (null), (null);')
 box.execute('INSERT INTO t VALUES (null), (null);')
