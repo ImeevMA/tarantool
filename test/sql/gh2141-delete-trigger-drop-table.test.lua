@@ -4,7 +4,7 @@ _ = box.space._session_settings:update('sql_default_engine', {{'=', 2, engine}})
 box.execute([[SET SESSION "sql_seq_scan" = true;]])
 
 -- create space
-box.execute("CREATE TABLE t(id INT PRIMARY KEY)")
+box.execute("CREATE TABLE T(ID INT PRIMARY KEY)")
 
 box.execute("CREATE TRIGGER tt_bu BEFORE UPDATE ON t FOR EACH ROW BEGIN SELECT 1; END")
 box.execute("CREATE TRIGGER tt_au AFTER UPDATE ON t FOR EACH ROW BEGIN SELECT 1; END")

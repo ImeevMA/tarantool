@@ -1,7 +1,8 @@
 netbox = require('net.box')
 test_run = require('test_run').new()
 
-box.execute("CREATE TABLE t (id INT PRIMARY KEY AUTOINCREMENT, a INT NOT NULL, c TEXT COLLATE \"unicode_ci\");")
+box.execute("CREATE TABLE T (ID INT PRIMARY KEY AUTOINCREMENT, "..\
+            "A INT NOT NULL, C TEXT COLLATE \"unicode_ci\");")
 box.execute("INSERT INTO t VALUES (1, 1, 'aSd');")
 
 remote = test_run:get_cfg('remote') == 'true'

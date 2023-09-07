@@ -4,9 +4,12 @@ _ = box.space._session_settings:update('sql_default_engine', {{'=', 2, engine}})
 
 box.cfg{}
 
-box.execute("CREATE TABLE t1 (s1 INTEGER PRIMARY KEY AUTOINCREMENT, s2 INTEGER, CHECK (s1 <> 19));");
-box.execute("CREATE TABLE t2 (s1 INTEGER PRIMARY KEY AUTOINCREMENT, s2 INTEGER, CHECK (s1 <> 19 AND s1 <> 25));");
-box.execute("CREATE TABLE t3 (s1 INTEGER PRIMARY KEY AUTOINCREMENT, s2 INTEGER, CHECK (s1 < 10));");
+box.execute("CREATE TABLE T1 (S1 INTEGER PRIMARY KEY AUTOINCREMENT, "..\
+            "S2 INTEGER, CHECK (S1 <> 19));");
+box.execute("CREATE TABLE T2 (S1 INTEGER PRIMARY KEY AUTOINCREMENT, "..\
+            "S2 INTEGER, CHECK (S1 <> 19 AND S1 <> 25));");
+box.execute("CREATE TABLE T3 (S1 INTEGER PRIMARY KEY AUTOINCREMENT, "..\
+            "S2 INTEGER, CHECK (S1 < 10));");
 
 box.execute("insert into t1 values (18, null);")
 box.execute("insert into t1(s2) values (null);")

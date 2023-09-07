@@ -7,7 +7,7 @@ _ = box.space._session_settings:update('sql_default_engine', {{'=', 2, engine}})
 box.schema.user.grant('guest', 'read,write,execute', 'universe')
 
 -- Create a table and insert a datum
-box.execute([[CREATE TABLE t(id int PRIMARY KEY)]])
+box.execute([[CREATE TABLE T(ID INT PRIMARY KEY)]])
 box.execute([[INSERT INTO t (id) VALUES (1)]])
 
 -- Sanity check

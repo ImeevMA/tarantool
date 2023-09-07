@@ -2,7 +2,7 @@
 -- Make sure that when inserting, values are inserted in the given
 -- order when ephemeral space is used.
 --
-CREATE TABLE t (i INT PRIMARY KEY AUTOINCREMENT);
+CREATE TABLE T (I INT PRIMARY KEY AUTOINCREMENT);
 --
 -- In order for this INSERT to use the ephemeral space, we created
 -- this trigger.

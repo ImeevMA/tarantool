@@ -1,8 +1,8 @@
-box.execute("CREATE TABLE supersecret(id INT PRIMARY KEY, data TEXT);")
+box.execute("CREATE TABLE SUPERSECRET(ID INT PRIMARY KEY, DATA TEXT);")
 ---
 - row_count: 1
 ...
-box.execute("CREATE TABLE supersecret2(id INT PRIMARY KEY, data TEXT);")
+box.execute("CREATE TABLE SUPERSECRET2(ID INT PRIMARY KEY, DATA TEXT);")
 ---
 - row_count: 1
 ...

@@ -3,7 +3,7 @@
 -- Make sure that when inserting, values are inserted in the given
 -- order when ephemeral space is used.
 --
-CREATE TABLE t (i INT PRIMARY KEY AUTOINCREMENT);
+CREATE TABLE T (I INT PRIMARY KEY AUTOINCREMENT);
  | ---
  | - row_count: 1
  | ...

@@ -1,5 +1,5 @@
-box.execute("CREATE TABLE supersecret(id INT PRIMARY KEY, data TEXT);")
-box.execute("CREATE TABLE supersecret2(id INT PRIMARY KEY, data TEXT);")
+box.execute("CREATE TABLE SUPERSECRET(ID INT PRIMARY KEY, DATA TEXT);")
+box.execute("CREATE TABLE SUPERSECRET2(ID INT PRIMARY KEY, DATA TEXT);")
 box.execute("INSERT INTO supersecret VALUES(1, 'very very big secret');")
 box.execute("INSERT INTO supersecret2 VALUES(1, 'very big secret 2');")
 box.execute("CREATE VIEW supersecret_leak AS  SELECT * FROM supersecret, supersecret2;")

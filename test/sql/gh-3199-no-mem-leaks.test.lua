@@ -16,7 +16,7 @@ box.execute([[SET SESSION "sql_seq_scan" = true;]])
 
 internal_usage = fiber.info()[fiber.self().id()].memory.used
 
-box.execute('CREATE TABLE test (id INT PRIMARY KEY, x INTEGER, y INTEGER)')
+box.execute('CREATE TABLE TEST (ID INT PRIMARY KEY, X INTEGER, Y INTEGER)')
 box.execute('INSERT INTO test VALUES (1, 1, 1), (2, 2, 2)')
 box.execute('SELECT x, y, x + y FROM test ORDER BY y')
 
@@ -29,7 +29,7 @@ box.execute('SELECT x, y, x + y FROM test ORDER BY y')
 
 fiber.info()[fiber.self().id()].memory.used == internal_usage
 
-box.execute('CREATE TABLE test2 (id INT PRIMARY KEY, a TEXT, b INTEGER)')
+box.execute('CREATE TABLE TEST2 (ID INT PRIMARY KEY, A TEXT, B INTEGER)')
 box.execute('INSERT INTO test2 VALUES (1, \'abc\', 1), (2, \'hello\', 2)')
 box.execute('INSERT INTO test2 VALUES (3, \'test\', 3), (4, \'xx\', 4)')
 box.execute('SELECT a, id + 2, b FROM test2 WHERE b < id * 2 ORDER BY a ')

@@ -3,8 +3,8 @@ engine = test_run:get_cfg('engine')
 _ = box.space._session_settings:update('sql_default_engine', {{'=', 2, engine}})
 nb = require('net.box')
 
-box.execute("CREATE TABLE t1 (s1 INT PRIMARY KEY, s2 INT UNIQUE);")
-box.execute("CREATE TABLE t2 (s1 INT PRIMARY KEY);")
+box.execute("CREATE TABLE T1 (S1 INT PRIMARY KEY, S2 INT UNIQUE);")
+box.execute("CREATE TABLE T2 (S1 INT PRIMARY KEY);")
 box.execute("INSERT INTO t1 VALUES (1, 1);")
 box.execute("INSERT INTO t2 VALUES (1);")
 

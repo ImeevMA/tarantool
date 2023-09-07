@@ -12,7 +12,7 @@ box.execute([[SET SESSION "sql_seq_scan" = true;]])
 - row_count: 1
 ...
 -- create space
-box.execute("CREATE TABLE t(id INT PRIMARY KEY)")
+box.execute("CREATE TABLE T(ID INT PRIMARY KEY)")
 ---
 - row_count: 1
 ...

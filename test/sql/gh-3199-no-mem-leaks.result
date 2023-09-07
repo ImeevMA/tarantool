@@ -24,7 +24,7 @@ box.execute([[SET SESSION "sql_seq_scan" = true;]])
 internal_usage = fiber.info()[fiber.self().id()].memory.used
 ---
 ...
-box.execute('CREATE TABLE test (id INT PRIMARY KEY, x INTEGER, y INTEGER)')
+box.execute('CREATE TABLE TEST (ID INT PRIMARY KEY, X INTEGER, Y INTEGER)')
 ---
 - row_count: 1
 ...
@@ -105,7 +105,7 @@ fiber.info()[fiber.self().id()].memory.used == internal_usage
 ---
 - true
 ...
-box.execute('CREATE TABLE test2 (id INT PRIMARY KEY, a TEXT, b INTEGER)')
+box.execute('CREATE TABLE TEST2 (ID INT PRIMARY KEY, A TEXT, B INTEGER)')
 ---
 - row_count: 1
 ...

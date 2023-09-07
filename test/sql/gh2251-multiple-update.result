@@ -13,7 +13,7 @@ box.execute([[SET SESSION "sql_seq_scan" = true;]])
 - row_count: 1
 ...
 -- box.cfg()
-box.execute("CREATE TABLE t1(a integer primary key, b INT UNIQUE, e INT);")
+box.execute("CREATE TABLE T1(A INTEGER PRIMARY KEY, B INT UNIQUE, E INT);")
 ---
 - row_count: 1
 ...
@@ -38,7 +38,8 @@ box.execute("SELECT e FROM t1")
   - [7]
   - [8]
 ...
-box.execute("CREATE TABLE t2(a integer primary key, b INT UNIQUE, c NUMBER, d NUMBER, e INT,  UNIQUE(c,d));")
+box.execute("CREATE TABLE T2(A INTEGER PRIMARY KEY, B INT UNIQUE, C NUMBER, "..\
+            "D NUMBER, E INT,  UNIQUE(C,D));")
 ---
 - row_count: 1
 ...

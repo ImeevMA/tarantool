@@ -8,16 +8,16 @@ _ = box.space._session_settings:update('sql_default_engine', {{'=', 2, engine}})
 
 box.cfg{}
 
-box.execute("CREATE TABLE t1(a INT PRIMARY KEY, b INT UNIQUE)")
-box.execute("CREATE TABLE t2(a INT UNIQUE, b INT)")
+box.execute("CREATE TABLE T1(A INT PRIMARY KEY, B INT UNIQUE)")
+box.execute("CREATE TABLE T2(A INT UNIQUE, B INT)")
 
-box.execute("CREATE TABLE t3(a NUMBER)")
-box.execute("CREATE TABLE t4(a NUMBER, b TEXT)")
-box.execute("CREATE TABLE t5(a NUMBER, b NUMBER UNIQUE)")
+box.execute("CREATE TABLE T3(A NUMBER)")
+box.execute("CREATE TABLE T4(A NUMBER, B TEXT)")
+box.execute("CREATE TABLE T5(A NUMBER, B NUMBER UNIQUE)")
 
 box.execute("DROP TABLE t1")
 
 --
 -- gh-3522: invalid primary key name
 --
-box.execute("CREATE TABLE tx (a INT, PRIMARY KEY (b));")
+box.execute("CREATE TABLE TX (A INT, PRIMARY KEY (B));")

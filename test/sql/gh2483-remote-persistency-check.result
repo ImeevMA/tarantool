@@ -15,7 +15,7 @@ box.schema.user.grant('guest', 'read,write,execute', 'universe')
 ---
 ...
 -- Create a table and insert a datum
-box.execute([[CREATE TABLE t(id int PRIMARY KEY)]])
+box.execute([[CREATE TABLE T(ID INT PRIMARY KEY)]])
 ---
 - row_count: 1
 ...

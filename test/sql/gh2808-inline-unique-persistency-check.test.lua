@@ -5,7 +5,7 @@ engine = test_run:get_cfg('engine')
 _ = box.space._session_settings:update('sql_default_engine', {{'=', 2, engine}})
 
 -- Create a table and insert a datum
-box.execute([[CREATE TABLE t1(a INT PRIMARY KEY, b INT, UNIQUE(b));]])
+box.execute([[CREATE TABLE T1(A INT PRIMARY KEY, B INT, UNIQUE(B));]])
 box.execute([[INSERT INTO t1 VALUES(1,2);]])
 
 -- Sanity check
