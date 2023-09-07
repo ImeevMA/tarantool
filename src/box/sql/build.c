@@ -59,20 +59,26 @@
 #include "box/session_settings.h"
 
 /** Return a case-sensitive identifier generated from the given string. */
-static inline const char *
-sql_id_cs(struct Parse *parse, const char *str, size_t len)
+static inline char *
+sql_id_cs(struct Parse *parse, const char *str, size_t str_len)
 {
+	char *id = xregion_alloc(&parse->region, str_len + 1);
+	memcpy(id, str, str_len);
+	id[str_len] = '\0';
+	if (id[0] == '"')
+		sqlDequote(id);
+	size_t len = strlen(id);
 	if (len > BOX_NAME_MAX) {
 		const char *name = tt_cstr(str, BOX_INVALID_NAME_MAX);
 		diag_set(ClientError, ER_IDENTIFIER, name);
 		parse->is_aborted = true;
-		return -1;
+		return NULL;
 	}
 	if (identifier_check(str, len) != 0) {
 		parse->is_aborted = true;
-		return -1;
+		return NULL;
 	}
-	return 0;
+	return id;
 }
 
 void
@@ -224,10 +230,10 @@ sqlStartTable(Parse *pParse, Token *pName)
 	struct Vdbe *v = sqlGetVdbe(pParse);
 	sqlVdbeCountChanges(v);
 
-	const char *id = sql_id_cs(pParse, pName->z, pName->n);
-	if (id == NULL)
+	char *table_name = sql_id_cs(pParse, pName->z, pName->n);
+	if (table_name == NULL)
 		return NULL;
-	new_space = sql_template_space_new(pParse, zName);
+	new_space = sql_template_space_new(pParse, table_name);
 	strlcpy(new_space->def->engine_name,
 		sql_storage_engine_strs[current_session()->sql_default_engine],
 		ENGINE_NAME_MAX + 1);
@@ -338,14 +344,10 @@ sql_create_column_start(struct Parse *parse)
 	}
 #endif
 
-	struct region *region = &parse->region;
 	struct Token *name = &create_column_def->base.name;
-	if (sql_identifier_check(parse, name->z, name->n) != 0)
+	char *column_name = sql_id_cs(parse, name->z, name->n);
+	if (column_name == NULL)
 		goto tnt_error;
-
-	char *column_name = xregion_alloc(region, name->n + 1);
-	memcpy(column_name, name->z, name->n);
-	column_name[name->n] = '\0';
 
 	/*
 	 * Format can be set in Lua, then exact_field_count can be
