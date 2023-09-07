@@ -198,11 +198,13 @@ engine_opts ::= ENGINE EQ STRING(A). {
     pParse->is_aborted = true;
     return;
   }
+  char buf[ENGINE_NAME_MAX + 1];
+  memcpy(buf, A.z, A.n);
+  buf[A.n] = '\0';
   /* Need to dequote name. */
-  char *normalized_name = sql_name_from_token(&A);
-  memcpy(pParse->create_table_def.new_space->def->engine_name, normalized_name,
-         strlen(normalized_name) + 1);
-  sql_xfree(normalized_name);
+  sqlDequote(buf);
+  size_t len = strlen(buf) + 1;
+  memcpy(pParse->create_table_def.new_space->def->engine_name, buf, len);
 }
 
 create_table_end ::= . { sqlEndTable(pParse); }
