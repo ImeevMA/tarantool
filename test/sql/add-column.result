@@ -7,7 +7,7 @@ SET SESSION "sql_seq_scan" = true;
 --
 -- gh-3075: Check <ALTER TABLE table ADD COLUMN column> statement.
 --
-CREATE TABLE t1 (a INT PRIMARY KEY);
+CREATE TABLE T1 (A INT PRIMARY KEY);
  | ---
  | - row_count: 1
  | ...
@@ -15,7 +15,7 @@ CREATE TABLE t1 (a INT PRIMARY KEY);
 --
 -- COLUMN keyword is optional. Check it here, but omit it below.
 --
-ALTER TABLE t1 ADD COLUMN b INT;
+ALTER TABLE T1 ADD COLUMN B INT;
  | ---
  | - row_count: 1
  | ...
@@ -23,7 +23,7 @@ ALTER TABLE t1 ADD COLUMN b INT;
 --
 -- A column with the same name already exists.
 --
-ALTER TABLE t1 ADD b SCALAR;
+ALTER TABLE T1 ADD B SCALAR;
  | ---
  | - null
  | - Space field 'B' is duplicate
@@ -36,7 +36,7 @@ CREATE VIEW v AS SELECT * FROM t1;
  | ---
  | - row_count: 1
  | ...
-ALTER TABLE v ADD c INT;
+ALTER TABLE V ADD C INT;
  | ---
  | - null
  | - 'Can''t modify space ''V'': view can not be altered'
@@ -81,7 +81,7 @@ DROP VIEW v;
 --
 -- Check PRIMARY KEY constraint works with an added column.
 --
-CREATE TABLE pk_check (a INT CONSTRAINT pk PRIMARY KEY);
+CREATE TABLE PK_CHECK (A INT CONSTRAINT PK PRIMARY KEY);
  | ---
  | - row_count: 1
  | ...
@@ -89,7 +89,7 @@ ALTER TABLE pk_check DROP CONSTRAINT pk;
  | ---
  | - row_count: 1
  | ...
-ALTER TABLE pk_check ADD b INT PRIMARY KEY;
+ALTER TABLE PK_CHECK ADD B INT PRIMARY KEY;
  | ---
  | - row_count: 1
  | ...
@@ -111,11 +111,11 @@ DROP TABLE pk_check;
 --
 -- Check UNIQUE constraint works with an added column.
 --
-CREATE TABLE unique_check (a INT PRIMARY KEY);
+CREATE TABLE UNIQUE_CHECK (A INT PRIMARY KEY);
  | ---
  | - row_count: 1
  | ...
-ALTER TABLE unique_check ADD b INT UNIQUE;
+ALTER TABLE UNIQUE_CHECK ADD B INT UNIQUE;
  | ---
  | - row_count: 1
  | ...
@@ -137,11 +137,11 @@ DROP TABLE unique_check;
 --
 -- Check CHECK constraint works with an added column.
 --
-CREATE TABLE ck_check (a INT PRIMARY KEY);
+CREATE TABLE CK_CHECK (A INT PRIMARY KEY);
  | ---
  | - row_count: 1
  | ...
-ALTER TABLE ck_check ADD b INT CHECK (b > 0);
+ALTER TABLE CK_CHECK ADD B INT CHECK (B > 0);
  | ---
  | - row_count: 1
  | ...
@@ -166,11 +166,11 @@ DELETE FROM "_func" WHERE "name" == 'check_CK_CHECK_ck_unnamed_CK_CHECK_B_1';
 --
 -- Check FOREIGN KEY constraint works with an added column.
 --
-CREATE TABLE fk_check (a INT PRIMARY KEY);
+CREATE TABLE FK_CHECK (A INT PRIMARY KEY);
  | ---
  | - row_count: 1
  | ...
-ALTER TABLE fk_check ADD b INT REFERENCES t1(a);
+ALTER TABLE FK_CHECK ADD B INT REFERENCES T1(A);
  | ---
  | - row_count: 1
  | ...
@@ -212,11 +212,11 @@ DROP TABLE t1;
 -- Check FOREIGN KEY (self-referenced) constraint works with an
 -- added column.
 --
-CREATE TABLE self (id INT PRIMARY KEY AUTOINCREMENT, a INT UNIQUE)
+CREATE TABLE SELF (ID INT PRIMARY KEY AUTOINCREMENT, A INT UNIQUE)
  | ---
  | - row_count: 1
  | ...
-ALTER TABLE self ADD b INT REFERENCES self(a)
+ALTER TABLE SELF ADD B INT REFERENCES SELF(A)
  | ---
  | - row_count: 1
  | ...
@@ -255,7 +255,7 @@ DROP TABLE self;
 --
 -- Check AUTOINCREMENT works with an added column.
 --
-CREATE TABLE autoinc_check (a INT CONSTRAINT pk PRIMARY KEY);
+CREATE TABLE AUTOINC_CHECK (A INT CONSTRAINT PK PRIMARY KEY);
  | ---
  | - row_count: 1
  | ...
@@ -263,7 +263,7 @@ ALTER TABLE autoinc_check DROP CONSTRAINT pk;
  | ---
  | - row_count: 1
  | ...
-ALTER TABLE autoinc_check ADD b INT PRIMARY KEY AUTOINCREMENT;
+ALTER TABLE AUTOINC_CHECK ADD B INT PRIMARY KEY AUTOINCREMENT;
  | ---
  | - row_count: 1
  | ...
@@ -287,7 +287,7 @@ TRUNCATE TABLE autoinc_check;
 --
 -- Can't add second column with AUTOINCREMENT.
 --
-ALTER TABLE autoinc_check ADD c INT AUTOINCREMENT;
+ALTER TABLE AUTOINC_CHECK ADD C INT AUTOINCREMENT;
  | ---
  | - null
  | - 'Can''t add AUTOINCREMENT: space AUTOINC_CHECK can''t feature more than one AUTOINCREMENT
@@ -301,11 +301,11 @@ DROP TABLE autoinc_check;
 --
 -- Check COLLATE clause works with an added column.
 --
-CREATE TABLE collate_check (a INT PRIMARY KEY);
+CREATE TABLE COLLATE_CHECK (A INT PRIMARY KEY);
  | ---
  | - row_count: 1
  | ...
-ALTER TABLE collate_check ADD b TEXT COLLATE "unicode_ci";
+ALTER TABLE COLLATE_CHECK ADD B TEXT COLLATE "unicode_ci";
  | ---
  | - row_count: 1
  | ...
@@ -336,11 +336,11 @@ DROP TABLE collate_check;
 --
 -- Check DEFAULT clause works with an added column.
 --
-CREATE TABLE default_check (a INT PRIMARY KEY);
+CREATE TABLE DEFAULT_CHECK (A INT PRIMARY KEY);
  | ---
  | - row_count: 1
  | ...
-ALTER TABLE default_check ADD b TEXT DEFAULT ('a');
+ALTER TABLE DEFAULT_CHECK ADD B TEXT DEFAULT ('a');
  | ---
  | - row_count: 1
  | ...
@@ -366,11 +366,11 @@ DROP TABLE default_check;
 --
 -- Check NULL constraint works with an added column.
 --
-CREATE TABLE null_check (a INT PRIMARY KEY);
+CREATE TABLE NULL_CHECK (A INT PRIMARY KEY);
  | ---
  | - row_count: 1
  | ...
-ALTER TABLE null_check ADD b TEXT NULL;
+ALTER TABLE NULL_CHECK ADD B TEXT NULL;
  | ---
  | - row_count: 1
  | ...
@@ -396,11 +396,11 @@ DROP TABLE null_check;
 --
 -- Check NOT NULL constraint works with an added column.
 --
-CREATE TABLE notnull_check (a INT PRIMARY KEY);
+CREATE TABLE NOTNULL_CHECK (A INT PRIMARY KEY);
  | ---
  | - row_count: 1
  | ...
-ALTER TABLE notnull_check ADD b TEXT NOT NULL;
+ALTER TABLE NOTNULL_CHECK ADD B TEXT NOT NULL;
  | ---
  | - row_count: 1
  | ...
@@ -422,7 +422,7 @@ DROP TABLE notnull_check;
 -- Can't add a column with DEAFULT or NULL to a non-empty space.
 -- This ability isn't implemented yet.
 --
-CREATE TABLE non_empty (a INT PRIMARY KEY);
+CREATE TABLE NON_EMPTY (A INT PRIMARY KEY);
  | ---
  | - row_count: 1
  | ...
@@ -430,12 +430,12 @@ INSERT INTO non_empty VALUES (1);
  | ---
  | - row_count: 1
  | ...
-ALTER TABLE non_empty ADD b INT NULL;
+ALTER TABLE NON_EMPTY ADD B INT NULL;
  | ---
  | - null
  | - Tuple field count 1 does not match space field count 2
  | ...
-ALTER TABLE non_empty ADD b INT DEFAULT (1);
+ALTER TABLE NON_EMPTY ADD B INT DEFAULT (1);
  | ---
  | - null
  | - Tuple field count 1 does not match space field count 2
@@ -459,7 +459,7 @@ _ = box.schema.space.create('WITHOUT_FORMAT')
  | ---
  | - true
  | ...
-ALTER TABLE without_format ADD a INT PRIMARY KEY;
+ALTER TABLE WITHOUT_FORMAT ADD A INT PRIMARY KEY;
  | ---
  | - row_count: 1
  | ...
@@ -489,7 +489,7 @@ with_format:format{{name = 'A', type = 'unsigned'}}
  | ---
  | - true
  | ...
-ALTER TABLE with_format ADD b INT PRIMARY KEY;
+ALTER TABLE WITH_FORMAT ADD B INT PRIMARY KEY;
  | ---
  | - row_count: 1
  | ...
@@ -505,7 +505,7 @@ DROP TABLE with_format;
 --
 -- Add multiple columns (with a constraint) inside a transaction.
 --
-CREATE TABLE t2 (a INT PRIMARY KEY)
+CREATE TABLE T2 (A INT PRIMARY KEY)
  | ---
  | - row_count: 1
  | ...
@@ -514,8 +514,8 @@ CREATE TABLE t2 (a INT PRIMARY KEY)
  | - true
  | ...
 box.begin()                                                                     \
-box.execute('ALTER TABLE t2 ADD b INT')                                         \
-box.execute('ALTER TABLE t2 ADD c INT UNIQUE')                                  \
+box.execute('ALTER TABLE T2 ADD B INT')                                         \
+box.execute('ALTER TABLE T2 ADD C INT UNIQUE')                                  \
 box.commit()
  | ---
  | ...
