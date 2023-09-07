@@ -5,7 +5,8 @@ _ = box.space._session_settings:update('sql_default_engine', {{'=', 2, engine}})
 -- box.cfg()
 
 -- create space
-box.execute("CREATE TABLE zzzoobar (c1 INT, c2 INT PRIMARY KEY, c3 TEXT, c4 INT)")
+box.execute("CREATE TABLE ZZZOOBAR(C1 INT, C2 INT PRIMARY KEY, C3 TEXT, "..\
+            "C4 INT)")
 
 box.execute("CREATE INDEX zb ON zzzoobar(c1, c3)")
 
@@ -20,7 +21,7 @@ box.execute("INSERT INTO zzzoobar VALUES (111, 222, 'c3', 444)")
 -- gh-3712: if space features sequence, data from _sequence_data
 -- must be deleted before space is dropped.
 --
-box.execute("CREATE TABLE t1 (id INT PRIMARY KEY AUTOINCREMENT);")
+box.execute("CREATE TABLE T1 (ID INT PRIMARY KEY AUTOINCREMENT);")
 box.execute("INSERT INTO t1 VALUES (NULL);")
 box.snapshot()
 test_run:cmd('restart server default')
@@ -53,7 +54,7 @@ box.session.su('tmp')
 -- Error: user do not have rights to write in box.space._index.
 -- Space that was already created should be automatically dropped.
 --
-box.execute('CREATE TABLE t1 (id INT PRIMARY KEY, a INT)')
+box.execute('CREATE TABLE T1 (ID INT PRIMARY KEY, A INT)')
 -- Error: no such table.
 box.execute('DROP TABLE t1')
 
@@ -77,7 +78,8 @@ box.session.su('tmp')
 --
 -- Error: user do not have rights to write in _sequence.
 --
-box.execute('CREATE TABLE t2 (id INT PRIMARY KEY AUTOINCREMENT, a INT UNIQUE, b INT UNIQUE, c INT UNIQUE, d INT UNIQUE)')
+box.execute('CREATE TABLE T2 (ID INT PRIMARY KEY AUTOINCREMENT, '..\
+            'A INT UNIQUE, B INT UNIQUE, C INT UNIQUE, D INT UNIQUE)')
 
 box.session.su('admin')
 
@@ -97,11 +99,12 @@ fk_constraint_count = #box.space._fk_constraint:select()
 box.schema.user.grant('tmp', 'write', 'space')
 box.session.su('tmp')
 
-box.execute('CREATE TABLE t3(a INTEGER PRIMARY KEY);')
+box.execute('CREATE TABLE T3(A INTEGER PRIMARY KEY);')
 --
 -- Error: Failed to drop referenced table.
 --
-box.execute('CREATE TABLE t4(x INTEGER PRIMARY KEY REFERENCES t3, a INT UNIQUE, c TEXT REFERENCES t3);')
+box.execute('CREATE TABLE T4(X INTEGER PRIMARY KEY REFERENCES T3, '..\
+            'A INT UNIQUE, C TEXT REFERENCES T3);')
 box.execute('DROP TABLE t3;')
 box.execute('DROP TABLE t4;')
 box.execute('DROP TABLE t3;')

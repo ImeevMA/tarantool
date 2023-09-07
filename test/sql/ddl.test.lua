@@ -9,8 +9,8 @@ box.execute([[SET SESSION "sql_seq_scan" = true;]])
 --
 test_run:cmd("setopt delimiter ';'")
 box.begin()
-box.execute('CREATE TABLE t1(id INTEGER PRIMARY KEY);')
-box.execute('CREATE TABLE t2(id INTEGER PRIMARY KEY);')
+box.execute('CREATE TABLE T1(ID INTEGER PRIMARY KEY);')
+box.execute('CREATE TABLE T2(ID INTEGER PRIMARY KEY);')
 box.commit();
 test_run:cmd("setopt delimiter ''");
 
@@ -32,7 +32,7 @@ test_run:cmd("setopt delimiter ''");
 --
 -- Try to build an index transactionally.
 --
-box.execute('CREATE TABLE t1(id INTEGER PRIMARY KEY, a INTEGER, b INTEGER)')
+box.execute('CREATE TABLE T1(ID INTEGER PRIMARY KEY, A INTEGER, B INTEGER)')
 box.space.T1:replace{1, 1, 1}
 box.space.T1:replace{2, 2, 2}
 box.space.T1:replace{3, 3, 3}
@@ -44,7 +44,7 @@ box.snapshot()
 
 test_run:cmd("setopt delimiter ';'")
 box.begin(),
-box.execute('CREATE TABLE t2(id INTEGER PRIMARY KEY)') or box.error(),
+box.execute('CREATE TABLE T2(ID INTEGER PRIMARY KEY)') or box.error(),
 box.execute('CREATE INDEX t1a ON t1(a)') or box.error(),
 box.execute('CREATE INDEX t1b ON t1(b)') or box.error(),
 box.commit();
@@ -60,7 +60,7 @@ box.execute('CREATE INDEX t1b ON t1(b)')
 
 test_run:cmd("setopt delimiter ';'")
 box.begin()
-box.execute('CREATE TABLE t2(id INTEGER PRIMARY KEY)')
+box.execute('CREATE TABLE T2(ID INTEGER PRIMARY KEY)')
 box.execute('DROP INDEX t1a ON t1')
 box.execute('DROP INDEX t1b ON t1')
 box.commit()
@@ -122,17 +122,17 @@ function monster_ddl()
 -- Try random errors inside this big batch of DDL to ensure, that
 -- they do not affect normal operation.
     local _, err1, err2, err3, err4, err5
-    box.execute([[CREATE TABLE t1(id INTEGER PRIMARY KEY,
-                                  a INTEGER,
-                                  b INTEGER);]])
-    box.execute([[CREATE TABLE t2(id INTEGER PRIMARY KEY,
-                                  a INTEGER,
-                                  b INTEGER UNIQUE);]])
+    box.execute([[CREATE TABLE T1(ID INTEGER PRIMARY KEY,
+                                  A INTEGER,
+                                  B INTEGER);]])
+    box.execute([[CREATE TABLE T2(ID INTEGER PRIMARY KEY,
+                                  A INTEGER,
+                                  B INTEGER UNIQUE);]])
 
     box.execute('CREATE INDEX t1a ON t1(a);')
     box.execute('CREATE INDEX t2a ON t2(a);')
 
-    box.execute('CREATE TABLE t_to_rename(id INTEGER PRIMARY KEY, a INTEGER);')
+    box.execute('CREATE TABLE T_TO_RENAME(ID INTEGER PRIMARY KEY, A INTEGER);')
 
     box.execute('DROP INDEX t2a ON t2;')
 
@@ -140,9 +140,9 @@ function monster_ddl()
 
     _, err1 = box.execute('ALTER TABLE t_to_rename RENAME TO t1;')
 
-    _, err2 = box.execute('CREATE TABLE t1(id INTEGER PRIMARY KEY);')
+    _, err2 = box.execute('CREATE TABLE T1(ID INTEGER PRIMARY KEY);')
 
-    box.execute([[CREATE TABLE trigger_catcher(id INTEGER PRIMARY
+    box.execute([[CREATE TABLE TRIGGER_CATCHER(ID INTEGER PRIMARY
                                                KEY AUTOINCREMENT);]])
 
     box.execute('ALTER TABLE t_to_rename RENAME TO t_renamed;')
@@ -266,9 +266,9 @@ monster_ddl_cmp_res(ddl_res, true_ddl_res)
 --
 test_run:cmd("setopt delimiter ';'")
 box.begin()
-box.execute('CREATE TABLE t1(id INTEGER PRIMARY KEY);')
+box.execute('CREATE TABLE T1(ID INTEGER PRIMARY KEY);')
 assert(box.space.T1 ~= nil)
-box.execute('CREATE TABLE t2(id INTEGER PRIMARY KEY);')
+box.execute('CREATE TABLE T2(ID INTEGER PRIMARY KEY);')
 assert(box.space.T2 ~= nil)
 box.rollback();
 
@@ -276,9 +276,9 @@ box.space.T1 == nil and box.space.T2 == nil;
 
 box.begin()
 save1 = box.savepoint()
-box.execute('CREATE TABLE t1(id INTEGER PRIMARY KEY)')
+box.execute('CREATE TABLE T1(ID INTEGER PRIMARY KEY)')
 save2 = box.savepoint()
-box.execute('CREATE TABLE t2(id INTEGER PRIMARY KEY, a INTEGER)')
+box.execute('CREATE TABLE T2(ID INTEGER PRIMARY KEY, A INTEGER)')
 box.execute('CREATE INDEX t2a ON t2(a)')
 save3 = box.savepoint()
 assert(box.space.T1 ~= nil)

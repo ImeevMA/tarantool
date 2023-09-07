@@ -13,7 +13,7 @@ box.execute([[SET SESSION "sql_seq_scan" = true;]])
 ...
 -- box.cfg()
 -- create space
-box.execute("CREATE TABLE t1(a INT, b INT, PRIMARY KEY(a, b));");
+box.execute("CREATE TABLE T1(A INT, B INT, PRIMARY KEY(A, B));");
 ---
 - row_count: 1
 ...
@@ -61,7 +61,7 @@ box.execute("DELETE FROM t1;")
 - null
 - Space 'T1' does not exist
 ...
-box.execute("CREATE TABLE t2 (s1 INT PRIMARY KEY);")
+box.execute("CREATE TABLE T2 (S1 INT PRIMARY KEY);")
 ---
 - row_count: 1
 ...
@@ -87,7 +87,7 @@ box.execute("TRUNCATE TABLE \"_fk_constraint\";")
 - null
 - Can't truncate a system space, space '_fk_constraint'
 ...
-box.execute("CREATE TABLE t1(id INT PRIMARY KEY, a INT, b TEXT);")
+box.execute("CREATE TABLE T1(ID INT PRIMARY KEY, A INT, B TEXT);")
 ---
 - row_count: 1
 ...
@@ -137,7 +137,7 @@ box.execute("TRUNCATE TABLE v1;")
   a view'
 ...
 -- Can't truncate table with FK.
-box.execute("CREATE TABLE t2(x INT PRIMARY KEY REFERENCES t1(id));")
+box.execute("CREATE TABLE T2(X INT PRIMARY KEY REFERENCES T1(ID));")
 ---
 - row_count: 1
 ...
@@ -155,7 +155,7 @@ box.execute("DROP TABLE t2;")
 ---
 - row_count: 1
 ...
-box.execute("CREATE TABLE t2(x INT PRIMARY KEY);")
+box.execute("CREATE TABLE T2(X INT PRIMARY KEY);")
 ---
 - row_count: 1
 ...

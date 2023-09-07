@@ -6,7 +6,7 @@ box.execute([[SET SESSION "sql_seq_scan" = true;]])
 -- box.cfg()
 
 -- Create space.
-box.execute("CREATE TABLE t3(id INT primary key,x INT,y INT);");
+box.execute("CREATE TABLE T3(ID INT PRIMARY KEY,X INT,Y INT);");
 box.execute("CREATE UNIQUE INDEX t3y ON t3(y);");
 
 -- Seed entries.

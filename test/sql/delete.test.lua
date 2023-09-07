@@ -6,7 +6,7 @@ box.execute([[SET SESSION "sql_seq_scan" = true;]])
 -- box.cfg()
 
 -- create space
-box.execute("CREATE TABLE t1(a INT, b INT, PRIMARY KEY(a, b));");
+box.execute("CREATE TABLE T1(A INT, B INT, PRIMARY KEY(A, B));");
 
 -- Seed entries
 box.execute("INSERT INTO t1 VALUES(1, 2);");
@@ -30,7 +30,7 @@ box.execute("DROP TABLE t1;");
 --
 box.execute("DELETE FROM t1;")
 
-box.execute("CREATE TABLE t2 (s1 INT PRIMARY KEY);")
+box.execute("CREATE TABLE T2 (S1 INT PRIMARY KEY);")
 box.execute("CREATE TRIGGER t2 BEFORE INSERT ON t2 FOR EACH ROW BEGIN DELETE FROM t1; END;")
 box.execute("INSERT INTO t2 VALUES (0);")
 
@@ -44,7 +44,7 @@ box.execute("DROP TABLE t2;")
 -- can't truncate system table.
 box.execute("TRUNCATE TABLE \"_fk_constraint\";")
 
-box.execute("CREATE TABLE t1(id INT PRIMARY KEY, a INT, b TEXT);")
+box.execute("CREATE TABLE T1(ID INT PRIMARY KEY, A INT, B TEXT);")
 box.execute("INSERT INTO t1 VALUES(1, 1, 'one');")
 box.execute("INSERT INTO t1 VALUES(2, 2, 'two');")
 
@@ -59,13 +59,13 @@ box.execute("CREATE VIEW v1 AS SELECT * FROM t1;")
 box.execute("TRUNCATE TABLE v1;")
 
 -- Can't truncate table with FK.
-box.execute("CREATE TABLE t2(x INT PRIMARY KEY REFERENCES t1(id));")
+box.execute("CREATE TABLE T2(X INT PRIMARY KEY REFERENCES T1(ID));")
 box.execute("INSERT INTO t2 VALUES(1);")
 box.execute("TRUNCATE TABLE t1;")
 
 -- Table triggers should be ignored.
 box.execute("DROP TABLE t2;")
-box.execute("CREATE TABLE t2(x INT PRIMARY KEY);")
+box.execute("CREATE TABLE T2(X INT PRIMARY KEY);")
 box.execute("CREATE TRIGGER trig2 BEFORE DELETE ON t1 FOR EACH ROW BEGIN INSERT INTO t2 VALUES(old.x); END;")
 box.execute("TRUNCATE TABLE t1;")
 box.execute("SELECT * FROM t1;")

@@ -9,7 +9,7 @@ _ = box.space._session_settings:update('sql_default_engine', {{'=', 2, engine}})
 ...
 -- box.cfg()
 -- create space
-box.execute("CREATE TABLE zzoobar (c1 NUMBER, c2 INT PRIMARY KEY, c3 TEXT, c4 NUMBER)")
+box.execute("CREATE TABLE ZZOOBAR (C1 NUMBER, C2 INT PRIMARY KEY, C3 TEXT, C4 NUMBER)")
 ---
 - row_count: 1
 ...

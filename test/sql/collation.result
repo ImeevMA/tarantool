@@ -43,7 +43,7 @@ box.execute("SELECT 1 LIMIT 1 COLLATE BINARY, 1;")
 ...
 -- gh-3052: upper/lower support only default locale
 -- For tr-TR result depends on collation
-box.execute([[CREATE TABLE tu (descriptor VARCHAR(50) PRIMARY KEY, letter VARCHAR(50))]]);
+box.execute([[CREATE TABLE TU (DESCRIPTOR VARCHAR(50) PRIMARY KEY, LETTER VARCHAR(50));]])
 ---
 - row_count: 1
 ...
@@ -157,7 +157,7 @@ cn:close()
 ...
 -- Explicitly set BINARY collation is predifined and has ID.
 --
-box.execute("CREATE TABLE t (id INT PRIMARY KEY, a TEXT, b TEXT COLLATE \"binary\");")
+box.execute("CREATE TABLE T (ID INT PRIMARY KEY, A TEXT, B TEXT COLLATE \"binary\");")
 ---
 - row_count: 1
 ...
@@ -229,7 +229,7 @@ box.space._collation:delete{0}
 ...
 -- gh-3185: collations of LHS and RHS must be compatible.
 --
-box.execute("CREATE TABLE t (id INT PRIMARY KEY, a TEXT, b TEXT COLLATE \"binary\", c TEXT COLLATE \"unicode_ci\");")
+box.execute("CREATE TABLE T (ID INT PRIMARY KEY, A TEXT, B TEXT COLLATE \"binary\", C TEXT COLLATE \"unicode_ci\");")
 ---
 - row_count: 1
 ...
@@ -381,11 +381,11 @@ box.schema.user.drop('tmp')
 ...
 -- gh-3644 Foreign key update fails with "unicode_ci".
 -- Check that foreign key update doesn't fail with "unicode_ci".
-box.execute('CREATE TABLE t0 (s1 VARCHAR(5) COLLATE "unicode_ci" UNIQUE, id INT PRIMARY KEY AUTOINCREMENT);')
+box.execute('CREATE TABLE T0 (S1 VARCHAR(5) COLLATE "unicode_ci" UNIQUE, ID INT PRIMARY KEY AUTOINCREMENT);')
 ---
 - row_count: 1
 ...
-box.execute('CREATE TABLE t1 (s1 INT PRIMARY KEY, s0 VARCHAR(5) COLLATE "unicode_ci" REFERENCES t0(s1));')
+box.execute('CREATE TABLE T1 (S1 INT PRIMARY KEY, S0 VARCHAR(5) COLLATE "unicode_ci" REFERENCES T0(S1));')
 ---
 - row_count: 1
 ...
@@ -431,11 +431,11 @@ box.execute("DROP TABLE t0;")
 - row_count: 1
 ...
 -- Check that foreign key update fails with default collation.
-box.execute('CREATE TABLE t0 (s1 VARCHAR(5) UNIQUE, id INT PRIMARY KEY AUTOINCREMENT);')
+box.execute('CREATE TABLE T0 (S1 VARCHAR(5) UNIQUE, ID INT PRIMARY KEY AUTOINCREMENT);')
 ---
 - row_count: 1
 ...
-box.execute('CREATE TABLE t1 (s1 INT PRIMARY KEY, s0 VARCHAR(5) REFERENCES t0(s1));')
+box.execute('CREATE TABLE T1 (S1 INT PRIMARY KEY, S0 VARCHAR(5) REFERENCES T0(S1));')
 ---
 - row_count: 1
 ...
@@ -483,7 +483,7 @@ box.execute("DROP TABLE t0;")
 ...
 -- gh-3937: result of concatination has derived collation.
 --
-box.execute("CREATE TABLE t4a(a TEXT COLLATE \"unicode\", b TEXT COLLATE \"unicode_ci\", c INT PRIMARY KEY);")
+box.execute("CREATE TABLE T4A(A TEXT COLLATE \"unicode\", B TEXT COLLATE \"unicode_ci\", C INT PRIMARY KEY);")
 ---
 - row_count: 1
 ...
@@ -550,7 +550,7 @@ box.execute("SELECT c FROM t4a WHERE (a||b)=(b||a);")
   rows:
   - [3]
 ...
-box.execute("CREATE TABLE t4b(a TEXT COLLATE \"unicode_ci\", b TEXT COLLATE \"unicode_ci\", c INT PRIMARY KEY);")
+box.execute("CREATE TABLE T4B(A TEXT COLLATE \"unicode_ci\", B TEXT COLLATE \"unicode_ci\", C INT PRIMARY KEY);")
 ---
 - row_count: 1
 ...
@@ -628,7 +628,7 @@ box.space.T4B:drop()
 ...
 -- gh-3537 Duplicate key error for an index that is not unique
 -- pk - default, sc - unicode_ci
-box.execute('CREATE TABLE t3 (s1 VARCHAR(5) PRIMARY KEY);')
+box.execute('CREATE TABLE T3 (S1 VARCHAR(5) PRIMARY KEY);')
 ---
 - row_count: 1
 ...
@@ -658,7 +658,7 @@ box.execute("DROP TABLE t3;")
 - row_count: 1
 ...
 -- pk - binary, sc - unicode
-box.execute('CREATE TABLE t3b (s1 VARCHAR(5) collate "binary" PRIMARY KEY);')
+box.execute('CREATE TABLE T3B (S1 VARCHAR(5) COLLATE "binary" PRIMARY KEY);')
 ---
 - row_count: 1
 ...
@@ -688,7 +688,7 @@ box.execute("DROP TABLE t3b;")
 - row_count: 1
 ...
 -- pk - binary, sc - unicode (make dup)
-box.execute('CREATE TABLE t3b (s1 VARCHAR(5) collate "binary" PRIMARY KEY);')
+box.execute('CREATE TABLE T3B (S1 VARCHAR(5) COLLATE "binary" PRIMARY KEY);')
 ---
 - row_count: 1
 ...
@@ -724,7 +724,7 @@ box.execute("DROP TABLE t3b;")
 - row_count: 1
 ...
 -- pk - unicode, sc - binary
-box.execute('CREATE TABLE t3c (s1 VARCHAR(5) collate "unicode" PRIMARY KEY);')
+box.execute('CREATE TABLE T3C (S1 VARCHAR(5) COLLATE "unicode" PRIMARY KEY);')
 ---
 - row_count: 1
 ...
@@ -754,7 +754,7 @@ box.execute("DROP TABLE t3c;")
 - row_count: 1
 ...
 -- pk - unicode, sc - binary (make dup)
-box.execute('CREATE TABLE t3c (s1 VARCHAR(5) collate "unicode" PRIMARY KEY);')
+box.execute('CREATE TABLE T3C (S1 VARCHAR(5) COLLATE "unicode" PRIMARY KEY);')
 ---
 - row_count: 1
 ...
@@ -790,7 +790,7 @@ box.execute("DROP TABLE t3c;")
 - row_count: 1
 ...
 -- pk - binary, sc - unicode_ci
-box.execute('CREATE TABLE t3d (s1 VARCHAR(5) collate "binary" PRIMARY KEY);')
+box.execute('CREATE TABLE T3D (S1 VARCHAR(5) COLLATE "binary" PRIMARY KEY);')
 ---
 - row_count: 1
 ...
@@ -820,7 +820,7 @@ box.execute("DROP TABLE t3d;")
 - row_count: 1
 ...
 -- pk - binary, sc - unicode_ci (make dup)
-box.execute('CREATE TABLE t3d (s1 VARCHAR(5) collate "binary" PRIMARY KEY);')
+box.execute('CREATE TABLE T3D (S1 VARCHAR(5) COLLATE "binary" PRIMARY KEY);')
 ---
 - row_count: 1
 ...
@@ -856,7 +856,7 @@ box.execute("DROP TABLE t3d;")
 - row_count: 1
 ...
 -- pk - unicode_ci, sc - binary (should fail)
-box.execute('CREATE TABLE t3e (s1 VARCHAR(5) collate "unicode_ci" PRIMARY KEY);')
+box.execute('CREATE TABLE T3E (S1 VARCHAR(5) COLLATE "unicode_ci" PRIMARY KEY);')
 ---
 - row_count: 1
 ...
@@ -887,7 +887,7 @@ box.execute("DROP TABLE t3e;")
 - row_count: 1
 ...
 -- pk - unicode, sc - unicode_ci
-box.execute('CREATE TABLE t3f (s1 VARCHAR(5) collate "unicode" PRIMARY KEY);')
+box.execute('CREATE TABLE T3F (S1 VARCHAR(5) COLLATE "unicode" PRIMARY KEY);')
 ---
 - row_count: 1
 ...
@@ -917,7 +917,7 @@ box.execute("DROP TABLE t3f;")
 - row_count: 1
 ...
 -- pk - unicode, sc - unicode_ci (make dup)
-box.execute('CREATE TABLE t3f (s1 VARCHAR(5) collate "unicode" PRIMARY KEY);')
+box.execute('CREATE TABLE T3F (S1 VARCHAR(5) COLLATE "unicode" PRIMARY KEY);')
 ---
 - row_count: 1
 ...
@@ -953,7 +953,7 @@ box.execute("DROP TABLE t3f;")
 - row_count: 1
 ...
 -- pk - unicode_ci, sc - unicode (should fail)
-box.execute('CREATE TABLE t3g (s1 VARCHAR(5) collate "unicode_ci" PRIMARY KEY);')
+box.execute('CREATE TABLE T3G (S1 VARCHAR(5) COLLATE "unicode_ci" PRIMARY KEY);')
 ---
 - row_count: 1
 ...
@@ -984,7 +984,7 @@ box.execute("DROP TABLE t3g;")
 - row_count: 1
 ...
 -- pk - default, sc - multipart
-box.execute('CREATE TABLE qms1 (w VARCHAR(5) PRIMARY KEY, n VARCHAR(5), q VARCHAR(5), s INTEGER);')
+box.execute('CREATE TABLE QMS1 (W VARCHAR(5) PRIMARY KEY, N VARCHAR(5), Q VARCHAR(5), S INTEGER);')
 ---
 - row_count: 1
 ...
@@ -1019,7 +1019,7 @@ box.execute("DROP TABLE qms1;")
 ---
 - row_count: 1
 ...
-box.execute('CREATE TABLE qms2 (w VARCHAR(5) PRIMARY KEY, n VARCHAR(5), q VARCHAR(5), s INTEGER);')
+box.execute('CREATE TABLE QMS2 (W VARCHAR(5) PRIMARY KEY, N VARCHAR(5), Q VARCHAR(5), S INTEGER);')
 ---
 - row_count: 1
 ...
@@ -1055,7 +1055,8 @@ box.execute("DROP TABLE qms2;")
 - row_count: 1
 ...
 -- pk - multipart, sc overlaps with pk
-box.execute('CREATE TABLE qms3 (w VARCHAR(5), n VARCHAR(5), q VARCHAR(5), s INTEGER, CONSTRAINT pk_qms3 PRIMARY KEY(w, n, q));')
+box.execute('CREATE TABLE QMS3 (W VARCHAR(5), N VARCHAR(5), Q VARCHAR(5), '..\
+            'S INTEGER, CONSTRAINT PK_QMS3 PRIMARY KEY(W, N, Q));')
 ---
 - row_count: 1
 ...
@@ -1090,7 +1091,8 @@ box.execute("DROP TABLE qms3;")
 ---
 - row_count: 1
 ...
-box.execute('CREATE TABLE qms4 (w VARCHAR(5), n VARCHAR(5), q VARCHAR(5), s INTEGER, CONSTRAINT pk_qms4 PRIMARY KEY(w, n, q));')
+box.execute('CREATE TABLE QMS4 (W VARCHAR(5), N VARCHAR(5), Q VARCHAR(5), '..\
+            'S INTEGER, CONSTRAINT PK_QMS4 PRIMARY KEY(W, N, Q));')
 ---
 - row_count: 1
 ...
@@ -1128,7 +1130,8 @@ box.execute("DROP TABLE qms4;")
 -- gh-3932: make sure set build-in functions derive collation
 -- from their arguments.
 --
-box.execute("CREATE TABLE jj (s1 INT PRIMARY KEY, s2 VARCHAR(3) COLLATE \"unicode_ci\");")
+box.execute("CREATE TABLE JJ (S1 INT PRIMARY KEY, "..\
+            "S2 VARCHAR(3) COLLATE \"unicode_ci\");")
 ---
 - row_count: 1
 ...
