@@ -8,7 +8,7 @@ fiber = require('fiber')
 
 -- gh-3924 Check that tuple_formats of ephemeral spaces are
 -- reused.
-box.execute("CREATE TABLE t4 (id INTEGER PRIMARY KEY, a INTEGER);")
+box.execute("CREATE TABLE T4 (ID INTEGER PRIMARY KEY, A INTEGER);")
 box.execute("INSERT INTO t4 VALUES (1,1)")
 box.execute("INSERT INTO t4 VALUES (2,1)")
 box.execute("INSERT INTO t4 VALUES (3,2)")
@@ -19,7 +19,7 @@ errinj.set('ERRINJ_MEMTX_DELAY_GC', false)
 errinj.set('ERRINJ_TUPLE_FORMAT_COUNT', -1)
 box.execute('DROP TABLE t4')
 
-box.execute('create table test (id int primary key, a NUMBER, b text)')
+box.execute('CREATE TABLE TEST (ID INT PRIMARY KEY, A NUMBER, B TEXT);')
 box.schema.user.grant('guest','read,write,execute', 'universe')
 cn = remote.connect(box.cfg.listen)
 cn:ping()
@@ -52,7 +52,7 @@ box.execute('drop table test')
 txn_isolation_default = box.cfg.txn_isolation
 box.cfg{txn_isolation = 'read-committed'}
 
-box.execute('CREATE TABLE test (id integer primary key)')
+box.execute('CREATE TABLE TEST (ID INTEGER PRIMARY KEY);')
 cn = remote.connect(box.cfg.listen)
 
 ch = fiber.channel(200)
@@ -69,8 +69,8 @@ box.cfg{txn_isolation = txn_isolation_default}
 ----
 ---- gh-3273: Move SQL TRIGGERs into server.
 ----
-box.execute("CREATE TABLE t1(id INTEGER PRIMARY KEY, a INTEGER);");
-box.execute("CREATE TABLE t2(id INTEGER PRIMARY KEY, a INTEGER);");
+box.execute("CREATE TABLE T1(ID INTEGER PRIMARY KEY, A INTEGER);")
+box.execute("CREATE TABLE T2(ID INTEGER PRIMARY KEY, A INTEGER);")
 box.error.injection.set("ERRINJ_WAL_IO", true)
 box.execute("CREATE TRIGGER t1t INSERT ON t1 FOR EACH ROW BEGIN INSERT INTO t2 VALUES (1, 1); END;")
 box.execute("CREATE INDEX t1a ON t1(a);")
