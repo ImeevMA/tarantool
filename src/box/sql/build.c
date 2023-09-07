@@ -58,6 +58,23 @@
 #include "box/constraint_id.h"
 #include "box/session_settings.h"
 
+/** This procedure checks if a string is a valid identifier. */
+static inline int
+sql_identifier_check(struct Parse *parse, const char *str, size_t len)
+{
+	if (len > BOX_NAME_MAX) {
+		const char *name = tt_cstr(str, BOX_INVALID_NAME_MAX);
+		diag_set(ClientError, ER_IDENTIFIER, name);
+		parse->is_aborted = true;
+		return -1;
+	}
+	if (identifier_check(str, len) != 0) {
+		parse->is_aborted = true;
+		return -1;
+	}
+	return 0;
+}
+
 void
 sql_finish_coding(struct Parse *parse_context)
 {
@@ -203,19 +220,13 @@ sql_space_primary_key(const struct space *space)
 struct space *
 sqlStartTable(Parse *pParse, Token *pName)
 {
-	char *zName = 0;	/* The name of the new table */
 	struct space *new_space = NULL;
 	struct Vdbe *v = sqlGetVdbe(pParse);
 	sqlVdbeCountChanges(v);
 
-	zName = sql_name_from_token(pName);
-	if (sqlCheckIdentifierName(pParse, zName) != 0) {
-		sql_xfree(zName);
+	if (sql_identifier_check(pParse, pName->z, pName->n) != 0)
 		return NULL;
-	}
-
 	new_space = sql_template_space_new(pParse, zName);
-	sql_xfree(zName);
 	strlcpy(new_space->def->engine_name,
 		sql_storage_engine_strs[current_session()->sql_default_engine],
 		ENGINE_NAME_MAX + 1);
@@ -328,8 +339,12 @@ sql_create_column_start(struct Parse *parse)
 
 	struct region *region = &parse->region;
 	struct Token *name = &create_column_def->base.name;
-	char *column_name =
-		sql_normalized_name_region_new(region, name->z, name->n);
+	if (sql_identifier_check(parse, name->z, name->n) != 0)
+		goto tnt_error;
+
+	char *column_name = xregion_alloc(region, name->n);
+	memcpy(column_name, name->z, name->n);
+	column_name[name->n] = '\0';
 
 	/*
 	 * Format can be set in Lua, then exact_field_count can be
