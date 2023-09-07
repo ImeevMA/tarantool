@@ -127,7 +127,7 @@ box.execute('SELECT CAST(18446744073709551600e0 AS INTEGER);')
 -- [INT64_MAX, UINT64_MAX], they are handled inside SQL in a
 -- proper way, which now means that an error is raised.
 --
-box.execute('CREATE TABLE t (id INT PRIMARY KEY);')
+box.execute('CREATE TABLE T (ID INT PRIMARY KEY);')
 ---
 - row_count: 1
 ...
@@ -154,7 +154,7 @@ box.space.T:drop()
 -- Make sure that integers stored in NUMBER field are converted
 -- to floating point properly.
 --
-box.execute("CREATE TABLE t(id INT PRIMARY KEY, a NUMBER);")
+box.execute("CREATE TABLE T(ID INT PRIMARY KEY, A NUMBER);")
 ---
 - row_count: 1
 ...

@@ -21,14 +21,17 @@ box.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, a INTEGER CHECK (a > 5) ON 
 --
 -- gh-3473: Primary key can't be declared with NULL.
 --
-box.execute("CREATE TABLE te17 (s1 INT NULL PRIMARY KEY NOT NULL);")
-box.execute("CREATE TABLE te17 (s1 INT NULL PRIMARY KEY);")
-box.execute("CREATE TABLE test (a int PRIMARY KEY, b int NULL ON CONFLICT IGNORE);")
+box.execute("CREATE TABLE TE17 (S1 INT NULL PRIMARY KEY NOT NULL);")
+box.execute("CREATE TABLE TE17 (S1 INT NULL PRIMARY KEY);")
+box.execute("CREATE TABLE TEST (A INT PRIMARY KEY, "..\
+            "B INT NULL ON CONFLICT IGNORE);")
 box.execute("CREATE TABLE test (a int, b int NULL, c int, PRIMARY KEY(a, b, c))")
 
 -- Several NOT NULL REPLACE constraints work
 --
-box.execute("CREATE TABLE a (id INT PRIMARY KEY, a INT NOT NULL ON CONFLICT REPLACE DEFAULT 1, b INT NOT NULL ON CONFLICT REPLACE DEFAULT 2);")
+box.execute("CREATE TABLE A (ID INT PRIMARY KEY, "..\
+            "A INT NOT NULL ON CONFLICT REPLACE DEFAULT 1, "..\
+            "B INT NOT NULL ON CONFLICT REPLACE DEFAULT 2);")
 box.execute("INSERT INTO a VALUES(1, NULL, NULL);")
 box.execute("INSERT INTO a VALUES(2, NULL, NULL);")
 box.execute("SELECT * FROM a;")
@@ -36,7 +39,7 @@ box.execute("DROP TABLE a;")
 
 -- gh-3566: UPDATE OR IGNORE causes deletion of old entry.
 --
-box.execute("CREATE TABLE tj (s0 INT PRIMARY KEY, s1 INT UNIQUE, s2 INT);")
+box.execute("CREATE TABLE TJ (S0 INT PRIMARY KEY, S1 INT UNIQUE, S2 INT);")
 box.execute("INSERT INTO tj VALUES (1, 1, 2), (2, 2, 3);")
 box.execute("CREATE UNIQUE INDEX i ON tj (s2);")
 box.execute("UPDATE OR IGNORE tj SET s1 = s1 + 1;")
@@ -47,7 +50,7 @@ box.execute("SELECT s1, s2 FROM tj;")
 -- gh-3565: INSERT OR REPLACE causes assertion fault.
 --
 box.execute("DROP TABLE tj;")
-box.execute("CREATE TABLE tj (s1 INT PRIMARY KEY, s2 INT);")
+box.execute("CREATE TABLE TJ (S1 INT PRIMARY KEY, S2 INT);")
 box.execute("INSERT INTO tj VALUES (1, 2),(2, 3);")
 box.execute("CREATE UNIQUE INDEX i ON tj (s2);")
 box.execute("REPLACE INTO tj VALUES (1, 3);")

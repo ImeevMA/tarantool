@@ -16,7 +16,7 @@ s:drop()
 -- after drop of indexes. So, if space:drop() fails due to being
 -- referenced by a view, space becomes unusable in SQL terms.
 --
-box.execute("CREATE TABLE t1 (id INT PRIMARY KEY);")
+box.execute("CREATE TABLE T1 (ID INT PRIMARY KEY);")
 box.execute("CREATE VIEW v1 AS SELECT * FROM t1;")
 box.space.T1:drop()
 box.execute("SELECT * FROM v1;")

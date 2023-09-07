@@ -69,8 +69,8 @@ box.execute('SELECT field66, field68, field70 FROM test')
 box.space.TEST:drop()
 
 -- gh-4933: Make sure that autoindex optimization is used.
-box.execute('CREATE TABLE t1(i INT PRIMARY KEY, a INT);')
-box.execute('CREATE TABLE t2(i INT PRIMARY KEY, b INT);')
+box.execute('CREATE TABLE T1(I INT PRIMARY KEY, A INT);')
+box.execute('CREATE TABLE T2(I INT PRIMARY KEY, B INT);')
 for i = 1, 10240 do\
 	box.execute('INSERT INTO t1 VALUES ($1, $1);', {i})\
 	box.execute('INSERT INTO t2 VALUES ($1, $1);', {i})\
@@ -84,7 +84,7 @@ box.execute('SELECT * FROM (VALUES(true));')
 diag == box.error.last()
 
 -- exclude_null + SQL correctness
-box.execute([[CREATE TABLE j (s1 INT PRIMARY KEY, s2 STRING, s3 VARBINARY)]])
+box.execute([[CREATE TABLE J (S1 INT PRIMARY KEY, S2 STRING, S3 VARBINARY)]])
 s = box.space.J
 i = box.space.J:create_index('I3',{parts={2,'string', exclude_null=true}})
 box.execute([[INSERT INTO j VALUES (1,NULL,NULL), (2,'',X'00');]])

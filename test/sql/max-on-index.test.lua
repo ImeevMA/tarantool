@@ -6,11 +6,11 @@ _ = box.space._session_settings:update('sql_default_engine', {{'=', 2, engine}})
 
 -- create space
 -- scalar affinity
-box.execute("CREATE TABLE test1 (f1 INT, f2 INT, PRIMARY KEY(f1))")
+box.execute("CREATE TABLE TEST1 (F1 INT, F2 INT, PRIMARY KEY(F1));")
 box.execute("CREATE INDEX test1_index ON test1 (f2)")
 
 -- integer affinity
-box.execute("CREATE TABLE test2 (f1 INT, f2 INT, PRIMARY KEY(f1))")
+box.execute("CREATE TABLE TEST2 (F1 INT, F2 INT, PRIMARY KEY(F1));")
 
 -- Seed entries
 box.execute("INSERT INTO test1 VALUES(1, 2)");

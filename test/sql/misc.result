@@ -225,11 +225,11 @@ box.space.TEST:drop()
 ---
 ...
 -- gh-4933: Make sure that autoindex optimization is used.
-box.execute('CREATE TABLE t1(i INT PRIMARY KEY, a INT);')
+box.execute('CREATE TABLE T1(I INT PRIMARY KEY, A INT);')
 ---
 - row_count: 1
 ...
-box.execute('CREATE TABLE t2(i INT PRIMARY KEY, b INT);')
+box.execute('CREATE TABLE T2(I INT PRIMARY KEY, B INT);')
 ---
 - row_count: 1
 ...
@@ -276,7 +276,7 @@ diag == box.error.last()
 - true
 ...
 -- exclude_null + SQL correctness
-box.execute([[CREATE TABLE j (s1 INT PRIMARY KEY, s2 STRING, s3 VARBINARY)]])
+box.execute([[CREATE TABLE J (S1 INT PRIMARY KEY, S2 STRING, S3 VARBINARY)]])
 ---
 - row_count: 1
 ...

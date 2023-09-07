@@ -3,8 +3,9 @@ engine = test_run:get_cfg('engine')
 _ = box.space._session_settings:update('sql_default_engine', {{'=', 2, engine}})
 
 -- Creating tables.
-box.execute("CREATE TABLE t1(id INTEGER PRIMARY KEY, a INTEGER)")
-box.execute("CREATE TABLE t2(object INTEGER PRIMARY KEY, price INTEGER, count INTEGER)")
+box.execute("CREATE TABLE T1(ID INTEGER PRIMARY KEY, A INTEGER);")
+box.execute("CREATE TABLE T2(OBJECT INTEGER PRIMARY KEY, PRICE INTEGER, "..\
+            "COUNT INTEGER);")
 
 -- Expressions that're supposed to create functional indexes
 -- should return certain message.

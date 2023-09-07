@@ -9,7 +9,7 @@ _ = box.space._session_settings:update('sql_default_engine', {{'=', 2, engine}})
  | ---
  | ...
 
-box.execute([[CREATE TABLE t (b STRING PRIMARY KEY);]])
+box.execute([[CREATE TABLE T (B STRING PRIMARY KEY);]])
  | ---
  | - row_count: 1
  | ...

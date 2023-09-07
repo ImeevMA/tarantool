@@ -1,5 +1,5 @@
 -- test-run result file version 2
-CREATE TABLE test (s1 INTEGER PRIMARY KEY, s2 SCALAR UNIQUE, s3 SCALAR);
+CREATE TABLE TEST (S1 INTEGER PRIMARY KEY, S2 SCALAR UNIQUE, S3 SCALAR);
  | ---
  | - row_count: 1
  | ...
