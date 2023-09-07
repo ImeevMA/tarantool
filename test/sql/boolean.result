@@ -5,7 +5,7 @@ SET SESSION "sql_seq_scan" = true;
  | ...
 
 -- Create table for tests
-CREATE TABLE t (a BOOLEAN PRIMARY KEY);
+CREATE TABLE T (A BOOLEAN PRIMARY KEY);
  | ---
  | - row_count: 1
  | ...
@@ -68,7 +68,7 @@ SELECT a FROM t WHERE a != true;
  | ...
 
 -- Check DEFAULT values for boolean.
-CREATE TABLE t0 (i INT PRIMARY KEY, a BOOLEAN DEFAULT true);
+CREATE TABLE T0 (I INT PRIMARY KEY, A BOOLEAN DEFAULT TRUE);
  | ---
  | - row_count: 1
  | ...
@@ -117,7 +117,7 @@ SELECT * FROM t0;
  | ...
 
 -- Make sure that SCALAR can handle boolean values.
-CREATE TABLE ts (id INT PRIMARY KEY AUTOINCREMENT, s SCALAR);
+CREATE TABLE TS (ID INT PRIMARY KEY AUTOINCREMENT, S SCALAR);
  | ---
  | - row_count: 1
  | ...
@@ -425,7 +425,7 @@ box.execute('SELECT :value1, @value2;', parameters)
  | ...
 
 -- Check interactions with CHECK constraint.
-CREATE TABLE t1 (i INT PRIMARY KEY, a BOOLEAN, CONSTRAINT ck CHECK(a != true));
+CREATE TABLE T1 (I INT PRIMARY KEY, A BOOLEAN, CONSTRAINT ck CHECK(A != TRUE));
  | ---
  | - row_count: 1
  | ...
@@ -440,7 +440,7 @@ INSERT INTO t1 VALUES (2, true);
  | ...
 
 -- Check interactions with FOREIGN KEY constraint.
-CREATE TABLE t2 (a BOOLEAN PRIMARY KEY, b BOOLEAN REFERENCES t2(a));
+CREATE TABLE T2 (A BOOLEAN PRIMARY KEY, B BOOLEAN REFERENCES T2(A));
  | ---
  | - row_count: 1
  | ...
@@ -466,7 +466,7 @@ INSERT INTO t2 VALUES (false, true)
  | ...
 
 -- Check interactions with UNIQUE constraint.
-CREATE TABLE t3 (i INT PRIMARY KEY, a BOOLEAN, CONSTRAINT uq UNIQUE(a));
+CREATE TABLE T3 (I INT PRIMARY KEY, A BOOLEAN, CONSTRAINT uq UNIQUE(A));
  | ---
  | - row_count: 1
  | ...
@@ -582,11 +582,11 @@ SELECT cast('TRUE' AS BOOLEAN), cast('FALSE' AS BOOLEAN);
  | ...
 
 -- Check usage in trigger.
-CREATE TABLE t4 (i INT PRIMARY KEY, a BOOLEAN);
+CREATE TABLE T4 (I INT PRIMARY KEY, A BOOLEAN);
  | ---
  | - row_count: 1
  | ...
-CREATE TABLE t5 (i INT PRIMARY KEY AUTOINCREMENT, b BOOLEAN);
+CREATE TABLE T5 (I INT PRIMARY KEY AUTOINCREMENT, B BOOLEAN);
  | ---
  | - row_count: 1
  | ...
@@ -892,7 +892,7 @@ SELECT a, COUNT(*) FROM (SELECT * FROM t4 UNION SELECT * FROM t5) GROUP BY a;
  | ...
 
 -- Check logical, bitwise and arithmetical operations.
-CREATE TABLE t6 (a1 BOOLEAN PRIMARY KEY, a2 BOOLEAN);
+CREATE TABLE T6 (A1 BOOLEAN PRIMARY KEY, A2 BOOLEAN);
  | ---
  | - row_count: 1
  | ...
@@ -2464,7 +2464,7 @@ SELECT a, a BETWEEN false AND true FROM t;
  | ...
 
 -- Check interaction of BOOLEAN and INTEGER.
-CREATE TABLE t7 (b INT PRIMARY KEY);
+CREATE TABLE T7 (B INT PRIMARY KEY);
  | ---
  | - row_count: 1
  | ...
@@ -3949,7 +3949,7 @@ SELECT a2, a2 BETWEEN 0 and 10 FROM t6;
  | ...
 
 -- Check interaction of BOOLEAN and DOUBLE.
-CREATE TABLE t8 (c DOUBLE PRIMARY KEY);
+CREATE TABLE T8 (C DOUBLE PRIMARY KEY);
  | ---
  | - row_count: 1
  | ...
@@ -5125,7 +5125,7 @@ SELECT a2, a2 BETWEEN 0.1 and 9.9 FROM t6;
  | ...
 
 -- Check interaction of BOOLEAN and TEXT.
-CREATE TABLE t9 (d TEXT PRIMARY KEY);
+CREATE TABLE T9 (D TEXT PRIMARY KEY);
  | ---
  | - row_count: 1
  | ...

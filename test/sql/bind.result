@@ -8,7 +8,7 @@ box.execute([[SET SESSION "sql_seq_scan" = true;]])
 ---
 - row_count: 1
 ...
-box.execute('CREATE TABLE test (id INT PRIMARY KEY, a NUMBER, b TEXT)')
+box.execute('CREATE TABLE TEST (ID INT PRIMARY KEY, A NUMBER, B TEXT)')
 ---
 - row_count: 1
 ...
@@ -305,7 +305,7 @@ test_run:cmd("setopt delimiter ';'")
 - true
 ...
 if remote then
-	execute("CREATE TABLE t(a VARBINARY PRIMARY KEY);")
+	execute("CREATE TABLE T(A VARBINARY PRIMARY KEY);")
 	execute("INSERT INTO t VALUES (X'00');")
 	res = execute("SELECT typeof(?);", box.space.T:select()[1])
 	assert(res['rows'][1][1] == "varbinary")
@@ -340,7 +340,7 @@ box.execute('SELECT $2', {1, 2, 3})
 ...
 -- gh-4566: bind variable to LIKE argument resulted to crash.
 --
-box.execute("CREATE TABLE t (id INT PRIMARY KEY, a TEXT);")
+box.execute("CREATE TABLE T (ID INT PRIMARY KEY, A TEXT);")
 ---
 - row_count: 1
 ...

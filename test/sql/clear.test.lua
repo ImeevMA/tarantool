@@ -6,7 +6,7 @@ box.execute([[SET SESSION "sql_seq_scan" = true;]])
 -- box.cfg()
 
 -- create space
-box.execute("CREATE TABLE zoobar (c1 INT, c2 INT PRIMARY KEY, c3 TEXT, c4 INT)")
+box.execute("CREATE TABLE ZOOBAR (C1 INT, C2 INT PRIMARY KEY, C3 TEXT, C4 INT)")
 box.execute("CREATE UNIQUE INDEX zoobar2 ON zoobar(c1, c4)")
 
 -- Seed entry
@@ -34,5 +34,6 @@ box.execute("DROP TABLE zoobar")
 -- type is created with the same name and in the same
 -- CREATE TABLE statement.
 --
-box.execute("CREATE TABLE t1(id INT PRIMARY KEY, CONSTRAINT ck1 CHECK(id > 0), CONSTRAINT ck1 CHECK(id < 0));")
+box.execute("CREATE TABLE T1(ID INT PRIMARY KEY, "..\
+            "CONSTRAINT ck1 CHECK(ID > 0), CONSTRAINT ck1 CHECK(ID < 0));")
 box.space.t1

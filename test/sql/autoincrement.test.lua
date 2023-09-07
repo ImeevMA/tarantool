@@ -21,7 +21,7 @@ seq:drop()
 -- Automatic sequence should be removed at DROP TABLE, together
 -- with all the grants.
 --
-box.execute('CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT)')
+box.execute('CREATE TABLE T (ID INTEGER PRIMARY KEY AUTOINCREMENT)')
 seqs = box.space._sequence:select{}
 #seqs == 1 or seqs
 seq = seqs[1].name

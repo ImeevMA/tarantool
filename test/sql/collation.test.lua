@@ -15,7 +15,7 @@ box.execute("SELECT 1 LIMIT 1 COLLATE BINARY, 1;")
 
 -- gh-3052: upper/lower support only default locale
 -- For tr-TR result depends on collation
-box.execute([[CREATE TABLE tu (descriptor VARCHAR(50) PRIMARY KEY, letter VARCHAR(50))]]);
+box.execute([[CREATE TABLE TU (DESCRIPTOR VARCHAR(50) PRIMARY KEY, LETTER VARCHAR(50));]])
 box.internal.collation.create('TURKISH', 'ICU', 'tr-TR', {strength='primary'});
 box.execute([[INSERT INTO tu VALUES ('Latin Capital Letter I U+0049','I');]])
 box.execute([[INSERT INTO tu VALUES ('Latin Small Letter I U+0069','i');]])
@@ -46,7 +46,7 @@ cn:close()
 
 -- Explicitly set BINARY collation is predifined and has ID.
 --
-box.execute("CREATE TABLE t (id INT PRIMARY KEY, a TEXT, b TEXT COLLATE \"binary\");")
+box.execute("CREATE TABLE T (ID INT PRIMARY KEY, A TEXT, B TEXT COLLATE \"binary\");")
 box.space.T:format()[2]['collation']
 box.space.T:format()[3]['collation']
 box.execute("DROP TABLE t;")
@@ -74,7 +74,7 @@ box.space._collation:delete{0}
 
 -- gh-3185: collations of LHS and RHS must be compatible.
 --
-box.execute("CREATE TABLE t (id INT PRIMARY KEY, a TEXT, b TEXT COLLATE \"binary\", c TEXT COLLATE \"unicode_ci\");")
+box.execute("CREATE TABLE T (ID INT PRIMARY KEY, A TEXT, B TEXT COLLATE \"binary\", C TEXT COLLATE \"unicode_ci\");")
 box.execute("SELECT * FROM t WHERE a = b;")
 box.execute("SELECT * FROM t WHERE a COLLATE \"binary\" = b;")
 box.execute("SELECT * FROM t WHERE b = c;")

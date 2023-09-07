@@ -58,9 +58,9 @@
 #include "box/constraint_id.h"
 #include "box/session_settings.h"
 
-/** This procedure checks if a string is a valid identifier. */
-static inline int
-sql_identifier_check(struct Parse *parse, const char *str, size_t len)
+/** Return a case-sensitive identifier generated from the given string. */
+static inline const char *
+sql_id_cs(struct Parse *parse, const char *str, size_t len)
 {
 	if (len > BOX_NAME_MAX) {
 		const char *name = tt_cstr(str, BOX_INVALID_NAME_MAX);
@@ -224,7 +224,8 @@ sqlStartTable(Parse *pParse, Token *pName)
 	struct Vdbe *v = sqlGetVdbe(pParse);
 	sqlVdbeCountChanges(v);
 
-	if (sql_identifier_check(pParse, pName->z, pName->n) != 0)
+	const char *id = sql_id_cs(pParse, pName->z, pName->n);
+	if (id == NULL)
 		return NULL;
 	new_space = sql_template_space_new(pParse, zName);
 	strlcpy(new_space->def->engine_name,
@@ -342,7 +343,7 @@ sql_create_column_start(struct Parse *parse)
 	if (sql_identifier_check(parse, name->z, name->n) != 0)
 		goto tnt_error;
 
-	char *column_name = xregion_alloc(region, name->n);
+	char *column_name = xregion_alloc(region, name->n + 1);
 	memcpy(column_name, name->z, name->n);
 	column_name[name->n] = '\0';
 

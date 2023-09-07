@@ -5,7 +5,7 @@ box.execute([[SET SESSION "sql_seq_scan" = true;]])
 -- box.cfg()
 
 -- create space
-box.execute("CREATE TABLE t1(a INT,b INT,c INT,PRIMARY KEY(b,c));")
+box.execute("CREATE TABLE T1(A INT, B INT, C INT, PRIMARY KEY(B, C));")
 
 -- Seed entries
 box.execute("WITH RECURSIVE cnt(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM cnt WHERE x<1000) INSERT INTO t1 SELECT x, x%40, x/40 FROM cnt;")

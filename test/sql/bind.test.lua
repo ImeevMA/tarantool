@@ -2,7 +2,7 @@ netbox = require('net.box')
 test_run = require('test_run').new()
 box.execute([[SET SESSION "sql_seq_scan" = true;]])
 
-box.execute('CREATE TABLE test (id INT PRIMARY KEY, a NUMBER, b TEXT)')
+box.execute('CREATE TABLE TEST (ID INT PRIMARY KEY, A NUMBER, B TEXT)')
 box.space.TEST:replace{1, 2, '3'}
 box.space.TEST:replace{7, 8.5, '9'}
 box.space.TEST:replace{10, 11, box.NULL}
@@ -105,7 +105,7 @@ execute('SELECT ? ', {18446744073709551615ULL})
 test_run:cmd("setopt delimiter ';'")
 
 if remote then
-	execute("CREATE TABLE t(a VARBINARY PRIMARY KEY);")
+	execute("CREATE TABLE T(A VARBINARY PRIMARY KEY);")
 	execute("INSERT INTO t VALUES (X'00');")
 	res = execute("SELECT typeof(?);", box.space.T:select()[1])
 	assert(res['rows'][1][1] == "varbinary")
@@ -126,7 +126,7 @@ box.execute('SELECT $2', {1, 2, 3})
 
 -- gh-4566: bind variable to LIKE argument resulted to crash.
 --
-box.execute("CREATE TABLE t (id INT PRIMARY KEY, a TEXT);")
+box.execute("CREATE TABLE T (ID INT PRIMARY KEY, A TEXT);")
 box.execute("SELECT * FROM t WHERE a LIKE ?;", {'a%'});
 box.execute("INSERT INTO t VALUES (1, 'aA'), (2, 'Ba'), (3, 'A');")
 box.execute("SELECT * FROM t WHERE a LIKE ?;", {'a%'});
