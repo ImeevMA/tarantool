@@ -1035,7 +1035,7 @@ sql_expr_new(int op, const struct Token *token)
 struct Expr *
 sql_expr_new_dequoted(int op, const struct Token *token)
 {
-	int extra_size = 0, rc;
+	int extra_size = 0;
 	if (token != NULL) {
 		int val;
 		assert(token->z != NULL || token->n == 0);
@@ -1049,19 +1049,9 @@ sql_expr_new_dequoted(int op, const struct Token *token)
 	e->u.zToken = (char *) &e[1];
 	if (token->z[0] == '"')
 		e->flags |= EP_DblQuoted;
-	if (op != TK_ID && op != TK_COLLATE && op != TK_FUNCTION) {
-		memcpy(e->u.zToken, token->z, token->n);
-		e->u.zToken[token->n] = '\0';
-		sqlDequote(e->u.zToken);
-	} else if ((rc = sql_normalize_name(e->u.zToken, extra_size, token->z,
-					    token->n)) > extra_size) {
-		extra_size = rc;
-		e = sql_xrealloc(e, sizeof(*e) + extra_size);
-		e->u.zToken = (char *) &e[1];
-		if (sql_normalize_name(e->u.zToken, extra_size, token->z,
-				       token->n) > extra_size)
-			unreachable();
-	}
+	memcpy(e->u.zToken, token->z, token->n);
+	e->u.zToken[token->n] = '\0';
+	sqlDequote(e->u.zToken);
 	return e;
 }
 

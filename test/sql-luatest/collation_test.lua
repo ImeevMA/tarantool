@@ -16,6 +16,6 @@ g.test_ghs_80 = function()
     g.server:exec(function()
         local sql = [[select 'a' collate a union select 'b' collate "binary";]]
         local _, err = box.execute(sql)
-        t.assert_equals(err.message, "Collation 'A' does not exist")
+        t.assert_equals(err.message, "Collation 'a' does not exist")
     end)
 end
