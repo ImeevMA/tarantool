@@ -2479,7 +2479,7 @@ void sqlDequote(char *);
  * @param src_len The length of the original string.
  * @retval The count of bytes written (or need to be written).
  */
-int
+void
 sql_normalize_name(char *dst, int dst_size, const char *src, int src_len);
 
 /**
