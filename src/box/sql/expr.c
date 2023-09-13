@@ -275,6 +275,29 @@ check_collate_arg(struct Parse *parse, struct Expr *expr)
 	return 0;
 }
 
+struct coll *
+sql_expr_get_coll(struct Parse *parser, struct Expr *expr, uint32_t *coll_id)
+{
+	assert(expr->op == TK_COLLATE);
+	const char *name = expr->u.zToken;
+	assert(name != NULL);
+	size_t len = strlen(name);
+	struct coll_id *p = coll_by_name(name, len);
+	if (p == NULL && (expr->flags & EP_Lookup) != 0) {
+		char *old_name = sql_old_normalized_name_new(name, len);
+		p = coll_by_name(old_name, strlen(old_name));
+		sql_xfree(old_name);
+	}
+	if (p == NULL) {
+		diag_set(ClientError, ER_NO_SUCH_COLLATION, name);
+		parser->is_aborted = true;
+		return NULL;
+	} else {
+		*coll_id = p->id;
+		return p->coll;
+	}
+}
+
 int
 sql_expr_coll(Parse *parse, Expr *p, bool *is_explicit_coll, uint32_t *coll_id,
 	      struct coll **coll)
@@ -291,7 +314,7 @@ sql_expr_coll(Parse *parse, Expr *p, bool *is_explicit_coll, uint32_t *coll_id,
 		}
 		if (op == TK_COLLATE ||
 		    (op == TK_REGISTER && p->op2 == TK_COLLATE)) {
-			*coll = sql_get_coll_seq(parse, p->u.zToken, coll_id);
+			*coll = sql_expr_get_coll(parse, p, coll_id);
 			if (*coll == NULL)
 				return -1;
 			*is_explicit_coll = true;
@@ -1047,8 +1070,8 @@ sql_expr_new_dequoted(int op, const struct Token *token)
 	if (token == NULL || token->n == 0)
 		return e;
 	e->u.zToken = (char *) &e[1];
-	if (token->z[0] == '"')
-		e->flags |= EP_DblQuoted;
+	if (token->z[0] != '"')
+		e->flags |= EP_Lookup;
 	memcpy(e->u.zToken, token->z, token->n);
 	e->u.zToken[token->n] = '\0';
 	sqlDequote(e->u.zToken);

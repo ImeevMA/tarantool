@@ -1415,7 +1415,8 @@ struct Expr {
 #define EP_Error     0x000008	/* Expression contains one or more errors */
 #define EP_Distinct  0x000010	/* Aggregate function with DISTINCT keyword */
 #define EP_VarSelect 0x000020	/* pSelect is correlated, not constant */
-#define EP_DblQuoted 0x000040	/* token.z was originally in "..." */
+/* Second lookup could be performed for the name. */
+#define EP_Lookup    0x000040
 #define EP_Collate   0x000100	/* Tree contains a TK_COLLATE operator */
 #define EP_IntValue  0x000400	/* Integer value contained in u.iValue */
 #define EP_xIsSelect 0x000800	/* x.pSelect is valid (otherwise x.pList is) */
@@ -4068,16 +4069,9 @@ int sqlResolveOrderGroupBy(Parse *, Select *, ExprList *, const char *);
 char *
 rename_trigger(char const *sql_stmt, char const *table_name, bool *is_quoted);
 
-/**
- * Find a collation by name. Set error in @a parser if not found.
- * @param parser Parser.
- * @param name Collation name.
- * @param[out] Collation identifier.
- *
- * @retval Collation object. NULL on error or not found.
- */
+/** Find a collation by name. Set error in @a parser if not found. */
 struct coll *
-sql_get_coll_seq(Parse *parser, const char *name, uint32_t *coll_id);
+sql_expr_get_coll(struct Parse *parser, struct Expr *expr, uint32_t *coll_id);
 
 /**
  * This function returns average size of tuple in given index.
