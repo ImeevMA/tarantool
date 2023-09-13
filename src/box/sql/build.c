@@ -732,26 +732,35 @@ sql_create_check_contraint(struct Parse *parser, bool is_field_ck)
 void
 sqlAddCollateType(Parse * pParse, Token * pToken)
 {
+	char *coll_name = sql_name_from_token(pToken);
+	struct coll_id *coll_id = coll_by_name(coll_name, strlen(coll_name));
+	if (coll_id == NULL && !sqlIsquote(pToken->z[0])) {
+		char *old_coll_name = sql_old_name_from_token(pToken);
+		coll_id = coll_by_name(old_coll_name, strlen(old_coll_name));
+		sql_xfree(old_coll_name);
+	}
+	if (coll_id == NULL) {
+		diag_set(ClientError, ER_NO_SUCH_COLLATION, coll_name);
+		pParse->is_aborted = true;
+		sql_xfree(coll_name);
+		return;
+	}
+	sql_xfree(coll_name);
+
 	struct space *space = pParse->create_column_def.space;
 	assert(space != NULL);
 	uint32_t i = space->def->field_count - 1;
-	char *coll_name = sql_name_from_token(pToken);
-	uint32_t *coll_id = &space->def->fields[i].coll_id;
-	if (sql_get_coll_seq(pParse, coll_name, coll_id) != NULL) {
-		/* If the column is declared as "<name> PRIMARY KEY COLLATE <type>",
-		 * then an index may have been created on this column before the
-		 * collation type was added. Correct this if it is the case.
-		 */
-		for (uint32_t i = 0; i < space->index_count; ++i) {
-			struct index *idx = space->index[i];
-			assert(idx->def->key_def->part_count == 1);
-			if (idx->def->key_def->parts[0].fieldno == i) {
-				coll_id = &idx->def->key_def->parts[0].coll_id;
-				(void)sql_column_collation(space->def, i, coll_id);
-			}
-		}
+	space->def->fields[i].coll_id = coll_id->id;
+	/* If the column is declared as "<name> PRIMARY KEY COLLATE <type>",
+	 * then an index may have been created on this column before the
+	 * collation type was added. Correct this if it is the case.
+	 */
+	for (uint32_t j = 0; j < space->index_count; ++j) {
+		struct index *idx = space->index[j];
+		assert(idx->def->key_def->part_count == 1);
+		if (idx->def->key_def->parts[0].fieldno == i)
+			idx->def->key_def->parts[0].coll_id = coll_id->id;
 	}
-	sql_xfree(coll_name);
 }
 
 struct coll *
@@ -2202,8 +2211,7 @@ index_fill_def(struct Parse *parse, struct index *index,
 		uint32_t fieldno = column_expr->iColumn;
 		uint32_t coll_id;
 		if (expr->op == TK_COLLATE) {
-			if (sql_get_coll_seq(parse, expr->u.zToken,
-					     &coll_id) == NULL)
+			if (sql_expr_get_coll(parse, expr, &coll_id) == NULL)
 				goto tnt_error;
 		} else {
 			sql_column_collation(space_def, fieldno, &coll_id);
