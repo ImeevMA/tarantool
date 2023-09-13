@@ -2492,6 +2492,13 @@ char *
 sql_normalized_name_new(const char *name, int len);
 
 /**
+ * Duplicate the normalized version of the name in the space allocated using
+ * sql_xmalloc(). Normalization uses the old normalization rules.
+ */
+char *
+sql_old_normalized_name_new(const char *name, int len);
+
+/**
  * Duplicate a normalized version of @a name onto a region @a r.
  * For normalization rules @sa sql_normalize_name().
  * @param r Region allocator.
@@ -3091,6 +3098,18 @@ sql_name_from_token(struct Token *t)
 {
 	assert(t != NULL && t->z != NULL);
 	return sql_normalized_name_new(t->z, t->n);
+}
+
+/**
+ * The token text is normalized using the old rules and the result is stored in
+ * the returned string. Space to hold the returned string is obtained from
+ * sql_xmalloc() and must be freed by the calling function sql_xfree().
+ */
+static inline char *
+sql_old_name_from_token(struct Token *t)
+{
+	assert(t != NULL && t->n > 0);
+	return sql_old_normalized_name_new(t->z, t->n);
 }
 
 int sqlExprCompare(Expr *, Expr *, int);

@@ -146,6 +146,33 @@ sql_normalized_name_region_new(struct region *r, const char *name, int len)
 	return res;
 }
 
+char *
+sql_old_normalized_name_new(const char *name, int len)
+{
+	size_t size = len + 1;
+	char *res = sql_xmalloc(size);
+	if (sqlIsquote(name[0])) {
+		memcpy(res, name, len);
+		res[len] = '\0';
+		sqlDequote(res);
+		return res;
+	}
+	UErrorCode status = U_ZERO_ERROR;
+	assert(icu_ucase_default_map != NULL);
+	int new_len = ucasemap_utf8ToUpper(icu_ucase_default_map, res, size,
+					   name, len, &status);
+	assert(U_SUCCESS(status) || status == U_BUFFER_OVERFLOW_ERROR);
+	if (new_len > len) {
+		size = new_len + 1;
+		res = sql_xrealloc(res, size);
+		new_len = ucasemap_utf8ToUpper(icu_ucase_default_map, res, size,
+					       name, len, &status);
+		assert((size_t)new_len < size);
+		(void)new_len;
+	}
+	return res;
+}
+
 /* Convenient short-hand */
 #define UpperToLower sqlUpperToLower
 
