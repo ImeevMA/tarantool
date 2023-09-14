@@ -1050,7 +1050,7 @@ sql_expr_new(int op, const struct Token *token)
 	if (token == NULL)
 		return e;
 	/* No need for a second lookup if an ID has not been given by a user. */
-	if (op == TK_COLLATE)
+	if (op == TK_COLLATE || op == TK_ID)
 		e->flags |= EP_ID_quoted;
 	e->u.zToken = (char *) &e[1];
 	assert(token->z != NULL || token->n == 0);

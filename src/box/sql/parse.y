@@ -938,6 +938,8 @@ idlist(A) ::= nm(Y). {
     p->iAgg = -1;
     p->u.zToken = (char*)&p[1];
     sql_normalize_name(p->u.zToken, name_sz, t.z, t.n);
+    if (op == TK_ID)
+      p->flags |= t.z[0] == '"' ? EP_ID_quoted : EP_ID_simple;
 #if SQL_MAX_EXPR_DEPTH>0
     p->nHeight = 1;
 #endif  

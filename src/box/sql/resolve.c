@@ -157,10 +157,11 @@ nameInUsingClause(IdList * pUsing, const char *zCol)
  * match anything.
  */
 int
-sqlMatchSpanName(const char *zSpan,
-		     const char *zCol, const char *zTab
-	)
+sqlMatchSpanName(const char *zSpan, const char *zCol, const char *old_col_name,
+		 const char *zTab, const char *old_tab_name)
 {
+	(void)old_col_name;
+	(void)old_tab_name;
 	int n;
 	for (n = 0; ALWAYS(zSpan[n]) && zSpan[n] != '.'; n++) {
 	}
@@ -199,13 +200,35 @@ sqlMatchSpanName(const char *zSpan,
  * in pParse and return WRC_Abort.  Return WRC_Prune on success.
  */
 static int
-lookupName(Parse * pParse,	/* The parsing context */
-	   const char *zTab,	/* Name of table containing column, or NULL */
-	   const char *zCol,	/* Name of the column. */
-	   NameContext * pNC,	/* The name context used to resolve the name */
-	   Expr * pExpr		/* Make this EXPR node point to the selected column */
-    )
+lookupName(struct Parse *pParse, struct Expr *pExpr, struct NameContext *pNC)
 {
+	struct Expr *table_expr = NULL;
+	struct Expr *column_expr = NULL;
+	const char *zTab = NULL;
+	const char *zCol = NULL;
+	char *old_tab_name = NULL;
+	char *old_col_name = NULL;
+	if (pExpr->op == TK_DOT) {
+		column_expr = pExpr->pRight;
+		table_expr = pExpr->pLeft;
+		assert(table_expr->op == TK_ID && column_expr->op == TK_ID);
+		assert((table_expr->flags & EP_ID_quoted) != 0 ||
+		       (table_expr->flags & EP_ID_simple) != 0);
+		zTab = table_expr->u.zToken;
+		if ((table_expr->flags & EP_ID_simple) != 0) {
+			old_tab_name =
+				sql_old_normalized_name_new(zTab, strlen(zTab));
+		}
+	} else {
+		column_expr = pExpr;
+	}
+	assert(column_expr->op == TK_ID);
+	assert((column_expr->flags & (EP_ID_quoted | EP_ID_simple)) != 0);
+	zCol = column_expr->u.zToken;
+
+	if ((column_expr->flags & EP_ID_simple) != 0)
+		old_col_name = sql_old_normalized_name_new(zCol, strlen(zCol));
+
 	int i, j;		/* Loop counters */
 	int cnt = 0;		/* Number of matching column names */
 	int cntTab = 0;		/* Number of matching table names */
@@ -242,9 +265,10 @@ lookupName(Parse * pParse,	/* The parsing context */
 					int hit = 0;
 					pEList = pItem->pSelect->pEList;
 					for (j = 0; j < pEList->nExpr; j++) {
-						if (sqlMatchSpanName
-						    (pEList->a[j].zSpan, zCol,
-						     zTab)) {
+						if (sqlMatchSpanName(
+							pEList->a[j].zSpan,
+							zCol, old_col_name,
+							zTab, old_tab_name)) {
 							cnt++;
 							cntTab = 2;
 							pMatch = pItem;
@@ -260,9 +284,11 @@ lookupName(Parse * pParse,	/* The parsing context */
 					    pItem->zAlias ? pItem->
 					    zAlias : space_def->name;
 					assert(zTabName != 0);
-					if (strcmp(zTabName, zTab) != 0) {
+					if (strcmp(zTabName, zTab) != 0 &&
+					    (old_tab_name == NULL ||
+					     strcmp(zTabName,
+						    old_tab_name) != 0))
 						continue;
-					}
 				}
 				if (0 == (cntTab++)) {
 					pMatch = pItem;
@@ -379,6 +405,8 @@ lookupName(Parse * pParse,	/* The parsing context */
 							 ER_SQL_PARSER_GENERIC,
 							 tt_sprintf(err, zAs));
 						pParse->is_aborted = true;
+						sql_xfree(old_tab_name);
+						sql_xfree(old_col_name);
 						return WRC_Abort;
 					}
 					if (sqlExprVectorSize(pOrig) != 1) {
@@ -386,6 +414,8 @@ lookupName(Parse * pParse,	/* The parsing context */
 							 ER_SQL_PARSER_GENERIC,
 							 "row value misused");
 						pParse->is_aborted = true;
+						sql_xfree(old_tab_name);
+						sql_xfree(old_col_name);
 						return WRC_Abort;
 					}
 					resolveAlias(pEList, j, pExpr, "",
@@ -457,6 +487,8 @@ lookupName(Parse * pParse,	/* The parsing context */
 	pExpr->pRight = 0;
 	pExpr->op = (isTrigger ? TK_TRIGGER : TK_COLUMN_REF);
  lookupname_end:
+	sql_xfree(old_tab_name);
+	sql_xfree(old_col_name);
 	if (cnt == 1) {
 		assert(pNC != 0);
 		/* Increment the nRef value on all name contexts from TopNC up to
@@ -549,31 +581,14 @@ resolveExprStep(Walker * pWalker, Expr * pExpr)
 	case TK_ID:{
 			if ((pNC->ncFlags & NC_AllowAgg) != 0)
 				pNC->ncFlags |= NC_HasUnaggregatedId;
-			return lookupName(pParse, 0, pExpr->u.zToken, pNC,
-					  pExpr);
+			return lookupName(pParse, pExpr, pNC);
 		}
 
 		/* A table name and column name:     ID.ID
 		 * Or a database, table and column:  ID.ID.ID
 		 */
-	case TK_DOT:{
-			const char *zColumn;
-			const char *zTable;
-			Expr *pRight;
-
-			/* if( pSrcList==0 ) break; */
-			pRight = pExpr->pRight;
-			if (pRight->op == TK_ID) {
-				zTable = pExpr->pLeft->u.zToken;
-				zColumn = pRight->u.zToken;
-			} else {
-				assert(pRight->op == TK_DOT);
-				zTable = pRight->pLeft->u.zToken;
-				zColumn = pRight->pRight->u.zToken;
-			}
-			return lookupName(pParse, zTable, zColumn, pNC,
-					  pExpr);
-		}
+	case TK_DOT:
+		return lookupName(pParse, pExpr, pNC);
 
 		/* Resolve function names
 		 */

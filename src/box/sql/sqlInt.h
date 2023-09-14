@@ -3958,7 +3958,10 @@ void sqlSelectPrep(Parse *, Select *, NameContext *);
 const char *
 sql_select_op_name(int id);
 
-int sqlMatchSpanName(const char *, const char *, const char *);
+int
+sqlMatchSpanName(const char *span, const char *col_name,
+		 const char *old_col_name, const char *tab_name,
+		 const char *old_tab_name);
 int sqlResolveExprNames(NameContext *, Expr *);
 int sqlResolveExprListNames(NameContext *, ExprList *);
 void sqlResolveSelectNames(Parse *, Select *, NameContext *);
