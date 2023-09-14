@@ -1650,6 +1650,7 @@ sql_expr_list_dup(struct ExprList *p, int flags)
 				pNewExpr->pLeft = pPriorSelectCol;
 			}
 		}
+		pItem->name = pOldItem->name;
 		pItem->zName = sql_xstrdup(pOldItem->zName);
 		pItem->zSpan = sql_xstrdup(pOldItem->zSpan);
 		pItem->sort_order = pOldItem->sort_order;
@@ -1891,6 +1892,7 @@ sqlExprListSetName(Parse * pParse,	/* Parsing context */
 	assert(pList->nExpr > 0);
 	struct ExprList_item *item = &pList->a[pList->nExpr - 1];
 	assert(item->zName == NULL);
+	item->name = *pName;
 	if (dequote) {
 		item->zName = sql_normalized_name_new(pName->z, pName->n);
 	} else {

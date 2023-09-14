@@ -1494,6 +1494,7 @@ struct Expr {
 struct ExprList {
 	int nExpr;		/* Number of expressions on the list */
 	struct ExprList_item {	/* For each expression in the list */
+		struct Token name;
 		Expr *pExpr;	/* The list of expressions */
 		char *zName;	/* Token associated with this expression */
 		char *zSpan;	/* Original text of the expression */
@@ -3097,7 +3098,7 @@ void sqlExprIfFalse(Parse *, Expr *, int, int);
  * Does not return NULL.
  */
 static inline char *
-sql_name_from_token(struct Token *t)
+sql_name_from_token(const struct Token *t)
 {
 	assert(t != NULL && t->z != NULL);
 	return sql_normalized_name_new(t->z, t->n);
@@ -3109,7 +3110,7 @@ sql_name_from_token(struct Token *t)
  * sql_xmalloc() and must be freed by the calling function sql_xfree().
  */
 static inline char *
-sql_old_name_from_token(struct Token *t)
+sql_old_name_from_token(const struct Token *t)
 {
 	assert(t != NULL && t->n > 0);
 	return sql_old_normalized_name_new(t->z, t->n);

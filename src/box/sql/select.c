@@ -4257,6 +4257,7 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 				int len = strlen(str);
 				char *name = sql_normalized_name_new(str, len);
 				pList->a[i].zName = name;
+				sqlTokenInit(&pList->a[i].name, str);
 			}
 		}
 		if (pSub->pOrderBy) {
@@ -5088,7 +5089,12 @@ selectExpander(Walker * pWalker, Select * p)
 					pExpr = pRight;
 				}
 				pNew = sql_expr_list_append(pNew, pExpr);
-				sqlTokenInit(&sColname, zColname);
+				size_t name_len = strlen(zColname);
+				char *name = xregion_alloc(&pParse->region,
+							   name_len + 1);
+				memcpy(name, zColname, name_len);
+				name[name_len] = '\0';
+				sqlTokenInit(&sColname, name);
 				sqlExprListSetName(pParse, pNew, &sColname, 0);
 				if ((p->selFlags & SF_NestedFrom) == 0) {
 					sql_xfree(zToFree);

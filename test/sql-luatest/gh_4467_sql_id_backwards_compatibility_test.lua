@@ -70,3 +70,19 @@ g.test_collate_clause = function()
         box.space._collation:delete({coll_id})
     end)
 end
+
+g.test_fk_create_clause = function()
+    g.server:exec(function()
+        local sql = [[CREATE TABLE ASD(QWE INT PRIMARY KEY, ZXC INT,
+                      FOREIGN KEY (Zxc) REFERENCES aSd(qwE));]]
+        t.assert_equals(box.execute(sql), {row_count = 1})
+        local space = box.space._space.index.name:get({'ASD'})
+        local res = {fk_unnamed_ASD_1 = {space = space.id, field = {[1] = 0}}}
+        t.assert_equals(space.flags.foreign_key, res)
+
+        sql = [[CREATE TABLE t(i INT PRIMARY KEY REFERENCES AsD(QwE));]]
+        t.assert_equals(box.execute(sql), {row_count = 1})
+        res = {fk_unnamed_t_i_1 = {space = space.id, field = 1}}
+        t.assert_equals(box.space.t:format()[1].foreign_key, res)
+    end)
+end

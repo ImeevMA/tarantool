@@ -1170,19 +1170,36 @@ vdbe_emit_fk_constraint_create(struct Parse *parse_context,
  */
 static int
 resolve_link(struct Parse *parse_context, const struct space_def *def,
-	     const char *field_name, uint32_t *link, const char *fk_name)
+	     const struct Token *name_token, uint32_t *link,
+	     const char *fk_name)
 {
+	assert(name_token->n > 0);
+	char *name = sql_name_from_token(name_token);
 	assert(link != NULL);
 	for (uint32_t j = 0; j < def->field_count; ++j) {
-		if (strcmp(field_name, def->fields[j].name) == 0) {
+		if (strcmp(name, def->fields[j].name) == 0) {
 			*link = j;
+			sql_xfree(name);
 			return 0;
 		}
 	}
+	if (name_token->z[0] != '"') {
+		char *old_name = sql_old_name_from_token(name_token);
+		for (uint32_t j = 0; j < def->field_count; ++j) {
+			if (strcmp(old_name, def->fields[j].name) == 0) {
+				*link = j;
+				sql_xfree(name);
+				sql_xfree(old_name);
+				return 0;
+			}
+		}
+		sql_xfree(old_name);
+	}
 	diag_set(ClientError, ER_CREATE_FK_CONSTRAINT, fk_name,
 		 tt_sprintf("unknown column %s in foreign key definition",
-			    field_name));
+			    name));
 	parse_context->is_aborted = true;
+	sql_xfree(name);
 	return -1;
 }
 
@@ -1262,7 +1279,7 @@ vdbe_emit_create_constraints(struct Parse *parse, int reg_space_id)
 			struct ExprList *cols = fk_parse->selfref_cols;
 			for (uint32_t i = 0; i < fk_def->field_count; ++i) {
 				if (resolve_link(parse, space->def,
-						 cols->a[i].zName,
+						 &cols->a[i].name,
 						 &fk_def->links[i].parent_field,
 						 fk_def->name) != 0)
 					return;
@@ -1717,19 +1734,31 @@ sql_drop_table(struct Parse *parse_context)
  */
 static int
 columnno_by_name(struct Parse *parse_context, const struct space *space,
-		 const char *column_name, uint32_t *colno, const char *fk_name)
+		 const struct Token *name_token, uint32_t *colno,
+		 const char *fk_name)
 {
-	assert(colno != NULL);
-	uint32_t column_len = strlen(column_name);
-	if (tuple_fieldno_by_name(space->def->dict, column_name, column_len,
-				  field_name_hash(column_name, column_len),
-				  colno) != 0) {
+	assert(colno != NULL && name_token->n > 0);
+	char *name = sql_name_from_token(name_token);
+	size_t len = strlen(name);
+	int rc = tuple_fieldno_by_name(space->def->dict, name, len,
+				       field_name_hash(name, len), colno);
+	if (rc != 0 && name_token->z[0] != '"') {
+		char *old_name = sql_old_name_from_token(name_token);
+		size_t old_len = strlen(old_name);
+		rc = tuple_fieldno_by_name(space->def->dict, old_name, old_len,
+					   field_name_hash(old_name, old_len),
+					   colno);
+		sql_xfree(old_name);
+	}
+	if (rc != 0) {
 		diag_set(ClientError, ER_CREATE_FK_CONSTRAINT, fk_name,
 			 tt_sprintf("foreign key refers to nonexistent field %s",
-				    column_name));
+				    name));
 		parse_context->is_aborted = true;
+		sql_xfree(name);
 		return -1;
 	}
+	sql_xfree(name);
 	return 0;
 }
 
@@ -1862,9 +1891,23 @@ sql_create_foreign_key(struct Parse *parse_context)
 	 * self-referenced, but in this case parent (which is
 	 * also child) table will definitely exist.
 	 */
-	is_self_referenced = !is_alter_add_constr &&
-			     strcmp(parent_name, space->def->name) == 0;
+	if (!is_alter_add_constr) {
+		const char *space_name = space->def->name;
+		if (strcmp(parent_name, space_name) == 0) {
+			is_self_referenced = true;
+		} else if (parent->z[0] != '"') {
+			char *old_name = sql_old_name_from_token(parent);
+			is_self_referenced = strcmp(old_name, space_name) == 0;
+			sql_xfree(old_name);
+		}
+	}
 	struct space *parent_space = space_by_name0(parent_name);
+	if (parent_space == NULL && !is_self_referenced &&
+	    parent->z[0] != '"') {
+		char *old_name = sql_old_name_from_token(parent);
+		parent_space = space_by_name0(old_name);
+		sql_xfree(old_name);
+	}
 	if (parent_space == NULL && !is_self_referenced) {
 		diag_set(ClientError, ER_NO_SUCH_SPACE, parent_name);
 		goto tnt_error;
@@ -1930,7 +1973,7 @@ sql_create_foreign_key(struct Parse *parse_context)
 			fk_def->links[i].parent_field = pk_def->parts[i].fieldno;
 		} else if (!is_self_referenced &&
 			   columnno_by_name(parse_context, parent_space,
-					    parent_cols->a[i].zName,
+					    &parent_cols->a[i].name,
 					    &fk_def->links[i].parent_field,
 					    constraint_name) != 0) {
 			goto exit_create_fk;
@@ -1949,13 +1992,13 @@ sql_create_foreign_key(struct Parse *parse_context)
 				break;
 			}
 			if (resolve_link(parse_context, space->def,
-					 child_cols->a[i].zName,
+					 &child_cols->a[i].name,
 					 &fk_def->links[i].child_field,
 					 constraint_name) != 0)
 				goto exit_create_fk;
 		/* In case of ALTER parent table must exist. */
 		} else if (columnno_by_name(parse_context, child_space,
-					    child_cols->a[i].zName,
+					    &child_cols->a[i].name,
 					    &fk_def->links[i].child_field,
 					    constraint_name) != 0) {
 			goto exit_create_fk;
