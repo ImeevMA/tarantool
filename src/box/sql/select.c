@@ -486,6 +486,7 @@ src_list_append_unique(struct SrcList *list, const char *new_name)
 	list = sql_src_list_enlarge(list, 1, list->nSrc);
 	struct SrcList_item *pItem = &list->a[list->nSrc - 1];
 	pItem->zName = sql_xstrdup(new_name);
+	pItem->fg.is_quoted = 1;
 	return list;
 }
 
@@ -497,9 +498,18 @@ select_collect_table_names(struct Walker *walker, struct Select *select)
 	for (int i = 0; i < select->pSrc->nSrc; ++i) {
 		if (select->pSrc->a[i].zName == NULL)
 			continue;
-		walker->u.pSrcList =
-			src_list_append_unique(walker->u.pSrcList,
-					       select->pSrc->a[i].zName);
+		struct SrcList *list = walker->u.pSrcList;
+		const char *name = select->pSrc->a[i].zName;
+		const struct space *space = space_by_name0(name);
+		if (space == NULL && select->pSrc->a[i].fg.is_quoted == 0) {
+			size_t len = strlen(name);
+			char *old_name = sql_old_normalized_name_new(name, len);
+			space = space_by_name0(old_name);
+			sql_xfree(old_name);
+		}
+		if (space != NULL)
+			name = space->def->name;
+		walker->u.pSrcList = src_list_append_unique(list, name);
 		assert(walker->u.pSrcList != NULL);
 	}
 	return WRC_Continue;

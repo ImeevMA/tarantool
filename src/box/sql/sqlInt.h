@@ -1610,6 +1610,7 @@ struct SrcList {
 			unsigned isCorrelated:1;	/* True if sub-query is correlated */
 			unsigned viaCoroutine:1;	/* Implemented as a co-routine */
 			unsigned isRecursive:1;	/* True for recursive reference in WITH */
+			unsigned is_quoted : 1;
 			/**
 			 * Flag indicating whether scanning is allowed for the
 			 * source. By default, scanning is allowed, as this

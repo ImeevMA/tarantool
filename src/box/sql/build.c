@@ -2792,8 +2792,11 @@ sql_src_list_append(struct SrcList *list, struct Token *name_token)
 		list = new_list;
 	}
 	struct SrcList_item *item = &list->a[list->nSrc - 1];
-	if (name_token != NULL)
+	if (name_token != NULL) {
+		assert(name_token->n > 0);
 		item->zName = sql_name_from_token(name_token);
+		item->fg.is_quoted = name_token->z[0] == '"';
+	}
 	return list;
 }
 
