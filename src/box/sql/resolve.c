@@ -137,12 +137,14 @@ resolveAlias(struct ExprList *pEList, int iCol, struct Expr *pExpr,
  * zCol.
  */
 static int
-nameInUsingClause(IdList * pUsing, const char *zCol)
+nameInUsingClause(IdList * pUsing, const char *zCol, const char *old_col_name)
 {
 	if (pUsing) {
 		int k;
 		for (k = 0; k < pUsing->nId; k++) {
-			if (strcmp(pUsing->a[k].zName, zCol) == 0)
+			if (strcmp(pUsing->a[k].zName, zCol) == 0 ||
+			    (old_col_name != NULL && strcmp(pUsing->a[k].zName,
+							    old_col_name) == 0))
 				return 1;
 		}
 	}
@@ -160,18 +162,19 @@ int
 sqlMatchSpanName(const char *zSpan, const char *zCol, const char *old_col_name,
 		 const char *zTab, const char *old_tab_name)
 {
-	(void)old_col_name;
-	(void)old_tab_name;
-	int n;
+	size_t n;
 	for (n = 0; ALWAYS(zSpan[n]) && zSpan[n] != '.'; n++) {
 	}
-	if (zTab && (sqlStrNICmp(zSpan, zTab, n) != 0 || zTab[n] != 0)) {
+	if (zTab != NULL) {
+		if ((strlen(zTab) != n || strncmp(zSpan, zTab, n) != 0) &&
+		    (old_tab_name == NULL || strlen(old_tab_name) != n ||
+		     strncmp(zSpan, old_tab_name, n) != 0))
 		return 0;
 	}
 	zSpan += n + 1;
-	if (zCol && strcmp(zSpan, zCol) != 0) {
+	if (zCol && strcmp(zSpan, zCol) != 0 &&
+	    (old_col_name == NULL || strcmp(zSpan, old_col_name) != 0))
 		return 0;
-	}
 	return 1;
 }
 
@@ -296,7 +299,10 @@ lookupName(struct Parse *pParse, struct Expr *pExpr, struct NameContext *pNC)
 				for (j = 0; j < (int)space_def->field_count;
 				     j++) {
 					if (strcmp(space_def->fields[j].name,
-						   zCol) == 0) {
+						   zCol) == 0 ||
+					    (old_col_name != NULL &&
+					     strcmp(space_def->fields[j].name,
+						    old_col_name) == 0)) {
 						/* If there has been exactly one prior match and this match
 						 * is for the right-hand table of a NATURAL JOIN or is in a
 						 * USING clause, then skip this match.
@@ -308,7 +314,8 @@ lookupName(struct Parse *pParse, struct Expr *pExpr, struct NameContext *pNC)
 								continue;
 							if (nameInUsingClause
 							    (pItem->pUsing,
-							     zCol))
+							     zCol,
+							     old_col_name))
 								continue;
 						}
 						cnt++;
@@ -352,10 +359,12 @@ lookupName(struct Parse *pParse, struct Expr *pExpr, struct NameContext *pNC)
 				cntTab++;
 				for (iCol = 0; iCol <
 				     (int)space_def->field_count; iCol++) {
-					if (strcmp(space_def->fields[iCol].name,
-						   zCol) == 0) {
+					const char *name =
+						space_def->fields[iCol].name;
+					if (strcmp(name, zCol) == 0 ||
+					    (old_col_name != NULL &&
+					     strcmp(name, old_col_name) == 0))
 						break;
-					}
 				}
 				if (iCol < (int)space_def->field_count) {
 					cnt++;
@@ -390,7 +399,10 @@ lookupName(struct Parse *pParse, struct Expr *pExpr, struct NameContext *pNC)
 		if ((pEList = pNC->pEList) != 0 && zTab == 0 && cnt == 0) {
 			for (j = 0; j < pEList->nExpr; j++) {
 				char *zAs = pEList->a[j].zName;
-				if (zAs != 0 && strcmp(zAs, zCol) == 0) {
+				if (zAs != 0 && (strcmp(zAs, zCol) == 0 ||
+						 (old_col_name != NULL &&
+						  strcmp(zAs,
+							 old_col_name) == 0))) {
 					Expr *pOrig;
 					assert(pExpr->pLeft == 0
 					       && pExpr->pRight == 0);
