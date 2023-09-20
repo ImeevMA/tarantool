@@ -19,7 +19,8 @@ field_default_func_verify(struct func *func)
 {
 	const char *func_name = func->def->name;
 
-	if (func->def->language == FUNC_LANGUAGE_LUA) {
+	if (func->def->language == FUNC_LANGUAGE_LUA ||
+	    func->def->language == FUNC_LANGUAGE_SQL_EXPR) {
 		if (func->def->body != NULL)
 			return 0;
 		diag_set(ClientError, ER_CREATE_DEFAULT_FUNC, func_name,
