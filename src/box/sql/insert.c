@@ -354,14 +354,27 @@ sqlInsert(Parse * pParse,	/* Parser context */
 			pColumn->a[i].idx = -1;
 		}
 		for (i = 0; i < pColumn->nId; i++) {
+			const char *name = pColumn->a[i].zName;
 			for (j = 0; j < (int) space_def->field_count; j++) {
-				if (strcmp(pColumn->a[i].zName,
-					   space_def->fields[j].name) == 0) {
+				const char *field_name =
+					space_def->fields[j].name;
+				if (strcmp(name, field_name) == 0) {
 					pColumn->a[i].idx = j;
 					if (i != j)
 						bIdListInOrder = 0;
 					break;
 				}
+				size_t len = strlen(name);
+				char *old_name =
+					sql_old_normalized_name_new(name, len);
+				if (strcmp(old_name, field_name) == 0) {
+					sql_xfree(old_name);
+					pColumn->a[i].idx = j;
+					if (i != j)
+						bIdListInOrder = 0;
+					break;
+				}
+				sql_xfree(old_name);
 			}
 			if (j >= (int) space_def->field_count) {
 				diag_set(ClientError,

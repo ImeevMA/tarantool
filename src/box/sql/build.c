@@ -2709,6 +2709,7 @@ sql_id_list_append(struct IdList *list, struct Token *name_token)
 	list->a = sqlArrayAllocate(list->a, sizeof(list->a[0]), &list->nId, &i);
 	assert(i >= 0);
 	list->a[i].zName = sql_name_from_token(name_token);
+	list->a[i].is_quoted = name_token->z[0] == '"';
 	return list;
 }
 
