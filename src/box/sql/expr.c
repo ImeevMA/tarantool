@@ -386,7 +386,7 @@ sql_expr_coll(Parse *parse, Expr *p, bool *is_explicit_coll, uint32_t *coll_id,
 		if (op == TK_FUNCTION) {
 			uint32_t arg_count = p->x.pList == NULL ? 0 :
 					     p->x.pList->nExpr;
-			uint32_t flags = sql_func_flags(p->u.zToken);
+			uint32_t flags = sql_func_flags(p);
 			if (((flags & SQL_FUNC_DERIVEDCOLL) != 0) &&
 			    arg_count > 0 && p->type == FIELD_TYPE_STRING) {
 				/*
@@ -1070,8 +1070,8 @@ sql_expr_new_dequoted(int op, const struct Token *token)
 	if (token == NULL || token->n == 0)
 		return e;
 	e->u.zToken = (char *) &e[1];
-	if (token->z[0] != '"')
-		e->flags |= EP_Lookup;
+	if (op == TK_COLLATE || op == TK_ID || op == TK_FUNCTION)
+		e->flags |= token->z[0] != '"' ? EP_Lookup : 0;
 	memcpy(e->u.zToken, token->z, token->n);
 	e->u.zToken[token->n] = '\0';
 	sqlDequote(e->u.zToken);
