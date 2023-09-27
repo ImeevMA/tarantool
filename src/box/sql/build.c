@@ -2051,20 +2051,33 @@ sql_drop_table_constraint(struct Parse *parser, const struct Token *table_name,
 		sqlVdbeCountChanges(v);
 		sqlVdbeAddOp4(v, OP_DropTupleForeignKey, space->def->id, 0, 0,
 			      name_str, P4_DYNAMIC);
-		return;
 	}
 
 	const struct tuple_constraint_def *ck =
 		sql_tuple_ck_by_token(space, name);
 	if (ck != NULL) {
+		if (fk != NULL) {
+			diag_set(ClientError, ER_SQL_EXECUTE,
+				 tt_sprintf("ambiguous constraint name: '%s'",
+					    name_str));
+			parser->is_aborted = true;
+			return;
+		}
 		sqlVdbeCountChanges(v);
 		sqlVdbeAddOp4(v, OP_DropTupleCheck, space->def->id, 0, 0,
 			      name_str, P4_DYNAMIC);
-		return;
 	}
 
 	uint32_t index_id = sql_index_id_by_token(space, name);
 	if (index_id != UINT32_MAX) {
+		if (fk != NULL || ck != NULL) {
+			diag_set(ClientError, ER_SQL_EXECUTE,
+				 tt_sprintf("ambiguous constraint name: '%s'",
+					    name_str));
+			parser->is_aborted = true;
+			return;
+		}
+		sql_xfree(name_str);
 		int regs = sqlGetTempRange(parser, 3);
 		sqlVdbeCountChanges(v);
 		sqlVdbeAddOp2(v, OP_Integer, space->def->id, regs);
@@ -2075,6 +2088,9 @@ sql_drop_table_constraint(struct Parse *parser, const struct Token *table_name,
 		sqlReleaseTempRange(parser, regs, 3);
 		return;
 	}
+
+	if (fk != NULL || ck != NULL)
+		return;
 
 	diag_set(ClientError, ER_NO_SUCH_CONSTRAINT, name_str,
 		 space->def->name);
@@ -2105,6 +2121,7 @@ sql_drop_field_constraint(struct Parse *parser, const struct Token *table_name,
 	}
 	struct Vdbe *v = sqlGetVdbe(parser);
 	char *name_str = sql_name_from_token(name);
+	const char *field_name = space->def->fields[fieldno].name;
 
 	const struct tuple_constraint_def *fk =
 		sql_field_fk_by_token(space, fieldno, name);
@@ -2112,19 +2129,28 @@ sql_drop_field_constraint(struct Parse *parser, const struct Token *table_name,
 		sqlVdbeCountChanges(v);
 		sqlVdbeAddOp4(v, OP_DropFieldForeignKey, space->def->id, 0,
 			      fieldno, name_str, P4_DYNAMIC);
-		return;
 	}
 
 	const struct tuple_constraint_def *ck =
 		sql_field_ck_by_token(space, fieldno, name);
 	if (ck != NULL) {
+		if (fk != NULL) {
+			const char *err =
+				tt_sprintf("ambiguous constraint name: '%s.%s'",
+					   field_name, name_str);
+			diag_set(ClientError, ER_SQL_EXECUTE, err);
+			parser->is_aborted = true;
+			return;
+		}
 		sqlVdbeCountChanges(v);
 		sqlVdbeAddOp4(v, OP_DropFieldCheck, space->def->id, 0, fieldno,
 			      name_str, P4_DYNAMIC);
 		return;
 	}
 
-	const char *field_name = space->def->fields[fieldno].name;
+	if (fk != NULL)
+		return;
+
 	diag_set(ClientError, ER_NO_SUCH_CONSTRAINT,
 		 tt_sprintf("%s.%s", field_name, name_str), space->def->name);
 	sql_xfree(name_str);
