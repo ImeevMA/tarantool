@@ -1683,6 +1683,12 @@ sql_drop_table(struct Parse *parse_context)
 	assert(table_name_list->nSrc == 1);
 	const char *space_name = table_name_list->a[0].zName;
 	struct space *space = space_by_name0(space_name);
+	if (space == NULL && table_name_list->a[0].fg.has_lookup) {
+		uint32_t len = strlen(space_name);
+		char *name = sql_old_normalized_name_new(space_name, len);
+		space = space_by_name0(name);
+		sql_xfree(name);
+	}
 	if (space == NULL) {
 		if (!drop_def.if_exist) {
 			diag_set(ClientError, ER_NO_SUCH_SPACE, space_name);
@@ -3062,8 +3068,10 @@ sql_src_list_append(struct SrcList *list, struct Token *name_token)
 		list = new_list;
 	}
 	struct SrcList_item *item = &list->a[list->nSrc - 1];
-	if (name_token != NULL)
+	if (name_token != NULL) {
 		item->zName = sql_name_from_token(name_token);
+		item->fg.has_lookup = name_token->z[0] != '"';
+	}
 	return list;
 }
 
