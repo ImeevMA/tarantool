@@ -1162,20 +1162,11 @@ vdbe_emit_fk_constraint_create(struct Parse *parse_context,
 	sqlVdbeCountChanges(vdbe);
 }
 
-/**
- * Find fieldno by name.
- * @param parse_context Parser. Used for error reporting.
- * @param def Space definition to search field in.
- * @param field_name Field name to search by.
- * @param[out] link Result fieldno.
- * @param fk_name FK name. Used for error reporting.
- *
- * @retval 0 Success.
- * @retval -1 Error - field is not found.
- */
+/**  Find fieldno by name. */
 static int
 resolve_link(struct Parse *parse_context, const struct space_def *def,
-	     const char *field_name, uint32_t *link, const char *fk_name)
+	     const char *field_name, bool has_lookup, uint32_t *link,
+	     const char *fk_name)
 {
 	assert(link != NULL);
 	for (uint32_t j = 0; j < def->field_count; ++j) {
@@ -1183,6 +1174,18 @@ resolve_link(struct Parse *parse_context, const struct space_def *def,
 			*link = j;
 			return 0;
 		}
+	}
+	if (has_lookup) {
+		size_t len = strlen(field_name);
+		char *name = sql_old_normalized_name_new(field_name, len);
+		for (uint32_t j = 0; j < def->field_count; ++j) {
+			if (strcmp(name, def->fields[j].name) == 0) {
+				*link = j;
+				sql_xfree(name);
+				return 0;
+			}
+		}
+		sql_xfree(name);
 	}
 	diag_set(ClientError, ER_CREATE_FK_CONSTRAINT, fk_name,
 		 tt_sprintf("unknown column %s in foreign key definition",
@@ -1268,6 +1271,7 @@ vdbe_emit_create_constraints(struct Parse *parse, int reg_space_id)
 			for (uint32_t i = 0; i < fk_def->field_count; ++i) {
 				if (resolve_link(parse, space->def,
 						 cols->a[i].zName,
+						 cols->a[i].has_lookup,
 						 &fk_def->links[i].parent_field,
 						 fk_def->name) != 0)
 					return;
@@ -1722,20 +1726,31 @@ sql_drop_table(struct Parse *parse_context)
  */
 static int
 columnno_by_name(struct Parse *parse_context, const struct space *space,
-		 const char *column_name, uint32_t *colno, const char *fk_name)
+		 const char *column_name, bool has_lookup, uint32_t *colno,
+		 const char *fk_name)
 {
 	assert(colno != NULL);
 	uint32_t column_len = strlen(column_name);
 	if (tuple_fieldno_by_name(space->def->dict, column_name, column_len,
 				  field_name_hash(column_name, column_len),
-				  colno) != 0) {
-		diag_set(ClientError, ER_CREATE_FK_CONSTRAINT, fk_name,
-			 tt_sprintf("foreign key refers to nonexistent field %s",
-				    column_name));
-		parse_context->is_aborted = true;
-		return -1;
+				  colno) == 0)
+		return 0;
+	if (has_lookup) {
+		char *name = sql_old_normalized_name_new(column_name,
+							 column_len);
+		size_t len = strlen(name);
+		int rc = tuple_fieldno_by_name(space->def->dict, name, len,
+					       field_name_hash(name, len),
+					       colno);
+		sql_xfree(name);
+		if (rc == 0)
+			return 0;
 	}
-	return 0;
+	diag_set(ClientError, ER_CREATE_FK_CONSTRAINT, fk_name,
+		 tt_sprintf("foreign key refers to nonexistent field %s",
+			    column_name));
+	parse_context->is_aborted = true;
+	return -1;
 }
 
 /** Generate unique name for foreign key constraint. */
@@ -1867,9 +1882,17 @@ sql_create_foreign_key(struct Parse *parse_context)
 	 * self-referenced, but in this case parent (which is
 	 * also child) table will definitely exist.
 	 */
-	is_self_referenced = !is_alter_add_constr &&
-			     strcmp(parent_name, space->def->name) == 0;
-	struct space *parent_space = space_by_name0(parent_name);
+	if (!is_alter_add_constr) {
+		const char *space_name = space->def->name;
+		if (strcmp(parent_name, space_name) == 0) {
+			is_self_referenced = true;
+		} else if (parent->z[0] != '"') {
+			char *old_name = sql_old_name_from_token(parent);
+			is_self_referenced = strcmp(old_name, space_name) == 0;
+			sql_xfree(old_name);
+		}
+	}
+	const struct space *parent_space = sql_space_by_token(parent);
 	if (parent_space == NULL && !is_self_referenced) {
 		diag_set(ClientError, ER_NO_SUCH_SPACE, parent_name);
 		goto tnt_error;
@@ -1902,13 +1925,13 @@ sql_create_foreign_key(struct Parse *parse_context)
 		 * If parent columns are not specified, then PK
 		 * columns of parent table are used as referenced.
 		 */
-		struct index *parent_pk = space_index(parent_space, 0);
-		if (parent_pk == NULL) {
+		if (parent_space->index_count == 0) {
 			diag_set(ClientError, ER_CREATE_FK_CONSTRAINT,
 				 constraint_name,
 				 "referenced space doesn't feature PRIMARY KEY");
 			goto tnt_error;
 		}
+		const struct index *parent_pk = parent_space->index[0];
 		if (parent_pk->def->key_def->part_count != child_cols_count) {
 			diag_set(ClientError, ER_CREATE_FK_CONSTRAINT,
 				 constraint_name, error_msg);
@@ -1936,6 +1959,7 @@ sql_create_foreign_key(struct Parse *parse_context)
 		} else if (!is_self_referenced &&
 			   columnno_by_name(parse_context, parent_space,
 					    parent_cols->a[i].zName,
+					    parent_cols->a[i].has_lookup,
 					    &fk_def->links[i].parent_field,
 					    constraint_name) != 0) {
 			goto exit_create_fk;
@@ -1955,12 +1979,14 @@ sql_create_foreign_key(struct Parse *parse_context)
 			}
 			if (resolve_link(parse_context, space->def,
 					 child_cols->a[i].zName,
+					 child_cols->a[i].has_lookup,
 					 &fk_def->links[i].child_field,
 					 constraint_name) != 0)
 				goto exit_create_fk;
 		/* In case of ALTER parent table must exist. */
 		} else if (columnno_by_name(parse_context, child_space,
 					    child_cols->a[i].zName,
+					    child_cols->a[i].has_lookup,
 					    &fk_def->links[i].child_field,
 					    constraint_name) != 0) {
 			goto exit_create_fk;

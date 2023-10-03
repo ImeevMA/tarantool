@@ -4262,6 +4262,7 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 			if (pList->a[i].zName == 0) {
 				const struct Token *t = &pList->a[i].span;
 				pList->a[i].zName = sql_name_from_token(t);
+				pList->a[i].has_lookup = t->z[0] != '"';
 			}
 		}
 		if (pSub->pOrderBy) {

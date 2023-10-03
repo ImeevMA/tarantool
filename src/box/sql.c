@@ -1625,6 +1625,11 @@ sql_space_by_token(const struct Token *name)
 	char *name_str = sql_name_from_token(name);
 	struct space *res = space_by_name0(name_str);
 	sql_xfree(name_str);
+	if (res == NULL && name->z[0] != '"') {
+		char *old_name_str = sql_old_name_from_token(name);
+		res = space_by_name0(old_name_str);
+		sql_xfree(old_name_str);
+	}
 	return res;
 }
 

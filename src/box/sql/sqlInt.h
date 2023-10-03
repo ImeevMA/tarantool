@@ -1496,6 +1496,8 @@ struct ExprList {
 		enum sort_order sort_order;
 		unsigned done:1;	/* A flag to indicate when processing is finished */
 		unsigned reusable:1;	/* Constant expression is reusable */
+		/* Second lookup could be performed for the name. */
+		unsigned has_lookup:1;
 		union {
 			struct {
 				u16 iOrderByCol;	/* For ORDER BY, column number in result set */

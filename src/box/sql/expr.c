@@ -1648,6 +1648,7 @@ sql_expr_list_dup(struct ExprList *p, int flags)
 		pItem->sort_order = pOldItem->sort_order;
 		pItem->done = 0;
 		pItem->u = pOldItem->u;
+		pItem->has_lookup = pOldItem->has_lookup;
 	}
 	return pNew;
 }
@@ -1885,6 +1886,7 @@ sqlExprListSetName(Parse * pParse,	/* Parsing context */
 	assert(item->zName == NULL);
 	if (dequote) {
 		item->zName = sql_normalized_name_new(pName->z, pName->n);
+		item->has_lookup = pName->z[0] != '"';
 	} else {
 		item->zName = sql_xstrndup(pName->z, pName->n);
 	}
