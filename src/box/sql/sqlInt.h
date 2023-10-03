@@ -1480,23 +1480,20 @@ struct Expr {
  * also be used as the argument to a function, in which case the a.zName
  * field is not used.
  *
- * By default the Expr.zSpan field holds a human-readable description of
+ * By default the Expr.span field holds a human-readable description of
  * the expression that is used in the generation of error messages and
- * column labels.  In this case, Expr.zSpan is typically the text of a
- * column expression as it exists in a SELECT statement.  However, if
- * the bSpanIsTab flag is set, then zSpan is overloaded to mean the name
- * of the result column in the form: DATABASE.TABLE.COLUMN.  This later
- * form is used for name resolution with nested FROM clauses.
+ * column labels.  In this case, Expr.span is typically the text of a
+ * column expression as it exists in a SELECT statement.
  */
 struct ExprList {
 	int nExpr;		/* Number of expressions on the list */
 	struct ExprList_item {	/* For each expression in the list */
 		Expr *pExpr;	/* The list of expressions */
 		char *zName;	/* Token associated with this expression */
-		char *zSpan;	/* Original text of the expression */
+		/* Original text of the expression. */
+		struct Token span;
 		enum sort_order sort_order;
 		unsigned done:1;	/* A flag to indicate when processing is finished */
-		unsigned bSpanIsTab:1;	/* zSpan holds DB.TABLE.COLUMN */
 		unsigned reusable:1;	/* Constant expression is reusable */
 		union {
 			struct {
@@ -2629,7 +2626,7 @@ void sqlExprListSetSortOrder(ExprList *, enum sort_order sort_order);
 void sqlExprListSetName(Parse *, ExprList *, Token *, int);
 
 /**
- * Set the ExprList.a[].zSpan element of the most recently added item on the
+ * Set the ExprList.a[].span element of the most recently added item on the
  * expression list.
  */
 void
@@ -4028,7 +4025,15 @@ void sqlSelectPrep(Parse *, Select *, NameContext *);
 const char *
 sql_select_op_name(int id);
 
-int sqlMatchSpanName(const char *, const char *, const char *);
+/**
+ * Subqueries stores the original table and column names for their result sets
+ * in ExprList.a[].span, in the form "TABLE.COLUMN". Check to see if the span
+ * given to this routine matches the zTab, and zCol. If zCol is NULL then this
+ * field will match anything.
+ */
+bool
+sqlMatchSpanName(const struct Token *span, const char *col, const char *tab);
+
 int sqlResolveExprNames(NameContext *, Expr *);
 int sqlResolveExprListNames(NameContext *, ExprList *);
 void sqlResolveSelectNames(Parse *, Select *, NameContext *);

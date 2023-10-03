@@ -149,29 +149,17 @@ nameInUsingClause(IdList * pUsing, const char *zCol)
 	return 0;
 }
 
-/*
- * Subqueries stores the original database, table and column names for their
- * result sets in ExprList.a[].zSpan, in the form "DATABASE.TABLE.COLUMN".
- * Check to see if the zSpan given to this routine matches the zTab,
- * and zCol.  If any of zTab, and zCol are NULL then those fields will
- * match anything.
- */
-int
-sqlMatchSpanName(const char *zSpan,
-		     const char *zCol, const char *zTab
-	)
+bool
+sqlMatchSpanName(const struct Token *span, const char *col, const char *tab)
 {
-	int n;
-	for (n = 0; ALWAYS(zSpan[n]) && zSpan[n] != '.'; n++) {
+	size_t n;
+	for (n = 0; n < span->n && span->z[n] != '.'; n++) {
 	}
-	if (zTab && (sqlStrNICmp(zSpan, zTab, n) != 0 || zTab[n] != 0)) {
-		return 0;
-	}
-	zSpan += n + 1;
-	if (zCol && strcmp(zSpan, zCol) != 0) {
-		return 0;
-	}
-	return 1;
+	if (tab != NULL && (strncmp(span->z, tab, n) != 0 || tab[n] != '\0'))
+		return false;
+	if (col != NULL && strcmp(span->z + n + 1, col) != 0)
+		return false;
+	return true;
 }
 
 /*
@@ -242,9 +230,9 @@ lookupName(Parse * pParse,	/* The parsing context */
 					int hit = 0;
 					pEList = pItem->pSelect->pEList;
 					for (j = 0; j < pEList->nExpr; j++) {
-						if (sqlMatchSpanName
-						    (pEList->a[j].zSpan, zCol,
-						     zTab)) {
+						if (sqlMatchSpanName(
+							&pEList->a[j].span,
+							zCol, zTab)) {
 							cnt++;
 							cntTab = 2;
 							pMatch = pItem;

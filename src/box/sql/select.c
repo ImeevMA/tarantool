@@ -1835,8 +1835,8 @@ generateSortTail(Parse * pParse,	/* Parsing context */
 		}
 		sqlVdbeAddOp3(v, OP_Column, iSortTab, iRead, regRow + i);
 		VdbeComment((v, "%s",
-			     aOutEx[i].zName ? aOutEx[i].zName : aOutEx[i].
-			     zSpan));
+			     aOutEx[i].zName ? aOutEx[i].zName :
+			     tt_cstr(aOutEx[i].span.z, aOutEx[i].span.n)));
 	}
 	switch (eDest) {
 	case SRT_Table:
@@ -1965,7 +1965,8 @@ generate_column_metadata(struct Parse *pParse, struct SrcList *pTabList,
 		}
 		vdbe_metadata_set_col_nullability(v, i, -1);
 		const char *colname = pEList->a[i].zName;
-		const char *span = pEList->a[i].zSpan;
+		char *span = pEList->a[i].span.n == 0 ? NULL :
+			sql_xstrndup(pEList->a[i].span.z, pEList->a[i].span.n);
 		if (p->op == TK_COLUMN_REF || p->op == TK_AGG_COLUMN) {
 			char *zCol;
 			int iCol = p->iColumn;
@@ -2013,6 +2014,7 @@ generate_column_metadata(struct Parse *pParse, struct SrcList *pTabList,
 			if (is_full_meta)
 				vdbe_metadata_set_col_span(v, i, span);
 		}
+		sql_xfree(span);
 	}
 	if (var_count == 0)
 		return;
@@ -4258,10 +4260,8 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 		pList = pParent->pEList;
 		for (i = 0; i < pList->nExpr; i++) {
 			if (pList->a[i].zName == 0) {
-				char *str = pList->a[i].zSpan;
-				int len = strlen(str);
-				char *name = sql_normalized_name_new(str, len);
-				pList->a[i].zName = name;
+				const struct Token *t = &pList->a[i].span;
+				pList->a[i].zName = sql_name_from_token(t);
 			}
 		}
 		if (pSub->pOrderBy) {
@@ -5009,9 +5009,9 @@ selectExpander(Walker * pWalker, Select * p)
 			 */
 			pNew = sql_expr_list_append(pNew, a[k].pExpr);
 			pNew->a[pNew->nExpr - 1].zName = a[k].zName;
-			pNew->a[pNew->nExpr - 1].zSpan = a[k].zSpan;
+			pNew->a[pNew->nExpr - 1].span = a[k].span;
 			a[k].zName = 0;
-			a[k].zSpan = 0;
+			a[k].span = Token_nil;
 			a[k].pExpr = 0;
 			continue;
 		}
@@ -5052,7 +5052,7 @@ selectExpander(Walker * pWalker, Select * p)
 
 				assert(zName != NULL);
 				if (zTName != NULL && pSub != NULL &&
-				    sqlMatchSpanName(pSub->pEList->a[j].zSpan,
+				    sqlMatchSpanName(&pSub->pEList->a[j].span,
 						     0, zTName) == 0)
 					continue;
 				tableSeen = 1;
@@ -5102,15 +5102,20 @@ selectExpander(Walker * pWalker, Select * p)
 				struct ExprList_item *pX =
 					&pNew->a[pNew->nExpr - 1];
 				if (pSub != NULL) {
-					const char *str =
-						pSub->pEList->a[j].zSpan;
-					pX->zSpan = sql_xstrdup(str);
+					pX->span = pSub->pEList->a[j].span;
 				} else {
-					pX->zSpan = sqlMPrintf("%s.%s",
-							       zTabName,
-							       zColname);
+					struct region *region = &pParse->region;
+					size_t tab_len = strlen(zTabName);
+					size_t col_len = strlen(zColname);
+					size_t size = tab_len + col_len + 2;
+					char *buf = xregion_alloc(region, size);
+					memcpy(buf, zTabName, tab_len);
+					buf[tab_len] = '.';
+					memcpy(buf + tab_len + 1, zColname,
+					       col_len);
+					buf[tab_len + col_len + 1] = '\0';
+					sqlTokenInit(&pX->span, buf);
 				}
-				pX->bSpanIsTab = 1;
 				sql_xfree(zToFree);
 			}
 		}

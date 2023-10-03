@@ -1631,10 +1631,9 @@ sql_expr_list_dup(struct ExprList *p, int flags)
 			}
 		}
 		pItem->zName = sql_xstrdup(pOldItem->zName);
-		pItem->zSpan = sql_xstrdup(pOldItem->zSpan);
+		pItem->span = pOldItem->span;
 		pItem->sort_order = pOldItem->sort_order;
 		pItem->done = 0;
-		pItem->bSpanIsTab = pOldItem->bSpanIsTab;
 		pItem->u = pOldItem->u;
 	}
 	return pNew;
@@ -1886,8 +1885,8 @@ sqlExprListSetSpan(struct ExprList *pList, struct ExprSpan *pSpan)
 	struct ExprList_item *pItem = &pList->a[pList->nExpr - 1];
 	assert(pList->nExpr > 0);
 	assert(pItem->pExpr == pSpan->pExpr);
-	sql_xfree(pItem->zSpan);
-	pItem->zSpan = sql_xstrndup(pSpan->zStart, pSpan->zEnd - pSpan->zStart);
+	pItem->span.z = pSpan->zStart;
+	pItem->span.n = pSpan->zEnd - pSpan->zStart;
 }
 
 /*
@@ -1902,7 +1901,6 @@ exprListDeleteNN(struct ExprList *pList)
 	for (pItem = pList->a, i = 0; i < pList->nExpr; i++, pItem++) {
 		sql_expr_delete(pItem->pExpr);
 		sql_xfree(pItem->zName);
-		sql_xfree(pItem->zSpan);
 	}
 	sql_xfree(pList->a);
 	sql_xfree(pList);
