@@ -3399,24 +3399,34 @@ sql_fieldno_by_name(struct Parse *parse_context, struct Expr *field_name,
 		    uint32_t *fieldno)
 {
 	struct space_def *def = parse_context->create_table_def.new_space->def;
-	struct Expr *name = sqlExprSkipCollate(field_name);
-	if (name->op != TK_ID) {
+	struct Expr *expr = sqlExprSkipCollate(field_name);
+	if (expr->op != TK_ID) {
 		diag_set(ClientError, ER_INDEX_DEF_UNSUPPORTED, "Expressions");
 		parse_context->is_aborted = true;
 		return -1;
 	}
-	uint32_t i;
-	for (i = 0; i < def->field_count; ++i) {
-		if (strcmp(def->fields[i].name, name->u.zToken) == 0)
-			break;
+	const char *name = expr->u.zToken;
+	for (uint32_t i = 0; i < def->field_count; ++i) {
+		if (strcmp(def->fields[i].name, name) == 0) {
+			*fieldno = i;
+			return 0;
+		}
 	}
-	if (i == def->field_count) {
-		diag_set(ClientError, ER_SQL_CANT_RESOLVE_FIELD, name->u.zToken);
-		parse_context->is_aborted = true;
-		return -1;
+	if ((expr->flags & EP_Lookup) != 0) {
+		size_t len = strlen(name);
+		char *old_name = sql_old_normalized_name_new(name, len);
+		for (uint32_t i = 0; i < def->field_count; ++i) {
+			if (strcmp(def->fields[i].name, old_name) == 0) {
+				sql_xfree(old_name);
+				*fieldno = i;
+				return 0;
+			}
+		}
+		sql_xfree(old_name);
 	}
-	*fieldno = i;
-	return 0;
+	diag_set(ClientError, ER_SQL_CANT_RESOLVE_FIELD, name);
+	parse_context->is_aborted = true;
+	return -1;
 }
 
 /**
