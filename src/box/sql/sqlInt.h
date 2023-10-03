@@ -4051,11 +4051,11 @@ sql_select_op_name(int id);
 /**
  * Subqueries stores the original table and column names for their result sets
  * in ExprList.a[].span, in the form "TABLE.COLUMN". Check to see if the span
- * given to this routine matches the zTab, and zCol. If zCol is NULL then this
- * field will match anything.
+ * given to this routine matches given table or column names.
  */
 bool
-sqlMatchSpanName(const struct Token *span, const char *col, const char *tab);
+sqlMatchSpanName(const struct Token *span, const char *col, const char *tab,
+		 const char *old_col, const char *old_tab);
 
 int sqlResolveExprNames(NameContext *, Expr *);
 int sqlResolveExprListNames(NameContext *, ExprList *);

@@ -5054,7 +5054,8 @@ selectExpander(Walker * pWalker, Select * p)
 				assert(zName != NULL);
 				if (zTName != NULL && pSub != NULL &&
 				    sqlMatchSpanName(&pSub->pEList->a[j].span,
-						     0, zTName) == 0)
+						     NULL, zTName, NULL,
+						     NULL) == 0)
 					continue;
 				tableSeen = 1;
 
