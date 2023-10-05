@@ -1474,39 +1474,6 @@ sql_store_select(struct Parse *parse_context, struct Select *select)
 }
 
 /**
- * Generate VDBE program to remove entry from _index space.
- *
- * @param parse_context Parsing context.
- * @param name Index name.
- * @param space_def Def of table which index belongs to.
- * @param errcode Type of printing error: "no such index" or
- *                "no such constraint".
- * @param if_exist True if there was <IF EXISTS> in the query.
- */
-static void
-vdbe_emit_index_drop(struct Parse *parse_context, const char *name,
-		     struct space_def *space_def, int errcode, bool if_exist)
-{
-	assert(errcode == ER_NO_SUCH_INDEX_NAME ||
-	       errcode == ER_NO_SUCH_CONSTRAINT);
-	struct Vdbe *vdbe = sqlGetVdbe(parse_context);
-	assert(vdbe != NULL);
-	assert(sql_get() != NULL);
-	int key_reg = sqlGetTempRange(parse_context, 3);
-	sqlVdbeAddOp2(vdbe, OP_Integer, space_def->id, key_reg);
-	sqlVdbeAddOp4(vdbe, OP_String8, 0, key_reg + 1, 0, sql_xstrdup(name),
-		      P4_DYNAMIC);
-	const char *error_msg =
-		tt_sprintf(tnt_errcode_desc(errcode), name, space_def->name);
-	vdbe_emit_halt_with_presence_test(parse_context, BOX_INDEX_ID, 2,
-					  key_reg, 2, errcode, error_msg,
-					  if_exist, OP_Found);
-	sqlVdbeAddOp3(vdbe, OP_MakeRecord, key_reg, 2, key_reg + 2);
-	sqlVdbeAddOp3(vdbe, OP_SDelete, BOX_INDEX_ID, key_reg + 2, 2);
-	sqlReleaseTempRange(parse_context, key_reg, 3);
-}
-
-/**
  * Generate VDBE program to revoke all
  * privileges associated with the given object.
  *
@@ -2940,6 +2907,12 @@ sql_drop_index(struct Parse *parse_context)
 	char *index_name = NULL;
 	sqlVdbeCountChanges(v);
 	struct space *space = space_by_name0(table_name);
+	if (space == NULL && table_list->a[0].fg.has_lookup) {
+		size_t len = strlen(table_name);
+		char *old_name = sql_old_normalized_name_new(table_name, len);
+		space = space_by_name0(old_name);
+		sql_xfree(old_name);
+	}
 	bool if_exists = drop_def->if_exist;
 	if (space == NULL) {
 		if (!if_exists) {
@@ -2948,11 +2921,25 @@ sql_drop_index(struct Parse *parse_context)
 		}
 		goto exit_drop_index;
 	}
-	index_name = sql_name_from_token(&drop_def->name);
 
-	vdbe_emit_index_drop(parse_context, index_name, space->def,
-			     ER_NO_SUCH_INDEX_NAME, if_exists);
+	uint32_t index_id = sql_index_id_by_token(space, &drop_def->name);
+	if (index_id == UINT32_MAX) {
+		const char *name_str = sql_tt_name_from_token(&drop_def->name);
+		diag_set(ClientError, ER_NO_SUCH_INDEX_NAME, name_str,
+			 space->def->name);
+		parse_context->is_aborted = true;
+		goto exit_drop_index;
+	}
+
+	int regs = sqlGetTempRange(parse_context, 3);
+	sqlVdbeCountChanges(v);
+	sqlVdbeAddOp2(v, OP_Integer, space->def->id, regs);
+	sqlVdbeAddOp2(v, OP_Integer, index_id, regs + 1);
+	sqlVdbeAddOp3(v, OP_MakeRecord, regs, 2, regs + 2);
+	sqlVdbeAddOp3(v, OP_SDelete, BOX_INDEX_ID, regs + 2, 0);
 	sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
+	sqlReleaseTempRange(parse_context, regs, 3);
+
  exit_drop_index:
 	sqlSrcListDelete(table_list);
 	sql_xfree(index_name);

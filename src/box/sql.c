@@ -1641,10 +1641,21 @@ sql_index_id_by_token(const struct space *space, const struct Token *name)
 	for (uint32_t i = 0; i < space->index_count; ++i) {
 		if (strcmp(space->index[i]->def->name, name_str) == 0) {
 			res = space->index[i]->def->iid;
-			break;
+			sql_xfree(name_str);
+			return res;
 		}
 	}
 	sql_xfree(name_str);
+	if (name->z[0] == '"')
+		return res;
+	char *old_name_str = sql_old_name_from_token(name);
+	for (uint32_t i = 0; i < space->index_count; ++i) {
+		if (strcmp(space->index[i]->def->name, old_name_str) == 0) {
+			res = space->index[i]->def->iid;
+			break;
+		}
+	}
+	sql_xfree(old_name_str);
 	return res;
 }
 
