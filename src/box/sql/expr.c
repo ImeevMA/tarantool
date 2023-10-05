@@ -1625,6 +1625,7 @@ sql_expr_list_dup(struct ExprList *p, int flags)
 		pItem->sort_order = pOldItem->sort_order;
 		pItem->done = 0;
 		pItem->u = pOldItem->u;
+		pItem->has_name_lookup = pOldItem->has_name_lookup;
 	}
 	return pNew;
 }
@@ -1695,6 +1696,7 @@ sqlIdListDup(struct IdList *p)
 		struct IdList_item *pOldItem = &p->a[i];
 		pNewItem->zName = sql_xstrdup(pOldItem->zName);
 		pNewItem->idx = pOldItem->idx;
+		pNewItem->has_id_lookup = pOldItem->has_id_lookup;
 	}
 	return pNew;
 }
@@ -1800,6 +1802,8 @@ sqlExprListAppendVector(Parse * pParse,	/* Parsing context */
 		pList = sql_expr_list_append(pList, pSubExpr);
 		assert(pList->nExpr == iFirst + i + 1);
 		pList->a[pList->nExpr - 1].zName = pColumns->a[i].zName;
+		pList->a[pList->nExpr - 1].has_name_lookup =
+			pColumns->a[i].has_id_lookup;
 		pColumns->a[i].zName = 0;
 	}
 
@@ -1862,6 +1866,7 @@ sqlExprListSetName(Parse * pParse,	/* Parsing context */
 	assert(item->zName == NULL);
 	if (dequote) {
 		item->zName = sql_name_new(pName->z, pName->n);
+		item->has_name_lookup = pName->z[0] != '"';
 	} else {
 		item->zName = sql_xstrndup(pName->z, pName->n);
 	}

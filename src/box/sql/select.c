@@ -4262,6 +4262,7 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 			if (pList->a[i].zName == 0) {
 				const struct Token *t = &pList->a[i].span;
 				pList->a[i].zName = sql_name_from_token(t);
+				pList->a[i].has_name_lookup = t->z[0] != '"';
 			}
 		}
 		if (pSub->pOrderBy) {
@@ -5010,6 +5011,8 @@ selectExpander(Walker * pWalker, Select * p)
 			pNew = sql_expr_list_append(pNew, a[k].pExpr);
 			pNew->a[pNew->nExpr - 1].zName = a[k].zName;
 			pNew->a[pNew->nExpr - 1].span = a[k].span;
+			pNew->a[pNew->nExpr - 1].has_name_lookup =
+				a[k].has_name_lookup;
 			a[k].zName = 0;
 			a[k].span = Token_nil;
 			a[k].pExpr = 0;
