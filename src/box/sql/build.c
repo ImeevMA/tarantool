@@ -721,6 +721,14 @@ sql_create_check_contraint(struct Parse *parser, bool is_field_ck)
 	if (is_alter_add_constr) {
 		const char *space_name = alter_def->entity_name->a[0].zName;
 		struct space *space = space_by_name0(space_name);
+		if (space == NULL &&
+		    alter_def->entity_name->a[0].fg.has_lookup) {
+			size_t len = strlen(space_name);
+			char *old_name = sql_old_normalized_name_new(space_name,
+								     len);
+			space = space_by_name0(old_name);
+			sql_xfree(old_name);
+		}
 		if (space == NULL) {
 			diag_set(ClientError, ER_NO_SUCH_SPACE, space_name);
 			parser->is_aborted = true;
@@ -1836,6 +1844,14 @@ sql_create_foreign_key(struct Parse *parse_context)
 	if (is_alter_add_constr) {
 		const char *child_name = alter_def->entity_name->a[0].zName;
 		child_space = space_by_name0(child_name);
+		if (child_space == NULL &&
+		    alter_def->entity_name->a[0].fg.has_lookup) {
+			size_t len = strlen(child_name);
+			char *old_name = sql_old_normalized_name_new(child_name,
+								     len);
+			child_space = space_by_name0(old_name);
+			sql_xfree(old_name);
+		}
 		if (child_space == NULL) {
 			diag_set(ClientError, ER_NO_SUCH_SPACE, child_name);
 			goto tnt_error;
