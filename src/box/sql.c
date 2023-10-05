@@ -1663,15 +1663,54 @@ uint32_t
 sql_fieldno_by_token(const struct space *space, const struct Token *name)
 {
 	char *name_str = sql_name_from_token(name);
-	uint32_t res = UINT32_MAX;
 	for (uint32_t i = 0; i < space->def->field_count; ++i) {
 		if (strcmp(space->def->fields[i].name, name_str) == 0) {
-			res = i;
-			break;
+			sql_xfree(name_str);
+			return i;
 		}
 	}
 	sql_xfree(name_str);
-	return res;
+	if (name->z[0] == '"')
+		return UINT32_MAX;
+
+	char *old_name_str = sql_old_name_from_token(name);
+	for (uint32_t i = 0; i < space->def->field_count; ++i) {
+		if (strcmp(space->def->fields[i].name, old_name_str) == 0) {
+			sql_xfree(old_name_str);
+			return i;
+		}
+	}
+	sql_xfree(old_name_str);
+	return UINT32_MAX;
+}
+
+static const struct tuple_constraint_def *
+sql_constraint_by_token(const struct tuple_constraint_def *cdefs,
+			uint32_t count, enum tuple_constraint_type type,
+			const struct Token *name)
+{
+	char *name_str = sql_name_from_token(name);
+	for (uint32_t i = 0; i < count; ++i) {
+		if (strcmp(cdefs[i].name, name_str) == 0 &&
+		    cdefs[i].type == type) {
+			sql_xfree(name_str);
+			return &cdefs[i];
+		}
+	}
+	sql_xfree(name_str);
+	if (name->z[0] == '"')
+		return NULL;
+
+	char *old_name_str = sql_old_name_from_token(name);
+	for (uint32_t i = 0; i < count; ++i) {
+		if (strcmp(cdefs[i].name, old_name_str) == 0 &&
+		    cdefs[i].type == type) {
+			sql_xfree(old_name_str);
+			return &cdefs[i];
+		}
+	}
+	sql_xfree(old_name_str);
+	return NULL;
 }
 
 const struct tuple_constraint_def *
@@ -1679,17 +1718,7 @@ sql_tuple_fk_by_token(const struct space *space, const struct Token *name)
 {
 	struct tuple_constraint_def *cdefs = space->def->opts.constraint_def;
 	uint32_t count = space->def->opts.constraint_count;
-	char *name_str = sql_name_from_token(name);
-	const struct tuple_constraint_def *res = NULL;
-	for (uint32_t i = 0; i < count; ++i) {
-		if (strcmp(cdefs[i].name, name_str) == 0 &&
-		    cdefs[i].type == CONSTR_FKEY) {
-			res = &cdefs[i];
-			break;
-		}
-	}
-	sql_xfree(name_str);
-	return res;
+	return sql_constraint_by_token(cdefs, count, CONSTR_FKEY, name);
 }
 
 const struct tuple_constraint_def *
@@ -1697,17 +1726,7 @@ sql_tuple_ck_by_token(const struct space *space, const struct Token *name)
 {
 	struct tuple_constraint_def *cdefs = space->def->opts.constraint_def;
 	uint32_t count = space->def->opts.constraint_count;
-	char *name_str = sql_name_from_token(name);
-	const struct tuple_constraint_def *res = NULL;
-	for (uint32_t i = 0; i < count; ++i) {
-		if (strcmp(cdefs[i].name, name_str) == 0 &&
-		    cdefs[i].type == CONSTR_FUNC) {
-			res = &cdefs[i];
-			break;
-		}
-	}
-	sql_xfree(name_str);
-	return res;
+	return sql_constraint_by_token(cdefs, count, CONSTR_FUNC, name);
 }
 
 const struct tuple_constraint_def *
@@ -1717,17 +1736,7 @@ sql_field_fk_by_token(const struct space *space, uint32_t fieldno,
 	struct field_def *field = &space->def->fields[fieldno];
 	struct tuple_constraint_def *cdefs = field->constraint_def;
 	uint32_t count = field->constraint_count;
-	char *name_str = sql_name_from_token(name);
-	const struct tuple_constraint_def *res = NULL;
-	for (uint32_t i = 0; i < count; ++i) {
-		if (strcmp(cdefs[i].name, name_str) == 0 &&
-		    cdefs[i].type == CONSTR_FKEY) {
-			res = &cdefs[i];
-			break;
-		}
-	}
-	sql_xfree(name_str);
-	return res;
+	return sql_constraint_by_token(cdefs, count, CONSTR_FKEY, name);
 }
 
 const struct tuple_constraint_def *
@@ -1737,17 +1746,7 @@ sql_field_ck_by_token(const struct space *space, uint32_t fieldno,
 	struct field_def *field = &space->def->fields[fieldno];
 	struct tuple_constraint_def *cdefs = field->constraint_def;
 	uint32_t count = field->constraint_count;
-	char *name_str = sql_name_from_token(name);
-	const struct tuple_constraint_def *res = NULL;
-	for (uint32_t i = 0; i < count; ++i) {
-		if (strcmp(cdefs[i].name, name_str) == 0 &&
-		    cdefs[i].type == CONSTR_FUNC) {
-			res = &cdefs[i];
-			break;
-		}
-	}
-	sql_xfree(name_str);
-	return res;
+	return sql_constraint_by_token(cdefs, count, CONSTR_FUNC, name);
 }
 
 #ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
