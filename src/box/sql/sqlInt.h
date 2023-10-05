@@ -1415,7 +1415,8 @@ struct Expr {
 #define EP_Error     0x000008	/* Expression contains one or more errors */
 #define EP_Distinct  0x000010	/* Aggregate function with DISTINCT keyword */
 #define EP_VarSelect 0x000020	/* pSelect is correlated, not constant */
-#define EP_DblQuoted 0x000040	/* token.z was originally in "..." */
+/** Second lookup could be performed for the ID. */
+#define EP_Lookup    0x000040
 #define EP_Collate   0x000100	/* Tree contains a TK_COLLATE operator */
 #define EP_IntValue  0x000400	/* Integer value contained in u.iValue */
 #define EP_xIsSelect 0x000800	/* x.pSelect is valid (otherwise x.pList is) */
@@ -2467,6 +2468,20 @@ sql_name_new(const char *name, int len);
 char *
 sql_name_parser(struct Parse *parser, const char *name, int len);
 
+/** Normalize the given name and write it to the newly allocated memory. */
+char *
+sql_old_name_new(const char *name, int len);
+
+/**
+ * Normalize the given NULL-terminated name and write it to the newly allocated
+ * memory.
+ */
+static inline char *
+sql_old_name_new0(const char *name)
+{
+	return sql_old_name_new(name, strlen(name));
+}
+
 /**
  * Return an escaped version of the original name in memory allocated with
  * sql_xmalloc().
@@ -3087,11 +3102,39 @@ uint32_t
 sql_index_id_by_token(const struct space *space, const struct Token *name);
 
 /**
+ * Return the fieldno of the field with the given name. Return UINT32_MAX if the
+ * field was not found.
+ */
+uint32_t
+sql_fieldno_by_name(const struct space *space, const char *name);
+
+/**
  * Return the fieldno of the field with the name defined by the token. Return
  * UINT32_MAX if the field was not found.
  */
 uint32_t
 sql_fieldno_by_token(const struct space *space, const struct Token *name);
+
+/**
+ * Return the fieldno of the field with the name defined by the expression.
+ * Return UINT32_MAX if the field was not found.
+ */
+uint32_t
+sql_fieldno_by_expr(const struct space *space, const struct Expr *expr);
+
+/**
+ * Return the ID of the collation with the name defined by the token. Return
+ * UINT32_MAX if the field was not found.
+ */
+uint32_t
+sql_coll_id_by_token(const struct Token *name);
+
+/**
+ * Return the ID of the collation with the name defined by the expression.
+ * Return UINT32_MAX if the field was not found.
+ */
+uint32_t
+sql_coll_id_by_expr(const struct Expr *expr);
 
 /**
  * Return the tuple foreign key constraint with the name defined by the token.
@@ -4429,8 +4472,8 @@ sql_add_autoincrement(struct Parse *parse_context, uint32_t fieldno);
  * @retval -1 on error.
  */
 int
-sql_fieldno_by_name(struct Parse *parse_context, struct Expr *field_name,
-		    uint32_t *fieldno);
+sql_fieldno_by_expr_name(struct Parse *parse_context, struct Expr *field_name,
+			 uint32_t *fieldno);
 
 /**
  * Create VDBE instructions to set the new value of the session setting.

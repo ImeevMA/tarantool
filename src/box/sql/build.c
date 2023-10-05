@@ -3359,8 +3359,8 @@ sql_add_autoincrement(struct Parse *parse_context, uint32_t fieldno)
 }
 
 int
-sql_fieldno_by_name(struct Parse *parse_context, struct Expr *field_name,
-		    uint32_t *fieldno)
+sql_fieldno_by_expr_name(struct Parse *parse_context, struct Expr *field_name,
+			 uint32_t *fieldno)
 {
 	struct space_def *def = parse_context->create_table_def.new_space->def;
 	struct Expr *name = sqlExprSkipCollate(field_name);

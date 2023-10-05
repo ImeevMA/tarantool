@@ -1047,8 +1047,8 @@ sql_expr_new_dequoted(int op, const struct Token *token)
 	if (token == NULL || token->n == 0)
 		return e;
 	e->u.zToken = (char *) &e[1];
-	if (token->z[0] == '"')
-		e->flags |= EP_DblQuoted;
+	if (token->z[0] != '"')
+		e->flags |= EP_Lookup;
 	memcpy(e->u.zToken, token->z, token->n);
 	e->u.zToken[token->n] = '\0';
 	sqlDequote(e->u.zToken);
@@ -5426,3 +5426,34 @@ sqlClearTempRegCache(Parse * pParse)
 	pParse->nRangeReg = 0;
 }
 
+uint32_t
+sql_fieldno_by_expr(const struct space *space, const struct Expr *expr)
+{
+	assert(expr->op == TK_ID);
+	uint32_t res = sql_fieldno_by_name(space, expr->u.zToken);
+	if (res != UINT32_MAX || (expr->flags & EP_Lookup) == 0)
+		return res;
+
+	char *old_name = sql_old_name_new0(expr->u.zToken);
+	res = sql_fieldno_by_name(space, old_name);
+	sql_xfree(old_name);
+	return res;
+}
+
+uint32_t
+sql_coll_id_by_expr(const struct Expr *expr)
+{
+	assert(expr->op == TK_ID);
+	const char *name = expr->u.zToken;
+	struct coll_id *coll_id = coll_by_name(name, strlen(name));
+	if (coll_id != NULL)
+		return coll_id->id;
+	if ((expr->flags & EP_Lookup) == 0)
+		return UINT32_MAX;
+
+	char *old_name = sql_old_name_new0(name);
+	uint32_t old_len = strlen(old_name);
+	coll_id = coll_by_name(old_name, old_len);
+	sql_xfree(old_name);
+	return coll_id == NULL ? UINT32_MAX : coll_id->id;
+}

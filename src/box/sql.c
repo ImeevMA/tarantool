@@ -57,6 +57,7 @@
 #include "box/tuple_constraint_def.h"
 #include "mp_util.h"
 #include "tweaks.h"
+#include "coll_id_cache.h"
 
 static sql *db = NULL;
 
@@ -1644,18 +1645,41 @@ sql_index_id_by_token(const struct space *space, const struct Token *name)
 }
 
 uint32_t
+sql_fieldno_by_name(const struct space *space, const char *name)
+{
+	uint32_t len = strlen(name);
+	uint32_t hash = field_name_hash(name, len);
+	uint32_t res;
+	if (tuple_fieldno_by_name(space->def->dict, name, len, hash, &res) != 0)
+		return UINT32_MAX;
+	return res;
+}
+
+uint32_t
 sql_fieldno_by_token(const struct space *space, const struct Token *name)
 {
 	char *name_str = sql_name_from_token(name);
-	uint32_t res = UINT32_MAX;
-	for (uint32_t i = 0; i < space->def->field_count; ++i) {
-		if (strcmp(space->def->fields[i].name, name_str) == 0) {
-			res = i;
-			break;
-		}
-	}
+	uint32_t res = sql_fieldno_by_name(space, name_str);
 	sql_xfree(name_str);
 	return res;
+}
+
+uint32_t
+sql_coll_id_by_token(const struct Token *name)
+{
+	char *name_str = sql_name_from_token(name);
+	struct coll_id *coll_id = coll_by_name(name_str, strlen(name_str));
+	sql_xfree(name_str);
+	if (coll_id != NULL)
+		return coll_id->id;
+	if (name->z[0] == '"')
+		return UINT32_MAX;
+
+	char *old_name = sql_old_name_new(name->z, name->n);
+	uint32_t old_len = strlen(old_name);
+	coll_id = coll_by_name(old_name, old_len);
+	sql_xfree(old_name);
+	return coll_id == NULL ? UINT32_MAX : coll_id->id;
 }
 
 const struct tuple_constraint_def *

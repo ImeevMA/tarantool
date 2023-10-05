@@ -729,7 +729,7 @@ col_list_with_autoinc(A) ::= col_list_with_autoinc(A) COMMA expr(Y)
                              autoinc(I). {
   uint32_t fieldno;
   if (I == 1) {
-    if (sql_fieldno_by_name(pParse, Y.pExpr, &fieldno) != 0)
+    if (sql_fieldno_by_expr_name(pParse, Y.pExpr, &fieldno) != 0)
       return;
     if (sql_add_autoincrement(pParse, fieldno) != 0)
       return;
@@ -740,7 +740,7 @@ col_list_with_autoinc(A) ::= col_list_with_autoinc(A) COMMA expr(Y)
 col_list_with_autoinc(A) ::= expr(Y) autoinc(I). {
   if (I == 1) {
     uint32_t fieldno = 0;
-    if (sql_fieldno_by_name(pParse, Y.pExpr, &fieldno) != 0)
+    if (sql_fieldno_by_expr_name(pParse, Y.pExpr, &fieldno) != 0)
       return;
     if (sql_add_autoincrement(pParse, fieldno) != 0)
       return;
@@ -940,6 +940,8 @@ idlist(A) ::= nm(Y). {
     memcpy(p->u.zToken, t.z, t.n);
     p->u.zToken[t.n] = '\0';
     sqlDequote(p->u.zToken);
+    if (op == TK_ID || op == TK_COLLATE || op == TK_FUNCTION)
+      p->flags |= t.z[0] != '"' ? EP_Lookup : 0;
 #if SQL_MAX_EXPR_DEPTH>0
     p->nHeight = 1;
 #endif  
