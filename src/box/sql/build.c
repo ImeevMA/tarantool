@@ -313,6 +313,14 @@ sql_create_column_start(struct Parse *parse)
 		const char *space_name =
 			alter_entity_def->entity_name->a[0].zName;
 		space = space_by_name0(space_name);
+		if (space == NULL &&
+		    alter_entity_def->entity_name->a[0].fg.has_lookup) {
+			size_t len = strlen(space_name);
+			char *old_name = sql_old_normalized_name_new(space_name,
+								     len);
+			space = space_by_name0(old_name);
+			sql_xfree(old_name);
+		}
 		if (space == NULL) {
 			diag_set(ClientError, ER_NO_SUCH_SPACE, space_name);
 			goto tnt_error;
