@@ -53,6 +53,12 @@ sql_alter_table_rename(struct Parse *parse)
 	}
 	const char *tbl_name = src_tab->a[0].zName;
 	struct space *space = space_by_name0(tbl_name);
+	if (space == NULL && src_tab->a[0].fg.has_lookup) {
+		char *old_name = sql_old_normalized_name_new(tbl_name,
+							     strlen(tbl_name));
+		space = space_by_name0(old_name);
+		sql_xfree(old_name);
+	}
 	if (space == NULL) {
 		diag_set(ClientError, ER_NO_SUCH_SPACE, tbl_name);
 		goto tnt_error;
