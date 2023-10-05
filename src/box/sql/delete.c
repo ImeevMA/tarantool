@@ -40,6 +40,13 @@ sql_lookup_space(struct Parse *parse, struct SrcList_item *space_name)
 	assert(space_name != NULL);
 	assert(space_name->space == NULL);
 	struct space *space = space_by_name0(space_name->zName);
+	if (space == NULL && space_name->fg.has_lookup) {
+		const char *name = space_name->zName;
+		size_t len = strlen(name);
+		char *old_name = sql_old_normalized_name_new(name, len);
+		space = space_by_name0(old_name);
+		sql_xfree(old_name);
+	}
 	if (space == NULL) {
 		diag_set(ClientError, ER_NO_SUCH_SPACE, space_name->zName);
 		parse->is_aborted = true;
