@@ -80,9 +80,14 @@ sql_trigger_begin(struct Parse *parse)
 		goto trigger_cleanup;
 
 	const char *table_name = alter_def->entity_name->a[0].zName;
-	uint32_t space_id = box_space_id_by_name(table_name,
-						 strlen(table_name));
-	if (space_id == BOX_ID_NIL) {
+	struct space *space = space_by_name0(table_name);
+	if (space == NULL && alter_def->entity_name->a[0].fg.has_lookup) {
+		size_t len = strlen(table_name);
+		char *old_name = sql_old_normalized_name_new(table_name, len);
+		space = space_by_name0(old_name);
+		sql_xfree(old_name);
+	}
+	if (space == NULL) {
 		diag_set(ClientError, ER_NO_SUCH_SPACE, table_name);
 		goto set_tarantool_error_and_cleanup;
 	}
@@ -105,7 +110,7 @@ sql_trigger_begin(struct Parse *parse)
 
 	/* Build the Trigger object. */
 	trigger = sql_xmalloc0(sizeof(struct sql_trigger));
-	trigger->space_id = space_id;
+	trigger->space_id = space->def->id;
 	trigger->zName = trigger_name;
 	trigger_name = NULL;
 	assert(trigger_def->op == TK_INSERT || trigger_def->op == TK_UPDATE ||
