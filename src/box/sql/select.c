@@ -4502,26 +4502,31 @@ is_simple_count(struct Select *select, struct AggInfo *agg_info)
 int
 sqlIndexedByLookup(Parse * pParse, struct SrcList_item *pFrom)
 {
-	if (pFrom->space != NULL && pFrom->fg.isIndexedBy) {
-		struct space *space = pFrom->space;
-		char *zIndexedBy = pFrom->u1.zIndexedBy;
-		struct index *idx = NULL;
+	if (pFrom->space == NULL || !pFrom->fg.isIndexedBy)
+		return 0;
+	struct space *space = pFrom->space;
+	char *name = pFrom->u1.zIndexedBy;
+	for (uint32_t i = 0; i < space->index_count; ++i) {
+		if (strcmp(space->index[i]->def->name, name) == 0) {
+			pFrom->pIBIndex = space->index[i]->def;
+			return 0;
+		}
+	}
+	if (pFrom->fg.has_index_lookup) {
+		size_t len = strlen(name);
+		char *old_name = sql_old_normalized_name_new(name, len);
 		for (uint32_t i = 0; i < space->index_count; ++i) {
-			if (strcmp(space->index[i]->def->name,
-				   zIndexedBy) == 0) {
-				idx = space->index[i];
-				break;
+			if (strcmp(space->index[i]->def->name, old_name) == 0) {
+				sql_xfree(old_name);
+				pFrom->pIBIndex = space->index[i]->def;
+				return 0;
 			}
 		}
-		if (idx == NULL) {
-			diag_set(ClientError, ER_NO_SUCH_INDEX_NAME,
-				 zIndexedBy, space->def->name);
-			pParse->is_aborted = true;
-			return -1;
-		}
-		pFrom->pIBIndex = idx->def;
+		sql_xfree(old_name);
 	}
-	return 0;
+	diag_set(ClientError, ER_NO_SUCH_INDEX_NAME, name, space->def->name);
+	pParse->is_aborted = true;
+	return -1;
 }
 
 /*

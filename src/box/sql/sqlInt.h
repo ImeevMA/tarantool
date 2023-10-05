@@ -1606,8 +1606,14 @@ struct SrcList {
 			unsigned isCorrelated:1;	/* True if sub-query is correlated */
 			unsigned viaCoroutine:1;	/* Implemented as a co-routine */
 			unsigned isRecursive:1;	/* True for recursive reference in WITH */
-			/* Second lookup could be performed for the name. */
+			/**
+			 * Second lookup could be performed for the space name.
+			 */
 			unsigned has_lookup:1;
+			/**
+			 * Second lookup could be performed for the index name.
+			 */
+			unsigned has_index_lookup:1;
 			/**
 			 * Flag indicating whether scanning is allowed for the
 			 * source. By default, scanning is allowed, as this

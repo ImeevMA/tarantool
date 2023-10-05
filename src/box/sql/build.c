@@ -3180,6 +3180,7 @@ sqlSrcListIndexedBy(struct SrcList *p, struct Token *pIndexedBy)
 		} else if (pIndexedBy->z != NULL) {
 			pItem->u1.zIndexedBy = sql_name_from_token(pIndexedBy);
 			pItem->fg.isIndexedBy = true;
+			pItem->fg.has_index_lookup = true;
 		}
 	}
 }
