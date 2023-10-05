@@ -1665,6 +1665,19 @@ sql_fieldno_by_token(const struct space *space, const struct Token *name)
 }
 
 uint32_t
+sql_fieldno_by_id(const struct space *space, const struct IdList_item *id)
+{
+	uint32_t res = sql_fieldno_by_name(space, id->zName);
+	if (res != UINT32_MAX || !id->has_id_lookup)
+		return res;
+
+	char *old_name = sql_old_name_new0(id->zName);
+	res = sql_fieldno_by_name(space, id->zName);
+	sql_xfree(old_name);
+	return res;
+}
+
+uint32_t
 sql_coll_id_by_token(const struct Token *name)
 {
 	char *name_str = sql_name_from_token(name);

@@ -1536,6 +1536,8 @@ struct IdList {
 	struct IdList_item {
 		char *zName;	/* Name of the identifier */
 		int idx;	/* Index in some Table.aCol[] of a column named zName */
+		/** Second lookup could be performed for the ID. */
+		bool has_id_lookup;
 	} *a;
 	int nId;		/* Number of identifiers on the list */
 };
@@ -3114,6 +3116,13 @@ sql_fieldno_by_name(const struct space *space, const char *name);
  */
 uint32_t
 sql_fieldno_by_token(const struct space *space, const struct Token *name);
+
+/**
+ * Return the fieldno of the field with the name defined by the element of
+ * IdList. Return UINT32_MAX if the field was not found.
+ */
+uint32_t
+sql_fieldno_by_id(const struct space *space, const struct IdList_item *id);
 
 /**
  * Return the fieldno of the field with the name defined by the expression.
