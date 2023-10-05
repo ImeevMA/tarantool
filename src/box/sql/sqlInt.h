@@ -1538,6 +1538,7 @@ struct IdList {
 	struct IdList_item {
 		char *zName;	/* Name of the identifier */
 		int idx;	/* Index in some Table.aCol[] of a column named zName */
+		bool has_lookup;
 	} *a;
 	int nId;		/* Number of identifiers on the list */
 };

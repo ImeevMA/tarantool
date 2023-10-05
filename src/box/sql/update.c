@@ -135,8 +135,13 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 			goto update_cleanup;
 		}
 		for (j = 0; j < (int)def->field_count; j++) {
-			if (strcmp(def->fields[j].name,
-				   pChanges->a[i].zName) == 0) {
+			const char *name = pChanges->a[i].zName;
+			size_t len = strlen(name);
+			char *old_name = !pChanges->a[i].has_lookup ? NULL :
+					 sql_old_normalized_name_new(name, len);
+			if (strcmp(def->fields[j].name, name) == 0 ||
+			    (old_name != NULL && strcmp(def->fields[j].name,
+							old_name) == 0)) {
 				if (pPk &&
 				    sql_space_column_is_in_pk(space, j))
 					is_pk_modified = true;
@@ -144,8 +149,7 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 					const char *err =
 						"set id list: duplicate "\
 						"column name %s";
-					err = tt_sprintf(err,
-							 pChanges->a[i].zName);
+					err = tt_sprintf(err, name);
 					diag_set(ClientError,
 						 ER_SQL_PARSER_GENERIC,
 						 err);

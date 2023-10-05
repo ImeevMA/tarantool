@@ -1824,6 +1824,8 @@ sqlExprListAppendVector(Parse * pParse,	/* Parsing context */
 		pList = sql_expr_list_append(pList, pSubExpr);
 		assert(pList->nExpr == iFirst + i + 1);
 		pList->a[pList->nExpr - 1].zName = pColumns->a[i].zName;
+		pList->a[pList->nExpr - 1].has_lookup =
+			pColumns->a[i].has_lookup;
 		pColumns->a[i].zName = 0;
 	}
 
