@@ -2627,6 +2627,12 @@ sql_create_index(struct Parse *parse) {
 		assert(token.n > 0 && token.z != NULL);
 		const char *name = tbl_name->a[0].zName;
 		space = space_by_name0(name);
+		if (space == NULL && tbl_name->a[0].fg.has_lookup) {
+			size_t len = strlen(name);
+			char *old_name = sql_old_normalized_name_new(name, len);
+			space = space_by_name0(old_name);
+			sql_xfree(old_name);
+		}
 		if (space == NULL) {
 			if (! create_entity_def->if_not_exist) {
 				diag_set(ClientError, ER_NO_SUCH_SPACE, name);
