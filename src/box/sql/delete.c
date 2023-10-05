@@ -95,6 +95,12 @@ sql_table_truncate(struct Parse *parse, struct SrcList *tab_list)
 	struct Vdbe *v = sqlGetVdbe(parse);
 	const char *tab_name = tab_list->a->zName;
 	struct space *space = space_by_name0(tab_name);
+	if (space == NULL && tab_list->a->fg.has_lookup) {
+		char *old_name = sql_old_normalized_name_new(tab_name,
+							     strlen(tab_name));
+		space = space_by_name0(old_name);
+		sql_xfree(old_name);
+	}
 	if (space == NULL) {
 		diag_set(ClientError, ER_NO_SUCH_SPACE, tab_name);
 		goto tarantool_error;
