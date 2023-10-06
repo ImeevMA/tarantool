@@ -2936,7 +2936,7 @@ sql_id_list_append(struct IdList *list, struct Token *name_token)
 	assert(list->nId >= 0);
 	list->a = sqlArrayAllocate(list->a, sizeof(list->a[0]), &list->nId, &i);
 	assert(i >= 0);
-	list->a[i].zName = sql_name_from_token(name_token);
+	list->a[i].name = sql_name_from_token(name_token);
 	list->a[i].has_id_lookup = name_token->z[0] != '"';
 	return list;
 }
@@ -2948,7 +2948,7 @@ sqlIdListDelete(struct IdList *pList)
 	if (pList == 0)
 		return;
 	for (i = 0; i < pList->nId; i++) {
-		sql_xfree(pList->a[i].zName);
+		sql_xfree(pList->a[i].name);
 	}
 	sql_xfree(pList->a);
 	sql_xfree(pList);
@@ -2965,7 +2965,7 @@ sqlIdListIndex(IdList * pList, const char *zName)
 	if (pList == 0)
 		return -1;
 	for (i = 0; i < pList->nId; i++) {
-		if (strcmp(pList->a[i].zName, zName) == 0)
+		if (strcmp(pList->a[i].name, zName) == 0)
 			return i;
 	}
 	return -1;

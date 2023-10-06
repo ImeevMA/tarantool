@@ -142,7 +142,7 @@ nameInUsingClause(IdList * pUsing, const char *zCol)
 	if (pUsing) {
 		int k;
 		for (k = 0; k < pUsing->nId; k++) {
-			if (strcmp(pUsing->a[k].zName, zCol) == 0)
+			if (strcmp(pUsing->a[k].name, zCol) == 0)
 				return 1;
 		}
 	}

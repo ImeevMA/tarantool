@@ -880,7 +880,7 @@ sqlProcessJoin(Parse * pParse, Select * p)
 				int iLeftCol;	/* Column number of matching column on the left */
 				int iRightCol;	/* Column number of matching column on the right */
 
-				zName = pList->a[j].zName;
+				zName = pList->a[j].name;
 				iRightCol = columnIndex(right_space->def, zName);
 				if (iRightCol < 0
 				    || !tableAndColumnIndex(pSrc, i + 1, zName,

@@ -1536,7 +1536,7 @@ struct ExprSpan {
  */
 struct IdList {
 	struct IdList_item {
-		char *zName;	/* Name of the identifier */
+		char *name;	/* Name of the identifier */
 		int idx;	/* Index in some Table.aCol[] of a column named zName */
 		/** Second lookup could be performed for the ID. */
 		bool has_id_lookup;

@@ -1694,7 +1694,7 @@ sqlIdListDup(struct IdList *p)
 	for (i = 0; i < p->nId; i++) {
 		struct IdList_item *pNewItem = &pNew->a[i];
 		struct IdList_item *pOldItem = &p->a[i];
-		pNewItem->zName = sql_xstrdup(pOldItem->zName);
+		pNewItem->name = sql_xstrdup(pOldItem->name);
 		pNewItem->idx = pOldItem->idx;
 		pNewItem->has_id_lookup = pOldItem->has_id_lookup;
 	}
@@ -1801,10 +1801,10 @@ sqlExprListAppendVector(Parse * pParse,	/* Parsing context */
 		Expr *pSubExpr = sqlExprForVectorField(pParse, pExpr, i);
 		pList = sql_expr_list_append(pList, pSubExpr);
 		assert(pList->nExpr == iFirst + i + 1);
-		pList->a[pList->nExpr - 1].zName = pColumns->a[i].zName;
+		pList->a[pList->nExpr - 1].zName = pColumns->a[i].name;
 		pList->a[pList->nExpr - 1].has_name_lookup =
 			pColumns->a[i].has_id_lookup;
-		pColumns->a[i].zName = 0;
+		pColumns->a[i].name = 0;
 	}
 
 	if (pExpr->op == TK_SELECT) {
