@@ -1524,7 +1524,7 @@ sql_resolve_self_reference(struct Parse *parser, struct space_def *def,
 	memset(&sNC, 0, sizeof(sNC));
 	memset(&sSrc, 0, sizeof(sSrc));
 	sSrc.nSrc = 1;
-	sSrc.a[0].zName = def->name;
+	sSrc.a[0].name = def->name;
 	struct space tmp_space;
 	memset(&tmp_space, 0, sizeof(tmp_space));
 	tmp_space.def = def;

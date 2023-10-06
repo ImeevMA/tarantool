@@ -1651,7 +1651,7 @@ sqlSrcListDup(struct SrcList *p, int flags)
 	for (i = 0; i < p->nSrc; i++) {
 		struct SrcList_item *pNewItem = &pNew->a[i];
 		struct SrcList_item *pOldItem = &p->a[i];
-		pNewItem->zName = sql_xstrdup(pOldItem->zName);
+		pNewItem->name = sql_xstrdup(pOldItem->name);
 		pNewItem->zAlias = sql_xstrdup(pOldItem->zAlias);
 		pNewItem->fg = pOldItem->fg;
 		pNewItem->iCursor = pOldItem->iCursor;

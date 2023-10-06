@@ -79,7 +79,7 @@ sql_trigger_begin(struct Parse *parse)
 	if (sqlCheckIdentifierName(parse, trigger_name) != 0)
 		goto trigger_cleanup;
 
-	const char *table_name = alter_def->entity_name->a[0].zName;
+	const char *table_name = alter_def->entity_name->a[0].name;
 	uint32_t space_id = box_space_id_by_name(table_name,
 						 strlen(table_name));
 	if (space_id == BOX_ID_NIL) {
@@ -329,7 +329,7 @@ sql_drop_trigger(struct Parse *parser)
 	sqlVdbeCountChanges(v);
 
 	assert(name->nSrc == 1);
-	const char *trigger_name = name->a[0].zName;
+	const char *trigger_name = name->a[0].name;
 	const char *error_msg =
 		tt_sprintf(tnt_errcode_desc(ER_NO_SUCH_TRIGGER),
 			   trigger_name);
@@ -472,7 +472,7 @@ targetSrcList(struct TriggerStep *pStep)
 {
 	SrcList *pSrc = sql_src_list_append(NULL, NULL);
 	assert(pSrc->nSrc > 0);
-	pSrc->a[pSrc->nSrc - 1].zName = sql_xstrdup(pStep->zTarget);
+	pSrc->a[pSrc->nSrc - 1].name = sql_xstrdup(pStep->zTarget);
 	return pSrc;
 }
 

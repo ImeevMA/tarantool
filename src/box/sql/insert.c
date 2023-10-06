@@ -274,7 +274,7 @@ sqlInsert(Parse * pParse,	/* Parser context */
 	/* Locate the table into which we will be inserting new information.
 	 */
 	assert(pTabList->nSrc == 1);
-	zTab = pTabList->a[0].zName;
+	zTab = pTabList->a[0].name;
 	if (NEVER(zTab == 0))
 		goto insert_cleanup;
 	struct space *space = sql_lookup_space(pParse, pTabList->a);
@@ -367,7 +367,7 @@ sqlInsert(Parse * pParse,	/* Parser context */
 				diag_set(ClientError,
 					 ER_NO_SUCH_FIELD_NAME_IN_SPACE,
 					 pColumn->a[i].name,
-					 pTabList->a[0].zName);
+					 pTabList->a[0].name);
 				pParse->is_aborted = true;
 				goto insert_cleanup;
 			}
@@ -438,7 +438,7 @@ sqlInsert(Parse * pParse,	/* Parser context */
 	    nColumn != (int)space_def->field_count) {
 		const char *err =
 			"table %s has %d columns but %d values were supplied";
-		err = tt_sprintf(err, pTabList->a[0].zName,
+		err = tt_sprintf(err, pTabList->a[0].name,
 				 space_def->field_count, nColumn);
 		diag_set(ClientError, ER_SQL_PARSER_GENERIC, err);
 		pParse->is_aborted = true;
@@ -1072,7 +1072,7 @@ xferOptimization(Parse * pParse,	/* Parser context */
 	 * we have to check the semantics.
 	 */
 	pItem = pSelect->pSrc->a;
-	struct space *src = space_by_name0(pItem->zName);
+	struct space *src = space_by_name0(pItem->name);
 	/* FROM clause does not contain a real table. */
 	if (src == NULL)
 		return 0;

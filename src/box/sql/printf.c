@@ -777,7 +777,7 @@ sqlVXPrintf(StrAccum * pAccum,	/* Accumulate results here */
 				struct SrcList_item *pItem = &pSrc->a[k];
 				assert(bArgList == 0);
 				assert(k >= 0 && k < pSrc->nSrc);
-				sqlStrAccumAppendAll(pAccum, pItem->zName);
+				sqlStrAccumAppendAll(pAccum, pItem->name);
 				length = width = 0;
 				break;
 			}

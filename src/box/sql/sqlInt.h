@@ -1592,7 +1592,7 @@ struct SrcList {
 	int nSrc;		/* Number of tables or subqueries in the FROM clause */
 	u32 nAlloc;		/* Number of entries allocated in a[] below */
 	struct SrcList_item {
-		char *zName;	/* Name of the table */
+		char *name;	/* Name of the table */
 		char *zAlias;	/* The "B" part of a "A AS B" phrase.  zName is the "A" */
 		/** A space corresponding to zName */
 		struct space *space;

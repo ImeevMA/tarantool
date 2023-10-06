@@ -216,8 +216,8 @@ sqlTreeViewSelect(TreeView * pView, const Select * p, u8 moreToFollow)
 				char zLine[100];
 				sqlStrAccumInit(&x, zLine, sizeof(zLine), 0);
 				sqlXPrintf(&x, "{%d,*}", pItem->iCursor);
-				if (pItem->zName) {
-					sqlXPrintf(&x, " %s", pItem->zName);
+				if (pItem->name) {
+					sqlXPrintf(&x, " %s", pItem->name);
 				}
 				if (pItem->space != NULL) {
 					sqlXPrintf(&x, " tabname=%Q",
