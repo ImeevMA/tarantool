@@ -1203,7 +1203,7 @@ selectInnerLoop(Parse * pParse,		/* The parser context */
 		for (i = 0; i < nResultCol; i++) {
 			sqlVdbeAddOp3(v, OP_Column, srcTab, i,
 					  regResult + i);
-			VdbeComment((v, "%s", pEList->a[i].zName));
+			VdbeComment((v, "%s", pEList->a[i].name));
 		}
 	} else if (eDest != SRT_Exists) {
 		/* If the destination is an EXISTS(...) expression, the actual
@@ -1835,7 +1835,7 @@ generateSortTail(Parse * pParse,	/* Parsing context */
 		}
 		sqlVdbeAddOp3(v, OP_Column, iSortTab, iRead, regRow + i);
 		VdbeComment((v, "%s",
-			     aOutEx[i].zName ? aOutEx[i].zName :
+			     aOutEx[i].name ? aOutEx[i].name :
 			     tt_cstr(aOutEx[i].span.z, aOutEx[i].span.n)));
 	}
 	switch (eDest) {
@@ -1964,7 +1964,7 @@ generate_column_metadata(struct Parse *pParse, struct SrcList *pTabList,
 			}
 		}
 		vdbe_metadata_set_col_nullability(v, i, -1);
-		const char *colname = pEList->a[i].zName;
+		const char *colname = pEList->a[i].name;
 		char *span = pEList->a[i].span.n == 0 ? NULL :
 			sql_xstrndup(pEList->a[i].span.z, pEList->a[i].span.n);
 		if (p->op == TK_COLUMN_REF || p->op == TK_AGG_COLUMN) {
@@ -2077,7 +2077,7 @@ sqlColumnsFromExprList(Parse * parse, ExprList * expr_list,
 		 * Check if the column contains an "AS <name>"
 		 * phrase.
 		 */
-		char *name = expr_list->a[i].zName;
+		char *name = expr_list->a[i].name;
 		if (name == NULL) {
 			struct Expr *pColExpr = expr_list->a[i].pExpr;
 			struct space_def *space_def = NULL;
@@ -4259,9 +4259,9 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 		 */
 		pList = pParent->pEList;
 		for (i = 0; i < pList->nExpr; i++) {
-			if (pList->a[i].zName == 0) {
+			if (pList->a[i].name == 0) {
 				const struct Token *t = &pList->a[i].span;
-				pList->a[i].zName = sql_name_from_token(t);
+				pList->a[i].name = sql_name_from_token(t);
 				pList->a[i].has_name_lookup = t->z[0] != '"';
 			}
 		}
@@ -4979,10 +4979,10 @@ selectExpander(Walker * pWalker, Select * p)
 		       || (pE->pLeft != 0 && pE->pLeft->op == TK_ID));
 		if (pE->op == TK_DOT && pE->pRight->op == TK_ASTERISK)
 			has_asterisk = true;
-		if (pEList->a[k].zName == NULL &&
+		if (pEList->a[k].name == NULL &&
 		    expr_autoname_is_required(pE)) {
 			uint32_t idx = ++pParse->autoname_i;
-			pEList->a[k].zName =
+			pEList->a[k].name =
 				sql_xstrdup(sql_generate_column_name(idx));
 		}
 	}
@@ -5009,11 +5009,11 @@ selectExpander(Walker * pWalker, Select * p)
 			 * expanded.
 			 */
 			pNew = sql_expr_list_append(pNew, a[k].pExpr);
-			pNew->a[pNew->nExpr - 1].zName = a[k].zName;
+			pNew->a[pNew->nExpr - 1].name = a[k].name;
 			pNew->a[pNew->nExpr - 1].span = a[k].span;
 			pNew->a[pNew->nExpr - 1].has_name_lookup =
 				a[k].has_name_lookup;
-			a[k].zName = 0;
+			a[k].name = 0;
 			a[k].span = Token_nil;
 			a[k].pExpr = 0;
 			continue;

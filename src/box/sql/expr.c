@@ -1620,7 +1620,7 @@ sql_expr_list_dup(struct ExprList *p, int flags)
 				pNewExpr->pLeft = pPriorSelectCol;
 			}
 		}
-		pItem->zName = sql_xstrdup(pOldItem->zName);
+		pItem->name = sql_xstrdup(pOldItem->name);
 		pItem->span = pOldItem->span;
 		pItem->sort_order = pOldItem->sort_order;
 		pItem->done = 0;
@@ -1801,7 +1801,7 @@ sqlExprListAppendVector(Parse * pParse,	/* Parsing context */
 		Expr *pSubExpr = sqlExprForVectorField(pParse, pExpr, i);
 		pList = sql_expr_list_append(pList, pSubExpr);
 		assert(pList->nExpr == iFirst + i + 1);
-		pList->a[pList->nExpr - 1].zName = pColumns->a[i].name;
+		pList->a[pList->nExpr - 1].name = pColumns->a[i].name;
 		pList->a[pList->nExpr - 1].has_name_lookup =
 			pColumns->a[i].has_id_lookup;
 		pColumns->a[i].name = 0;
@@ -1863,14 +1863,14 @@ sqlExprListSetName(Parse * pParse,	/* Parsing context */
 		return;
 	assert(pList->nExpr > 0);
 	struct ExprList_item *item = &pList->a[pList->nExpr - 1];
-	assert(item->zName == NULL);
+	assert(item->name == NULL);
 	if (dequote) {
-		item->zName = sql_name_new(pName->z, pName->n);
+		item->name = sql_name_new(pName->z, pName->n);
 		item->has_name_lookup = pName->z[0] != '"';
 	} else {
-		item->zName = sql_xstrndup(pName->z, pName->n);
+		item->name = sql_xstrndup(pName->z, pName->n);
 	}
-	sqlCheckIdentifierName(pParse, item->zName);
+	sqlCheckIdentifierName(pParse, item->name);
 }
 
 void
@@ -1895,7 +1895,7 @@ exprListDeleteNN(struct ExprList *pList)
 	assert(pList->a != 0 || pList->nExpr == 0);
 	for (pItem = pList->a, i = 0; i < pList->nExpr; i++, pItem++) {
 		sql_expr_delete(pItem->pExpr);
-		sql_xfree(pItem->zName);
+		sql_xfree(pItem->name);
 	}
 	sql_xfree(pList->a);
 	sql_xfree(pList);

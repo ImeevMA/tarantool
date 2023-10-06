@@ -145,7 +145,7 @@ sqlTreeViewWith(TreeView * pView, const With * pWith)
 				int j;
 				for (j = 0; j < pCte->pCols->nExpr; j++) {
 					sqlXPrintf(&x, "%c%s", cSep,
-						       pCte->pCols->a[j].zName);
+						       pCte->pCols->a[j].name);
 					cSep = ',';
 				}
 				sqlXPrintf(&x, ")");

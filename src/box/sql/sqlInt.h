@@ -1490,7 +1490,7 @@ struct ExprList {
 	int nExpr;		/* Number of expressions on the list */
 	struct ExprList_item {	/* For each expression in the list */
 		Expr *pExpr;	/* The list of expressions */
-		char *zName;	/* Token associated with this expression */
+		char *name;	/* Token associated with this expression */
 		/* Original text of the expression. */
 		struct Token span;
 		enum sort_order sort_order;
