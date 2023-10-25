@@ -435,7 +435,7 @@ ALTER TABLE non_empty ADD b INT NULL;
  | - null
  | - Tuple field count 1 does not match space field count 2
  | ...
-ALTER TABLE non_empty ADD b INT DEFAULT (1);
+ALTER TABLE non_empty ADD b INT DEFAULT 1;
  | ---
  | - null
  | - Tuple field count 1 does not match space field count 2

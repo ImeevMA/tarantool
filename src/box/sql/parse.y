@@ -289,7 +289,7 @@ carglist ::= .
 cconsname(N) ::= CONSTRAINT nm(X). { N = X; }
 cconsname(N) ::= . { N = Token_nil; }
 ccons ::= DEFAULT term(X).            {sql_add_term_default(pParse, &X);}
-ccons ::= DEFAULT LP expr(X) RP.      {sqlAddDefaultValue(pParse,&X);}
+ccons ::= DEFAULT LP expr(X) RP.      {sql_add_func_default(pParse, &X);}
 ccons ::= DEFAULT PLUS number(X).       {sql_add_term_default(pParse, &X);}
 ccons ::= DEFAULT MINUS(A) number(X).      {
   ExprSpan v;

@@ -147,7 +147,7 @@ DROP TABLE notnull_check;
 CREATE TABLE non_empty (a INT PRIMARY KEY);
 INSERT INTO non_empty VALUES (1);
 ALTER TABLE non_empty ADD b INT NULL;
-ALTER TABLE non_empty ADD b INT DEFAULT (1);
+ALTER TABLE non_empty ADD b INT DEFAULT 1;
 DROP TABLE non_empty;
 
 --
