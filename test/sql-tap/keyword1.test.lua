@@ -1,6 +1,6 @@
 #!/usr/bin/env tarantool
 local test = require("sqltester")
-test:plan(182)
+test:plan(180)
 
 --!./tcltestrunner.lua
 -- 2009 January 29
@@ -42,6 +42,7 @@ local kwlist = {
 	"offset",
 	"plan",
 	"query",
+    "replace",
 	"restrict",
 	"enable",
 	"disable"
@@ -112,7 +113,6 @@ local bannedkws = {
 	"references",
 	"release",
 	"rename",
-	"replace",
 	"right",
 	"rollback",
 	"row",
@@ -135,10 +135,8 @@ local bannedkws = {
 	"where",
 	"any",
 	"asensitive",
-	"binary",
 	"call",
 	"char",
-	"character",
 	"condition",
 	"connect",
 	"current",
@@ -182,7 +180,6 @@ local bannedkws = {
 	"row_number",
 	"sensitive",
 	"signal",
-	"smallint",
 	"specific",
 	"start",
 	"system",
@@ -204,9 +201,9 @@ for _, kw in ipairs(kwlist) do
         "keyword1-"..kw..".1",
         function()
             if (kw == "if") then
-                test:execsql( string.format([[CREATE TABLE "%s"(%s %s PRIMARY KEY)]], kw:upper(), kw, 'INT'))
+                test:execsql( string.format([[CREATE TABLE "%s"(%s INT PRIMARY KEY)]], kw:upper(), kw))
             else
-                test:execsql(string.format("CREATE TABLE %s(%s %s PRIMARY KEY)", kw, kw, 'INT'))
+                test:execsql(string.format("CREATE TABLE %s(%s INT PRIMARY KEY)", kw, kw))
             end
             test:execsql("INSERT INTO "..kw.." VALUES(99)")
             test:execsql("INSERT INTO "..kw.." SELECT a FROM t1")
@@ -238,25 +235,13 @@ end
 
 for _, kw in ipairs(bannedkws) do
     local query = 'CREATE TABLE '..kw..'(a INT PRIMARY KEY);'
-    if kw == 'end' or kw == 'match' or kw == 'release' or kw == 'rename' or
-       kw == 'replace' or kw == 'binary' or kw == 'character' or
-       kw == 'smallint' then
-        test:do_catchsql_test(
-        "bannedkw1-"..kw..".1",
-        query, {
-            1, "At line 1 at or near position "..14 + string.len(kw)..
-            ": keyword '"..kw.."' is reserved. Please use double quotes if '"
-            ..kw.."' is an identifier."
-        })
-    else
-        test:do_catchsql_test(
-        "bannedkw1-"..kw..".1",
-        query, {
-            1, "At line 1 at or near position 14: keyword '"..kw..
-            "' is reserved. Please use double quotes if '"..kw..
-            "' is an identifier."
-        })
-    end
+    test:do_catchsql_test(
+    "bannedkw1-"..kw..".1",
+    query, {
+        1, "At line 1 at or near position 14: keyword '"..kw..
+        "' is reserved. Please use double quotes if '"..kw..
+        "' is an identifier."
+    })
 end
 
 

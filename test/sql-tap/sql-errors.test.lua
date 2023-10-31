@@ -524,7 +524,7 @@ test:do_catchsql_test(
 		DROP TABLE IF EXISTS END;
 	]], {
 		-- <sql-errors-1.47>
-		1, "At line 1 at or near position 27: keyword 'END' is reserved. Please use double quotes if 'END' is an identifier."
+        1, "Syntax error at line 1 near 'END'"
 		-- </sql-errors-1.47>
 	})
 

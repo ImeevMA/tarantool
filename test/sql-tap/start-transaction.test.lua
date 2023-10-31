@@ -119,7 +119,7 @@ test:do_catchsql_test(
 		END;
 	]], {
 		-- <start-transaction-1.8>
-		1, "At line 2 at or near position 3: keyword 'END' is reserved. Please use double quotes if 'END' is an identifier."
+        1, "Syntax error at line 2 near 'END'"
 		-- <start-transaction-1.8>
 	})
 
@@ -144,7 +144,7 @@ test:do_catchsql_test(
 		END TRANSACTION;
 	]], {
 		-- <start-transaction-1.10>
-		1, "At line 2 at or near position 3: keyword 'END' is reserved. Please use double quotes if 'END' is an identifier."
+        1, "Syntax error at line 2 near 'END'"
 		-- <start-transaction-1.10>
 	})
 
