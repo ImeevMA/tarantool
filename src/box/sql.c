@@ -66,18 +66,6 @@ static const char nil_key[] = { 0x90 }; /* Empty MsgPack array. */
 static bool sql_seq_scan_default = false;
 TWEAK_BOOL(sql_seq_scan_default);
 
-static Expr *
-sql_expr_compile_cb(const char *expr, int expr_len)
-{
-	return sql_expr_compile(expr, expr_len);
-}
-
-static void
-sql_expr_delete_cb(struct Expr *expr)
-{
-	sql_expr_delete(expr);
-}
-
 uint32_t
 sql_default_session_flags(void)
 {
@@ -89,9 +77,6 @@ sql_default_session_flags(void)
 void
 sql_init(void)
 {
-	tuple_format_expr_compile = sql_expr_compile_cb;
-	tuple_format_expr_delete = sql_expr_delete_cb;
-
 	current_session()->sql_flags = sql_default_session_flags();
 
 	if (sql_init_db(&db) != 0)
@@ -365,7 +350,6 @@ sql_ephemeral_space_new(const struct sql_space_info *info)
 		names += strlen(fields[i].name) + 1;
 		fields[i].is_nullable = true;
 		fields[i].nullable_action = ON_CONFLICT_ACTION_NONE;
-		fields[i].sql_default_value = NULL;
 		fields[i].default_value = NULL;
 		fields[i].default_value_size = 0;
 		fields[i].default_func_id = 0;
