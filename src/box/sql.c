@@ -1012,11 +1012,8 @@ sql_encode_table(struct region *region, struct space_def *def, uint32_t *size)
 	for (uint32_t i = 0; i < field_count && !is_error; i++) {
 		uint32_t cid = def->fields[i].coll_id;
 		struct field_def *field = &def->fields[i];
-		const char *default_str = field->sql_default_value;
 		int base_len = 4;
 		if (cid != COLL_NONE)
-			base_len += 1;
-		if (default_str != NULL)
 			base_len += 1;
 		if (field->default_value != NULL)
 			base_len += 1;
@@ -1055,10 +1052,6 @@ sql_encode_table(struct region *region, struct space_def *def, uint32_t *size)
 		if (cid != COLL_NONE) {
 			mpstream_encode_str(&stream, "collation");
 			mpstream_encode_uint(&stream, cid);
-		}
-		if (default_str != NULL) {
-			mpstream_encode_str(&stream, "sql_default");
-			mpstream_encode_str(&stream, default_str);
 		}
 		if (field->default_value != NULL) {
 			mpstream_encode_str(&stream, "default");
