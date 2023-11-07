@@ -90,14 +90,13 @@ pragmaLocate(const char *zName)
  * - name: Column name;
  * - type: Column declaration type;
  * - notnull: True if 'NOT NULL' is part of column declaration;
- * - dflt_value: The default value for the column, if any.
  */
 static void
 sql_pragma_table_info(struct Parse *parse, const struct space *space)
 {
 	if (space == NULL)
 		return;
-	parse->nMem = 6;
+	parse->nMem = 5;
 	if (space->def->opts.is_view)
 		sql_view_assign_cursors(parse, space->def->opts.sql);
 	struct Vdbe *v = sqlGetVdbe(parse);
@@ -112,10 +111,10 @@ sql_pragma_table_info(struct Parse *parse, const struct space *space)
 			const struct key_def *kdef = pk->def->key_def;
 			k = key_def_find_by_fieldno(kdef, i) - kdef->parts + 1;
 		}
-		sqlVdbeMultiLoad(v, 1, "issisi", i, field->name,
+		sqlVdbeMultiLoad(v, 1, "issii", i, field->name,
 				 field_type_strs[field->type],
-				 !field->is_nullable, NULL, k);
-		sqlVdbeAddOp2(v, OP_ResultRow, 1, 6);
+				 !field->is_nullable, k);
+		sqlVdbeAddOp2(v, OP_ResultRow, 1, 5);
 	}
 }
 

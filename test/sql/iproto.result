@@ -694,8 +694,6 @@ res.metadata
     type: text
   - name: notnull
     type: integer
-  - name: dflt_value
-    type: text
   - name: pk
     type: integer
 ...
