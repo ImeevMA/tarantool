@@ -211,6 +211,13 @@ local function privileges_subtract(target, current)
     return lacking
 end
 
+local function privileges_add_sharding(intermediate)
+    local res = table.deepcopy(intermediate)
+    -- TODO: give access to selected functions instead of all.
+    privileges_add_perm('lua_call', '', 'execute', res)
+    return res
+end
+
 local function privileges_add_defaults(name, role_or_user, intermediate)
     local res = table.deepcopy(intermediate)
 
@@ -330,6 +337,7 @@ local function get_credentials(config)
     credentials.roles['super'] = credentials.roles['super'] or {}
     credentials.roles['public'] = credentials.roles['public'] or {}
     credentials.roles['replication'] = credentials.roles['replication'] or {}
+    credentials.roles['sharding'] = credentials.roles['sharding'] or {}
 
     credentials.users = credentials.users or {}
     credentials.users['guest'] = credentials.users['guest'] or {}
@@ -513,6 +521,7 @@ local function sync_privileges(credentials, obj_to_sync)
         local box_privileges = box.schema[role_or_user].info(name)
 
         config_privileges = privileges_from_config(config_privileges)
+        config_privileges = privileges_add_sharding(config_privileges)
         box_privileges = privileges_from_box(box_privileges)
 
         local grants = privileges_subtract(config_privileges, box_privileges)
