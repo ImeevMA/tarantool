@@ -43,7 +43,7 @@ local function validate_fields(config, record)
                 validate_fields(v1, v.items)
             end
         end
-        if v.type ~= 'record' or not v.enterprise_edition or is_enterprise then
+        if not v.enterprise_edition or is_enterprise then
             table.insert(record_fields, k)
         end
     end
@@ -272,9 +272,17 @@ g.test_log = function()
 end
 
 g.test_iproto = function()
+    t.tarantool.skip_if_enterprise()
     local iconfig = {
         iproto = {
-            listen = 'one',
+            listen = {
+                {
+                    uri = 'one',
+                    params = {
+                        transport = 'ssl',
+                    },
+                }
+            },
             advertise = {
                 client = 'two',
                 peer = 'three',
@@ -289,7 +297,51 @@ g.test_iproto = function()
     validate_fields(iconfig.iproto, instance_config.schema.fields.iproto)
 
     local exp = {
-        listen = box.NULL,
+        advertise = {
+            client = box.NULL,
+            peer = box.NULL,
+            sharding = box.NULL,
+        },
+        threads = 1,
+        net_msg_max = 768,
+        readahead = 16320,
+    }
+    local res = instance_config:apply_default({}).iproto
+    t.assert_equals(res, exp)
+end
+
+g.test_iproto_enterprise = function()
+    t.tarantool.skip_if_not_enterprise()
+    local iconfig = {
+        iproto = {
+            listen = {
+                {
+                    uri = 'one',
+                    params = {
+                        transport = 'ssl',
+                        ssl_password = 'five',
+                        ssl_cert_file = 'six',
+                        ssl_key_file = 'seven',
+                        ssl_password_file = 'eight',
+                        ssl_ciphers = 'nine',
+                        ssl_ca_file = 'ten',
+                    },
+                }
+            },
+            advertise = {
+                client = 'two',
+                peer = 'three',
+                sharding = 'four',
+            },
+            threads = 1,
+            net_msg_max = 1,
+            readahead = 1,
+        },
+    }
+    instance_config:validate(iconfig)
+    validate_fields(iconfig.iproto, instance_config.schema.fields.iproto)
+
+    local exp = {
         advertise = {
             client = box.NULL,
             peer = box.NULL,
@@ -517,9 +569,9 @@ end
 -- Verify iproto.listen validation, bad cases.
 for case_name, case in pairs({
     incorrect_uri = {
-        listen = ':3301',
+        listen = {{uri = ':3301'}},
         exp_err_msg = table.concat({
-            '[instance_config] iproto.listen',
+            '[instance_config] iproto.listen[1].uri',
             'Unable to parse an URI/a list of URIs',
             'Incorrect URI',
             'expected host:service or /unix.socket'
@@ -540,7 +592,7 @@ end
 -- Successful cases for iproto.listen.
 for case_name, case in pairs({
     inet_socket = {
-        listen = 'localhost:3301',
+        listen = {{uri = 'localhost:3301'}},
     },
     -- A username and a password have no sense in the listen URI,
     -- but it is accepted by box.cfg() for some reason and
@@ -548,53 +600,53 @@ for case_name, case in pairs({
     -- the existing behavior and adopt the test if it'll be
     -- changed later.
     inet_socket_user = {
-        listen = 'user@localhost:3301',
+        listen = {{uri = 'user@localhost:3301'}},
     },
     inet_socket_user_pass = {
-        listen = 'user:pass@localhost:3301',
+        listen = {{uri = 'user:pass@localhost:3301'}},
     },
     unix_socket = {
-        listen = 'unix/:/foo/bar.iproto',
+        listen = {{uri = 'unix/:/foo/bar.iproto'}},
     },
     -- See the comment above re user@<...> and user:pass@<...>.
     unix_socket_user = {
-        listen = 'user@unix/:/foo/bar.iproto',
+        listen = {{uri = 'user@unix/:/foo/bar.iproto'}},
     },
     unix_socket_user_pass = {
-        listen = 'user:pass@unix/:/foo/bar.iproto',
+        listen = {{uri = 'user:pass@unix/:/foo/bar.iproto'}},
     },
     multiple_uris = {
-        listen = 'localhost:3301,localhost:3302',
+        listen = {{uri = 'localhost:3301,localhost:3302'}},
     },
     inaddr_any_ipv4 = {
-        listen = '0.0.0.0:3301',
+        listen = {{uri = '0.0.0.0:3301'}},
     },
     -- See the comment above re user@<...> and user:pass@<...>.
     inaddr_any_ipv4_user = {
-        listen = 'user@0.0.0.0:3301',
+        listen = {{uri = 'user@0.0.0.0:3301'}},
     },
     inaddr_any_ipv4_user_pass = {
-        listen = 'user:pass@0.0.0.0:3301',
+        listen = {{uri = 'user:pass@0.0.0.0:3301'}},
     },
     inaddr_any_ipv6 = {
-        listen = '[::]:3301',
+        listen = {{uri = '[::]:3301'}},
     },
     -- See the comment above re user@<...> and user:pass@<...>.
     inaddr_any_ipv6_user = {
-        listen = 'user@[::]:3301',
+        listen = {{uri = 'user@[::]:3301'}},
     },
     inaddr_any_ipv6_user_pass = {
-        listen = 'user:pass@[::]:3301',
+        listen = {{uri = 'user:pass@[::]:3301'}},
     },
     zero_port = {
-        listen = 'localhost:0',
+        listen = {{uri = 'localhost:0'}},
     },
     -- See the comment above re user@<...> and user:pass@<...>.
     zero_port_user = {
-        listen = 'user@localhost:0',
+        listen = {{uri = 'user@localhost:0'}},
     },
     zero_port_user_pass = {
-        listen = 'user:pass@localhost:0',
+        listen = {{uri = 'user:pass@localhost:0'}},
     },
 }) do
     g[('test_good_iproto_listen_%s'):format(case_name)] = function()

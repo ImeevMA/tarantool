@@ -4,6 +4,7 @@ local helpers = require('test.config-luatest.helpers')
 local treegen = require('test.treegen')
 local justrun = require('test.justrun')
 local json = require('json')
+local fio = require('fio')
 
 local g = t.group()
 
@@ -44,7 +45,7 @@ local function verify_configdata()
             },
         },
         iproto = {
-            listen = 'unix/:./{{ instance_name }}.iproto',
+            listen = {{uri = 'unix/:./{{ instance_name }}.iproto'}},
         },
         groups = {
             ['group-001'] = {
@@ -85,7 +86,7 @@ local function verify_configdata()
             },
         },
         iproto = {
-            listen = 'unix/:./instance-001.iproto',
+            listen = {{uri = 'unix/:./instance-001.iproto'}},
         },
         sql = {
             cache_size = 2000,
@@ -339,7 +340,8 @@ g.test_remaining_vinyl_options = function()
               - super
 
         iproto:
-          listen: unix/:./{{ instance_name }}.iproto
+          listen:
+            - uri: unix/:./{{ instance_name }}.iproto
 
         vinyl:
           bloom_fpr: 0.37
@@ -395,7 +397,8 @@ g.test_feedback_options = function()
               - super
 
         iproto:
-          listen: unix/:./{{ instance_name }}.iproto
+          listen:
+            - uri: unix/:./{{ instance_name }}.iproto
 
         feedback:
           crashinfo: false
@@ -442,7 +445,8 @@ g.test_memtx_sort_threads = function()
               - super
 
         iproto:
-          listen: unix/:./{{ instance_name }}.iproto
+          listen:
+            - uri: unix/:./{{ instance_name }}.iproto
 
         memtx:
             sort_threads: 11
@@ -474,7 +478,8 @@ g.test_memtx_sort_threads = function()
               - super
 
         iproto:
-          listen: unix/:./{{ instance_name }}.iproto
+          listen:
+            - uri: unix/:./{{ instance_name }}.iproto
 
         memtx:
             sort_threads: 12
@@ -508,7 +513,8 @@ g.test_bootstrap_leader = function(g)
               - super
 
         iproto:
-          listen: unix/:./{{ instance_name }}.iproto
+          listen:
+            - uri: unix/:./{{ instance_name }}.iproto
 
         groups:
           group-001:
@@ -538,7 +544,8 @@ g.test_bootstrap_leader = function(g)
               - super
 
         iproto:
-          listen: unix/:./{{ instance_name }}.iproto
+          listen:
+            - uri: unix/:./{{ instance_name }}.iproto
 
         replication:
           bootstrap_strategy: 'config'
@@ -567,7 +574,8 @@ g.test_bootstrap_leader = function(g)
               - super
 
         iproto:
-          listen: unix/:./{{ instance_name }}.iproto
+          listen:
+            - uri: unix/:./{{ instance_name }}.iproto
 
         replication:
           bootstrap_strategy: 'config'
@@ -597,7 +605,8 @@ g.test_bootstrap_leader = function(g)
               - super
 
         iproto:
-          listen: unix/:./{{ instance_name }}.iproto
+          listen:
+            - uri: unix/:./{{ instance_name }}.iproto
 
         replication:
           bootstrap_strategy: 'config'
@@ -632,7 +641,8 @@ g.test_flightrec_options = function()
               - super
 
         iproto:
-          listen: unix/:./{{ instance_name }}.iproto
+          listen:
+            - uri: unix/:./{{ instance_name }}.iproto
 
         flightrec:
             enabled: false
@@ -686,7 +696,8 @@ g.test_security_options = function()
               - super
 
         iproto:
-          listen: unix/:./{{ instance_name }}.iproto
+          listen:
+            - uri: unix/:./{{ instance_name }}.iproto
 
         security:
             auth_type: pap-sha256
@@ -743,7 +754,8 @@ g.test_metrics_options_default = function()
               - super
 
         iproto:
-          listen: unix/:./{{ instance_name }}.iproto
+          listen:
+            - uri: unix/:./{{ instance_name }}.iproto
 
         groups:
           group-001:
@@ -779,7 +791,8 @@ g.test_metrics_options = function()
               - super
 
         iproto:
-          listen: unix/:./{{ instance_name }}.iproto
+          listen:
+            - uri: unix/:./{{ instance_name }}.iproto
 
         metrics:
           include: [cpu]
@@ -920,4 +933,141 @@ g.test_failover_supervised_constrainsts = function(g)
         },
         exp_err = bootstrap_strategy_exp_err_template:format('supervised'),
     })
+end
+
+g.test_iproto_listen_plain = function()
+    local dir = treegen.prepare_directory(g, {}, {})
+
+    local verify = function()
+        local res = {
+            {
+                params = {transport = "plain"},
+                uri = "unix/:./instance-001.iproto",
+            },
+            {
+                params = {transport = "plain"},
+                uri = "unix/:./instance-001_2.iproto",
+            },
+            {
+                params = {transport = "plain"},
+                uri = "unix/:./instance-001_3.iproto",
+            },
+        }
+        t.assert_equals(box.cfg.listen, res)
+    end
+
+    helpers.success_case(g, {
+        dir = dir,
+        options = {
+            ['iproto.listen'] = {
+                {
+                    uri = 'unix/:./{{ instance_name }}.iproto',
+                    params = {transport = 'plain'},
+                },
+                {
+                    uri = 'unix/:./{{ instance_name }}_2.iproto',
+                    params = {transport = 'plain'},
+                },
+                {
+                    uri = 'unix/:./{{ instance_name }}_3.iproto',
+                    params = {transport = 'plain'},
+                },
+            },
+        },
+        verify = verify,
+    })
+end
+
+g.test_iproto_listen_ssl = function()
+    t.tarantool.skip_if_enterprise()
+    helpers.failure_case(g, {
+        options = {
+            ['iproto.listen'] = {
+                {
+                    uri = 'unix/:./{{ instance_name }}.iproto',
+                    params = {transport = 'ssl'},
+                },
+            },
+        },
+        exp_err = 'SSL is not available in this build',
+    })
+end
+
+g.test_iproto_listen_ssl_enterprise = function()
+    t.tarantool.skip_if_not_enterprise()
+    local dir = treegen.prepare_directory(g, {}, {})
+    local passwd_file = fio.pathjoin(dir, 'passwd.txt')
+    local file = fio.open(passwd_file, {'O_WRONLY', 'O_CREAT'},
+                          tonumber('666', 8))
+    t.assert(file ~= nil)
+    local cert_dir = fio.pathjoin(fio.abspath(os.getenv('SOURCEDIR') or '.'),
+                                  'test/enterprise-luatest/ssl_cert')
+    local ca_file = fio.pathjoin(cert_dir, 'ca.crt')
+    local cert_file = fio.pathjoin(cert_dir, 'client.crt')
+    local key_file = fio.pathjoin(cert_dir, 'client.enc.key')
+    local passwd = '123qwe'
+    local ciphers = 'ECDHE-RSA-AES256-GCM-SHA384'
+
+    local config = {
+        credentials = {
+            users = {
+                guest = {
+                    roles = {'super'},
+                },
+            },
+        },
+        iproto = {
+            listen = {{
+                uri = 'unix/:./{{ instance_name }}.iproto',
+                params = {
+                    transport = 'ssl',
+                    ssl_ca_file = ca_file,
+                    ssl_cert_file = cert_file,
+                    ssl_key_file = key_file,
+                    ssl_password = passwd,
+                    ssl_password_file = passwd_file,
+                    ssl_ciphers = ciphers,
+                },
+            }},
+        },
+        groups = {
+            ['group-001'] = {
+                replicasets = {
+                    ['replicaset-001'] = {
+                        instances = {
+                            ['instance-001'] = {},
+                        },
+                    },
+                },
+            },
+        },
+    }
+
+    treegen.write_script(dir, 'config.yaml', require('yaml').encode(config))
+    local config_file = fio.pathjoin(dir, 'config.yaml')
+
+    local script = ([[
+        assert(box.cfg.listen[1].params.transport ~= nil)
+        assert(box.cfg.listen[1].params.ssl_ca_file ~= nil)
+        assert(box.cfg.listen[1].params.ssl_cert_file ~= nil)
+        assert(box.cfg.listen[1].params.ssl_key_file ~= nil)
+        assert(box.cfg.listen[1].params.ssl_password ~= nil)
+        assert(box.cfg.listen[1].params.ssl_password_file ~= nil)
+        assert(box.cfg.listen[1].params.ssl_ciphers ~= nil)
+
+        assert(box.cfg.listen[1].params.transport == 'ssl')
+        assert(box.cfg.listen[1].params.ssl_ca_file == '%s')
+        assert(box.cfg.listen[1].params.ssl_cert_file == '%s')
+        assert(box.cfg.listen[1].params.ssl_key_file == '%s')
+        assert(box.cfg.listen[1].params.ssl_password == '%s')
+        assert(box.cfg.listen[1].params.ssl_password_file == '%s')
+        assert(box.cfg.listen[1].params.ssl_ciphers == '%s')
+        os.exit(0)
+    ]]):format(ca_file, cert_file, key_file, passwd, passwd_file, ciphers)
+    treegen.write_script(dir, 'main.lua', script)
+
+    local args = {'--name', 'instance-001', '--config', config_file, 'main.lua'}
+    local opts = {nojson = true, stderr = false}
+    local res = justrun.tarantool(dir, {}, args, opts)
+    t.assert_equals(res.exit_code, 0)
 end

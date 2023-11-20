@@ -50,10 +50,17 @@ local function find_advertise_uri(config, instance_name, dir)
         listen = listen or config.iproto.listen
     end
 
-    local uri = advertise or listen
-
-    -- Neither advertise, nor listen contain an URI.
-    if uri == nil then
+    local uri
+    if advertise ~= nil then
+        uri = advertise
+    elseif listen ~= nil then
+        local uris = {}
+        for _, v in pairs(listen) do
+            table.insert(uris, v.uri)
+        end
+        uri = table.concat(uris, ", ")
+    else
+        -- Neither advertise, nor listen contain an URI.
         return nil
     end
 
