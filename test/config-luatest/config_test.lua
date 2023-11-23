@@ -1000,13 +1000,14 @@ g.test_iproto_listen_ssl_enterprise = function()
     local passwd_file = fio.pathjoin(dir, 'passwd.txt')
     local file = fio.open(passwd_file, {'O_WRONLY', 'O_CREAT'},
                           tonumber('666', 8))
+    local passwd = '123qwe'
+    file:write(passwd)
     t.assert(file ~= nil)
     local cert_dir = fio.pathjoin(fio.abspath(os.getenv('SOURCEDIR') or '.'),
                                   'test/enterprise-luatest/ssl_cert')
     local ca_file = fio.pathjoin(cert_dir, 'ca.crt')
     local cert_file = fio.pathjoin(cert_dir, 'client.crt')
     local key_file = fio.pathjoin(cert_dir, 'client.enc.key')
-    local passwd = '123qwe'
     local ciphers = 'ECDHE-RSA-AES256-GCM-SHA384'
 
     local config = {
@@ -1016,6 +1017,9 @@ g.test_iproto_listen_ssl_enterprise = function()
                     roles = {'super'},
                 },
             },
+        },
+        log = {
+            level = 2
         },
         iproto = {
             listen = {{
@@ -1044,32 +1048,63 @@ g.test_iproto_listen_ssl_enterprise = function()
         },
     }
 
+    -- Check with password in file.
+    config.iproto.listen[1].params.ssl_password = nil
+    config.iproto.listen[1].params.ssl_password_file = passwd_file
     treegen.write_script(dir, 'config.yaml', yaml.encode(config))
     local config_file = fio.pathjoin(dir, 'config.yaml')
 
     local script = ([[
-        assert(box.cfg.listen[1].params.transport ~= nil)
-        assert(box.cfg.listen[1].params.ssl_ca_file ~= nil)
-        assert(box.cfg.listen[1].params.ssl_cert_file ~= nil)
-        assert(box.cfg.listen[1].params.ssl_key_file ~= nil)
-        assert(box.cfg.listen[1].params.ssl_password ~= nil)
-        assert(box.cfg.listen[1].params.ssl_password_file ~= nil)
-        assert(box.cfg.listen[1].params.ssl_ciphers ~= nil)
-
-        assert(box.cfg.listen[1].params.transport == 'ssl')
-        assert(box.cfg.listen[1].params.ssl_ca_file == '%s')
-        assert(box.cfg.listen[1].params.ssl_cert_file == '%s')
-        assert(box.cfg.listen[1].params.ssl_key_file == '%s')
-        assert(box.cfg.listen[1].params.ssl_password == '%s')
-        assert(box.cfg.listen[1].params.ssl_password_file == '%s')
-        assert(box.cfg.listen[1].params.ssl_ciphers == '%s')
+        local opts = {
+            transport = 'ssl',
+            ssl_ca_file = '%s',
+            ssl_cert_file = '%s',
+            ssl_key_file = '%s',
+            ssl_password = box.NULL,
+            ssl_password_file = '%s',
+            ssl_ciphers = '%s',
+        }
+        for name, exp in pairs(opts) do
+            local res = box.cfg.listen[1].params[name] or box.NULL
+            local err = 'Expected value for ' .. name .. ' is ' ..
+                        tostring(exp) .. ', got '.. tostring(res)
+            assert(res == exp, err)
+        end
         os.exit(0)
-    ]]):format(ca_file, cert_file, key_file, passwd, passwd_file, ciphers)
+    ]]):format(ca_file, cert_file, key_file, passwd_file, ciphers)
     treegen.write_script(dir, 'main.lua', script)
-
     local args = {'--name', 'instance-001', '--config', config_file, 'main.lua'}
-    local opts = {nojson = true, stderr = false}
+    local opts = {nojson = true, stderr = true}
     local res = justrun.tarantool(dir, {}, args, opts)
-    t.assert_equals(res.exit_code, 0)
+    t.assert_equals(res, {exit_code = 0, stderr = '', stdout = ''})
+    file:close()
+
+    -- Check with password.
+    config.iproto.listen[1].params.ssl_password = passwd
+    config.iproto.listen[1].params.ssl_password_file = nil
+    treegen.write_script(dir, 'config.yaml', yaml.encode(config))
+    config_file = fio.pathjoin(dir, 'config.yaml')
+
+    script = ([[
+        local opts = {
+            transport = 'ssl',
+            ssl_ca_file = '%s',
+            ssl_cert_file = '%s',
+            ssl_key_file = '%s',
+            ssl_password = '%s',
+            ssl_password_file = box.NULL,
+            ssl_ciphers = '%s',
+        }
+        for name, exp in pairs(opts) do
+            local res = box.cfg.listen[1].params[name] or box.NULL
+            local err = 'Expected value for ' .. name .. ' is ' ..
+                        tostring(exp) .. ', got '.. tostring(res)
+            assert(res == exp, err)
+        end
+        os.exit(0)
+    ]]):format(ca_file, cert_file, key_file, passwd, ciphers)
+    treegen.write_script(dir, 'main.lua', script)
+    res = justrun.tarantool(dir, {}, args, opts)
+    t.assert_equals(res, {exit_code = 0, stderr = '', stdout = ''})
     file:close()
 end
