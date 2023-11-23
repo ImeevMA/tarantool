@@ -296,6 +296,38 @@ g.test_iproto = function()
     instance_config:validate(iconfig)
     validate_fields(iconfig.iproto, instance_config.schema.fields.iproto)
 
+    iconfig = {
+        iproto = {
+            listen = {
+                {
+                    params = {
+                        transport = 'plain',
+                    },
+                }
+            },
+        },
+    }
+    local err = '[instance_config] iproto.listen[1]: The URI is required '..
+                'for iproto.listen'
+    t.assert_error_msg_equals(err, function()
+        instance_config:validate(iconfig)
+    end)
+
+    iconfig = {
+        iproto = {
+            listen = {
+                {
+                    uri = 'localhost:3301?transport=plain'
+                }
+            },
+        },
+    }
+    err = "[instance_config] iproto.listen[1].uri: URI parameters should be " ..
+          "described in the 'params' field, not as the part of URI"
+    t.assert_error_msg_equals(err, function()
+        instance_config:validate(iconfig)
+    end)
+
     local exp = {
         advertise = {
             client = box.NULL,
@@ -340,6 +372,38 @@ g.test_iproto_enterprise = function()
     }
     instance_config:validate(iconfig)
     validate_fields(iconfig.iproto, instance_config.schema.fields.iproto)
+
+    iconfig = {
+        iproto = {
+            listen = {
+                {
+                    params = {
+                        transport = 'plain',
+                    },
+                }
+            },
+        },
+    }
+    local err = '[instance_config] iproto.listen[1]: The URI is required '..
+                'for iproto.listen'
+    t.assert_error_msg_equals(err, function()
+        instance_config:validate(iconfig)
+    end)
+
+    iconfig = {
+        iproto = {
+            listen = {
+                {
+                    uri = 'localhost:3301?transport=plain'
+                }
+            },
+        },
+    }
+    err = "[instance_config] iproto.listen[1].uri: URI parameters should be " ..
+          "described in the 'params' field, not as the part of URI"
+    t.assert_error_msg_equals(err, function()
+        instance_config:validate(iconfig)
+    end)
 
     local exp = {
         advertise = {
@@ -572,7 +636,7 @@ for case_name, case in pairs({
         listen = {{uri = ':3301'}},
         exp_err_msg = table.concat({
             '[instance_config] iproto.listen[1].uri',
-            'Unable to parse an URI/a list of URIs',
+            'Unable to parse an URI',
             'Incorrect URI',
             'expected host:service or /unix.socket'
         }, ': '),
@@ -616,7 +680,7 @@ for case_name, case in pairs({
         listen = {{uri = 'user:pass@unix/:/foo/bar.iproto'}},
     },
     multiple_uris = {
-        listen = {{uri = 'localhost:3301,localhost:3302'}},
+        listen = {{uri = 'localhost:3301'}, {uri = 'localhost:3302'}},
     },
     inaddr_any_ipv4 = {
         listen = {{uri = '0.0.0.0:3301'}},

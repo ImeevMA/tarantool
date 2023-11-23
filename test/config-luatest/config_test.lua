@@ -3,6 +3,7 @@ local server = require('test.luatest_helpers.server')
 local helpers = require('test.config-luatest.helpers')
 local treegen = require('test.treegen')
 local justrun = require('test.justrun')
+local yaml = require('yaml')
 local json = require('json')
 local fio = require('fio')
 
@@ -1043,7 +1044,7 @@ g.test_iproto_listen_ssl_enterprise = function()
         },
     }
 
-    treegen.write_script(dir, 'config.yaml', require('yaml').encode(config))
+    treegen.write_script(dir, 'config.yaml', yaml.encode(config))
     local config_file = fio.pathjoin(dir, 'config.yaml')
 
     local script = ([[
@@ -1070,4 +1071,5 @@ g.test_iproto_listen_ssl_enterprise = function()
     local opts = {nojson = true, stderr = false}
     local res = justrun.tarantool(dir, {}, args, opts)
     t.assert_equals(res.exit_code, 0)
+    file:close()
 end

@@ -240,15 +240,14 @@ end
 -- schema object for details.
 local function find_suitable_uri_to_connect(listen)
     for _, u in ipairs(listen) do
-        if u.uri ~= nil then
-            local uri = urilib.parse(u.uri)
-            if uri ~= nil and uri_is_suitable_to_connect(uri) then
-                -- The urilib.format() call has the second optional
-                -- argument `write_password`. Let's assume that the
-                -- given URIs are to listen on them and so have no
-                -- user/password.
-                return urilib.format(uri)
-            end
+        assert(u.uri ~= nil)
+        local uri = urilib.parse(u.uri)
+        if uri ~= nil and uri_is_suitable_to_connect(uri) then
+            -- The urilib.format() call has the second optional
+            -- argument `write_password`. Let's assume that the
+            -- given URIs are to listen on them and so have no
+            -- user/password.
+            return urilib.format(uri)
         end
     end
     return nil
@@ -664,10 +663,14 @@ return schema.new('instance_config', schema.record({
                         -- Substitute variables with placeholders to don't
                         -- confuse the URI parser with the curly brackets.
                         data = data:gsub('{{ *.- *}}', 'placeholder')
-                        local uris, err = urilib.parse_many(data)
-                        if uris == nil then
-                            w.error('Unable to parse an URI/a list of URIs: %s',
-                                    err)
+                        local uri, err = urilib.parse(data)
+                        if uri == nil then
+                            w.error('Unable to parse an URI: %s', err)
+                        end
+                        if uri.params ~= nil then
+                            err = "URI parameters should be described in " ..
+                                  "the 'params' field, not as the part of URI"
+                            w.error(err)
                         end
                     end,
                 }),
@@ -678,16 +681,18 @@ return schema.new('instance_config', schema.record({
                     }, {
                         default = 'plain',
                     }),
-                    ssl_ca_file = enterprise_edition(schema.scalar({
+                    -- Mandatory server options for TLS.
+                    ssl_key_file = enterprise_edition(schema.scalar({
                         type = 'string',
                     })),
                     ssl_cert_file = enterprise_edition(schema.scalar({
                         type = 'string',
                     })),
-                    ssl_ciphers = enterprise_edition(schema.scalar({
+                    -- Optional server options for TLS.
+                    ssl_ca_file = enterprise_edition(schema.scalar({
                         type = 'string',
                     })),
-                    ssl_key_file = enterprise_edition(schema.scalar({
+                    ssl_ciphers = enterprise_edition(schema.scalar({
                         type = 'string',
                     })),
                     ssl_password = enterprise_edition(schema.scalar({
@@ -697,6 +702,17 @@ return schema.new('instance_config', schema.record({
                         type = 'string',
                     })),
                 }),
+            }, {
+                validate = function(data, w)
+                    -- No items in iproto.listen at all -- OK.
+                    if data == nil or next(data) == nil then
+                        return
+                    end
+                    -- There is some data -- the prefix should be there.
+                    if data.uri == nil then
+                        w.error('The URI is required for iproto.listen')
+                    end
+                end,
             }),
             box_cfg = 'listen',
         }),

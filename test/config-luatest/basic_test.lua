@@ -129,29 +129,53 @@ for case_name, case in pairs({
         exp_err = err_msg_cannot_find_user,
     },
     no_advertise_no_listen = {
-        listen_2 = {{uri = box.NULL}},
-        listen_3 = {{uri = box.NULL}},
+        listen_2 = {},
+        listen_3 = {},
         advertise_2 = box.NULL,
         advertise_3 = box.NULL,
         exp_err = err_msg_no_suitable_uris,
     },
     no_advertise_no_suitable_listen = {
-        listen_2 = {{uri = 'localhost:0,0.0.0.0:3301,[::]:3301'}},
-        listen_3 = {{uri = 'localhost:0,0.0.0.0:3301,[::]:3301'}},
+        listen_2 = {
+            {uri = 'localhost:0'},
+            {uri = '0.0.0.0:3301'},
+            {uri = '[::]:3301'}
+        },
+        listen_3 = {
+            {uri = 'localhost:0'},
+            {uri = '0.0.0.0:3301'},
+            {uri = '[::]:3301'}
+        },
         advertise_2 = box.NULL,
         advertise_3 = box.NULL,
         exp_err = err_msg_no_suitable_uris,
     },
     advertise_user_no_suitable_listen = {
-        listen_2 = {{uri = 'localhost:0,0.0.0.0:3301,[::]:3301'}},
-        listen_3 = {{uri = 'localhost:0,0.0.0.0:3301,[::]:3301'}},
+        listen_2 = {
+            {uri = 'localhost:0'},
+            {uri = '0.0.0.0:3301'},
+            {uri = '[::]:3301'}
+        },
+        listen_3 = {
+            {uri = 'localhost:0'},
+            {uri = '0.0.0.0:3301'},
+            {uri = '[::]:3301'}
+        },
         advertise_2 = 'replicator@',
         advertise_3 = 'replicator@',
         exp_err = err_msg_no_suitable_uris,
     },
     advertise_user_pass_no_suitable_listen = {
-        listen_2 = {{uri = 'localhost:0,0.0.0.0:3301,[::]:3301'}},
-        listen_3 = {{uri = 'localhost:0,0.0.0.0:3301,[::]:3301'}},
+        listen_2 = {
+            {uri = 'localhost:0'},
+            {uri = '0.0.0.0:3301'},
+            {uri = '[::]:3301'}
+        },
+        listen_3 = {
+            {uri = 'localhost:0'},
+            {uri = '0.0.0.0:3301'},
+            {uri = '[::]:3301'}
+        },
         advertise_2 = 'replicator:topsecret@',
         advertise_3 = 'replicator:topsecret@',
         exp_err = err_msg_no_suitable_uris,
