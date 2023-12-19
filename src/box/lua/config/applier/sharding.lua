@@ -22,7 +22,7 @@ local function apply(config)
     local cfg = configdata:sharding()
     if is_storage then
         log.info('sharding: apply storage config')
-        _G.vshard.storage.cfg(cfg, box.info.uuid)
+        _G.vshard.storage.cfg(cfg, box.info.name)
     end
     if is_router then
         log.info('sharding: apply router config')
