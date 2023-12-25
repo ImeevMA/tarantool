@@ -440,7 +440,7 @@ local function feedback_apply_default_if(_data, _w)
 end
 
 local function feedback_validate(data, w)
-    if data == nil or box.internal.feedback_daemon ~= nil then
+    if box.internal.feedback_daemon ~= nil then
         return
     end
     w.error('Tarantool is built without feedback reports sending support')
@@ -513,7 +513,7 @@ return schema.new('instance_config', schema.record({
         }, {
             validate = function(data, w)
                 -- No config.etcd section at all -- OK.
-                if data == nil or next(data) == nil then
+                if next(data) == nil then
                     return
                 end
                 -- There is some data -- the prefix should be there.
@@ -548,29 +548,17 @@ return schema.new('instance_config', schema.record({
                             'plain',
                             'ssl',
                         }),
-                        ssl_key_file = enterprise_edition(schema.scalar({
-                            type = 'string',
-                        })),
-                        ssl_cert_file = enterprise_edition(schema.scalar({
-                            type = 'string',
-                        })),
-                        ssl_ca_file = enterprise_edition(schema.scalar({
-                            type = 'string',
-                        })),
-                        ssl_ciphers = enterprise_edition(schema.scalar({
-                            type = 'string',
-                        })),
-                        ssl_password = enterprise_edition(schema.scalar({
-                            type = 'string',
-                        })),
-                        ssl_password_file = enterprise_edition(schema.scalar({
-                            type = 'string',
-                        })),
+                        ssl_key_file = schema.scalar({type = 'string'}),
+                        ssl_cert_file = schema.scalar({type = 'string'}),
+                        ssl_ca_file = schema.scalar({type = 'string'}),
+                        ssl_ciphers = schema.scalar({type = 'string'}),
+                        ssl_password = schema.scalar({type = 'string'}),
+                        ssl_password_file = schema.scalar({type = 'string'}),
                     }),
                 }),
                 validate = function(data, w)
                     if #data == 0 then
-                        w.error('At least one endpoint must be' ..
+                        w.error('At least one endpoint must be ' ..
                             'specified in config.storage.endpoints')
                     end
                 end,
@@ -585,7 +573,7 @@ return schema.new('instance_config', schema.record({
             })
         }, {
             validate = function(data, w)
-                if data == nil or next(data) == nil then
+                if next(data) == nil then
                     return
                 end
                 if data.prefix == nil and data.endpoints == nil then
@@ -1874,7 +1862,7 @@ return schema.new('instance_config', schema.record({
             type = 'boolean',
             validate = function(data, w)
                 local scope = w.schema.computed.annotations.scope
-                if data == nil or scope == nil then
+                if scope == nil then
                     return
                 end
                 if scope == 'instance' then
@@ -1895,7 +1883,7 @@ return schema.new('instance_config', schema.record({
             default = 'bucket_id',
             validate = function(data, w)
                 local scope = w.schema.computed.annotations.scope
-                if data == nil or scope == nil then
+                if scope == nil then
                     return
                 end
                 if scope ~= 'global' then
@@ -1909,7 +1897,7 @@ return schema.new('instance_config', schema.record({
             default = 3000,
             validate = function(data, w)
                 local scope = w.schema.computed.annotations.scope
-                if data == nil or scope == nil then
+                if scope == nil then
                     return
                 end
                 if scope ~= 'global' then
@@ -1923,7 +1911,7 @@ return schema.new('instance_config', schema.record({
             default = 1,
             validate = function(data, w)
                 local scope = w.schema.computed.annotations.scope
-                if data == nil or scope == nil then
+                if scope == nil then
                     return
                 end
                 if scope ~= 'global' then
@@ -1937,7 +1925,7 @@ return schema.new('instance_config', schema.record({
             default = 100,
             validate = function(data, w)
                 local scope = w.schema.computed.annotations.scope
-                if data == nil or scope == nil then
+                if scope == nil then
                     return
                 end
                 if scope ~= 'global' then
@@ -1951,7 +1939,7 @@ return schema.new('instance_config', schema.record({
             default = 1,
             validate = function(data, w)
                 local scope = w.schema.computed.annotations.scope
-                if data == nil or scope == nil then
+                if scope == nil then
                     return
                 end
                 if scope ~= 'global' then
@@ -1965,7 +1953,7 @@ return schema.new('instance_config', schema.record({
             default = 1,
             validate = function(data, w)
                 local scope = w.schema.computed.annotations.scope
-                if data == nil or scope == nil then
+                if scope == nil then
                     return
                 end
                 if scope ~= 'global' then
@@ -1978,7 +1966,7 @@ return schema.new('instance_config', schema.record({
             type = 'number',
             validate = function(data, w)
                 local scope = w.schema.computed.annotations.scope
-                if data == nil or scope == nil then
+                if scope == nil then
                     return
                 end
                 if scope ~= 'global' then
@@ -1992,7 +1980,7 @@ return schema.new('instance_config', schema.record({
             default = 5,
             validate = function(data, w)
                 local scope = w.schema.computed.annotations.scope
-                if data == nil or scope == nil then
+                if scope == nil then
                     return
                 end
                 if scope ~= 'global' then
@@ -2009,7 +1997,7 @@ return schema.new('instance_config', schema.record({
             default = 'on',
             validate = function(data, w)
                 local scope = w.schema.computed.annotations.scope
-                if data == nil or scope == nil then
+                if scope == nil then
                     return
                 end
                 if scope ~= 'global' then
@@ -2023,7 +2011,7 @@ return schema.new('instance_config', schema.record({
             default = 300,
             validate = function(data, w)
                 local scope = w.schema.computed.annotations.scope
-                if data == nil or scope == nil then
+                if scope == nil then
                     return
                 end
                 if scope ~= 'global' then
@@ -2037,7 +2025,7 @@ return schema.new('instance_config', schema.record({
             default = 1,
             validate = function(data, w)
                 local scope = w.schema.computed.annotations.scope
-                if data == nil or scope == nil then
+                if scope == nil then
                     return
                 end
                 if scope ~= 'global' then
