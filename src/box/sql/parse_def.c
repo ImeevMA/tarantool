@@ -101,3 +101,100 @@ sql_ast_init_table_rename(struct Parse *parse, const struct Token *old_name,
 	parse->ast.rename.old_name = *old_name;
 	parse->ast.rename.new_name = *new_name;
 }
+
+void
+sql_ast_init_constraint_drop(struct Parse *parse,
+			     const struct Token *table_name,
+			     const struct Token *name)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_UNKNOWN);
+	parse->ast.type = SQL_AST_TYPE_DROP_CONSTRAINT;
+	parse->ast.drop_constraint.table_name = *table_name;
+	parse->ast.drop_constraint.column_name = Token_nil;
+	parse->ast.drop_constraint.name = *name;
+}
+
+void
+sql_ast_init_foreign_key_drop(struct Parse *parse,
+			      const struct Token *table_name,
+			      const struct Token *name)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_UNKNOWN);
+	parse->ast.type = SQL_AST_TYPE_DROP_FOREIGN_KEY;
+	parse->ast.drop_constraint.table_name = *table_name;
+	parse->ast.drop_constraint.column_name = Token_nil;
+	parse->ast.drop_constraint.name = *name;
+}
+
+void
+sql_ast_init_primary_key_drop(struct Parse *parse,
+			      const struct Token *table_name,
+			      const struct Token *name)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_UNKNOWN);
+	parse->ast.type = SQL_AST_TYPE_DROP_PRIMARY_KEY;
+	parse->ast.drop_constraint.table_name = *table_name;
+	parse->ast.drop_constraint.column_name = Token_nil;
+	parse->ast.drop_constraint.name = *name;
+}
+
+void
+sql_ast_init_check_drop(struct Parse *parse, const struct Token *table_name,
+			const struct Token *name)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_UNKNOWN);
+	parse->ast.type = SQL_AST_TYPE_DROP_CHECK;
+	parse->ast.drop_constraint.table_name = *table_name;
+	parse->ast.drop_constraint.column_name = Token_nil;
+	parse->ast.drop_constraint.name = *name;
+}
+
+void
+sql_ast_init_unique_drop(struct Parse *parse, const struct Token *table_name,
+			 const struct Token *name)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_UNKNOWN);
+	parse->ast.type = SQL_AST_TYPE_DROP_UNIQUE;
+	parse->ast.drop_constraint.table_name = *table_name;
+	parse->ast.drop_constraint.column_name = Token_nil;
+	parse->ast.drop_constraint.name = *name;
+}
+
+void
+sql_ast_init_field_constraint_drop(struct Parse *parse,
+				   const struct Token *table_name,
+				   const struct Token *column_name,
+				   const struct Token *name)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_UNKNOWN);
+	parse->ast.type = SQL_AST_TYPE_DROP_FIELD_CONSTRAINT;
+	parse->ast.drop_constraint.table_name = *table_name;
+	parse->ast.drop_constraint.column_name = *column_name;
+	parse->ast.drop_constraint.name = *name;
+}
+
+void
+sql_ast_init_field_foreign_key_drop(struct Parse *parse,
+				    const struct Token *table_name,
+				    const struct Token *column_name,
+				    const struct Token *name)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_UNKNOWN);
+	parse->ast.type = SQL_AST_TYPE_DROP_FIELD_FOREIGN_KEY;
+	parse->ast.drop_constraint.table_name = *table_name;
+	parse->ast.drop_constraint.column_name = *column_name;
+	parse->ast.drop_constraint.name = *name;
+}
+
+void
+sql_ast_init_field_check_drop(struct Parse *parse,
+			      const struct Token *table_name,
+			      const struct Token *column_name,
+			      const struct Token *name)
+{
+	assert(parse->ast.type == SQL_AST_TYPE_UNKNOWN);
+	parse->ast.type = SQL_AST_TYPE_DROP_FIELD_CHECK;
+	parse->ast.drop_constraint.table_name = *table_name;
+	parse->ast.drop_constraint.column_name = *column_name;
+	parse->ast.drop_constraint.name = *name;
+}

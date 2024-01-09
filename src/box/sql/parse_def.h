@@ -92,6 +92,22 @@ enum sql_ast_type {
 	SQL_AST_TYPE_ROLLBACK_TO_SAVEPOINT,
 	/** ALTER TABLE RENAME statement. */
 	SQL_AST_TYPE_TABLE_RENAME,
+	/** ALTER TABLE DROP CONSTRAINT statement. */
+	SQL_AST_TYPE_DROP_CONSTRAINT,
+	/** ALTER TABLE DROP CONSTRAINT CHECK statement. */
+	SQL_AST_TYPE_DROP_CHECK,
+	/** ALTER TABLE DROP CONSTRAINT UNIQUE statement. */
+	SQL_AST_TYPE_DROP_UNIQUE,
+	/** ALTER TABLE DROP CONSTRAINT FOREIGN KEY statement. */
+	SQL_AST_TYPE_DROP_FOREIGN_KEY,
+	/** ALTER TABLE DROP CONSTRAINT PRIMARY KEY statement. */
+	SQL_AST_TYPE_DROP_PRIMARY_KEY,
+	/** ALTER TABLE DROP CONSTRAINT statement. */
+	SQL_AST_TYPE_DROP_FIELD_CONSTRAINT,
+	/** ALTER TABLE DROP CONSTRAINT CHECK statement. */
+	SQL_AST_TYPE_DROP_FIELD_CHECK,
+	/** ALTER TABLE DROP CONSTRAINT FOREIGN KEY statement. */
+	SQL_AST_TYPE_DROP_FIELD_FOREIGN_KEY,
 };
 
 /**
@@ -120,6 +136,16 @@ struct sql_ast_table_rename {
 	struct Token new_name;
 };
 
+/** Description of ALTER TABLE DROP CONSTRAINT statement. */
+struct sql_ast_drop_constraint {
+	/** The name of the table which constraint will be dropped. */
+	struct Token table_name;
+	/** The name of the column which field constraint will be dropped. */
+	struct Token column_name;
+	/** Name of the constraint to drop. */
+	struct Token name;
+};
+
 /** A structure describing the AST of the parsed SQL statement. */
 struct sql_ast {
 	/** Parsed statement type. */
@@ -129,6 +155,8 @@ struct sql_ast {
 		struct sql_ast_savepoint savepoint;
 		/** Description of ALTER TABLE RENAME statement. */
 		struct sql_ast_table_rename rename;
+		/** Description of ALTER TABLE DROP CONSTRAINT statement. */
+		struct sql_ast_drop_constraint drop_constraint;
 	};
 };
 
@@ -571,5 +599,54 @@ sql_ast_init_rollback_to_savepoint(struct Parse *parse,
 void
 sql_ast_init_table_rename(struct Parse *parse, const struct Token *old_name,
 			  const struct Token *new_name);
+
+/** Save parsed ALTER TABLE DROP CONSTRAINT statement. */
+void
+sql_ast_init_constraint_drop(struct Parse *parse,
+			     const struct Token *table_name,
+			     const struct Token *name);
+
+/** Save parsed ALTER TABLE DROP CONSTRAINT FOREIGN KEY statement. */
+void
+sql_ast_init_foreign_key_drop(struct Parse *parse,
+			      const struct Token *table_name,
+			      const struct Token *name);
+
+/** Save parsed ALTER TABLE DROP CONSTRAINT PRIMARY KEY statement. */
+void
+sql_ast_init_primary_key_drop(struct Parse *parse,
+			      const struct Token *table_name,
+			      const struct Token *name);
+
+/** Save parsed ALTER TABLE DROP CONSTRAINT CHECK statement. */
+void
+sql_ast_init_check_drop(struct Parse *parse, const struct Token *table_name,
+			const struct Token *name);
+
+/** Save parsed ALTER TABLE DROP CONSTRAINT UNIQUE statement. */
+void
+sql_ast_init_unique_drop(struct Parse *parse, const struct Token *table_name,
+			 const struct Token *name);
+
+/** Save parsed ALTER TABLE DROP CONSTRAINT FIELD FOREIGN KEY statement. */
+void
+sql_ast_init_field_constraint_drop(struct Parse *parse,
+				   const struct Token *table_name,
+				   const struct Token *column_name,
+				   const struct Token *name);
+
+/** Save parsed ALTER TABLE DROP CONSTRAINT FIELD FOREIGN KEY statement. */
+void
+sql_ast_init_field_foreign_key_drop(struct Parse *parse,
+				    const struct Token *table_name,
+				    const struct Token *column_name,
+				    const struct Token *name);
+
+/** Save parsed ALTER TABLE DROP CONSTRAINT FIELD CHECK statement. */
+void
+sql_ast_init_field_check_drop(struct Parse *parse,
+			      const struct Token *table_name,
+			      const struct Token *column_name,
+			      const struct Token *name);
 
 #endif /* TARANTOOL_BOX_SQL_PARSE_DEF_H_INCLUDED */
