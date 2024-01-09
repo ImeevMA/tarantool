@@ -396,7 +396,7 @@ g.test_iproto = function()
             listen = {{
                 uri = 'one',
                 params = {
-                    transport = 'ssl',
+                    transport = 'plain',
                 },
             }},
             advertise = {
@@ -413,7 +413,7 @@ g.test_iproto = function()
                     uri = 'six',
                     login = 'seven',
                     params = {
-                        transport = 'ssl',
+                        transport = 'plain',
                     },
                     password = 'ten',
                 },
@@ -426,6 +426,23 @@ g.test_iproto = function()
     instance_config:validate(iconfig)
     validate_fields(iconfig.iproto, instance_config.schema.fields.iproto)
     check_validate_iproto()
+
+    local iconfig = {
+        iproto = {
+            listen = {{
+                uri = 'one',
+                params = {
+                    transport = 'ssl',
+                },
+            }},
+        },
+    }
+    local err = "[instance_config] iproto.listen[1].params.transport: SSL " ..
+                "transport is only available in Tarantool Enterprise Edition"
+    t.assert_error_msg_equals(err, function()
+        instance_config:validate(iconfig)
+    end)
+
     local exp = {
         advertise = {
             client = box.NULL,

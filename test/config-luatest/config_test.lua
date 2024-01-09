@@ -1143,17 +1143,33 @@ end
 
 g.test_iproto_listen_ssl = function()
     t.tarantool.skip_if_enterprise()
-    helpers.failure_case(g, {
-        options = {
-            ['iproto.listen'] = {
-                {
-                    uri = 'unix/:./{{ instance_name }}.iproto',
-                    params = {transport = 'ssl'},
-                },
-            },
-        },
-        exp_err = 'SSL is not available in this build',
-    })
+    local dir = treegen.prepare_directory(g, {}, {})
+    local config = [[
+        credentials:
+          users:
+            guest:
+              roles:
+              - super
+        iproto:
+          listen:
+          - uri: unix/:./{{ instance_name }}.iproto
+            params:
+              transport: ssl
+        groups:
+          group-001:
+            replicasets:
+              replicaset-001:
+                instances:
+                  instance-001: {}
+    ]]
+    local config_file = treegen.write_script(dir, 'config.yaml', config)
+    local args = {'--name', 'instance-001', '--config', config_file}
+    local opts = {nojson = true, stderr = true}
+    local res = justrun.tarantool(dir, {}, args, opts)
+    local exp = 'SSL transport is only available in Tarantool Enterprise ' ..
+                'Edition'
+    t.assert_equals(res.exit_code, 1)
+    t.assert_str_contains(res.stderr, exp)
 end
 
 g.test_iproto_listen_ssl_enterprise = function()

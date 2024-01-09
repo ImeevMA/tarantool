@@ -185,6 +185,13 @@ local function uri_is_suitable_to_connect(uri)
     return true
 end
 
+local function validate_uri_transport(transport, w)
+    if transport == 'ssl' and tarantool.package ~= 'Tarantool Enterprise' then
+        w.error('SSL transport is only available in Tarantool Enterprise ' ..
+                'Edition')
+    end
+end
+
 -- Verify 'uri' field in iproto.listen and iproto.advertise.* options.
 local function validate_uri_field(has_login_field, used_to_connect)
     return function(data, w)
@@ -845,6 +852,8 @@ return schema.new('instance_config', schema.record({
                     transport = schema.enum({
                         'plain',
                         'ssl',
+                    }, {
+                        validate = validate_uri_transport,
                     }),
                     -- Mandatory server options for TLS.
                     ssl_key_file = enterprise_edition(schema.scalar({
@@ -956,6 +965,8 @@ return schema.new('instance_config', schema.record({
                     transport = schema.enum({
                         'plain',
                         'ssl',
+                    }, {
+                        validate = validate_uri_transport,
                     }),
                     ssl_ca_file = enterprise_edition(schema.scalar({
                         type = 'string',
@@ -1006,6 +1017,8 @@ return schema.new('instance_config', schema.record({
                     transport = schema.enum({
                         'plain',
                         'ssl',
+                    }, {
+                        validate = validate_uri_transport,
                     }),
                     ssl_ca_file = enterprise_edition(schema.scalar({
                         type = 'string',
