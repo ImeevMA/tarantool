@@ -144,6 +144,8 @@ end
 function methods.sharding(self)
     local sharding = {}
     local rebalancers = {}
+    local is_rebalancer_enabled = instance_config:get(self._iconfig_def,
+        'sharding.rebalancer_enabled')
     for group_name, group in pairs(self._cconfig.groups) do
         for replicaset_name, value in pairs(group.replicasets) do
             local lock
