@@ -6,6 +6,20 @@ local fiber = require('fiber')
 -- Var is set with the first apply() call.
 local config
 
+local acc = {
+    default = {
+        roles = {
+            super = {},
+            public = {},
+            replication = {},
+        },
+        users = {
+            guest = {},
+            admin = {},
+        },
+    },
+}
+
 -- {{{ Sync helpers
 
 --[[
@@ -369,47 +383,41 @@ end
 
 -- Get the latest credentials configuration from the config and add empty
 -- default users and roles configuration, if they are missing.
-local function get_credentials(config)
-    local configdata = config._configdata
-    local credentials = configdata:get('credentials')
-
-    -- If credentials section in config is empty, skip applier.
-    if credentials == nil then
+local function get_credentials()
+    local credentials = {roles = {}, users = {}}
+    local credentials_sources = {}
+    for credentials_source, credentials_partial in pairs(acc) do
+        table.insert(credentials_sources, credentials_source)
+        local roles = credentials_partial.roles or {}
+        for role_name, role_credentials in pairs(roles) do
+            credentials.roles[role_name] =
+                credentials.roles[role_name] or {privileges = {}, roles = {}}
+            for _, priv in pairs(role_credentials.privileges or {}) do
+                table.insert(credentials.roles[role_name].privileges, priv)
+            end
+            for _, role in pairs(role_credentials.roles or {}) do
+                table.insert(credentials.roles[role_name].roles, role)
+            end
+        end
+        local users = credentials_partial.users or {}
+        for user_name, user_credentials in pairs(users) do
+            credentials.users[user_name] =
+                credentials.users[user_name] or {privileges = {}, roles = {}}
+            credentials.users[user_name].password =
+                credentials.users[user_name].password or user_credentials.password
+            for _, priv in pairs(user_credentials.privileges or {}) do
+                table.insert(credentials.users[user_name].privileges, priv)
+            end
+            for _, role in pairs(user_credentials.roles or {}) do
+                table.insert(credentials.users[user_name].roles, role)
+            end
+        end
+    end
+    if #credentials_sources == 2 then
+        assert(credentials_sources[1] == 'default')
+        assert(credentials_sources[2] == 'config_default')
         return {}
     end
-
-    -- Tarantool has the following roles and users present by default on every
-    -- instance:
-    --
-    -- Default roles:
-    -- * super
-    -- * public
-    -- * replication
-    --
-    -- Default users:
-    -- * guest
-    -- * admin
-    --
-    -- These roles and users have according privileges pre-granted by design.
-    -- Credentials applier adds such privileges with `priviliges_add_default()`
-    -- when syncing. So, for the excessive (non-default) privs to be removed,
-    -- these roles and users must be present inside configuration at least in a
-    -- form of an empty table. Otherwise, the privileges will be left unchanged,
-    -- similar to all used-defined roles and users.
-
-    credentials.roles = credentials.roles or {}
-    credentials.roles['super'] = credentials.roles['super'] or {}
-    credentials.roles['public'] = credentials.roles['public'] or {}
-    credentials.roles['replication'] = credentials.roles['replication'] or {}
-
-    -- Add a semi-default role 'sharding'.
-    credentials.roles['sharding'] = credentials.roles['sharding'] or
-                                    sharding_role(configdata)
-
-    credentials.users = credentials.users or {}
-    credentials.users['guest'] = credentials.users['guest'] or {}
-    credentials.users['admin'] = credentials.users['admin'] or {}
-
     return credentials
 end
 
@@ -867,7 +875,7 @@ local function sync_credentials_worker()
                 ['sequence'] = {},
             }
 
-            local credentials = get_credentials(config)
+            local credentials = get_credentials()
 
             register_objects(credentials.roles)
             register_objects(credentials.users)
@@ -883,7 +891,7 @@ local function sync_credentials_worker()
                 wait_sync:put('Done')
             end
         else
-            local credentials = get_credentials(config)
+            local credentials = get_credentials()
 
             box.atomic(sync_privileges, credentials, obj_to_sync)
         end
@@ -896,6 +904,23 @@ local sync_credentials_fiber
 -- One-shot flag. It indicates that on_replace triggers are
 -- set for box.space._space/_func/_sequence.
 local triggers_are_set
+
+local function set(source_name, credentials)
+    acc[source_name] = credentials
+    -- If Tarantool is already in Read Write mode, credentials are still
+    -- applied in the fiber to avoid possible concurrency issues, but the
+    -- main applier fiber is blocked by `wait_sync`.
+    if not box.info.ro then
+        -- Schedule a full sync with a result message on return.
+        sync_tasks:put({type = 'BLOCKING_FULL_SYNC'})
+
+        wait_sync:get()
+    else
+        -- Schedule a full sync in the background. It will be executed
+        -- when the instance switches to RW.
+        sync_tasks:put({type = 'BACKGROUND_FULL_SYNC'})
+    end
+end
 
 local function apply(config_module)
     config = config_module
@@ -935,20 +960,8 @@ local function apply(config_module)
             sync_credentials_fiber:status() == 'dead' then
         sync_credentials_fiber = fiber.new(sync_credentials_worker)
     end
-
-    -- If Tarantool is already in Read Write mode, credentials are still
-    -- applied in the fiber to avoid possible concurrency issues, but the
-    -- main applier fiber is blocked by `wait_sync`.
-    if not box.info.ro then
-        -- Schedule a full sync with a result message on return.
-        sync_tasks:put({type = 'BLOCKING_FULL_SYNC'})
-
-        wait_sync:get()
-    else
-        -- Schedule a full sync in the background. It will be executed
-        -- when the instance switches to RW.
-        sync_tasks:put({type = 'BACKGROUND_FULL_SYNC'})
-    end
+    acc['config_default'] = {roles = sharding_role(config._configdata)}
+    set('config', config._configdata:get('credentials'))
 end
 
 -- }}} Applier
@@ -956,6 +969,7 @@ end
 return {
     name = 'credentials',
     apply = apply,
+    set = set,
     -- Exported for testing purposes.
     _internal = {
         set_config = function(config_module)
