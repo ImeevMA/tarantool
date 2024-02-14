@@ -8,7 +8,7 @@ local replicaset = require('test.config-luatest.replicaset')
 
 local g = helpers.group()
 
-local internal = require('internal.config.applier.credentials')._internal
+local internal = require('internal.config.privileges')._internal
 
 g.before_all(replicaset.init)
 g.after_each(replicaset.drop)
@@ -589,10 +589,10 @@ g.test_sync_privileges = function(g)
         child:roundtrip(("box.schema.user.%s(%q, %q, %q, %q, %s)"):format(
                          action, name, perm, obj_type, obj_name, opts))
     end
-    child:roundtrip("applier = require('internal.config.applier.credentials')")
-    child:roundtrip("applier._internal.set_config({_aboard = " ..
-        "require('internal.config.utils.aboard').new()})")
-    child:roundtrip("sync_privileges =  applier._internal.sync_privileges")
+    child:roundtrip("privileges = require('internal.config.privileges')")
+    child:roundtrip("privileges.set_aboard(" ..
+        "require('internal.config.utils.aboard').new())")
+    child:roundtrip("sync_privileges =  privileges._internal.sync_privileges")
     child:roundtrip("json = require('json')")
     child:roundtrip(("credentials = json.decode(%q)"):format(
                      json.encode(credentials)))
@@ -651,8 +651,8 @@ g.test_set_password = function(g)
         child:roundtrip(("myuser = %q"):format(name))
         child:roundtrip("box.schema.user.create(myuser)")
 
-        child:roundtrip("set_password = require('internal.config.applier." ..
-                        "credentials')._internal.set_password")
+        child:roundtrip("set_password = require('internal.config." ..
+                        "privileges')._internal.set_password")
 
         child:roundtrip("set_password(myuser, 'password1')")
 
@@ -691,8 +691,7 @@ g.test_remove_user_role = function(g)
         t.assert(ok, err)
         ok, err = pcall(box.schema.role.info, 'myrole')
         t.assert(ok, err)
-        local internal =
-                require('internal.config.applier.credentials')._internal
+        local internal = require('internal.config.privileges')._internal
 
         local guest_perm = box.schema.user.info('guest')
         guest_perm = internal.privileges_from_box(guest_perm)
@@ -784,8 +783,7 @@ g.test_restore_defaults_for_default_user = function(g)
             }
         },
         verify = function()
-            local internal =
-                    require('internal.config.applier.credentials')._internal
+            local internal = require('internal.config.privileges')._internal
 
             local default_identities = {{
                 'user', 'admin',
@@ -818,8 +816,7 @@ g.test_restore_defaults_for_default_user = function(g)
             }
         },
         verify_2 = function()
-            local internal =
-                    require('internal.config.applier.credentials')._internal
+            local internal = require('internal.config.privileges')._internal
 
             local default_identities = {{
                 'user', 'admin',
@@ -875,8 +872,7 @@ g.test_sync_ro_rw = function(g)
         verify_2 = function()
             t.assert(box.info.ro)
 
-            local internal =
-                    require('internal.config.applier.credentials')._internal
+            local internal = require('internal.config.privileges')._internal
 
             local perm = box.schema.user.info('guest')
             perm = internal.privileges_from_box(perm)
@@ -973,8 +969,7 @@ g.test_postpone_grants_till_creation = function(g)
             box.schema.func.create('myfunc2')
             box.schema.sequence.create('myseq3')
 
-            local internal =
-                    require('internal.config.applier.credentials')._internal
+            local internal = require('internal.config.privileges')._internal
 
             local perm_1 = box.schema.user.info('myuser1')
             perm_1 = internal.privileges_from_box(perm_1)
@@ -1009,8 +1004,7 @@ g.test_postpone_grants_till_creation = function(g)
             box.schema.sequence.create('myseq1')
             box.schema.sequence.create('myseq2')
 
-            local internal =
-                    require('internal.config.applier.credentials')._internal
+            local internal = require('internal.config.privileges')._internal
 
             local perm_1 = box.schema.user.info('myuser1')
             perm_1 = internal.privileges_from_box(perm_1)
@@ -1093,8 +1087,7 @@ g.test_postpone_grants_till_rename = function(g)
         verify = function()
             box.schema.space.create('myspace2')
 
-            local internal =
-                    require('internal.config.applier.credentials')._internal
+            local internal = require('internal.config.privileges')._internal
 
             local perm_1 = box.schema.user.info('myuser1')
             perm_1 = internal.privileges_from_box(perm_1)
@@ -1153,8 +1146,7 @@ g.test_postpone_grants_till_rename = function(g)
         verify = function()
             box.schema.space.create('myspace1')
 
-            local internal =
-                    require('internal.config.applier.credentials')._internal
+            local internal = require('internal.config.privileges')._internal
 
             local perm_1 = box.schema.user.info('myuser')
             perm_1 = internal.privileges_from_box(perm_1)
@@ -1178,8 +1170,7 @@ g.test_postpone_grants_till_rename = function(g)
         verify_2 = function(iconfig)
             box.schema.space.create('myspace1')
 
-            local internal =
-                    require('internal.config.applier.credentials')._internal
+            local internal = require('internal.config.privileges')._internal
 
             local perm = box.schema.user.info('myuser')
             perm = internal.privileges_from_box(perm)
@@ -1237,8 +1228,7 @@ g.test_postpone_grants_till_rename = function(g)
     helpers.success_case(g, {
         options = iconfig,
         verify = function(iconfig)
-            local internal =
-                    require('internal.config.applier.credentials')._internal
+            local internal = require('internal.config.privileges')._internal
 
             local function check_sync()
 

@@ -158,6 +158,7 @@ extern char session_lua[],
 	config_applier_sharding_lua[],
 	config_cluster_config_lua[],
 	config_configdata_lua[],
+	config_privileges_lua[],
 	config_init_lua[],
 	config_instance_config_lua[],
 	config_source_env_lua[],
@@ -377,6 +378,10 @@ static const char *lua_sources[] = {
 	"config/configdata",
 	"internal.config.configdata",
 	config_configdata_lua,
+
+	"config/privileges",
+	"internal.config.privileges",
+	config_privileges_lua,
 
 	"config/source/env",
 	"internal.config.source.env",
