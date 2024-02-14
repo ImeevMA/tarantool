@@ -54,6 +54,7 @@ lua_source(lua_sources lua/config/applier/roles.lua       config_applier_roles_l
 lua_source(lua_sources lua/config/applier/sharding.lua    config_applier_sharding_lua)
 lua_source(lua_sources lua/config/cluster_config.lua      config_cluster_config_lua)
 lua_source(lua_sources lua/config/configdata.lua          config_configdata_lua)
+lua_source(lua_sources lua/config/privileges.lua          config_privileges_lua)
 lua_source(lua_sources lua/config/init.lua                config_init_lua)
 lua_source(lua_sources lua/config/instance_config.lua     config_instance_config_lua)
 lua_source(lua_sources lua/config/source/env.lua          config_source_env_lua)
