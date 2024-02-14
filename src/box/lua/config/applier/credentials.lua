@@ -6,6 +6,9 @@ local fiber = require('fiber')
 -- Var is set with the first apply() call.
 local config
 
+-- All credentials that should be applied by this module.
+local all_creds = {}
+
 -- {{{ Sync helpers
 
 --[[
@@ -367,15 +370,31 @@ local function sharding_role(configdata)
     }
 end
 
+local function merge_creds(dest, src)
+    assert(dest ~= nil and type(dest) == 'table')
+    if src == nil then
+        return
+    end
+
+    for name, object in pairs(src) do
+        dest[name] = dest[name] or {privileges = {}, roles = {}}
+        dest[name].password = object.password or dest[name].password
+        for _, privilege in pairs(object.privileges or {}) do
+            table.insert(dest[name].privileges, privilege)
+        end
+        for _, role in pairs(object.roles or {}) do
+            table.insert(dest[name].roles, role)
+        end
+    end
+end
+
 -- Get the latest credentials configuration from the config and add empty
 -- default users and roles configuration, if they are missing.
 local function get_credentials(config)
-    local configdata = config._configdata
-    local credentials = configdata:get('credentials')
-
-    -- If credentials section in config is empty, skip applier.
-    if credentials == nil then
-        return {}
+    local credentials = {users = {}, roles = {}}
+    for _, partial_credentials in ipairs(all_creds) do
+        merge_creds(credentials.roles, partial_credentials.credentials.roles)
+        merge_creds(credentials.users, partial_credentials.credentials.users)
     end
 
     -- Tarantool has the following roles and users present by default on every
@@ -404,7 +423,7 @@ local function get_credentials(config)
 
     -- Add a semi-default role 'sharding'.
     credentials.roles['sharding'] = credentials.roles['sharding'] or
-                                    sharding_role(configdata)
+                                    sharding_role(config._configdata)
 
     credentials.users = credentials.users or {}
     credentials.users['guest'] = credentials.users['guest'] or {}
@@ -913,8 +932,14 @@ local sync_credentials_fiber
 -- set for box.space._space/_func/_sequence.
 local triggers_are_set
 
-local function apply(config_module)
-    config = config_module
+local function set(source_name, credentials)
+    assert(type(source_name) == 'string')
+    assert(credentials == nil or type(credentials) == 'table')
+    if all_creds[source_name] == nil then
+        all_creds[source_name] = {}
+        all_creds[#all_creds + 1] = all_creds[source_name]
+    end
+    all_creds[source_name].credentials = credentials or {}
 
     -- Create a fiber channel for scheduled tasks for sync worker.
     if not sync_tasks then
@@ -968,11 +993,49 @@ local function apply(config_module)
     end
 end
 
+local function get(source_name)
+    if source_name == nil then
+        local res = {}
+        for source_name, value in pairs(all_creds) do
+            if type(source_name) == 'string' then
+                res[source_name] = table.deepcopy(value.credentials)
+            end
+        end
+        return res
+    end
+    if type(source_name) ~= 'string' then
+        error('Name of credential source must be a string or nil', 0)
+    end
+    if all_creds[source_name] == nil then
+        error(('Source with name %q is not found'):format(source_name), 0)
+    end
+    return table.deepcopy(all_creds[source_name].credentials)
+end
+
+local function drop(source_name)
+    if type(source_name) ~= 'string' then
+        error('Name of credential source must be a string', 0)
+    end
+    if all_creds[source_name] == nil then
+        error(('Source with name %q is not found'):format(source_name), 0)
+    end
+    all_creds[source_name].credentials = {users = {}, roles = {}}
+    all_creds[source_name] = nil
+end
+
+local function apply(config_module)
+    config = config_module
+    set('config', config_module._configdata:get('credentials'))
+end
+
 -- }}} Applier
 
 return {
     name = 'credentials',
     apply = apply,
+    _set = set,
+    _get = get,
+    _drop = drop,
     -- Exported for testing purposes.
     _internal = {
         set_config = function(config_module)
