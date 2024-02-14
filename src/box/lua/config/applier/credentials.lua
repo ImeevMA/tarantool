@@ -4,7 +4,10 @@ local digest = require('digest')
 local fiber = require('fiber')
 
 -- Var is set with the first apply() call.
-local config
+local aboard
+
+-- All credentials that should be applied by this module.
+local all_creds = {}
 
 -- {{{ Sync helpers
 
@@ -314,7 +317,8 @@ end
 -- "sharding" role is created by default, the error may still appear even if the
 -- user does not make any changes. To partially avoid this problem, we do not
 -- create the "sharding" role if it is not in use. This is a temporary solution.
-local function sharding_role(configdata)
+local function sharding_role(config)
+    local configdata = config._configdata
     local roles = configdata:get('credentials.roles')
     local users = configdata:get('credentials.users')
     local has_sharding_role = false
@@ -332,17 +336,20 @@ local function sharding_role(configdata)
         return
     end
 
+    local credentials = {roles = {sharding = {}}}
+
     -- Add necessary privileges if storage sharding role is enabled.
     local sharding_roles = configdata:get('sharding.roles')
     if sharding_roles == nil or #sharding_roles == 0 then
-        return {}
+        return credentials
     end
     local is_storage = false
     for _, role in pairs(sharding_roles) do
         is_storage = is_storage or role == 'storage'
     end
+
     if not is_storage then
-        return {}
+        return credentials
     end
 
     local funcs = {}
@@ -358,23 +365,47 @@ local function sharding_role(configdata)
             table.insert(funcs, name)
         end
     end
-    return {
+
+    credentials.roles.sharding = {
         privileges = {{
             permissions = {'execute'},
             functions = funcs,
         }},
         roles = {'replication'},
     }
+    return credentials
 end
 
--- Get the latest credentials configuration from the config and add empty
--- default users and roles configuration, if they are missing.
-local function get_credentials(config)
-    local configdata = config._configdata
-    local credentials = configdata:get('credentials')
+-- Add credentials from src to desc.
+local function merge_creds(dest, src)
+    assert(dest ~= nil and type(dest) == 'table')
+    if src == nil then
+        return
+    end
 
-    -- If credentials section in config is empty, skip applier.
-    if credentials == nil then
+    for name, object in pairs(src) do
+        dest[name] = dest[name] or {privileges = {}, roles = {}}
+        dest[name].password = object.password or dest[name].password
+        for _, privilege in pairs(object.privileges or {}) do
+            table.insert(dest[name].privileges, privilege)
+        end
+        for _, role in pairs(object.roles or {}) do
+            table.insert(dest[name].roles, role)
+        end
+    end
+end
+
+-- Merge prepared credentials and add empty default users and roles
+-- configuration, if they are missing.
+local function get_credentials()
+    local credentials = {users = {}, roles = {}}
+    for _, partial_credentials in ipairs(all_creds) do
+        merge_creds(credentials.roles, partial_credentials.credentials.roles)
+        merge_creds(credentials.users, partial_credentials.credentials.users)
+    end
+
+    -- If there is no credentials to set, skip applier.
+    if next(credentials.roles) == nil and next(credentials.users) == nil then
         return {}
     end
 
@@ -401,10 +432,6 @@ local function get_credentials(config)
     credentials.roles['super'] = credentials.roles['super'] or {}
     credentials.roles['public'] = credentials.roles['public'] or {}
     credentials.roles['replication'] = credentials.roles['replication'] or {}
-
-    -- Add a semi-default role 'sharding'.
-    credentials.roles['sharding'] = credentials.roles['sharding'] or
-                                    sharding_role(configdata)
 
     credentials.users = credentials.users or {}
     credentials.users['guest'] = credentials.users['guest'] or {}
@@ -550,7 +577,7 @@ local privileges_action_f = function(grant_or_revoke, role_or_user, name, privs,
         err = ('credentials.apply: box.schema.%s.%s(%q, %q, %q, %q) failed: %s')
               :format(role_or_user, grant_or_revoke, name, privs, obj_type,
                       obj_name, err)
-        config._aboard:set({type = 'error', message = err})
+        aboard:set({type = 'error', message = err})
     end
 end
 
@@ -575,7 +602,7 @@ local function sync_privileges(credentials, obj_to_sync)
     -- alerts: mark all of them and issue again the actual ones.
     -- The actual drop will occur later. New alerts, if any, are
     -- issued before the drop.
-    config._aboard:each(function(_key, alert)
+    aboard:each(function(_key, alert)
         if alert._trait == 'missed_privilege' then
             alert._trait = 'missed_privilege_obsolete'
         end
@@ -671,7 +698,7 @@ local function sync_privileges(credentials, obj_to_sync)
             local privs = table.concat(grant.privs, ',')
             alert.message = msg:format(role_or_user, 'grant', name, privs,
                                        grant.obj_type, grant.obj_name)
-            config._aboard:set(alert)
+            aboard:set(alert)
         end
     end
 
@@ -688,7 +715,7 @@ local function sync_privileges(credentials, obj_to_sync)
     end
 
     -- Drop obsolete missed_privilege alerts.
-    config._aboard:drop_if(function(_key, alert)
+    aboard:drop_if(function(_key, alert)
         return alert._trait == 'missed_privilege_obsolete'
     end)
 end
@@ -763,7 +790,7 @@ local function set_password(user_name, password)
     if user_name == 'guest' then
         local message = 'credentials.apply: setting a password for ' ..
                         'the guest user is not allowed'
-        config._aboard:set({type = 'error', message = message})
+        aboard:set({type = 'error', message = message})
     end
 
     local auth_def = box.space._user.index.name:get({user_name})[5]
@@ -883,7 +910,7 @@ local function sync_credentials_worker()
                 ['sequence'] = {},
             }
 
-            local credentials = get_credentials(config)
+            local credentials = get_credentials()
 
             register_objects(credentials.roles)
             register_objects(credentials.users)
@@ -899,7 +926,7 @@ local function sync_credentials_worker()
                 wait_sync:put('Done')
             end
         else
-            local credentials = get_credentials(config)
+            local credentials = get_credentials()
 
             box.atomic(sync_privileges, credentials, obj_to_sync)
         end
@@ -913,9 +940,26 @@ local sync_credentials_fiber
 -- set for box.space._space/_func/_sequence.
 local triggers_are_set
 
-local function apply(config_module)
-    config = config_module
+-- Set aboard to use in this module.
+local function set_aboard(alerts_board)
+    aboard = alerts_board
+end
 
+-- Set credentials by source.
+local function set(source_name, credentials)
+    assert(credentials == nil or type(credentials) == 'table')
+    if type(source_name) ~= 'string' then
+        error('Name of credential source must be a string or nil', 0)
+    end
+    if all_creds[source_name] == nil then
+        all_creds[source_name] = {}
+        all_creds[#all_creds + 1] = all_creds[source_name]
+    end
+    all_creds[source_name].credentials = credentials or {}
+end
+
+-- Invoke full credential synchronization to set the new credentials.
+local function execute()
     -- Create a fiber channel for scheduled tasks for sync worker.
     if not sync_tasks then
         -- There is no good reason to have the channel capacity limited,
@@ -968,6 +1012,16 @@ local function apply(config_module)
     end
 end
 
+local function apply(config_module)
+    set_aboard(config_module._aboard)
+    set('config', config_module._configdata:get('credentials'))
+    local sharding_credentials = sharding_role(config_module)
+    if sharding_credentials ~= nil then
+        set('sharding', sharding_credentials)
+    end
+    execute()
+end
+
 -- }}} Applier
 
 return {
@@ -976,7 +1030,7 @@ return {
     -- Exported for testing purposes.
     _internal = {
         set_config = function(config_module)
-            config = config_module
+            set_aboard(config_module._aboard)
         end,
         privileges_from_box = privileges_from_box,
         privileges_from_config = privileges_from_config,
