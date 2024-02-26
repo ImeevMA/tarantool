@@ -1393,3 +1393,88 @@ g.test_non_dynamic_alert = function(g)
         end,
     })
 end
+
+g.test_module_privileges = function(cg)
+    local verify = function(events)
+        local privileges = require('internal.config.privileges')
+        -- Check requested credentials just after loading.
+        local credentials_config = require('config'):get('credentials')
+        local exp = {config = credentials_config}
+        t.assert_equals(privileges.get(), exp)
+        t.assert_equals(privileges.get('config'), credentials_config)
+
+        -- Request new credentials.
+        local credentials_one = {
+            users = {
+                someuser = {
+                    privileges = {{
+                        permissions = {'drop'},
+                        spaces = {'_space'}
+                    }}
+                }
+            }
+        }
+        privileges.set('one', credentials_one)
+        exp.one = credentials_one
+        t.assert_equals(privileges.get(), exp)
+        t.assert_equals(privileges.get('one'), credentials_one)
+
+        -- Make sure that credentials were not granted yet.
+        t.assert(box.space._user.index.name:get('someuser') == nil)
+
+        -- Make sure that credentials were granted after execute().
+        privileges.execute()
+        local user = box.space._user.index.name:get('someuser')
+        t.assert(user ~= nil)
+
+        local privs = box.space._priv:select({user.id, 'space'})
+        t.assert_equals(#privs, 1)
+        local exp_space = {1, user.id, 'space', box.schema.SPACE_ID, box.priv.D}
+        t.assert_equals(privs[1], exp_space)
+
+        -- Request more credentials for the same user.
+        local credentials_two = {
+            users = {
+                someuser = {
+                    privileges = {{
+                        permissions = {'write'},
+                        spaces = {'_index'}
+                    }}
+                }
+            }
+        }
+        privileges.set('two', credentials_two)
+        exp.two = credentials_two
+        t.assert_equals(privileges.get(), exp)
+        t.assert_equals(privileges.get('two'), credentials_two)
+
+        -- Make sure that credentials were properly granted after execute().
+        privileges.execute()
+        privs = box.space._priv:select({user.id, 'space'})
+        t.assert_equals(#privs, 2)
+        local exp_index = {1, user.id, 'space', box.schema.INDEX_ID, box.priv.W}
+        t.assert_equals(privs[1], exp_space)
+        t.assert_equals(privs[2], exp_index)
+
+        -- Remove request some request for the credentials.
+        privileges.drop('one')
+        exp.one = nil
+        t.assert_equals(privileges.get(), exp)
+
+        -- Make sure that credentials were not revoked yet.
+        privs = box.space._priv:select({user.id, 'space'})
+        t.assert_equals(#privs, 2)
+        t.assert_equals(privs[1], exp_space)
+        t.assert_equals(privs[2], exp_index)
+
+        -- Make sure that credentials were revoked after execute().
+        privileges.execute()
+        privs = box.space._priv:select({user.id, 'space'})
+        t.assert_equals(#privs, 1)
+        t.assert_equals(privs[1], exp_index)
+    end
+
+    helpers.success_case(g, {
+        verify = verify,
+    })
+end

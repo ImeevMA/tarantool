@@ -1,3 +1,4 @@
+local instance_config = require('internal.config.instance_config')
 local log = require('internal.config.utils.log')
 local digest = require('digest')
 local fiber = require('fiber')
@@ -872,11 +873,39 @@ local function set(source_name, credentials)
     if type(source_name) ~= 'string' then
         error('Name of credential source must be a string or nil', 0)
     end
+    instance_config:validate({credentials = credentials})
     if all_creds[source_name] == nil then
         all_creds[source_name] = {}
         all_creds[#all_creds + 1] = all_creds[source_name]
     end
     all_creds[source_name].credentials = credentials or {}
+end
+
+local function get(source_name)
+    if source_name == nil then
+        local res = {}
+        for k, v in pairs(all_creds) do
+            if type(k) == 'string' then
+                res[k] = table.deepcopy(v.credentials)
+            end
+        end
+        return res
+    end
+    if type(source_name) ~= 'string' then
+        error('Name of credential source must be a string or nil', 0)
+    end
+    return table.deepcopy(all_creds[source_name].credentials)
+end
+
+local function drop(source_name)
+    if type(source_name) ~= 'string' then
+        error('Name of credential source must be a string', 0)
+    end
+    if all_creds[source_name] == nil then
+        return
+    end
+    all_creds[source_name].credentials = {}
+    all_creds[source_name] = nil
 end
 
 -- Invoke full credential synchronization to set the new credentials.
@@ -935,6 +964,8 @@ end
 
 return {
     set = set,
+    get = get,
+    drop = drop,
     execute = execute,
     set_aboard = set_aboard,
     -- Exported for testing purposes.
