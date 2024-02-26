@@ -1,3 +1,4 @@
+local privileges = require('internal.config.privileges')
 local log = require('internal.config.utils.log')
 
 local last_loaded = {}
@@ -53,6 +54,9 @@ local function stop_roles(roles_to_skip)
         if not ok then
             error(('Error stopping role %s: %s'):format(role_name, err), 0)
         end
+    end
+    for _, role_name in ipairs(roles_to_stop) do
+        privileges.drop('roles.' .. role_name)
     end
 end
 
@@ -115,6 +119,7 @@ local function post_apply(config)
     local role_names = configdata:get('roles', {use_default = true})
     if role_names == nil or next(role_names) == nil then
         stop_roles()
+        privileges.execute()
         return
     end
 
@@ -157,8 +162,23 @@ local function post_apply(config)
     -- Re-sorting of roles taking into account dependencies between them.
     roles_ordered = resort_roles(roles_ordered, loaded)
 
-    -- Validate configs for all roles.
     local roles_cfg = configdata:get('roles_cfg', {use_default = true}) or {}
+    for _, role_name in ipairs(roles_ordered) do
+        local role = loaded[role_name]
+        if role.privileges ~= nil then
+            log.verbose(('roles.post_apply: request credentials for ' ..
+                         'role %q'):format(role_name))
+            local ok, privs = pcall(role.privileges, roles_cfg[role_name])
+            if not ok then
+                error(('Credential request error for role %s: ' ..
+                       '%s'):format(role_name, err), 0)
+            end
+            privileges.set('roles.' .. role_name, privs)
+        end
+    end
+    privileges.execute()
+
+    -- Validate configs for all roles.
     for _, role_name in ipairs(roles_ordered) do
         local ok, err = pcall(loaded[role_name].validate, roles_cfg[role_name])
         if not ok then

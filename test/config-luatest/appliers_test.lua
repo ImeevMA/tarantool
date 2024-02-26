@@ -55,6 +55,8 @@ local appliers_script = [[
     console.apply(config)
     local fiber = require('internal.config.applier.fiber')
     fiber.apply(config)
+    local roles = require('internal.config.applier.roles')
+    pcall(roles.post_apply, config)
     local app = require('internal.config.applier.app')
     local ok, err = pcall(app.post_apply, config)
     %s

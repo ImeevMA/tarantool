@@ -84,7 +84,6 @@ local function apply(config_module)
     if sharding_credentials ~= nil then
         privileges.set('sharding', sharding_credentials)
     end
-    privileges.execute()
 end
 
 return {
