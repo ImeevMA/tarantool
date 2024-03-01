@@ -3,6 +3,7 @@ local instance_config = require('internal.config.instance_config')
 local cluster_config = require('internal.config.cluster_config')
 local configdata = require('internal.config.configdata')
 local aboard = require('internal.config.utils.aboard')
+local access_control = require('access_control')
 local tarantool = require('tarantool')
 
 -- Tarantool Enterprise Edition has its own additions
@@ -385,6 +386,10 @@ function methods._startup(self, instance_name, config_file)
 
     self:_initialize()
 
+    -- Disallow revokes until all granted privileges in the configuration have
+    -- been collected.
+    access_control._allow_revoke(false)
+
     -- Startup phase 1/2.
     --
     -- Start compat, mkdir, console and box_cfg appliers. The
@@ -410,6 +415,10 @@ function methods._startup(self, instance_name, config_file)
     self:_set_status_based_on_alerts()
 
     self:_post_apply()
+
+    -- Allow revokes and run synchronization to revoke unrevoked privileges.
+    access_control._allow_revoke(true)
+    access_control._invoke_sync()
     self:_set_status_based_on_alerts()
     if extras ~= nil then
         extras.post_apply(self)

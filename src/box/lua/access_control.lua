@@ -13,6 +13,9 @@ local aboard = {
 -- All credentials that should be applied by this module.
 local all_creds = {}
 
+-- Flag that show if it is allowed to revoke privileges.
+local can_revoke = true
+
 -- {{{ Sync helpers
 
 --[[
@@ -485,6 +488,9 @@ end
 local privileges_action_f = function(grant_or_revoke, role_or_user, name, privs,
                                      obj_type, obj_name)
     assert(grant_or_revoke == 'grant' or grant_or_revoke == 'revoke')
+    if grant_or_revoke == 'revoke' and not can_revoke then
+        return
+    end
     privs = table.concat(privs, ',')
 
     -- Try to apply the action immediately. If the object doesn't exist,
@@ -871,6 +877,10 @@ local function set_aboard(alerts_board)
     aboard = alerts_board
 end
 
+local function allow_revoke(flag)
+    can_revoke = flag
+end
+
 -- Invoke full credential synchronization to set the new credentials.
 local function invoke_sync()
     -- Create a fiber channel for scheduled tasks for sync worker.
@@ -982,6 +992,8 @@ return {
     get = get,
     drop = drop,
     _set_aboard = set_aboard,
+    _invoke_sync = invoke_sync,
+    _allow_revoke = allow_revoke,
     -- Exported for testing purposes.
     _internal = {
         privileges_from_box = privileges_from_box,
