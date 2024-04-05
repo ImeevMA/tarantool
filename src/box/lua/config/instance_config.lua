@@ -1568,6 +1568,13 @@ return schema.new('instance_config', schema.record({
                                 allowed_values = {'all'},
                             }),
                         }),
+                    }, {
+                        validate = function(data, w)
+                            -- If data is not nil then the permissions should be there.
+                            if data.permissions == nil then
+                                w.error('The permissions is required for privileges')
+                            end
+                        end,
                     }),
                 }),
                 -- The given role has all the privileges from
@@ -1634,6 +1641,13 @@ return schema.new('instance_config', schema.record({
                                 allowed_values = {'all'},
                             }),
                         }),
+                    }, {
+                        validate = function(data, w)
+                            -- If data is not nil then the permissions should be there.
+                            if data.permissions == nil then
+                                w.error('The permissions is required for privileges')
+                            end
+                        end,
                     }),
                 }),
                 -- The given user has all the privileges from
