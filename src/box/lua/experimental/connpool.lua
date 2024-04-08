@@ -189,6 +189,49 @@ local function filter(opts)
     return dynamic_candidates
 end
 
+local function get_prefer_local(candidates)
+    local preferred_candidates = {}
+    local non_preferred_candidates = {}
+    for _, candidate in pairs(candidates) do
+        if candidate == box.info.name then
+            table.insert(preferred_candidates, candidate)
+        else
+            table.insert(non_preferred_candidates, candidate)
+        end
+    end
+    return preferred_candidates, non_preferred_candidates
+end
+
+local function get_prefer_mode(candidates, prefer_mode)
+    connect_to_candidates(static_candidates)
+    local mode = prefer_mode == 'prefer_ro' and 'ro' or 'rw'
+    local preferred_candidates = {}
+    local non_preferred_candidates = {}
+    for _, candidate in pairs(candidates) do
+        local status = statuses[candidate]
+        if status ~= nil then
+            if status.mode == mode then
+                table.insert(preferred_candidates, candidate)
+            else
+                table.insert(non_preferred_candidates, candidate)
+            end
+        end
+    end
+    return preferred_candidates, non_preferred_candidates
+end
+
+local function get_connection_to_candidates(candidates)
+    while #candidates > 0 do
+        local n = math.random(#candidates)
+        local instance_name = table.remove(candidates, n)
+        local conn = connect(instance_name, {wait_connected = false})
+        if conn:wait_connected() then
+            return conn
+        end
+    end
+    return nil
+end
+
 local function get_connection(opts)
     local mode = nil
     if opts.mode == 'ro' or opts.mode == 'rw' then
@@ -204,30 +247,30 @@ local function get_connection(opts)
         return nil, "no candidates are available with these conditions"
     end
 
+    -- The "prefer_local" option has the highest priority among all the
+    -- "prefer_*" options.
     if opts.prefer_local ~= false then
-        local candidate_idx = nil
-        for n, candidate in ipairs(candidates) do
-            if candidate == box.info.name then
-                candidate_idx = n
-                local conn = connect(box.info.name, {wait_connected = false})
-                if conn:wait_connected() then
-                    return conn
-                end
-                break
-            end
-        end
-        if candidate_idx ~= nil then
-            table.remove(candidates, candidate_idx)
+        local preferred_candidates
+        preferred_candidates, candidates = get_prefer_local(candidates)
+        local conn = get_connection_to_candidates(preferred_candidates)
+        if conn ~= nil then
+            return conn
         end
     end
 
-    while #candidates > 0 do
-        local n = math.random(#candidates)
-        local instance_name = table.remove(candidates, n)
-        local conn = connect(instance_name, {wait_connected = false})
-        if conn:wait_connected() then
+    if opts.mode == 'prefer_rw' or opts.mode == 'prefer_ro' then
+        local mode = opts.mode
+        local preferred_candidates
+        preferred_candidates, candidates = get_prefer_mode(candidates, mode)
+        local conn = get_connection_to_candidates(preferred_candidates)
+        if conn ~= nil then
             return conn
         end
+    end
+
+    local conn = get_connection_to_candidates(candidates)
+    if conn ~= nil then
+        return conn
     end
     return nil, "connection to candidates failed"
 end
