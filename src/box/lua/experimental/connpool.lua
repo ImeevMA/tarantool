@@ -1,8 +1,14 @@
+local fiber = require('fiber')
+local clock = require('clock')
 local config = require('config')
 local checks = require('checks')
 local netbox = require('net.box')
 
+local WATCHER_DELAY = 0.1
+local WATCHER_TIMEOUT = 10
+
 local connections = {}
+local statuses = {}
 
 local function is_connection_valid(conn, opts)
     if conn == nil or conn.state == 'error' or conn.state == 'closed' then
@@ -44,6 +50,11 @@ local function connect(instance_name, opts)
         end
         conn = res
         connections[instance_name] = conn
+        local function watch_status(key, value)
+            statuses[instance_name] = statuses[instance_name] or {}
+            statuses[instance_name].mode = value.is_ro and 'ro' or 'rw'
+        end
+        conn:watch('box.status', watch_status)
     end
 
     -- If opts.wait_connected is not false we wait until the connection is
@@ -53,6 +64,29 @@ local function connect(instance_name, opts)
         error(msg:format(instance_name), 0)
     end
     return conn
+end
+
+local function connect_to_candidates(candidates)
+    local delay = WATCHER_DELAY
+    local conn_opts = {connect_timeout = WATCHER_TIMEOUT}
+    for _, instance_name in pairs(candidates) do
+        local time_connect_end = clock.monotonic() + WATCHER_TIMEOUT
+        local ok, conn = pcall(connect, instance_name, conn_opts)
+        if ok and conn.state == 'active' then
+            local status = statuses[instance_name]
+            while status == nil do
+                if clock.monotonic() > time_connect_end then
+                    conn:close()
+                    statuses[instance_name] = nil
+                    break
+                end
+                fiber.sleep(delay)
+                status = statuses[instance_name]
+            end
+        else
+            statuses[instance_name] = nil
+        end
+    end
 end
 
 local function is_roles_match(expected_roles, present_roles)
@@ -91,25 +125,68 @@ local function is_labels_match(expected_labels, present_labels)
     return true
 end
 
-local function is_candidate_match(instance_name, opts)
+local function is_candidate_match_static(instance_name, opts)
     assert(opts ~= nil and type(opts) == 'table')
     local get_opts = {instance = instance_name}
     return is_roles_match(opts.roles, config:get('roles', get_opts)) and
            is_labels_match(opts.labels, config:get('labels', get_opts))
 end
 
+local function is_mode_match(mode, instance_name)
+    if mode == nil then
+        return true
+    end
+    if statuses[instance_name] == nil then
+        return false
+    end
+    return statuses[instance_name].mode == mode
+end
+
+local function is_candidate_match_dynamic(instance_name, opts)
+    assert(opts ~= nil and type(opts) == 'table')
+    return is_mode_match(opts.mode, instance_name)
+end
+
 local function filter(opts)
     checks({
         labels = '?table',
         roles = '?table',
+        mode = '?string',
     })
-    local candidates = {}
+    opts = opts or {}
+    if opts.mode ~= nil and opts.mode ~= 'ro' and opts.mode ~= 'rw' then
+        local msg = 'Expected nil, "ro" or "rw", got "%s"'
+        error(msg:format(opts.mode), 0)
+    end
+    local static_opts = {
+        labels = opts.labels,
+        roles = opts.roles,
+    }
+    local dynamic_opts = {
+        mode = opts.mode,
+    }
+
+    -- First, select candidates using the information from the config.
+    local static_candidates = {}
     for instance_name in pairs(config:instances()) do
-        if is_candidate_match(instance_name, opts or {}) then
-            table.insert(candidates, instance_name)
+        if is_candidate_match_static(instance_name, static_opts) then
+            table.insert(static_candidates, instance_name)
         end
     end
-    return candidates
+    -- Return if retrieving dynamic information is not required.
+    if next(static_candidates) == nil or next(dynamic_opts) == nil then
+        return static_candidates
+    end
+
+    -- Filter the remaining candidates after connecting to them.
+    connect_to_candidates(static_candidates)
+    local dynamic_candidates = {}
+    for _, instance_name in pairs(static_candidates) do
+        if is_candidate_match_dynamic(instance_name, dynamic_opts) then
+            table.insert(dynamic_candidates, instance_name)
+        end
+    end
+    return dynamic_candidates
 end
 
 local function get_connection(all_candidates, prefer_local)
