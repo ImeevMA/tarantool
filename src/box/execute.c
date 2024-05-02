@@ -203,20 +203,21 @@ sql_unprepare(uint32_t stmt_id)
  * @retval -1 Error.
  */
 static inline int
-sql_execute(struct Vdbe *stmt, struct port *port, struct region *region)
+sql_execute(struct Vdbe *stmt, struct port *port, struct region *region,
+	    struct box_raw_read_view *rv)
 {
 	int rc, column_count = sql_column_count(stmt);
 	rmean_collect(rmean_box, IPROTO_EXECUTE, 1);
 	if (column_count > 0) {
 		/* Either ROW or DONE or ERROR. */
-		while ((rc = sql_step(stmt, NULL)) == SQL_ROW) {
+		while ((rc = sql_step(stmt, rv)) == SQL_ROW) {
 			if (sql_row_to_port(stmt, region, port) != 0)
 				return -1;
 		}
 		assert(rc == SQL_DONE || rc != 0);
 	} else {
 		/* No rows. Either DONE or ERROR. */
-		rc = sql_step(stmt, NULL);
+		rc = sql_step(stmt, rv);
 		assert(rc != SQL_ROW && rc != 0);
 	}
 	if (rc != SQL_DONE)
@@ -227,7 +228,7 @@ sql_execute(struct Vdbe *stmt, struct port *port, struct region *region)
 int
 sql_execute_prepared(uint32_t stmt_id, const struct sql_bind *bind,
 		     uint32_t bind_count, struct port *port,
-		     struct region *region)
+		     struct region *region, struct box_raw_read_view *rv)
 {
 
 	if (!session_check_stmt_id(current_session(), stmt_id)) {
@@ -243,7 +244,7 @@ sql_execute_prepared(uint32_t stmt_id, const struct sql_bind *bind,
 	if (sql_stmt_busy(stmt)) {
 		const char *sql_str = sql_stmt_query_str(stmt);
 		return sql_prepare_and_execute(sql_str, strlen(sql_str), bind,
-					       bind_count, port, region);
+					       bind_count, port, region, rv);
 	}
 	/*
 	 * Clear all set from previous execution cycle values to be bound and
@@ -256,7 +257,7 @@ sql_execute_prepared(uint32_t stmt_id, const struct sql_bind *bind,
 	enum sql_serialization_format format = sql_column_count(stmt) > 0 ?
 					       DQL_EXECUTE : DML_EXECUTE;
 	port_sql_create(port, stmt, format, false);
-	if (sql_execute(stmt, port, region) != 0) {
+	if (sql_execute(stmt, port, region, rv) != 0) {
 		port_destroy(port);
 		sql_stmt_reset(stmt);
 		return -1;
@@ -269,7 +270,7 @@ sql_execute_prepared(uint32_t stmt_id, const struct sql_bind *bind,
 int
 sql_prepare_and_execute(const char *sql, int len, const struct sql_bind *bind,
 			uint32_t bind_count, struct port *port,
-			struct region *region)
+			struct region *region, struct box_raw_read_view *rv)
 {
 	struct Vdbe *stmt;
 	if (sql_stmt_compile(sql, len, NULL, &stmt, NULL) != 0)
@@ -279,7 +280,7 @@ sql_prepare_and_execute(const char *sql, int len, const struct sql_bind *bind,
 					   DQL_EXECUTE : DML_EXECUTE;
 	port_sql_create(port, stmt, format, true);
 	if (sql_bind(stmt, bind, bind_count) == 0 &&
-	    sql_execute(stmt, port, region) == 0)
+	    sql_execute(stmt, port, region, rv) == 0)
 		return 0;
 	port_destroy(port);
 	return -1;
@@ -313,13 +314,13 @@ box_process_sql(const struct sql_request *request, struct port *port)
 			sql = mp_decode_str(&sql, &len);
 			return sql_prepare_and_execute(sql, len,
 						       bind, bind_count,
-						       port, region);
+						       port, region, NULL);
 		} else {
 			assert(request->stmt_id != NULL);
 			const char *data = request->stmt_id;
 			uint32_t stmt_id = mp_decode_uint(&data);
 			return sql_execute_prepared(stmt_id, bind, bind_count,
-						    port, region);
+						    port, region, NULL);
 		}
 	} else {
 		if (request->sql_text != NULL) {

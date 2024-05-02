@@ -52,6 +52,7 @@ struct Vdbe;
 struct region;
 struct sql_bind;
 struct sql_request;
+struct box_raw_read_view;
 
 int
 sql_unprepare(uint32_t stmt_id);
@@ -59,7 +60,7 @@ sql_unprepare(uint32_t stmt_id);
 int
 sql_execute_prepared(uint32_t query_id, const struct sql_bind *bind,
 		     uint32_t bind_count, struct port *port,
-		     struct region *region);
+		     struct region *region, struct box_raw_read_view *rv);
 
 /**
  * Prepare and execute an SQL statement.
@@ -77,7 +78,7 @@ sql_execute_prepared(uint32_t query_id, const struct sql_bind *bind,
 int
 sql_prepare_and_execute(const char *sql, int len, const struct sql_bind *bind,
 			uint32_t bind_count, struct port *port,
-			struct region *region);
+			struct region *region, struct box_raw_read_view *rv);
 
 /**
  * The following routine destroys a virtual machine that is created by the
