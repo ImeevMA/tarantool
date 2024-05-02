@@ -102,7 +102,7 @@ sql_metadata_is_full()
  * outer sql_step() wrapper procedure.
  */
 static int
-sqlStep(Vdbe * p)
+sqlStep(Vdbe * p, struct box_raw_read_view *rv)
 {
 	struct sql *db = sql_get();
 	int rc;
@@ -130,7 +130,7 @@ sqlStep(Vdbe * p)
 		rc = sqlVdbeList(p);
 	} else {
 		db->nVdbeExec++;
-		rc = sqlVdbeExec(p);
+		rc = sqlVdbeExec(p, rv);
 		db->nVdbeExec--;
 	}
 
@@ -149,10 +149,10 @@ sqlStep(Vdbe * p)
 }
 
 int
-sql_step(struct Vdbe *v)
+sql_step(struct Vdbe *v, struct box_raw_read_view *rv)
 {
 	assert(v != NULL);
-	return sqlStep(v);
+	return sqlStep(v, rv);
 }
 
 int

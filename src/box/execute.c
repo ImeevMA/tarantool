@@ -209,14 +209,14 @@ sql_execute(struct Vdbe *stmt, struct port *port, struct region *region)
 	rmean_collect(rmean_box, IPROTO_EXECUTE, 1);
 	if (column_count > 0) {
 		/* Either ROW or DONE or ERROR. */
-		while ((rc = sql_step(stmt)) == SQL_ROW) {
+		while ((rc = sql_step(stmt, NULL)) == SQL_ROW) {
 			if (sql_row_to_port(stmt, region, port) != 0)
 				return -1;
 		}
 		assert(rc == SQL_DONE || rc != 0);
 	} else {
 		/* No rows. Either DONE or ERROR. */
-		rc = sql_step(stmt);
+		rc = sql_step(stmt, NULL);
 		assert(rc != SQL_ROW && rc != 0);
 	}
 	if (rc != SQL_DONE)

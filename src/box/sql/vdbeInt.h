@@ -328,7 +328,7 @@ int sqlVdbeCursorRestore(VdbeCursor *);
 void sqlVdbePrintOp(FILE *, int, Op *);
 #endif
 
-int sqlVdbeExec(Vdbe *);
+int sqlVdbeExec(Vdbe *, struct box_raw_read_view *rv);
 int sqlVdbeList(Vdbe *);
 
 int sqlVdbeHalt(Vdbe *);

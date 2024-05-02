@@ -213,6 +213,8 @@
 #include <assert.h>
 #include <stddef.h>
 
+struct box_raw_read_view;
+
 typedef long long int sql_int64;
 typedef unsigned long long int sql_uint64;
 typedef sql_int64 sql_int64;
@@ -319,7 +321,7 @@ sql_stmt_compile(const char *sql, int bytes_count, struct Vdbe *re_prepared,
 
 /** This is the top-level implementation of sqlStep(). */
 int
-sql_step(struct Vdbe *v);
+sql_step(struct Vdbe *v, struct box_raw_read_view *rv);
 
 /** Encode the result of an SQL statement in msgpack. */
 char *

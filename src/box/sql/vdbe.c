@@ -48,6 +48,7 @@
 #include "mem.h"
 #include "vdbeInt.h"
 #include "tarantoolInt.h"
+#include "raw_read_view.h"
 
 #include "msgpuck/msgpuck.h"
 #include "mpstream/mpstream.h"
@@ -359,7 +360,7 @@ vdbe_field_ref_fetch(struct vdbe_field_ref *field_ref, uint32_t fieldno,
  * Execute as much of a VDBE program as we can.
  * This is the core of sql_step().
  */
-int sqlVdbeExec(Vdbe *p)
+int sqlVdbeExec(Vdbe *p, struct box_raw_read_view *rv)
 {
 	Op *aOp = p->aOp;          /* Copy of p->aOp */
 	Op *pOp = aOp;             /* Current operation */
@@ -2478,6 +2479,12 @@ case OP_IteratorOpen: {
  * space to register P1.
  */
 case OP_OpenSpace: {
+	if (rv != NULL) {
+		box_raw_read_view_space_t *space =
+			box_raw_read_view_space_by_id(rv, pOp->p2);
+		mem_set_ptr(&aMem[pOp->p1], space);
+		break;
+	}
 	assert(pOp->p1 >= 0 && pOp->p1 > 0);
 	struct space *space = space_by_id(pOp->p2);
 	assert(space != NULL);
