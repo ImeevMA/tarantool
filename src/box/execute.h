@@ -50,10 +50,22 @@ extern const char *sql_info_key_strs[];
 
 struct region;
 struct sql_bind;
-struct sql_stmt;
 
 int
 sql_unprepare(uint32_t stmt_id);
+
+/** \cond public */
+
+struct sql_stmt;
+struct box_raw_read_view;
+
+API_EXPORT struct sql_stmt *
+sql_rv_prepare(const char *sql);
+
+API_EXPORT char *
+sql_rv_execute(struct sql_stmt *stmt, struct box_raw_read_view *rv);
+
+/** \endcond public */
 
 int
 sql_execute_prepared(uint32_t query_id, const struct sql_bind *bind,

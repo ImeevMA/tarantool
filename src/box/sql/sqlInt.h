@@ -304,6 +304,7 @@ struct sql_vfs {
 
 struct tt_uuid;
 struct sql_key_info;
+struct box_raw_read_view;
 
 enum sql_ret_code {
 	/** sql_step() has another row ready. */
@@ -393,6 +394,9 @@ sql_randomness(int N, void *P);
 
 int
 sql_column_count(sql_stmt * pStmt);
+
+void
+sql_set_rv(struct sql_stmt *stmt, struct box_raw_read_view *rv);
 
 const char *
 sql_column_name(sql_stmt *, int N);

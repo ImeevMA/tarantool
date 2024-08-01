@@ -56,6 +56,10 @@
 #include "box/space.h"
 #include "box/sequence.h"
 #include "box/session_settings.h"
+#include "raw_read_view.h"
+
+uint32_t read_view_count = 0;
+struct box_raw_read_view **read_views = NULL;
 
 #ifdef SQL_DEBUG
 
@@ -2601,8 +2605,43 @@ case OP_SeekGT: {       /* jump, in3 */
 		cur->uc.pCursor->iter_type = is_lt ? ITER_LE : ITER_GE;
 
 	int res;
-	if (sql_cursor_seek(cur->uc.pCursor, mems, len, &res) != 0)
+	if (p->rv) {
+		struct BtCursor *bt_cur = cur->uc.pCursor;
+		uint32_t size;
+		struct region *region = &fiber()->gc;
+		size_t used = region_used(region);
+		const char *key = mem_encode_array(mems, len, &size, region);
+		uint32_t space_id = bt_cur->space->def->id;
+		uint32_t index_id = bt_cur->index->def->iid;
+		struct box_raw_read_view_space *space =
+			box_raw_read_view_space_by_id(p->rv, space_id);
+		struct box_raw_read_view_index *index =
+			box_raw_read_view_index_by_id(space, index_id);
+		p->rv_it = xmalloc(sizeof(*p->rv_it));
+		box_raw_read_view_iterator_create(p->rv_it, index,
+			bt_cur->iter_type, key, key + size);
+		region_truncate(region, used);
+
+		const char *data;
+		uint32_t data_size;
+		box_raw_read_view_iterator_next(p->rv_it, &data, &data_size);
+
+		struct tuple *tuple = box_tuple_new(
+			bt_cur->space->format, data, data + data_size);
+		if (bt_cur->last_tuple)
+			box_tuple_unref(bt_cur->last_tuple);
+		if (data) {
+			box_tuple_ref(tuple);
+			bt_cur->eState = CURSOR_VALID;
+			res = 0;
+		} else {
+			bt_cur->eState = CURSOR_INVALID;
+			res = 1;
+		}
+		bt_cur->last_tuple = tuple;
+	} else if (sql_cursor_seek(cur->uc.pCursor, mems, len, &res) != 0){
 		goto abort_due_to_error;
+	}
 	assert((res != 0) == (cur->uc.pCursor->eState == CURSOR_INVALID));
 	cur->cacheStatus = CACHE_STALE;
 #ifdef SQL_TEST
@@ -3307,6 +3346,40 @@ case OP_Rewind: {        /* jump */
 	if (isSorter(pC)) {
 		if (sqlVdbeSorterRewind(pC, &res) != 0)
 			goto abort_due_to_error;
+	} else if (p->rv != NULL) {
+		struct BtCursor *bt_cur = pC->uc.pCursor;
+		uint32_t size;
+		struct region *region = &fiber()->gc;
+		size_t used = region_used(region);
+		const char *key = mem_encode_array(NULL, 0, &size, region);
+		uint32_t space_id = bt_cur->space->def->id;
+		uint32_t index_id = bt_cur->index->def->iid;
+		struct box_raw_read_view_space *space =
+			box_raw_read_view_space_by_id(p->rv, space_id);
+		struct box_raw_read_view_index *index =
+			box_raw_read_view_index_by_id(space, index_id);
+		p->rv_it = xmalloc(sizeof(*p->rv_it));
+		box_raw_read_view_iterator_create(p->rv_it, index,
+			bt_cur->iter_type, key, key + size);
+		region_truncate(region, used);
+
+		const char *data;
+		uint32_t data_size;
+		box_raw_read_view_iterator_next(p->rv_it, &data, &data_size);
+
+		struct tuple *tuple = box_tuple_new(
+			bt_cur->space->format, data, data + data_size);
+		if (bt_cur->last_tuple)
+			box_tuple_unref(bt_cur->last_tuple);
+		if (data) {
+			box_tuple_ref(tuple);
+			bt_cur->eState = CURSOR_VALID;
+			res = 0;
+		} else {
+			bt_cur->eState = CURSOR_INVALID;
+			res = 1;
+		}
+		bt_cur->last_tuple = tuple;
 	} else {
 		assert(pC->eCurType==CURTYPE_TARANTOOL);
 		pCrsr = pC->uc.pCursor;
@@ -3427,9 +3500,31 @@ case OP_Next:          /* jump */
 	       || pC->seekOp==OP_SeekLT || pC->seekOp==OP_SeekLE
 	       || pC->seekOp==OP_Last);
 
-	if (pOp->p4.xAdvance(pC->uc.pCursor, &res) != 0)
-		goto abort_due_to_error;
-			next_tail:
+	if (p->rv) {
+		struct BtCursor *bt_cur = pC->uc.pCursor;
+		const char *data;
+		uint32_t data_size;
+		box_raw_read_view_iterator_next(p->rv_it, &data, &data_size);
+
+		if (data) {
+			struct tuple *tuple = box_tuple_new(
+				bt_cur->space->format, data, data + data_size);
+			if (bt_cur->last_tuple)
+				box_tuple_unref(bt_cur->last_tuple);
+			box_tuple_ref(tuple);
+			bt_cur->last_tuple = tuple;
+			bt_cur->eState = CURSOR_VALID;
+			res = 0;
+		} else {
+			bt_cur->eState = CURSOR_INVALID;
+			res = 1;
+		}
+	} else {
+		if (pOp->p4.xAdvance(pC->uc.pCursor, &res) != 0)
+			goto abort_due_to_error;
+				next_tail:
+	}
+
 	pC->cacheStatus = CACHE_STALE;
 	if (res == 0) {
 		pC->nullRow = 0;

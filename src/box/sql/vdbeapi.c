@@ -180,6 +180,13 @@ sql_column_count(sql_stmt * pStmt)
 	return pVm ? pVm->nResColumn : 0;
 }
 
+void
+sql_set_rv(struct sql_stmt *stmt, struct box_raw_read_view *rv)
+{
+	struct Vdbe *v = (struct Vdbe *)stmt;
+	v->rv = rv;
+}
+
 /*
  * Return the number of values available from the current row of the
  * currently executing statement pStmt.

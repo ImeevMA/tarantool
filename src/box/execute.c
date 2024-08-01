@@ -197,6 +197,64 @@ sql_execute(struct sql_stmt *stmt, struct port *port, struct region *region)
 	return 0;
 }
 
+API_EXPORT struct sql_stmt *
+sql_rv_prepare(const char *sql)
+{
+	struct sql_stmt *stmt = NULL;
+	if (sql_stmt_compile(sql, strlen(sql), NULL, &stmt, NULL) != 0)
+		return NULL;
+	return stmt;
+}
+
+API_EXPORT char *
+sql_rv_execute(struct sql_stmt *stmt, struct box_raw_read_view *rv)
+{
+	sql_set_rv(stmt, rv);
+	int column_count = sql_column_count(stmt);
+	assert(column_count > 0);
+	uint32_t names_len = mp_sizeof_array(column_count);
+	uint32_t types_len = mp_sizeof_array(column_count);
+	char *names = xmalloc(names_len);
+	char *types = xmalloc(types_len);
+	mp_encode_array(names, column_count);
+	mp_encode_array(types, column_count);
+	for (int i = 0; i < column_count; ++i) {
+		const char *name = sql_column_name(stmt, i);
+		uint32_t name_len = mp_sizeof_str(strlen(name));
+		names = xrealloc(names, names_len + name_len);
+		mp_encode_str0(names + names_len, name);
+		names_len += name_len;
+
+		const char *type = sql_column_datatype(stmt, i);
+		uint32_t type_len = mp_sizeof_str(strlen(type));
+		types = xrealloc(types, types_len + type_len);
+		mp_encode_str0(types + types_len, type);
+		types_len += type_len;
+	}
+	int count = 0;
+	char *tuples = NULL;
+	uint32_t tuples_size = 0;
+	while (sql_step(stmt) == SQL_ROW) {
+		++count;
+		uint32_t data_size;
+		char *data = sql_stmt_result_to_msgpack(stmt, &data_size, NULL);
+		tuples = xrealloc(tuples, tuples_size + data_size);
+		memcpy(tuples + tuples_size, data, data_size);
+		tuples_size += data_size;
+	}
+
+	uint32_t size = mp_sizeof_array(3) + names_len + types_len +
+		mp_sizeof_array(count) + tuples_size;
+	char *res = xmalloc(size);
+	char *res_end = res;
+	res_end = mp_encode_array(res_end, 3);
+	res_end = mp_memcpy(res_end, names, names_len);
+	res_end = mp_memcpy(res_end, types, types_len);
+	res_end = mp_encode_array(res_end, count);
+	memcpy(res_end, tuples, tuples_size);
+	return res;
+}
+
 int
 sql_execute_prepared(uint32_t stmt_id, const struct sql_bind *bind,
 		     uint32_t bind_count, struct port *port,

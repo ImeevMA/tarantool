@@ -47,6 +47,7 @@
 typedef struct VdbeOp Op;
 
 struct func;
+struct box_raw_read_view;
 
 /*
  * Boolean values
@@ -305,6 +306,8 @@ struct Vdbe {
 	uint32_t sql_flags;
 	/* Anonymous savepoint for aborts only */
 	struct txn_savepoint *anonymous_savepoint;
+	struct box_raw_read_view *rv;
+	struct box_raw_read_view_iterator *rv_it;
 };
 
 /*

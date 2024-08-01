@@ -3244,6 +3244,8 @@ char *
 mem_encode_array(const struct Mem *mems, uint32_t count, uint32_t *size,
 		 struct region *region)
 {
+	if (region == NULL)
+		region = &fiber()->gc;
 	size_t used = region_used(region);
 	bool is_error = false;
 	struct mpstream stream;
