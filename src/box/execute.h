@@ -48,10 +48,22 @@ enum sql_info_key {
 
 extern const char *sql_info_key_strs[];
 
-struct Vdbe;
 struct region;
 struct sql_bind;
 struct sql_request;
+
+/** \cond public */
+
+struct Vdbe;
+struct box_raw_read_view;
+
+API_EXPORT struct Vdbe *
+sql_rv_prepare(const char *sql);
+
+API_EXPORT char *
+sql_rv_execute(struct Vdbe *v, struct box_raw_read_view *rv);
+
+/** \endcond public */
 
 int
 sql_unprepare(uint32_t stmt_id);

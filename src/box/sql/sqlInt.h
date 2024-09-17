@@ -274,6 +274,7 @@ struct sql_vfs {
 
 struct tt_uuid;
 struct sql_key_info;
+struct box_raw_read_view;
 
 enum sql_ret_code {
 	/** sql_step() has another row ready. */
@@ -359,6 +360,9 @@ enum sql_subtype {
 
 void
 sql_randomness(int N, void *P);
+
+void
+sql_set_rv(struct Vdbe *v, struct box_raw_read_view *rv);
 
 /** Return the number of columns in the result set for the statement. */
 int

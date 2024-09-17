@@ -177,6 +177,12 @@ sql_stmt_func_result_to_msgpack(struct Vdbe *vdbe, uint32_t *size,
 	return mem_to_mp(vdbe->pResultSet, size, region);
 }
 
+void
+sql_set_rv(struct Vdbe *v, struct box_raw_read_view *rv)
+{
+	v->rv = rv;
+}
+
 const char *
 sql_column_name(struct Vdbe *p, int n)
 {
