@@ -3578,8 +3578,8 @@ case OP_Next:          /* jump */
 	} else {
 		if (pOp->p4.xAdvance(pC->uc.pCursor, &res) != 0)
 			goto abort_due_to_error;
-				next_tail:
 	}
+next_tail:
 
 	pC->cacheStatus = CACHE_STALE;
 	if (res == 0) {
