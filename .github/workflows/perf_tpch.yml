@@ -6,31 +6,76 @@ on:
       - '*'
   workflow_dispatch:
   schedule:
-    - cron:  '0 */3 * * *'
+    # Once a day. Runs directly on a dedicated (non-Docker) self-hosted
+    # machine that is expected to keep its workspace between runs, so the
+    # SF=1 TPC-H dataset and the tarantool build are reused incrementally
+    # instead of being regenerated/rebuilt from scratch every night.
+    - cron: '17 2 * * *'
 
 jobs:
   perf_tpch:
     if: github.repository == 'tarantool/tarantool'
 
-    runs-on: perf-sh2
+    # Dedicated machine for this benchmark (no Docker involved). Adjust the
+    # label to whatever this runner is actually registered as.
+    runs-on: [self-hosted, perf-tpch]
 
     steps:
-      - name: set PATH to GIT of the newer version 2.9.0
-        run: echo "/usr/local/git/bin" | tee -a $GITHUB_PATH
-      - name: cleanup workspace
-        run: docker run -w /source -v ${PWD}:/source -i centos:8 /bin/bash -c "chown -R $(id -u):$(id -g) * .[^.]*"
-      - uses: actions/checkout@v4
-      - name: test
-        env:
-          BENCH: 'tpch'
-          IMAGE_SUFFIX: '_tpch'
-        uses: ./.github/actions/perf
+      - name: Checkout tarantool
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          # Keep the previous build tree around: this is a dedicated,
+          # persistent machine, and a from-scratch rebuild every night is
+          # wasted work. cmake/make already do incremental rebuilds
+          # correctly on their own.
+          clean: false
+
+      - uses: ./.github/actions/environment
+
+      - name: Build tarantool
+        run: |
+          cmake . -DCMAKE_BUILD_TYPE=Release
+          make -j $(nproc)
+
+      - name: Add tarantool path to $PATH
+        run: echo "${PWD}/src:${PWD}/extra/dist" >> ${GITHUB_PATH}
+
+      - name: Get tarantool version
+        id: tarantool-version
+        run: echo "value=$(tarantool -e 'print(_TARANTOOL)')" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout tpch
+        uses: actions/checkout@v4
+        with:
+          path: tpch
+          repository: tarantool/tpch
+          # Same reasoning as above: tpch-dbgen/*.tbl (SF=1 data, ~1 GB) and
+          # the loaded Tarantool snapshot are untracked/gitignored, so a
+          # clean checkout would delete them and force a full
+          # regenerate+reload every run. The tpch Makefile already treats
+          # them as up-to-date build targets (it only (re)generates the
+          # .tbl files if they're missing/stale, and only (re)loads the
+          # database if the snapshot file doesn't exist yet) -- we just
+          # need to not wipe them out from under it.
+          clean: false
+
+      - name: Run TPC-H benchmark (SF=1)
+        working-directory: ./tpch
+        run: make bench-tnt SCALE_FACTOR=1
+
+      - name: Build results CSV
+        working-directory: ./tpch
+        run: grep '^Q' bench-tnt.log > bench-tnt.csv
+
       - name: call action to send Telegram message on failure
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_CORE_TOKEN }}
           TELEGRAM_TO: ${{ secrets.TELEGRAM_CORE_TO }}
         uses: ./.github/actions/send-telegram-notify
         if: failure()
+
       - name: artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -38,6 +83,5 @@ jobs:
           name: perf_tpch
           retention-days: 21
           path: |
-            *_result.txt
-            *_t_version.txt
-            bench-*.csv
+            tpch/bench-tnt.log
+            tpch/bench-tnt.csv
