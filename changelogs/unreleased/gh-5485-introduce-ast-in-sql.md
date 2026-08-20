@@ -8,3 +8,4 @@
   "JOIN cannot be both OUTER and INNER"; an unrecognized `JOIN` keyword is
   now a syntax error instead of the 'unknown or unsupported join type'
   error (gh-5485).
+* SQL now builds internal AST for SQL statement before building VDBE (gh-5485).
