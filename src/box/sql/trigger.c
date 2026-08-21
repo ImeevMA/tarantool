@@ -278,10 +278,12 @@ sql_trigger_delete_all(struct sql_trigger *trigger)
 }
 
 void
-vdbe_code_drop_trigger(struct Parse *parser, const char *trigger_name,
+vdbe_emit_drop_trigger(struct Parse *parser, const char *trigger_name,
 		       bool account_changes)
 {
 	struct Vdbe *v = sqlGetVdbe(parser);
+	if (account_changes)
+		sqlVdbeCountChanges(v);
 	/*
 	 * Generate code to delete entry from _trigger and
 	 * internal SQL structures.
@@ -296,21 +298,6 @@ vdbe_code_drop_trigger(struct Parse *parser, const char *trigger_name,
 			  record_to_delete);
 	if (account_changes)
 		sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
-}
-
-void
-sql_drop_trigger(struct Parse *parser, struct Token *name, bool if_exists)
-{
-	struct Vdbe *v = sqlGetVdbe(parser);
-	sqlVdbeCountChanges(v);
-
-	const char *trigger_name = sql_name_from_token(name);
-	int name_reg = ++parser->nMem;
-	sqlVdbeAddOp4(v, OP_String8, 0, name_reg, 0, trigger_name, P4_DYNAMIC);
-	vdbe_emit_halt_with_presence_test(parser, BOX_TRIGGER_ID, 0, name_reg,
-					  1, ER_NO_SUCH_TRIGGER, trigger_name,
-					  if_exists, OP_Found);
-	vdbe_code_drop_trigger(parser, trigger_name, true);
 }
 
 int

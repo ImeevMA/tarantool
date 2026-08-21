@@ -17,6 +17,7 @@ struct sql_rast {
 	union {
 		struct sql_ast *ast;
 		struct rast_drop_index drop_index;
+		const char *trigger_name;
 	};
 };
 

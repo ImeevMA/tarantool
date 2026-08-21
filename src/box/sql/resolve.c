@@ -1625,6 +1625,36 @@ sql_resolve_drop_index(struct sql_rast *rast, struct ast_drop_index *ast)
 	return rast;
 }
 
+static struct sql_rast *
+sql_resolve_drop_trigger(struct region *region, struct sql_rast *rast,
+			 struct ast_drop_trigger *stmt)
+{
+	char *name = sql_name_temp(region, stmt->name.z, stmt->name.n);
+	uint32_t len = strlen(name);
+	uint32_t used = region_used(region);
+	uint32_t size = mp_sizeof_array(1) + mp_sizeof_str(len);
+	char *begin = xregion_alloc(region, size);
+	char *end = mp_encode_array(begin, 1);
+	end = mp_encode_str(end, name, len);
+
+	box_tuple_t *result;
+	if (box_index_get(BOX_TRIGGER_ID, 0, begin, end, &result) != 0)
+		return NULL;
+	if (result == NULL) {
+		if (stmt->if_exists) {
+			rast->type = SQL_AST_UNKNOWN;
+			return rast;
+		}
+		diag_set(ClientError, ER_NO_SUCH_TRIGGER,
+			 sql_tt_name_from_token(&stmt->name));
+		return NULL;
+	}
+	region_truncate(region, used);
+	rast->trigger_name = name;
+	return rast;
+}
+
+
 struct sql_rast *
 sql_resolve_ast(struct region *region, struct sql_ast *ast)
 {
@@ -1635,6 +1665,10 @@ sql_resolve_ast(struct region *region, struct sql_ast *ast)
 	switch (ast->type) {
 	case SQL_AST_DROP_INDEX:
 		rast = sql_resolve_drop_index(rast, &ast->drop_index);
+		break;
+	case SQL_AST_DROP_TRIGGER:
+		rast = sql_resolve_drop_trigger(region, rast,
+						&ast->drop_trigger);
 		break;
 	default:
 		rast->ast = ast;

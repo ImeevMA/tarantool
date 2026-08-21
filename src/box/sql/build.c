@@ -327,7 +327,7 @@ sql_create_column_start(struct Parse *parse, struct Token *table,
 	}
 #endif
 
-	char *column_name = sql_name_temp(parse, name->z, name->n);
+	char *column_name = sql_name_temp(&parse->region, name->z, name->n);
 
 	/*
 	 * Format can be set in Lua, then exact_field_count can be
@@ -1670,7 +1670,7 @@ sql_code_drop_table(struct Parse *parse_context, const struct space *space,
 	 */
 	const struct sql_trigger *trigger = space->sql_triggers;
 	while (trigger != NULL) {
-		vdbe_code_drop_trigger(parse_context, trigger->zName, false);
+		vdbe_emit_drop_trigger(parse_context, trigger->zName, false);
 		trigger = trigger->next;
 	}
 	/*
@@ -3641,6 +3641,10 @@ sql_emit_bytecode(struct Parse *parser, struct sql_rast *rast, const char *sql)
 		parser->initiateTTrans = true;
 		vdbe_emit_drop_index(parser, rast->drop_index.space_id,
 				     rast->drop_index.index_id);
+		break;
+	case SQL_AST_DROP_TRIGGER:
+		parser->initiateTTrans = true;
+		vdbe_emit_drop_trigger(parser, rast->trigger_name, true);
 		break;
 	default:
 		sql_code_ast(parser, rast->ast, sql);

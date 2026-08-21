@@ -129,11 +129,10 @@ sql_name_new(const char *name, int len)
 }
 
 char *
-sql_name_temp(struct Parse *parser, const char *name, int len)
+sql_name_temp(struct region *region, const char *name, int len)
 {
-	struct region *r = &parser->region;
 	int size = len + 1;
-	char *res = xregion_alloc(r, size);
+	char *res = xregion_alloc(region, size);
 	memcpy(res, name, len);
 	res[len] = '\0';
 	sqlDequote(res);

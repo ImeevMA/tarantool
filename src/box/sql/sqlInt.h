@@ -2366,7 +2366,7 @@ sql_name_new(const char *name, int len);
  * necessary.
  */
 char *
-sql_name_temp(struct Parse *parser, const char *name, int len);
+sql_name_temp(struct region *region, const char *name, int len);
 
 /** Normalize the given name and write it to the newly allocated memory. */
 char *
@@ -3486,17 +3486,6 @@ vdbe_emit_create_trigger(struct Parse *parser, const char *sql,
 			 bool if_not_exists);
 
 /**
- * This function is called from parser to generate drop trigger
- * VDBE code.
- *
- * @param parser Parser context.
- * @param name Trigger name.
- * @param if_exists If TRUE do not raise an error when the trigger is missing.
- */
-void
-sql_drop_trigger(struct Parse *parser, struct Token *name, bool if_exists);
-
-/**
  * Drop a trigger given a pointer to that trigger.
  *
  * @param parser Parser context.
@@ -3505,7 +3494,7 @@ sql_drop_trigger(struct Parse *parser, struct Token *name, bool if_exists);
  *        last reset.
  */
 void
-vdbe_code_drop_trigger(struct Parse *parser, const char *trigger_name,
+vdbe_emit_drop_trigger(struct Parse *parser, const char *trigger_name,
 		       bool account_changes);
 
 /**
