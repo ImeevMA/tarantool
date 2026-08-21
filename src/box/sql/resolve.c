@@ -36,6 +36,7 @@
  * table and column.
  */
 #include "sqlInt.h"
+#include "resolve.h"
 #include <stdlib.h>
 #include <string.h>
 #include "box/schema.h"
@@ -1611,4 +1612,15 @@ sql_coll_id(uint32_t *id, const char *name, uint32_t len)
 	diag_set(ClientError, ER_NO_SUCH_COLLATION, name_str);
 	sql_xfree(name_str);
 	return -1;
+}
+
+struct sql_rast *
+sql_resolve_ast(struct Parse *parser, struct sql_ast *ast)
+{
+	struct region *region = &parser->region;
+	struct sql_rast *rast = xregion_alloc_object(region, typeof(*rast));
+	memset(rast, 0, sizeof(*rast));
+	rast->type = ast->type;
+	rast->ast = ast;
+	return rast;
 }
