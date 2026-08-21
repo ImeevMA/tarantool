@@ -46,6 +46,7 @@
 #include <ctype.h>
 #include "sqlInt.h"
 #include "mem.h"
+#include "resolve.h"
 #include "vdbeInt.h"
 #include "mp_decimal.h"
 #include "tarantoolInt.h"
@@ -3619,4 +3620,10 @@ sql_emit_show_create_table_all(struct Parse *parse)
 	sqlVdbeAddOp2(v, OP_ResultRow, result_reg, 2);
 	sqlVdbeAddOp2(v, OP_Next, cursor, addr2);
 	sqlVdbeJumpHere(v, addr1);
+}
+
+void
+sql_emit_bytecode(struct Parse *parser, struct sql_rast *rast, const char *sql)
+{
+	sql_code_ast(parser, rast->ast, sql);
 }
