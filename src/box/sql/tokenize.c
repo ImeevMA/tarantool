@@ -824,12 +824,10 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast, const char *sql)
 					 &ast->create_trigger.table,
 					 ast->create_trigger.if_not_exists);
 		break;
-	case SQL_AST_DROP_VIEW:
 	case SQL_AST_DROP_TABLE:
 		parse->initiateTTrans = true;
 		sql_drop_table(parse, &ast->drop_table.name,
-			       ast->drop_table.if_exists,
-			       ast->type == SQL_AST_DROP_VIEW);
+			       ast->drop_table.if_exists, false);
 		break;
 	case SQL_AST_ALTER_RENAME:
 		parse->initiateTTrans = true;

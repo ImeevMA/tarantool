@@ -1595,6 +1595,129 @@ sql_resolve_self_reference(struct Parse *parser, struct space_def *def,
 	sqlResolveExprNames(&sNC, expr);
 }
 
+static int
+sql_privs_by_type_and_id(struct region *region, struct stailq *head,
+			 const char *type, uint32_t id)
+{
+	uint32_t type_len = strlen(type);
+	uint32_t size = mp_sizeof_array(2) + mp_sizeof_str(type_len) +
+			mp_sizeof_uint(id);
+	char *begin = xregion_alloc(region, size);
+	char *end = mp_encode_array(begin, 2);
+	end = mp_encode_str(end, type, type_len);
+	end = mp_encode_uint(end, id);
+
+	/* Index 'object' : (object_type, object_id). */
+	box_iterator_t *it = box_index_iterator(BOX_PRIV_ID, 2, ITER_EQ,
+						begin, end);
+	if (it == NULL)
+		return -1;
+
+	box_tuple_t *tuple;
+	while (box_iterator_next(it, &tuple) == 0 && tuple != NULL) {
+		uint32_t len;
+		const char *key = box_tuple_extract_key(tuple, BOX_PRIV_ID, 0,
+							&len);
+		if (key == NULL) {
+			box_iterator_free(it);
+			diag_set(OutOfMemory, 0, "box_tuple_extract_key",
+				 "key");
+			return -1;
+		}
+
+		mp_decode_array(&key);
+		uint32_t grantee = mp_decode_uint(&key);
+		const char *type = mp_decode_str(&key, &len);
+		uint32_t id = mp_decode_uint(&key);
+
+		struct rast_priv_list_entry *priv =
+			xregion_alloc_object(region, typeof(*priv));
+		priv->grantee = grantee;
+		priv->id = id;
+		priv->type = xregion_alloc(region, len + 1);
+		memcpy(priv->type, type, len);
+		priv->type[len] = '\0';
+		stailq_add_tail(head, &priv->link);
+	}
+	box_iterator_free(it);
+	return 0;
+}
+
+static int
+sql_triggers_by_space_id(struct region *region, struct stailq *head,
+			 uint32_t space_id)
+{
+	uint32_t size = mp_sizeof_array(1) + mp_sizeof_uint(space_id);
+	char *begin = xregion_alloc(region, size);
+	char *end = mp_encode_array(begin, 1);
+	end = mp_encode_uint(end, space_id);
+
+	/* Index 'space_id' : (space_id). */
+	box_iterator_t *it = box_index_iterator(BOX_TRIGGER_ID, 1, ITER_EQ,
+						begin, end);
+	if (it == NULL)
+		return -1;
+
+	box_tuple_t *tuple;
+	while (box_iterator_next(it, &tuple) == 0 && tuple != NULL) {
+		uint32_t len;
+		const char *key = box_tuple_extract_key(tuple, BOX_TRIGGER_ID,
+							0, &len);
+		if (key == NULL) {
+			box_iterator_free(it);
+			diag_set(OutOfMemory, 0, "box_tuple_extract_key",
+				 "key");
+			return -1;
+		}
+
+		mp_decode_array(&key);
+		const char *name = mp_decode_str(&key, &len);
+
+		struct rast_name_list_entry *trigger =
+			xregion_alloc_object(region, typeof(*trigger));
+		trigger->name = xregion_alloc(region, len + 1);
+		memcpy(trigger->name, name, len);
+		trigger->name[len] = '\0';
+		stailq_add_tail(head, &trigger->link);
+	}
+	box_iterator_free(it);
+	return 0;
+}
+
+static struct sql_rast *
+sql_resolve_drop_view(struct region *region, struct sql_rast *rast,
+		      struct ast_drop_table *stmt)
+{
+	const struct space *space = sql_space_by_token(&stmt->name);
+	if (space == NULL) {
+		if (stmt->if_exists) {
+			rast->type = SQL_AST_UNKNOWN;
+			return rast;
+		}
+		diag_set(ClientError, ER_NO_SUCH_SPACE,
+			 sql_tt_name_from_token(&stmt->name));
+		return NULL;
+	}
+	if (!space->def->opts.is_view) {
+		diag_set(ClientError, ER_DROP_SPACE,
+			 sql_tt_name_from_token(&stmt->name), "use DROP TABLE");
+		return NULL;
+	}
+
+	uint32_t space_id = space->def->id;
+	struct stailq *priv_list = &rast->drop_view.priv_list;
+	stailq_create(priv_list);
+	if (sql_privs_by_type_and_id(region, priv_list, "space", space_id) != 0)
+		return NULL;
+
+	struct stailq *trigger_list = &rast->drop_view.trigger_list;
+	stailq_create(trigger_list);
+	if (sql_triggers_by_space_id(region, trigger_list, space_id) != 0)
+		return NULL;
+	rast->drop_view.space_id = space_id;
+	return rast;
+}
+
 static struct sql_rast *
 sql_resolve_drop_index(struct sql_rast *rast, struct ast_drop_index *ast)
 {
@@ -1663,6 +1786,9 @@ sql_resolve_ast(struct region *region, struct sql_ast *ast)
 	rast->type = ast->type;
 
 	switch (ast->type) {
+	case SQL_AST_DROP_VIEW:
+		rast = sql_resolve_drop_view(region, rast, &ast->drop_table);
+		break;
 	case SQL_AST_DROP_INDEX:
 		rast = sql_resolve_drop_index(rast, &ast->drop_index);
 		break;

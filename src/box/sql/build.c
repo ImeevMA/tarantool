@@ -1599,6 +1599,27 @@ sql_view_assign_cursors(struct Parse *parse, const char *view_stmt)
 	return 0;
 }
 
+static void
+vdbe_emit_drop_priv(struct Parse *parser, uint32_t grantee, const char *type,
+		    uint32_t id)
+{
+	uint32_t type_len = strlen(type);
+	uint32_t size = mp_sizeof_array(3) + mp_sizeof_uint(grantee) +
+			mp_sizeof_str(type_len) + mp_sizeof_uint(id);
+	char *begin = sql_xmalloc(size);
+	char *end = mp_encode_array(begin, 3);
+	end = mp_encode_uint(end, grantee);
+	end = mp_encode_str(end, type, type_len);
+	end = mp_encode_uint(end, id);
+
+	int key_reg = sqlGetTempRange(parser, 1);
+	struct Vdbe *v = sqlGetVdbe(parser);
+	sqlVdbeAddOp4(v, OP_Blob, size, key_reg, SQL_SUBTYPE_MSGPACK, begin,
+		      P4_DYNAMIC);
+	sqlVdbeAddOp2(v, OP_SDelete, BOX_PRIV_ID, key_reg);
+	sqlReleaseTempRange(parser, key_reg, 1);
+}
+
 /**
  * Generate VDBE program to revoke all
  * privileges associated with the given object.
@@ -1754,6 +1775,42 @@ sql_code_drop_table(struct Parse *parse_context, const struct space *space,
 	sqlVdbeAddOp2(v, OP_SDelete, BOX_SPACE_ID, idx_rec_reg);
 	sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
 	VdbeComment((v, "Delete entry from _space"));
+}
+
+/**
+ * Generate code to drop a view.
+ * This routine includes dropping privileges and triggers.
+ *
+ * @param parser Current parsing context.
+ * @param space_id ID of space to drop.
+ * @param priv_list List of privileges to drop.
+ * @param trigger_list List of triggers to drop.
+ */
+static void
+vdbe_emit_drop_view(struct Parse *parser, uint32_t space_id,
+		    struct stailq *priv_list, struct stailq *trigger_list)
+{
+	parser->initiateTTrans = true;
+	struct Vdbe *v = sqlGetVdbe(parser);
+	assert(v != NULL);
+
+	struct rast_priv_list_entry *priv;
+	stailq_foreach_entry(priv, priv_list, link) {
+		vdbe_emit_drop_priv(parser, priv->grantee, priv->type,
+				    priv->id);
+	}
+
+	struct rast_name_list_entry *trigger;
+	stailq_foreach_entry(trigger, trigger_list, link)
+		vdbe_emit_drop_trigger(parser, trigger->name, false);
+
+	int regs = sqlGetTempRange(parser, 2);
+	sqlVdbeCountChanges(v);
+	sqlVdbeAddOp2(v, OP_Integer, space_id, regs);
+	sqlVdbeAddOp3(v, OP_MakeRecord, regs, 1, regs + 1);
+	sqlVdbeAddOp2(v, OP_SDelete, BOX_SPACE_ID, regs + 1);
+	sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
+	sqlReleaseTempRange(parser, regs, 2);
 }
 
 void
@@ -3636,6 +3693,11 @@ sql_emit_bytecode(struct Parse *parser, struct sql_rast *rast, const char *sql)
 {
 	switch (rast->type) {
 	case SQL_AST_UNKNOWN:
+		break;
+	case SQL_AST_DROP_VIEW:
+		vdbe_emit_drop_view(parser, rast->drop_view.space_id,
+				    &rast->drop_view.priv_list,
+				    &rast->drop_view.trigger_list);
 		break;
 	case SQL_AST_DROP_INDEX:
 		parser->initiateTTrans = true;
