@@ -274,6 +274,7 @@ struct sql_vfs {
 
 struct tt_uuid;
 struct sql_key_info;
+struct sql_rast;
 
 enum sql_ret_code {
 	/** sql_step() has another row ready. */
@@ -2581,6 +2582,9 @@ sql_emit_show_create_table_one(struct Parse *parse, struct Token *name);
 /** Emit VDBE instructions for "SHOW CREATE TABLE;" statement. */
 void
 sql_emit_show_create_table_all(struct Parse *parse);
+
+void
+sql_emit_bytecode(struct Parse *parser, struct sql_rast *rast, const char *sql);
 
 /** Generate a CREATE TABLE statement for the space with the given ID. */
 void
