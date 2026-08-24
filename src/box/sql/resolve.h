@@ -7,9 +7,17 @@
 
 #include "ast.h"
 
+struct rast_drop_index {
+	uint32_t space_id;
+	uint32_t index_id;
+};
+
 struct sql_rast {
 	enum sql_ast_type type;
-	struct sql_ast *ast;
+	union {
+		struct sql_ast *ast;
+		struct rast_drop_index drop_index;
+	};
 };
 
 struct sql_rast *

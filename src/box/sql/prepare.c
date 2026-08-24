@@ -61,7 +61,7 @@ sql_stmt_compile(const char *zSql, struct Vdbe *pReprepare)
 	}
 
 	struct sql_rast *rast = sql_resolve_ast(&sParse.region, ast);
-	if (sParse.is_aborted) {
+	if (rast == NULL) {
 		sql_parser_destroy(&sParse);
 		return NULL;
 	}

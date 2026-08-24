@@ -2932,19 +2932,6 @@ sql_create_index(struct Parse *parse, struct Token *table, struct Token *name,
 		 struct ExprList *col_list, enum sql_index_type idx_type,
 		 enum sort_order sort_order, bool if_not_exists);
 
-/**
- * This routine will drop an existing named index.  This routine
- * implements the DROP INDEX statement.
- *
- * @param parse_context Current parsing context.
- * @param name Index name.
- * @param table Name of index table.
- * @param if_exists If TRUE do not raise an error when the index is missing.
- */
-void
-sql_drop_index(struct Parse *parse_context, struct Token *name,
-	       struct Token *table, bool if_exists);
-
 int sqlSelect(Parse *, Select *, SelectDest *);
 Select *sqlSelectNew(Parse *, ExprList *, SrcList *, Expr *, ExprList *,
 			 Expr *, ExprList *, u32, Expr *, Expr *);

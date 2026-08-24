@@ -1595,12 +1595,50 @@ sql_resolve_self_reference(struct Parse *parser, struct space_def *def,
 	sqlResolveExprNames(&sNC, expr);
 }
 
+static struct sql_rast *
+sql_resolve_drop_index(struct sql_rast *rast, struct ast_drop_index *ast)
+{
+	const struct space *space = sql_space_by_token(&ast->table);
+	if (space == NULL) {
+		if (ast->if_exists) {
+			rast->type = SQL_AST_UNKNOWN;
+			return rast;
+		}
+		diag_set(ClientError, ER_NO_SUCH_SPACE,
+			 sql_tt_name_from_token(&ast->table));
+		return NULL;
+	}
+
+	uint32_t index_id = sql_index_id_by_token(space, &ast->name);
+	if (index_id == UINT32_MAX) {
+		if (ast->if_exists) {
+			rast->type = SQL_AST_UNKNOWN;
+			return rast;
+		}
+		diag_set(ClientError, ER_NO_SUCH_INDEX_NAME,
+			 sql_tt_name_from_token(&ast->name), space->def->name);
+		return NULL;
+	}
+
+	rast->drop_index.space_id = space->def->id;
+	rast->drop_index.index_id = index_id;
+	return rast;
+}
+
 struct sql_rast *
 sql_resolve_ast(struct region *region, struct sql_ast *ast)
 {
 	struct sql_rast *rast = xregion_alloc_object(region, typeof(*rast));
 	memset(rast, 0, sizeof(*rast));
 	rast->type = ast->type;
-	rast->ast = ast;
+
+	switch (ast->type) {
+	case SQL_AST_DROP_INDEX:
+		rast = sql_resolve_drop_index(rast, &ast->drop_index);
+		break;
+	default:
+		rast->ast = ast;
+		break;
+	}
 	return rast;
 }

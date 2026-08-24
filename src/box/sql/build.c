@@ -2959,42 +2959,29 @@ sql_create_index(struct Parse *parse, struct Token *table, struct Token *name,
 	sql_xfree(index_name);
 }
 
-void
-sql_drop_index(struct Parse *parse_context, struct Token *name,
-	       struct Token *table, bool if_exists)
+/**
+ * This routine implements the DROP INDEX statement.
+ *
+ * @param parser Current parsing context.
+ * @param space_id ID of index space.
+ * @param index_id ID of index.
+ */
+static void
+vdbe_emit_drop_index(struct Parse *parser, uint32_t space_id, uint32_t index_id)
 {
-	struct Vdbe *v = sqlGetVdbe(parse_context);
+	struct Vdbe *v = sqlGetVdbe(parser);
 	assert(v != NULL);
 	/* Never called with prior errors. */
-	assert(!parse_context->is_aborted);
+	assert(!parser->is_aborted);
 	sqlVdbeCountChanges(v);
-	const struct space *space = sql_space_by_token(table);
-	if (space == NULL) {
-		if (!if_exists) {
-			diag_set(ClientError, ER_NO_SUCH_SPACE,
-				 sql_tt_name_from_token(table));
-			parse_context->is_aborted = true;
-		}
-		return;
-	}
-	uint32_t index_id = sql_index_id_by_token(space, name);
-	if (index_id == UINT32_MAX) {
-		if (if_exists)
-			return;
-		diag_set(ClientError, ER_NO_SUCH_INDEX_NAME,
-			 sql_tt_name_from_token(name), space->def->name);
-		parse_context->is_aborted = true;
-		return;
-	}
 
-	int regs = sqlGetTempRange(parse_context, 3);
-	sqlVdbeCountChanges(v);
-	sqlVdbeAddOp2(v, OP_Integer, space->def->id, regs);
+	int regs = sqlGetTempRange(parser, 3);
+	sqlVdbeAddOp2(v, OP_Integer, space_id, regs);
 	sqlVdbeAddOp2(v, OP_Integer, index_id, regs + 1);
 	sqlVdbeAddOp3(v, OP_MakeRecord, regs, 2, regs + 2);
 	sqlVdbeAddOp3(v, OP_SDelete, BOX_INDEX_ID, regs + 2, 0);
 	sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
-	sqlReleaseTempRange(parse_context, regs, 3);
+	sqlReleaseTempRange(parser, regs, 3);
 }
 
 void *
@@ -3647,5 +3634,18 @@ sql_emit_show_create_table_all(struct Parse *parse)
 void
 sql_emit_bytecode(struct Parse *parser, struct sql_rast *rast, const char *sql)
 {
-	sql_code_ast(parser, rast->ast, sql);
+	switch (rast->type) {
+	case SQL_AST_UNKNOWN:
+		break;
+	case SQL_AST_DROP_INDEX:
+		parser->initiateTTrans = true;
+		vdbe_emit_drop_index(parser, rast->drop_index.space_id,
+				     rast->drop_index.index_id);
+		break;
+	default:
+		sql_code_ast(parser, rast->ast, sql);
+		break;
+	}
+	if (!parser->is_aborted)
+		sql_finish_coding(parser);
 }

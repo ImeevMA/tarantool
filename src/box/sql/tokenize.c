@@ -836,12 +836,6 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast, const char *sql)
 		sql_drop_trigger(parse, &ast->drop_trigger.name,
 				 ast->drop_trigger.if_exists);
 		break;
-	case SQL_AST_DROP_INDEX:
-		parse->initiateTTrans = true;
-		sql_drop_index(parse, &ast->drop_index.name,
-			       &ast->drop_index.table,
-			       ast->drop_index.if_exists);
-		break;
 	case SQL_AST_ALTER_RENAME:
 		parse->initiateTTrans = true;
 		sql_alter_table_rename(parse, &ast->alter_rename.old_name,
@@ -888,8 +882,6 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast, const char *sql)
 	default:
 		unreachable();
 	}
-	if (!parse->is_aborted)
-		sql_finish_coding(parse);
 }
 
 /**
