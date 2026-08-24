@@ -60,7 +60,9 @@ sql_stmt_compile(const char *zSql, struct Vdbe *pReprepare)
 		return NULL;
 	}
 
-	struct sql_rast *rast = sql_resolve_ast(&sParse.region, ast);
+	struct sql_resolver_context resolver_ctx;
+	resolver_ctx.region = &sParse.region;
+	struct sql_rast *rast = sql_resolve_ast(&resolver_ctx, ast);
 	if (rast == NULL) {
 		sql_parser_destroy(&sParse);
 		return NULL;

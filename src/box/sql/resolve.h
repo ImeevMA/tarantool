@@ -7,6 +7,10 @@
 
 #include "ast.h"
 
+struct sql_resolver_context {
+	struct region *region;
+};
+
 struct rast_drop_index {
 	/** Link to the next element of the list. */
 	struct stailq_entry link;
@@ -68,4 +72,4 @@ struct sql_rast {
 };
 
 struct sql_rast *
-sql_resolve_ast(struct region *region, struct sql_ast *ast);
+sql_resolve_ast(struct sql_resolver_context *ctx, struct sql_ast *ast);

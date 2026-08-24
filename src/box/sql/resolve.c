@@ -1890,8 +1890,9 @@ sql_resolve_drop_trigger(struct region *region, struct sql_rast *rast,
 
 
 struct sql_rast *
-sql_resolve_ast(struct region *region, struct sql_ast *ast)
+sql_resolve_ast(struct sql_resolver_context *ctx, struct sql_ast *ast)
 {
+	struct region *region = ctx->region;
 	struct sql_rast *rast = xregion_alloc_object(region, typeof(*rast));
 	memset(rast, 0, sizeof(*rast));
 	rast->type = ast->type;
