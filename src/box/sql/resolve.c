@@ -40,6 +40,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "box/schema.h"
+#include "box/tuple.h"
 
 /*
  * Walk the expression tree pExpr and increase the aggregate function
@@ -1596,6 +1597,35 @@ sql_resolve_self_reference(struct Parse *parser, struct space_def *def,
 }
 
 static int
+sql_indexes_by_space_id(struct region *region, struct stailq *head,
+			uint32_t space_id)
+{
+	uint32_t size = mp_sizeof_array(1) + mp_sizeof_uint(space_id);
+	char *begin = xregion_alloc(region, size);
+	char *end = mp_encode_array(begin, 1);
+	end = mp_encode_uint(end, space_id);
+
+	/* Index 'primary' : (space_id, iid). */
+	box_iterator_t *it = box_index_iterator(BOX_INDEX_ID, 0, ITER_EQ, begin,
+						end);
+	if (it == NULL)
+		return -1;
+
+	box_tuple_t *tuple;
+	while (box_iterator_next(it, &tuple) == 0 && tuple != NULL) {
+		uint32_t index_id;
+		tuple_field_u32(tuple, BOX_INDEX_FIELD_ID, &index_id);
+		struct rast_drop_index *index =
+			xregion_alloc_object(region, typeof(*index));
+		index->space_id = space_id;
+		index->index_id = index_id;
+		stailq_add(head, &index->link);
+	}
+	box_iterator_free(it);
+	return 0;
+}
+
+static int
 sql_privs_by_type_and_id(struct region *region, struct stailq *head,
 			 const char *type, uint32_t id)
 {
@@ -1682,6 +1712,87 @@ sql_triggers_by_space_id(struct region *region, struct stailq *head,
 	}
 	box_iterator_free(it);
 	return 0;
+}
+
+static struct sql_rast *
+sql_resolve_drop_table(struct region *region, struct sql_rast *rast,
+		       struct ast_drop_table *stmt)
+{
+	const struct space *space = sql_space_by_token(&stmt->name);
+	if (space == NULL) {
+		if (stmt->if_exists) {
+			rast->type = SQL_AST_UNKNOWN;
+			return rast;
+		}
+		diag_set(ClientError, ER_NO_SUCH_SPACE,
+			 sql_tt_name_from_token(&stmt->name));
+		return NULL;
+	}
+	if (space->def->opts.is_view) {
+		diag_set(ClientError, ER_DROP_SPACE,
+			 sql_tt_name_from_token(&stmt->name), "use DROP VIEW");
+		return NULL;
+	}
+
+	uint32_t space_id = space->def->id;
+	rast->drop_table.space_id = space_id;
+
+	struct stailq *privs = &rast->drop_table.priv_list;
+	stailq_create(privs);
+	if (sql_privs_by_type_and_id(region, privs, "space", space_id) != 0)
+		return NULL;
+
+	struct stailq *triggers = &rast->drop_table.trigger_list;
+	stailq_create(triggers);
+	if (sql_triggers_by_space_id(region, triggers, space_id) != 0)
+		return NULL;
+
+	struct stailq *indexes = &rast->drop_table.index_list;
+	stailq_create(indexes);
+	if (sql_indexes_by_space_id(region, indexes, space_id) != 0)
+		return NULL;
+
+	uint32_t size = mp_sizeof_array(1) + mp_sizeof_uint(space_id);
+	char *begin = xregion_alloc(region, size);
+	char *end = mp_encode_array(begin, 1);
+	end = mp_encode_uint(end, space_id);
+
+	box_tuple_t *tuple;
+	if (box_index_get(BOX_TRUNCATE_ID, 0, begin, end, &tuple) != 0)
+		return NULL;
+	rast->drop_table.has_truncate = tuple != NULL;
+
+	if (box_index_get(BOX_SPACE_SEQUENCE_ID, 0, begin, end, &tuple) != 0)
+		return NULL;
+
+	if (tuple == NULL)
+		return rast;
+
+	rast->drop_table.has_sequence = true;
+
+	bool is_generated;
+	tuple_field_bool(tuple, BOX_SPACE_SEQUENCE_FIELD_IS_GENERATED,
+			 &is_generated);
+	if (!is_generated)
+		return rast;
+
+	uint32_t *seq_id = xregion_alloc_object(region, typeof(*seq_id));
+	tuple_field_u32(tuple, BOX_SPACE_SEQUENCE_FIELD_SEQUENCE_ID, seq_id);
+	rast->drop_table.sequence_id = seq_id;
+
+	if (sql_privs_by_type_and_id(region, privs, "sequence", *seq_id) != 0)
+		return NULL;
+
+	size = mp_sizeof_array(1) + mp_sizeof_uint(*seq_id);
+	begin = xregion_alloc(region, size);
+	end = mp_encode_array(begin, 1);
+	end = mp_encode_uint(end, *seq_id);
+
+	if (box_index_get(BOX_SEQUENCE_DATA_ID, 0, begin, end, &tuple) != 0)
+		return NULL;
+	rast->drop_table.has_sequence_data = tuple != NULL;
+
+	return rast;
 }
 
 static struct sql_rast *
@@ -1786,6 +1897,9 @@ sql_resolve_ast(struct region *region, struct sql_ast *ast)
 	rast->type = ast->type;
 
 	switch (ast->type) {
+	case SQL_AST_DROP_TABLE:
+		rast = sql_resolve_drop_table(region, rast, &ast->drop_table);
+		break;
 	case SQL_AST_DROP_VIEW:
 		rast = sql_resolve_drop_view(region, rast, &ast->drop_table);
 		break;

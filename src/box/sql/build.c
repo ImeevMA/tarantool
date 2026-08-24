@@ -1621,163 +1621,6 @@ vdbe_emit_drop_priv(struct Parse *parser, uint32_t grantee, const char *type,
 }
 
 /**
- * Generate VDBE program to revoke all
- * privileges associated with the given object.
- *
- * @param parser Parsing context.
- * @param object_type Object type.
- * @param object_id Object id.
- * @param access Access array associated with an object.
- */
-static void
-vdbe_emit_revoke_object(struct Parse *parser, const char *object_type,
-			uint32_t object_id, const struct access *access)
-{
-	struct Vdbe *v = sqlGetVdbe(parser);
-	assert(v != NULL);
-	/*
-	 * Get uid of users through access array
-	 * and generate code to delete corresponding
-	 * entries from _priv.
-	 */
-	int key_reg = sqlGetTempRange(parser, 4);
-	bool had_grants = false;
-	for (uint8_t token = 0; token < BOX_USER_MAX; ++token) {
-		if (!access[token].granted)
-			continue;
-		had_grants = true;
-		const struct user *user = user_find_by_token(token);
-		sqlVdbeAddOp2(v, OP_Integer, user->def->uid, key_reg);
-		sqlVdbeAddOp4(v, OP_String8, 0, key_reg + 1, 0,
-			      object_type, P4_STATIC);
-		sqlVdbeAddOp2(v, OP_Integer, object_id, key_reg + 2);
-		sqlVdbeAddOp3(v, OP_MakeRecord, key_reg, 3, key_reg + 3);
-		sqlVdbeAddOp2(v, OP_SDelete, BOX_PRIV_ID, key_reg + 3);
-	}
-	if (had_grants)
-		VdbeComment((v, "Remove %s grants", object_type));
-	sqlReleaseTempRange(parser, key_reg, 4);
-}
-
-/**
- * Generate code to drop a table.
- * This routine includes dropping triggers, sequences,
- * all indexes and entry from _space space.
- *
- * @param parse_context Current parsing context.
- * @param space Space to be dropped.
- * @param is_view True, if space is
- */
-static void
-sql_code_drop_table(struct Parse *parse_context, const struct space *space,
-		    bool is_view)
-{
-	struct Vdbe *v = sqlGetVdbe(parse_context);
-	assert(v != NULL);
-	/*
-	 * Remove all grants associated with
-	 * the table being dropped.
-	 */
-	vdbe_emit_revoke_object(parse_context, "space", space->def->id,
-				space->access);
-	/*
-	 * Drop all triggers associated with the table being
-	 * dropped. Code is generated to remove entries from
-	 * _trigger. on_replace_dd_trigger will remove it from
-	 * internal SQL structures.
-	 *
-	 * Do not account triggers deletion - they will be
-	 * accounted in DELETE from _space below.
-	 */
-	const struct sql_trigger *trigger = space->sql_triggers;
-	while (trigger != NULL) {
-		vdbe_emit_drop_trigger(parse_context, trigger->zName, false);
-		trigger = trigger->next;
-	}
-	/*
-	 * Remove any entries from the _sequence_data, _sequence
-	 * and _space_sequence spaces associated with the table
-	 * being dropped. This is done before the table is dropped
-	 * from internal schema.
-	 */
-	int idx_rec_reg = ++parse_context->nMem;
-	int space_id_reg = ++parse_context->nMem;
-	int index_id_reg = ++parse_context->nMem;
-	int space_id = space->def->id;
-	sqlVdbeAddOp2(v, OP_Integer, space_id, space_id_reg);
-	sqlVdbeAddOp1(v, OP_CheckViewReferences, space_id_reg);
-	if (space->sequence != NULL) {
-		/* Delete entry from _space_sequence. */
-		sqlVdbeAddOp3(v, OP_MakeRecord, space_id_reg, 1,
-				  idx_rec_reg);
-		sqlVdbeAddOp2(v, OP_SDelete, BOX_SPACE_SEQUENCE_ID,
-				  idx_rec_reg);
-		VdbeComment((v, "Delete entry from _space_sequence"));
-		if (space->sequence->is_generated) {
-			/* Delete entry from _sequence_data. */
-			int sequence_id_reg = ++parse_context->nMem;
-			sqlVdbeAddOp2(v, OP_Integer, space->sequence->def->id,
-				      sequence_id_reg);
-			sqlVdbeAddOp3(v, OP_MakeRecord, sequence_id_reg, 1,
-				      idx_rec_reg);
-			sqlVdbeAddOp2(v, OP_SDelete, BOX_SEQUENCE_DATA_ID,
-				      idx_rec_reg);
-			VdbeComment((v, "Delete entry from _sequence_data"));
-			/* Delete entries from _priv */
-		        vdbe_emit_revoke_object(parse_context, "sequence",
-						space->sequence->def->id,
-						space->sequence->access);
-			/* Delete entry by id from _sequence. */
-			sqlVdbeAddOp3(v, OP_MakeRecord, sequence_id_reg, 1,
-				      idx_rec_reg);
-			sqlVdbeAddOp2(v, OP_SDelete, BOX_SEQUENCE_ID,
-				      idx_rec_reg);
-			VdbeComment((v, "Delete entry from _sequence"));
-		}
-	}
-	/*
-	 * Drop all _space and _index entries that refer to the
-	 * table.
-	 */
-	if (!is_view) {
-		uint32_t index_count = space->index_count;
-		if (index_count > 1) {
-			/*
-			 * Remove all indexes, except for primary.
-			 * Tarantool won't allow remove primary when
-			 * secondary exist.
-			 */
-			for (uint32_t i = 1; i < index_count; ++i) {
-				sqlVdbeAddOp2(v, OP_Integer,
-						  space->index[i]->def->iid,
-						  index_id_reg);
-				sqlVdbeAddOp3(v, OP_MakeRecord,
-						  space_id_reg, 2, idx_rec_reg);
-				sqlVdbeAddOp2(v, OP_SDelete, BOX_INDEX_ID,
-						  idx_rec_reg);
-				VdbeComment((v,
-					     "Remove secondary index iid = %u",
-					     space->index[i]->def->iid));
-			}
-		}
-		sqlVdbeAddOp2(v, OP_Integer, 0, index_id_reg);
-		sqlVdbeAddOp3(v, OP_MakeRecord, space_id_reg, 2,
-				  idx_rec_reg);
-		sqlVdbeAddOp2(v, OP_SDelete, BOX_INDEX_ID, idx_rec_reg);
-		VdbeComment((v, "Remove primary index"));
-	}
-	/* Delete records about the space from the _truncate. */
-	sqlVdbeAddOp3(v, OP_MakeRecord, space_id_reg, 1, idx_rec_reg);
-	sqlVdbeAddOp2(v, OP_SDelete, BOX_TRUNCATE_ID, idx_rec_reg);
-	VdbeComment((v, "Delete entry from _truncate"));
-	/* Eventually delete entry from _space. */
-	sqlVdbeAddOp3(v, OP_MakeRecord, space_id_reg, 1, idx_rec_reg);
-	sqlVdbeAddOp2(v, OP_SDelete, BOX_SPACE_ID, idx_rec_reg);
-	sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
-	VdbeComment((v, "Delete entry from _space"));
-}
-
-/**
  * Generate code to drop a view.
  * This routine includes dropping privileges and triggers.
  *
@@ -1811,41 +1654,6 @@ vdbe_emit_drop_view(struct Parse *parser, uint32_t space_id,
 	sqlVdbeAddOp2(v, OP_SDelete, BOX_SPACE_ID, regs + 1);
 	sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
 	sqlReleaseTempRange(parser, regs, 2);
-}
-
-void
-sql_drop_table(struct Parse *parse_context, struct Token *table, bool if_exists,
-	       bool is_view)
-{
-	struct Vdbe *v = sqlGetVdbe(parse_context);
-	sqlVdbeCountChanges(v);
-	assert(!parse_context->is_aborted);
-	const struct space *space = sql_space_by_token(table);
-	if (space == NULL) {
-		if (!if_exists) {
-			diag_set(ClientError, ER_NO_SUCH_SPACE,
-				 sql_tt_name_from_token(table));
-			parse_context->is_aborted = true;
-		}
-		return;
-	}
-	/*
-	 * Ensure DROP TABLE is not used on a view,
-	 * and DROP VIEW is not used on a table.
-	 */
-	if (is_view && !space->def->opts.is_view) {
-		diag_set(ClientError, ER_DROP_SPACE,
-			 sql_tt_name_from_token(table), "use DROP TABLE");
-		parse_context->is_aborted = true;
-		return;
-	}
-	if (!is_view && space->def->opts.is_view) {
-		diag_set(ClientError, ER_DROP_SPACE,
-			 sql_tt_name_from_token(table), "use DROP VIEW");
-		parse_context->is_aborted = true;
-		return;
-	}
-	sql_code_drop_table(parse_context, space, is_view);
 }
 
 /**
@@ -3022,23 +2830,97 @@ sql_create_index(struct Parse *parse, struct Token *table, struct Token *name,
  * @param parser Current parsing context.
  * @param space_id ID of index space.
  * @param index_id ID of index.
+ * @param account_changes Count deleting from _index as changed row count.
  */
 static void
-vdbe_emit_drop_index(struct Parse *parser, uint32_t space_id, uint32_t index_id)
+vdbe_emit_drop_index(struct Parse *parser, uint32_t space_id, uint32_t index_id,
+		     bool account_changes)
 {
 	struct Vdbe *v = sqlGetVdbe(parser);
 	assert(v != NULL);
 	/* Never called with prior errors. */
 	assert(!parser->is_aborted);
-	sqlVdbeCountChanges(v);
+	if (account_changes)
+		sqlVdbeCountChanges(v);
 
 	int regs = sqlGetTempRange(parser, 3);
 	sqlVdbeAddOp2(v, OP_Integer, space_id, regs);
 	sqlVdbeAddOp2(v, OP_Integer, index_id, regs + 1);
 	sqlVdbeAddOp3(v, OP_MakeRecord, regs, 2, regs + 2);
 	sqlVdbeAddOp3(v, OP_SDelete, BOX_INDEX_ID, regs + 2, 0);
-	sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
+	if (account_changes)
+		sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
 	sqlReleaseTempRange(parser, regs, 3);
+}
+
+static void
+vdbe_emit_drop_table(struct Parse *parser, uint32_t space_id,
+		     struct stailq *priv_list, struct stailq *trigger_list,
+		     struct stailq *index_list, bool has_truncate,
+		     bool has_sequence, uint32_t *sequence_id,
+		     bool has_sequence_data)
+{
+	struct Vdbe *v = sqlGetVdbe(parser);
+	assert(v != NULL);
+	sqlVdbeCountChanges(v);
+
+	struct rast_priv_list_entry *priv;
+	stailq_foreach_entry(priv, priv_list, link) {
+		vdbe_emit_drop_priv(parser, priv->grantee, priv->type,
+				    priv->id);
+	}
+
+	struct rast_name_list_entry *trigger;
+	stailq_foreach_entry(trigger, trigger_list, link)
+		vdbe_emit_drop_trigger(parser, trigger->name, false);
+
+	if (has_truncate) {
+		int regs = sqlGetTempRange(parser, 2);
+		sqlVdbeAddOp2(v, OP_Integer, space_id, regs);
+		sqlVdbeAddOp3(v, OP_MakeRecord, regs, 1, regs + 1);
+		sqlVdbeAddOp2(v, OP_SDelete, BOX_TRUNCATE_ID, regs + 1);
+		VdbeComment((v, "Delete entry from _truncate"));
+	}
+
+	if (has_sequence) {
+		int regs = sqlGetTempRange(parser, 2);
+		sqlVdbeAddOp2(v, OP_Integer, space_id, regs);
+		sqlVdbeAddOp3(v, OP_MakeRecord, regs, 1, regs + 1);
+		sqlVdbeAddOp2(v, OP_SDelete, BOX_SPACE_SEQUENCE_ID, regs + 1);
+		VdbeComment((v, "Delete entry from _space_sequence"));
+	}
+
+	if (has_sequence_data) {
+		assert(sequence_id != NULL);
+		int regs = sqlGetTempRange(parser, 2);
+		sqlVdbeAddOp2(v, OP_Integer, *sequence_id, regs);
+		sqlVdbeAddOp3(v, OP_MakeRecord, regs, 1, regs + 1);
+		sqlVdbeAddOp2(v, OP_SDelete, BOX_SEQUENCE_DATA_ID, regs + 1);
+		VdbeComment((v, "Delete entry from _sequence_data"));
+		sqlReleaseTempRange(parser, regs, 2);
+	}
+
+	if (sequence_id != NULL) {
+		int regs = sqlGetTempRange(parser, 2);
+		sqlVdbeAddOp2(v, OP_Integer, *sequence_id, regs);
+		sqlVdbeAddOp3(v, OP_MakeRecord, regs, 1, regs + 1);
+		sqlVdbeAddOp2(v, OP_SDelete, BOX_SEQUENCE_ID, regs + 1);
+		VdbeComment((v, "Delete entry from _sequence"));
+		sqlReleaseTempRange(parser, regs, 2);
+	}
+
+	struct rast_drop_index *index;
+	stailq_foreach_entry(index, index_list, link) {
+		vdbe_emit_drop_index(parser, index->space_id, index->index_id,
+				     false);
+	}
+
+	int regs = sqlGetTempRange(parser, 2);
+	sqlVdbeAddOp2(v, OP_Integer, space_id, regs);
+	sqlVdbeAddOp3(v, OP_MakeRecord, regs, 1, regs + 1);
+	sqlVdbeAddOp2(v, OP_SDelete, BOX_SPACE_ID, regs + 1);
+	sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
+	sqlReleaseTempRange(parser, regs, 2);
 }
 
 void *
@@ -3694,6 +3576,17 @@ sql_emit_bytecode(struct Parse *parser, struct sql_rast *rast, const char *sql)
 	switch (rast->type) {
 	case SQL_AST_UNKNOWN:
 		break;
+	case SQL_AST_DROP_TABLE:
+		parser->initiateTTrans = true;
+		vdbe_emit_drop_table(parser, rast->drop_table.space_id,
+				    &rast->drop_table.priv_list,
+				    &rast->drop_table.trigger_list,
+				    &rast->drop_table.index_list,
+				    rast->drop_table.has_truncate,
+				    rast->drop_table.has_sequence,
+				    rast->drop_table.sequence_id,
+				    rast->drop_table.has_sequence_data);
+		break;
 	case SQL_AST_DROP_VIEW:
 		vdbe_emit_drop_view(parser, rast->drop_view.space_id,
 				    &rast->drop_view.priv_list,
@@ -3702,7 +3595,7 @@ sql_emit_bytecode(struct Parse *parser, struct sql_rast *rast, const char *sql)
 	case SQL_AST_DROP_INDEX:
 		parser->initiateTTrans = true;
 		vdbe_emit_drop_index(parser, rast->drop_index.space_id,
-				     rast->drop_index.index_id);
+				     rast->drop_index.index_id, true);
 		break;
 	case SQL_AST_DROP_TRIGGER:
 		parser->initiateTTrans = true;
