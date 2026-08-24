@@ -37,8 +37,10 @@
  */
 #include "sqlInt.h"
 #include "resolve.h"
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include "box/coll_id.h"
 #include "box/schema.h"
 #include "box/tuple.h"
 
@@ -1712,6 +1714,54 @@ sql_triggers_by_space_id(struct region *region, struct stailq *head,
 	}
 	box_iterator_free(it);
 	return 0;
+}
+
+/**
+ * Resolve a TK_INTEGER literal into @a res, mirroring the value
+ * computation performed by expr_code_int() for a non-negated integer
+ * literal, but without emitting any VDBE code.
+ */
+static struct rast_expr *
+sql_resolve_expr_integer(struct ast_expr *ast, struct rast_expr *res)
+{
+	if (ast->str[0] == '0' && (ast->str[1] == 'x' || ast->str[1] == 'X')) {
+		const char *z = tt_cstr(ast->str, ast->len);
+		errno = 0;
+		uint64_t value = strtoull(z, NULL, 16);
+		if (errno != 0) {
+			diag_set(ClientError, ER_HEX_LITERAL_MAX, z,
+				 ast->len - 2, 16);
+			return NULL;
+		}
+		res->type = FIELD_TYPE_UNSIGNED;
+		res->uval = value;
+		return res;
+	}
+	int64_t value;
+	bool is_neg;
+	if (sql_atoi64(ast->str, &value, &is_neg, ast->len) != 0) {
+		diag_set(ClientError, ER_INT_LITERAL_MAX,
+			 tt_cstr(ast->str, ast->len));
+		return NULL;
+	}
+	assert(!is_neg);
+	res->type = FIELD_TYPE_UNSIGNED;
+	res->uval = (uint64_t)value;
+	return res;
+}
+
+struct rast_expr *
+sql_resolve_expr(struct sql_resolver_context *ctx, struct ast_expr *ast)
+{
+	struct rast_expr *res = xregion_alloc_object(ctx->region, typeof(*res));
+	res->op = ast->op;
+	switch (ast->op) {
+	case TK_INTEGER:
+		return sql_resolve_expr_integer(ast, res);
+	default:
+		res->ast = ast;
+	}
+	return res;
 }
 
 static struct sql_rast *

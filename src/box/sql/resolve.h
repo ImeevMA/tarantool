@@ -6,9 +6,11 @@
 #pragma once
 
 #include "ast.h"
+#include "box/field_def.h"
 
 struct sql_resolver_context {
 	struct region *region;
+	struct Parse *parser;
 };
 
 struct rast_drop_index {
@@ -59,6 +61,34 @@ struct rast_drop_table {
 	bool has_sequence_data;
 	bool has_truncate;
 };
+
+/** Resolved expression. */
+struct rast_expr {
+	/** Parser token code identifying the kind of expression. */
+	uint8_t op;
+	/** Resolved type of the expression. */
+	enum field_type type;
+	union {
+		/**
+		 * Original AST node, for opcodes not yet resolved
+		 * directly by this function.
+		 */
+		struct ast_expr *ast;
+		/** TK_INTEGER value, when type is FIELD_TYPE_INTEGER. */
+		int64_t ival;
+		/** TK_INTEGER value, when type is FIELD_TYPE_UNSIGNED. */
+		uint64_t uval;
+		/** Resolved collation id of the expression, or COLL_NONE. */
+		uint32_t coll_id;
+	};
+};
+
+/**
+ * Resolves names and types in @a ast, using @a nc to look up columns
+ * and tables. Returns NULL and sets diag on error.
+ */
+struct rast_expr *
+sql_resolve_expr(struct sql_resolver_context *ctx, struct ast_expr *ast);
 
 struct sql_rast {
 	enum sql_ast_type type;
