@@ -291,7 +291,7 @@ like_optimization_is_valid(Expr *pExpr, Expr **ppPrefix, int *pisComplete)
 
 	op = pRight->op;
 	if (op == TK_STRING)
-		z = pRight->u.zToken;
+		z = pRight->v.s;
 	if (z) {
 		cnt = 0;
 		while ((c = z[cnt]) != 0 && c != MATCH_ONE_WILDCARD &&
@@ -301,8 +301,7 @@ like_optimization_is_valid(Expr *pExpr, Expr **ppPrefix, int *pisComplete)
 			Expr *pPrefix;
 			*pisComplete = c == MATCH_ALL_WILDCARD &&
 				       z[cnt + 1] == 0;
-			pPrefix = sql_expr_new_named(TK_STRING, z);
-			pPrefix->u.zToken[cnt] = 0;
+			pPrefix = sql_expr_new_string(z, cnt);
 			*ppPrefix = pPrefix;
 		} else {
 			z = 0;
@@ -1100,7 +1099,7 @@ exprAnalyze(SrcList * pSrc,	/* the FROM clause */
 
 		/* Last character before the first wildcard */
 		u8 c, *pC;
-		pC = (u8 *)&pStr2->u.zToken[sqlStrlen30(pStr2->u.zToken) - 1];
+		pC = (u8 *)&pStr2->v.s[sqlStrlen30(pStr2->v.s) - 1];
 		c = *pC;
 		*pC = c + 1;
 		pNewExpr1 = sqlExprDup(pLeft, 0);
