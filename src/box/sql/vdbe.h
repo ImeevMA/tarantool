@@ -198,7 +198,6 @@ int sqlVdbeAddOp0(Vdbe *, int);
 int sqlVdbeAddOp1(Vdbe *, int, int);
 int sqlVdbeAddOp2(Vdbe *, int, int, int);
 int sqlVdbeGoto(Vdbe *, int);
-int sqlVdbeLoadString(Vdbe *, int, const char *);
 void sqlVdbeMultiLoad(Vdbe *, int, const char *, ...);
 int sqlVdbeAddOp3(Vdbe *, int, int, int, int);
 int sqlVdbeAddOp4(Vdbe *, int, int, int, int, const char *zP4, int);
