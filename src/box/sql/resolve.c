@@ -122,7 +122,7 @@ resolveAlias(struct ExprList *pEList, int iCol, struct Expr *pExpr,
 	ExprSetProperty(pExpr, EP_Static);
 	sql_expr_delete(pExpr);
 	memcpy(pExpr, pDup, sizeof(*pExpr));
-	if (!ExprHasProperty(pExpr, EP_IntValue) && pExpr->u.zToken != 0) {
+	if (pExpr->u.zToken != NULL) {
 		assert((pExpr->flags & (EP_Reduced | EP_TokenOnly)) == 0);
 		pExpr->u.zToken = sql_xstrdup(pExpr->u.zToken);
 		pExpr->flags |= EP_MemToken;
@@ -936,8 +936,6 @@ resolveCompoundOrderBy(Parse * pParse,	/* Parsing context.  Leave error messages
 				 */
 				struct Expr *pNew =
 					sql_expr_new_anon(TK_INTEGER);
-				pNew->flags |= EP_IntValue;
-				pNew->u.iValue = iCol;
 				pNew->v.u = iCol;
 				pNew->type = FIELD_TYPE_INTEGER;
 				if (pItem->pExpr == pE) {
@@ -1310,8 +1308,6 @@ resolveSelectStep(Walker * pWalker, Select * p)
 			 */
 			sql_expr_delete(p->pLimit);
 			p->pLimit = sql_expr_new(TK_INTEGER, NULL);
-			p->pLimit->flags |= EP_IntValue;
-			p->pLimit->u.iValue = 1;
 			p->pLimit->v.u = 1;
 			p->pLimit->type = FIELD_TYPE_INTEGER;
 		} else {
