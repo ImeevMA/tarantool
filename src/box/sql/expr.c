@@ -3508,10 +3508,10 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 	case TK_FLOAT:
 		sql_vdbe_add_op4_real(v, 0, target, 0, pExpr->v.f);
 		return target;
-	case TK_STRING:{
-			sqlVdbeLoadString(v, target, pExpr->u.zToken);
-			return target;
-		}
+	case TK_STRING:
+		sqlVdbeAddOp4(v, OP_String8, 0, target, 0,
+			      sql_xstrdup(pExpr->u.zToken), P4_DYNAMIC);
+		return target;
 	case TK_NULL:{
 			sqlVdbeAddOp2(v, OP_Null, 0, target);
 			return target;
