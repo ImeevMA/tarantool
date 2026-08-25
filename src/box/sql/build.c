@@ -480,7 +480,7 @@ sql_add_term_default(struct Parse *parser, struct Expr *expr)
 		break;
 	}
 	case FIELD_TYPE_STRING: {
-		const char *val = expr->u.zToken;
+		const char *val = expr->v.s;
 		uint32_t len = strlen(val);
 		size = mp_sizeof_str(len);
 		buf = xregion_alloc(region, size);
