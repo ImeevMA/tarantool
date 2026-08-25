@@ -1306,6 +1306,12 @@ struct Expr {
 		int iValue;	/* Non-negative integer value if EP_IntValue */
 	} u;
 
+	/** Resolved value of the expression. */
+	union {
+		/** Value for TK_TRUE and TK_FALSE. */
+		bool b;
+	} v;
+
 	/* If the EP_TokenOnly flag is set in the Expr.flags mask, then no
 	 * space is allocated for the fields below this point. An attempt to
 	 * access them will result in a segfault or malfunction.
@@ -2473,6 +2479,9 @@ void sqlClearTempRegCache(Parse *);
  */
 struct Expr *
 sql_expr_new(int op, const struct Token *token);
+
+struct Expr *
+sql_expr_new_leaf(uint8_t op, enum field_type type);
 
 /**
  * The same as @sa sql_expr_new, but normalizes name, stored in

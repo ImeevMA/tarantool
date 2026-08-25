@@ -1043,6 +1043,20 @@ sql_expr_new(int op, const struct Token *token)
 }
 
 struct Expr *
+sql_expr_new_leaf(uint8_t op, enum field_type type)
+{
+
+	struct Expr *res = sql_xmalloc(sizeof(*res));
+	memset(res, 0, sizeof(*res));
+	res->op = op;
+	res->iAgg = -1;
+	res->nHeight = 1;
+	res->type = type;
+	res->flags |= EP_Leaf;
+	return res;
+}
+
+struct Expr *
 sql_expr_new_dequoted(int op, const struct Token *token)
 {
 	int extra_size = 0;
@@ -3634,10 +3648,9 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			return target;
 		}
 	case TK_TRUE:
-	case TK_FALSE: {
-			sqlVdbeAddOp2(v, OP_Bool, op == TK_TRUE, target);
-			return target;
-		}
+	case TK_FALSE:
+		sqlVdbeAddOp2(v, OP_Bool, pExpr->v.b, target);
+		return target;
 	case TK_DECIMAL:{
 			expr_code_dec(pParse, pExpr, false, target);
 			return target;
@@ -4863,6 +4876,13 @@ sqlExprCompare(Expr * pA, Expr * pB, int iTab)
 			return 1;
 		}
 		return 2;
+	}
+	switch (pA->op) {
+	case TK_TRUE:
+	case TK_FALSE:
+		return 0;
+	default:
+		break;
 	}
 	if (pA->op != TK_COLUMN_REF && pA->op != TK_AGG_COLUMN &&
 	    pA->u.zToken) {

@@ -648,7 +648,8 @@ expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 	case TK_TRUE:
 	case TK_FALSE:
 	case TK_UNKNOWN:
-		res = expr_leaf(expr, FIELD_TYPE_BOOLEAN);
+		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_BOOLEAN);
+		res->v.b = expr->op == TK_TRUE;
 		break;
 	case TK_VARIABLE:
 		res = expr_var(parser, expr);
