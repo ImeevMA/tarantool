@@ -1304,6 +1304,8 @@ struct Expr {
 	union {
 		/** Value for TK_TRUE and TK_FALSE. */
 		bool b;
+		/** Value for TK_FLOAT. */
+		double f;
 		/** Value for TK_DECIMAL. */
 		decimal_t d;
 	} v;

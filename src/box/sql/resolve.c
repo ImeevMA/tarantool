@@ -559,14 +559,11 @@ sql_expr_new_column(struct SrcList *src_list, int src_idx, int column)
 static int
 exprProbability(Expr * p)
 {
-	double r = -1.0;
 	if (p->op != TK_FLOAT)
 		return -1;
-	sqlAtoF(p->u.zToken, &r, sqlStrlen30(p->u.zToken));
-	assert(r >= 0.0);
-	if (r > 1.0)
+	if (p->v.f > 1.0)
 		return -1;
-	return (int)(r * 134217728.0);
+	return (int)(p->v.f * 134217728.0);
 }
 
 /*
