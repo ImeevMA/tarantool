@@ -1015,10 +1015,12 @@ sql_expr_token_to_int(int op, const struct Token *token, int *res)
 static inline struct Expr *
 sql_expr_new_int(int value)
 {
+	assert(value >= 0);
 	struct Expr *e = sql_expr_new_empty(TK_INTEGER, 0);
 	e->type = FIELD_TYPE_INTEGER;
 	e->flags |= EP_IntValue;
 	e->u.iValue = value;
+	e->v.u = value;
 	return e;
 }
 
@@ -2030,45 +2032,24 @@ sqlExprIsConstantOrFunction(struct Expr *p)
 	return exprIsConst(p, 4, 0);
 }
 
-/*
- * If the expression p codes a constant integer that is small enough
- * to fit in a 32-bit integer, return 1 and put the value of the integer
- * in *pValue.  If the expression is not an integer or if it is too big
- * to fit in a signed 32-bit integer, return 0 and leave *pValue unchanged.
- */
 int
 sqlExprIsInteger(Expr * p, int *pValue)
 {
-	int rc = 0;
-
-	/* If an expression is an integer literal that fits in a signed 32-bit
-	 * integer, then the EP_IntValue flag will have already been set
-	 */
-	assert(p->op != TK_INTEGER || (p->flags & EP_IntValue) != 0
-	       || sqlGetInt32(p->u.zToken, &rc) == 0);
-
-	if (p->flags & EP_IntValue) {
-		*pValue = p->u.iValue;
+	if (p->op == TK_INTEGER) {
+		if (p->v.u > INT32_MAX)
+			return 0;
+		*pValue = (int)p->v.u;
 		return 1;
 	}
-	switch (p->op) {
-	case TK_UPLUS:{
-			rc = sqlExprIsInteger(p->pLeft, pValue);
-			break;
-		}
-	case TK_UMINUS:{
-			int v;
-			if (sqlExprIsInteger(p->pLeft, &v)) {
-				assert(v != (-2147483647 - 1));
-				*pValue = -v;
-				rc = 1;
-			}
-			break;
-		}
-	default:
-		break;
+	if (p->op == TK_UPLUS)
+		return sqlExprIsInteger(p->pLeft, pValue);
+	if (p->op == TK_UMINUS) {
+		if (sqlExprIsInteger(p->pLeft, pValue) == 0)
+			return 0;
+		*pValue = -*pValue;
+		return 1;
 	}
-	return rc;
+	return 0;
 }
 
 /*
@@ -3074,70 +3055,6 @@ expr_code_dec(struct Vdbe * v, struct Expr *expr, bool is_neg, int reg)
 	sqlVdbeAddOp4(v, OP_Decimal, 0, reg, 0, (char *)value, P4_DEC);
 }
 
-/**
- * Generate an instruction that will put the integer describe by
- * text z[0..n-1] into register iMem.
- *
- * @param parse Parsing context.
- * @param expr Expression being parsed. Expr.u.zToken is always
- *             UTF8 and zero-terminated.
- * @param neg_flag True if value is negative.
- * @param mem Register to store parsed integer
- */
-static void
-expr_code_int(struct Parse *parse, struct Expr *expr, bool is_neg,
-	      int mem)
-{
-	struct Vdbe *v = parse->pVdbe;
-	if (expr->flags & EP_IntValue) {
-		int i = expr->u.iValue;
-		assert(i >= 0);
-		if (is_neg)
-			i = -i;
-		sqlVdbeAddOp2(v, OP_Integer, i, mem);
-		return;
-	}
-	int64_t value;
-	const char *z = expr->u.zToken;
-	assert(z != NULL);
-	const char *sign = is_neg ? "-" : "";
-	if (z[0] == '0' && (z[1] == 'x' || z[1] == 'X')) {
-		errno = 0;
-		if (is_neg)
-			value = strtoll(z, NULL, 16);
-		else
-			value = strtoull(z, NULL, 16);
-		if (errno != 0) {
-			diag_set(ClientError, ER_HEX_LITERAL_MAX,
-				 tt_sprintf("%s%s", sign, z),
-				 strlen(z) - 2, 16);
-			parse->is_aborted = true;
-			return;
-		}
-	} else {
-		size_t len = strlen(z);
-		bool unused;
-		if (sql_atoi64(z, &value, &unused, len) != 0 ||
-		    (is_neg && (uint64_t) value > (uint64_t) INT64_MAX + 1)) {
-			diag_set(ClientError, ER_INT_LITERAL_MAX,
-				 tt_sprintf("%s%s", sign, z));
-			parse->is_aborted = true;
-			return;
-		}
-	}
-
-	/*
-	 * We don't need to negate INT64_MIN value because it's negation is
-	 * equal to it.
-	 */
-	if (is_neg && value != INT64_MIN)
-		value = -value;
-	if (is_neg)
-		sql_vdbe_add_op4_int64(v, 0, mem, 0, value);
-	else
-		sql_vdbe_add_op4_uint64(v, 0, mem, 0, value);
-}
-
 static void
 expr_code_array(struct Parse *parser, struct Expr *expr, int reg)
 {
@@ -3610,10 +3527,9 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			 "reference to spaces");
 		pParse->is_aborted = true;
 		return target;
-	case TK_INTEGER:{
-			expr_code_int(pParse, pExpr, false, target);
-			return target;
-		}
+	case TK_INTEGER:
+		sql_vdbe_add_op4_uint64(v, 0, target, 0, pExpr->v.u);
+		return target;
 	case TK_TRUE:
 	case TK_FALSE:
 		sqlVdbeAddOp2(v, OP_Bool, pExpr->v.b, target);
@@ -3750,33 +3666,34 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			sqlVdbeAddOp3(v, op, r2, r1, target);
 			break;
 		}
-	case TK_UMINUS:{
-			Expr *pLeft = pExpr->pLeft;
-			assert(pLeft);
-			if (pLeft->op == TK_INTEGER) {
-				expr_code_int(pParse, pLeft, true, target);
-				return target;
-			} else if (pLeft->op == TK_FLOAT) {
-				sql_vdbe_add_op4_real(v, 0, target, 0,
-						      -pLeft->v.f);
-				return target;
-			} else if (pLeft->op == TK_DECIMAL) {
-				expr_code_dec(v, pLeft, true, target);
-				return target;
-			} else {
-				tempX.op = TK_INTEGER;
-				tempX.type = FIELD_TYPE_INTEGER;
-				tempX.flags = EP_IntValue | EP_TokenOnly;
-				tempX.u.iValue = 0;
-				r1 = sqlExprCodeTemp(pParse, &tempX,
-							 &regFree1);
-				r2 = sqlExprCodeTemp(pParse, pExpr->pLeft,
-							 &regFree2);
-				sqlVdbeAddOp3(v, OP_Subtract, r2, r1,
-						  target);
-			}
+	case TK_UMINUS: {
+		struct Expr *pLeft = pExpr->pLeft;
+		assert(pLeft != NULL);
+		if (pLeft->op == TK_INTEGER) {
+			int64_t value = 0;
+			if (sql_neg_uint(&value, pLeft->v.u) != 0)
+				pParse->is_aborted = true;
+			sql_vdbe_add_op4_int64(v, 0, target, 0, value);
 			break;
 		}
+		if (pLeft->op == TK_FLOAT) {
+			sql_vdbe_add_op4_real(v, 0, target, 0, -pLeft->v.f);
+			break;
+		}
+		if (pLeft->op == TK_DECIMAL) {
+			expr_code_dec(v, pLeft, true, target);
+			break;
+		}
+		tempX.op = TK_INTEGER;
+		tempX.type = FIELD_TYPE_INTEGER;
+		tempX.flags = EP_IntValue | EP_TokenOnly;
+		tempX.u.iValue = 0;
+		tempX.v.u = 0;
+		r1 = sqlExprCodeTemp(pParse, &tempX, &regFree1);
+		r2 = sqlExprCodeTemp(pParse, pExpr->pLeft, &regFree2);
+		sqlVdbeAddOp3(v, OP_Subtract, r2, r1, target);
+		break;
+	}
 	case TK_BITNOT:
 	case TK_NOT:{
 			assert(TK_BITNOT == OP_BitNot);
@@ -4845,6 +4762,8 @@ sqlExprCompare(Expr * pA, Expr * pB, int iTab)
 	case TK_TRUE:
 	case TK_FALSE:
 		return 0;
+	case TK_INTEGER:
+		return pA->v.u == pB->v.u ? 0 : 2;
 	case TK_FLOAT:
 		return pA->v.f == pB->v.f ? 0 : 2;
 	case TK_DECIMAL:

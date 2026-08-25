@@ -938,6 +938,7 @@ resolveCompoundOrderBy(Parse * pParse,	/* Parsing context.  Leave error messages
 					sql_expr_new_anon(TK_INTEGER);
 				pNew->flags |= EP_IntValue;
 				pNew->u.iValue = iCol;
+				pNew->v.u = iCol;
 				pNew->type = FIELD_TYPE_INTEGER;
 				if (pItem->pExpr == pE) {
 					pItem->pExpr = pNew;
@@ -1308,7 +1309,11 @@ resolveSelectStep(Walker * pWalker, Select * p)
 			 * restrict it directly).
 			 */
 			sql_expr_delete(p->pLimit);
-			p->pLimit = sql_expr_new(TK_INTEGER, &sqlIntTokens[1]);
+			p->pLimit = sql_expr_new(TK_INTEGER, NULL);
+			p->pLimit->flags |= EP_IntValue;
+			p->pLimit->u.iValue = 1;
+			p->pLimit->v.u = 1;
+			p->pLimit->type = FIELD_TYPE_INTEGER;
 		} else {
 			if (sqlResolveExprNames(&sNC, p->pHaving))
 				return WRC_Abort;

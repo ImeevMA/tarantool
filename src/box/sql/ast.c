@@ -624,6 +624,22 @@ expr_getitem(struct Parse *parser, struct ast_expr *expr)
 }
 
 static struct Expr *
+expr_integer(struct Parse *parser, struct ast_expr *expr)
+{
+	char *str = xregion_alloc(&parser->region, expr->len + 1);
+	memcpy(str, expr->str, expr->len);
+	str[expr->len] = '\0';
+
+	struct Expr *res = sql_expr_new_leaf(expr->op, FIELD_TYPE_INTEGER);
+	if (sql_uint_from_str(&res->v.u, str) == 0)
+		return res;
+
+	parser->is_aborted = true;
+	sql_expr_delete(res);
+	return NULL;
+}
+
+static struct Expr *
 expr_decimal(struct Parse *parser, struct ast_expr *expr)
 {
 	char *str = xregion_alloc(&parser->region, expr->len + 1);
@@ -653,7 +669,7 @@ expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 		res = expr_leaf(expr, FIELD_TYPE_VARBINARY);
 		break;
 	case TK_INTEGER:
-		res = expr_leaf(expr, FIELD_TYPE_INTEGER);
+		res = expr_integer(parser, expr);
 		break;
 	case TK_FLOAT:
 		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_DOUBLE);

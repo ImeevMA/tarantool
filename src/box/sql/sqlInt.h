@@ -1310,6 +1310,8 @@ struct Expr {
 	union {
 		/** Value for TK_TRUE and TK_FALSE. */
 		bool b;
+		/** Value for TK_INTEGER. */
+		uint64_t u;
 		/** Value for TK_FLOAT. */
 		double f;
 		/** Value for TK_DECIMAL. */
@@ -2400,6 +2402,12 @@ sql_escaped_name_new(const char *name);
 
 int
 sql_dec_from_str(decimal_t *dec, const char *str);
+
+int
+sql_uint_from_str(uint64_t *res, const char *str);
+
+int
+sql_neg_uint(int64_t *res, uint64_t val);
 
 int sqlKeywordCode(const unsigned char *, int);
 

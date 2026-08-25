@@ -336,16 +336,9 @@ sqlTreeViewExpr(TreeView * pView, const Expr * pExpr, u8 moreToFollow)
 			}
 			break;
 		}
-	case TK_INTEGER:{
-			if (pExpr->flags & EP_IntValue) {
-				sqlTreeViewLine(pView, "%d",
-						    pExpr->u.iValue);
-			} else {
-				sqlTreeViewLine(pView, "%s",
-						    pExpr->u.zToken);
-			}
-			break;
-		}
+	case TK_INTEGER:
+		sqlTreeViewLine(pView, "%llu", pExpr->v.u);
+		break;
 	case TK_FLOAT:{
 			sqlTreeViewLine(pView, "%f", pExpr->v.f);
 			break;
