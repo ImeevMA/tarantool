@@ -656,7 +656,8 @@ expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 		res = expr_leaf(expr, FIELD_TYPE_INTEGER);
 		break;
 	case TK_FLOAT:
-		res = expr_leaf(expr, FIELD_TYPE_DOUBLE);
+		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_DOUBLE);
+		sqlAtoF(expr->str, &res->v.f, expr->len);
 		break;
 	case TK_DECIMAL:
 		res = expr_decimal(parser, expr);

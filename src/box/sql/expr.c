@@ -3063,27 +3063,6 @@ sqlExprCodeIN(Parse * pParse,	/* Parsing and code generating context */
 	sql_xfree(zAff);
 }
 
-/*
- * Generate an instruction that will put the floating point
- * value described by z[0..n-1] into register iMem.
- *
- * The z[] string will probably not be zero-terminated.  But the
- * z[n] character is guaranteed to be something that does not look
- * like the continuation of the number.
- */
-static void
-codeReal(Vdbe * v, const char *z, int negateFlag, int iMem)
-{
-	if (ALWAYS(z != 0)) {
-		double value;
-		sqlAtoF(z, &value, sqlStrlen30(z));
-		assert(!sqlIsNaN(value));	/* The new AtoF never returns NaN */
-		if (negateFlag)
-			value = -value;
-		sql_vdbe_add_op4_real(v, 0, iMem, 0, value);
-	}
-}
-
 static void
 expr_code_dec(struct Vdbe * v, struct Expr *expr, bool is_neg, int reg)
 {
@@ -3642,11 +3621,9 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 	case TK_DECIMAL:
 		expr_code_dec(v, pExpr, false, target);
 		return target;
-	case TK_FLOAT:{
-			assert(!ExprHasProperty(pExpr, EP_IntValue));
-			codeReal(v, pExpr->u.zToken, 0, target);
-			return target;
-		}
+	case TK_FLOAT:
+		sql_vdbe_add_op4_real(v, 0, target, 0, pExpr->v.f);
+		return target;
 	case TK_STRING:{
 			assert(!ExprHasProperty(pExpr, EP_IntValue));
 			sqlVdbeLoadString(v, target, pExpr->u.zToken);
@@ -3780,8 +3757,8 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 				expr_code_int(pParse, pLeft, true, target);
 				return target;
 			} else if (pLeft->op == TK_FLOAT) {
-				assert(!ExprHasProperty(pExpr, EP_IntValue));
-				codeReal(v, pLeft->u.zToken, 1, target);
+				sql_vdbe_add_op4_real(v, 0, target, 0,
+						      -pLeft->v.f);
 				return target;
 			} else if (pLeft->op == TK_DECIMAL) {
 				expr_code_dec(v, pLeft, true, target);
@@ -4868,6 +4845,8 @@ sqlExprCompare(Expr * pA, Expr * pB, int iTab)
 	case TK_TRUE:
 	case TK_FALSE:
 		return 0;
+	case TK_FLOAT:
+		return pA->v.f == pB->v.f ? 0 : 2;
 	case TK_DECIMAL:
 		return decimal_compare(&pA->v.d, &pB->v.d) == 0 ? 0 : 2;
 	default:
