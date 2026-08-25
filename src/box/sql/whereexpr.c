@@ -306,7 +306,7 @@ like_optimization_is_valid(Parse *pParse, Expr *pExpr, Expr **ppPrefix,
 		}
 		assert(pRight->op == TK_VARIABLE || pRight->op == TK_REGISTER);
 	} else if (op == TK_STRING) {
-		z = pRight->u.zToken;
+		z = pRight->v.s;
 	}
 	if (z) {
 		cnt = 0;
@@ -317,8 +317,17 @@ like_optimization_is_valid(Parse *pParse, Expr *pExpr, Expr **ppPrefix,
 			Expr *pPrefix;
 			*pisComplete = c == MATCH_ALL_WILDCARD &&
 				       z[cnt + 1] == 0;
-			pPrefix = sql_expr_new_named(TK_STRING, z);
-			pPrefix->u.zToken[cnt] = 0;
+			uint32_t len = strlen(z);
+			pPrefix = sql_xmalloc(sizeof(*pPrefix) + len + 1);
+			memset(pPrefix, 0, sizeof(*pPrefix));
+			pPrefix->op = TK_STRING;
+			pPrefix->iAgg = -1;
+			pPrefix->nHeight = 1;
+			pPrefix->type = FIELD_TYPE_STRING;
+			pPrefix->flags |= EP_Leaf;
+			pPrefix->v.s = (char *)&pPrefix[1];
+			memcpy(pPrefix->v.s, z, cnt);
+			pPrefix->v.s[cnt] = '\0';
 			*ppPrefix = pPrefix;
 			if (op == TK_VARIABLE) {
 				Vdbe *v = pParse->pVdbe;
@@ -1136,7 +1145,7 @@ exprAnalyze(SrcList * pSrc,	/* the FROM clause */
 
 		/* Last character before the first wildcard */
 		u8 c, *pC;
-		pC = (u8 *)&pStr2->u.zToken[sqlStrlen30(pStr2->u.zToken) - 1];
+		pC = (u8 *)&pStr2->v.s[sqlStrlen30(pStr2->v.s) - 1];
 		c = *pC;
 		*pC = c + 1;
 		pNewExpr1 = sqlExprDup(pLeft, 0);

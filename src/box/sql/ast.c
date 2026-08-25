@@ -624,13 +624,24 @@ expr_getitem(struct Parse *parser, struct ast_expr *expr)
 }
 
 static struct Expr *
+expr_string(struct ast_expr *expr)
+{
+	struct Expr *res = sql_expr_new_leaf(expr->op, FIELD_TYPE_STRING,
+					     expr->len + 1);
+	memcpy(res->v.s, expr->str, expr->len);
+	res->v.s[expr->len] = '\0';
+	sqlDequote(res->v.s);
+	return res;
+}
+
+static struct Expr *
 expr_integer(struct Parse *parser, struct ast_expr *expr)
 {
 	char *str = xregion_alloc(&parser->region, expr->len + 1);
 	memcpy(str, expr->str, expr->len);
 	str[expr->len] = '\0';
 
-	struct Expr *res = sql_expr_new_leaf(expr->op, FIELD_TYPE_INTEGER);
+	struct Expr *res = sql_expr_new_leaf(expr->op, FIELD_TYPE_INTEGER, 0);
 	if (sql_uint_from_str(&res->v.u, str) == 0)
 		return res;
 
@@ -646,7 +657,7 @@ expr_decimal(struct Parse *parser, struct ast_expr *expr)
 	memcpy(str, expr->str, expr->len);
 	str[expr->len] = '\0';
 
-	struct Expr *res = sql_expr_new_leaf(expr->op, FIELD_TYPE_DECIMAL);
+	struct Expr *res = sql_expr_new_leaf(expr->op, FIELD_TYPE_DECIMAL, 0);
 	if (sql_dec_from_str(&res->v.d, str) == 0)
 		return res;
 
@@ -663,7 +674,7 @@ expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 	struct Expr *res = NULL;
 	switch (expr->op) {
 	case TK_STRING:
-		res = expr_leaf(expr, FIELD_TYPE_STRING);
+		res = expr_string(expr);
 		break;
 	case TK_BLOB:
 		res = expr_leaf(expr, FIELD_TYPE_VARBINARY);
@@ -672,7 +683,7 @@ expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 		res = expr_integer(parser, expr);
 		break;
 	case TK_FLOAT:
-		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_DOUBLE);
+		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_DOUBLE, 0);
 		sqlAtoF(expr->str, &res->v.f, expr->len);
 		break;
 	case TK_DECIMAL:
@@ -681,7 +692,7 @@ expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 	case TK_TRUE:
 	case TK_FALSE:
 	case TK_UNKNOWN:
-		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_BOOLEAN);
+		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_BOOLEAN, 0);
 		res->v.b = expr->op == TK_TRUE;
 		break;
 	case TK_VARIABLE:

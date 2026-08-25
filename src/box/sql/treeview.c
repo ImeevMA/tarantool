@@ -343,10 +343,9 @@ sqlTreeViewExpr(TreeView * pView, const Expr * pExpr, u8 moreToFollow)
 			sqlTreeViewLine(pView, "%f", pExpr->v.f);
 			break;
 		}
-	case TK_STRING:{
-			sqlTreeViewLine(pView, "%Q", pExpr->u.zToken);
-			break;
-		}
+	case TK_STRING:
+		sqlTreeViewLine(pView, "%Q", pExpr->v.s);
+		break;
 	case TK_NULL:{
 			sqlTreeViewLine(pView, "NULL");
 			break;

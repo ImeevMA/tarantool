@@ -1021,16 +1021,18 @@ sql_expr_new(int op, const struct Token *token)
 }
 
 struct Expr *
-sql_expr_new_leaf(uint8_t op, enum field_type type)
+sql_expr_new_leaf(uint8_t op, enum field_type type, uint32_t data_size)
 {
 
-	struct Expr *res = sql_xmalloc(sizeof(*res));
+	struct Expr *res = sql_xmalloc(sizeof(*res) + data_size);
 	memset(res, 0, sizeof(*res));
 	res->op = op;
 	res->iAgg = -1;
 	res->nHeight = 1;
 	res->type = type;
 	res->flags |= EP_Leaf;
+	if (data_size > 0)
+		res->v.s = (char *)&res[1];
 	return res;
 }
 
@@ -1284,8 +1286,12 @@ sqlExprDeleteNN(struct Expr *p)
 			sql_expr_list_delete(p->x.pList);
 		}
 	}
-	if (ExprHasProperty(p, EP_MemToken))
-		sql_xfree(p->u.zToken);
+	if (ExprHasProperty(p, EP_MemToken)) {
+		if (p->op == TK_STRING)
+			sql_xfree(p->v.s);
+		else
+			sql_xfree(p->u.zToken);
+	}
 	if (!ExprHasProperty(p, EP_Static)) {
 		sql_xfree(p);
 	}
@@ -1374,7 +1380,7 @@ dupedExprStructSize(Expr * p, int flags)
 /*
  * This function returns the space in bytes required to store the copy
  * of the Expr structure and a copy of the Expr.u.zToken string (if that
- * string is defined.)
+ * string is defined) or the Expr.v.s string (if the node is TK_STRING).
  */
 static int
 dupedExprNodeSize(Expr * p, int flags)
@@ -1383,6 +1389,8 @@ dupedExprNodeSize(Expr * p, int flags)
 	if (p->u.zToken != NULL) {
 		nByte += sqlStrlen30(p->u.zToken) + 1;
 	}
+	if (p->op == TK_STRING)
+		nByte += sqlStrlen30(p->v.s) + 1;
 	return ROUND8(nByte);
 }
 
@@ -1447,6 +1455,7 @@ sql_expr_dup(struct Expr *p, int flags, char **buffer)
 		nToken = sqlStrlen30(p->u.zToken) + 1;
 	else
 		nToken = 0;
+	int nStr = p->op == TK_STRING ? sqlStrlen30(p->v.s) + 1 : 0;
 	if (flags != 0) {
 		assert(ExprHasProperty(p, EP_Reduced) == 0);
 		memcpy(zAlloc, p, nNewSize);
@@ -1468,6 +1477,12 @@ sql_expr_dup(struct Expr *p, int flags, char **buffer)
 	if (nToken != 0) {
 		pNew->u.zToken = &zAlloc[nNewSize];
 		memcpy(pNew->u.zToken, p->u.zToken, nToken);
+	}
+
+	/* Copy the p->v.s string, if the node is TK_STRING. */
+	if (nStr != 0) {
+		pNew->v.s = &zAlloc[nNewSize + nToken];
+		memcpy(pNew->v.s, p->v.s, nStr);
 	}
 
 	if (((p->flags | pNew->flags) & (EP_TokenOnly | EP_Leaf)) == 0) {
@@ -3510,7 +3525,7 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 		return target;
 	case TK_STRING:
 		sqlVdbeAddOp4(v, OP_String8, 0, target, 0,
-			      sql_xstrdup(pExpr->u.zToken), P4_DYNAMIC);
+			      sql_xstrdup(pExpr->v.s), P4_DYNAMIC);
 		return target;
 	case TK_NULL:{
 			sqlVdbeAddOp2(v, OP_Null, 0, target);
@@ -4717,6 +4732,8 @@ sqlExprCompare(Expr * pA, Expr * pB, int iTab)
 	case TK_TRUE:
 	case TK_FALSE:
 		return 0;
+	case TK_STRING:
+		return strcmp(pA->v.s, pB->v.s) == 0 ? 0 : 2;
 	case TK_INTEGER:
 		return pA->v.u == pB->v.u ? 0 : 2;
 	case TK_FLOAT:

@@ -1315,6 +1315,8 @@ struct Expr {
 		double f;
 		/** Value for TK_DECIMAL. */
 		decimal_t d;
+		/** Value for TK_STRING. */
+		char *s;
 	} v;
 
 	/* If the EP_TokenOnly flag is set in the Expr.flags mask, then no
@@ -1375,7 +1377,8 @@ struct Expr {
 #define EP_Reduced   0x002000	/* Expr struct EXPR_REDUCEDSIZE bytes only */
 #define EP_TokenOnly 0x004000	/* Expr struct EXPR_TOKENONLYSIZE bytes only */
 #define EP_Static    0x008000	/* Held in memory not obtained from malloc() */
-#define EP_MemToken  0x010000	/* Need to sql_xfree() Expr.zToken */
+/** Need to free Expr.u.zToken or Expr.v.s. */
+#define EP_MemToken  0x010000
 #define EP_NoReduce  0x020000	/* Cannot EXPRDUP_REDUCE this Expr */
 #define EP_Unlikely  0x040000	/* unlikely() or likelihood() function */
 #define EP_ConstFunc 0x080000	/* A sql_FUNC_CONSTANT or _SLOCHNG function */
@@ -2488,7 +2491,7 @@ struct Expr *
 sql_expr_new(int op, const struct Token *token);
 
 struct Expr *
-sql_expr_new_leaf(uint8_t op, enum field_type type);
+sql_expr_new_leaf(uint8_t op, enum field_type type, uint32_t data_size);
 
 /**
  * The same as @sa sql_expr_new, but normalizes name, stored in
