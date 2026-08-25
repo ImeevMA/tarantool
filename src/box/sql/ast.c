@@ -623,6 +623,22 @@ expr_getitem(struct Parse *parser, struct ast_expr *expr)
 	return res;
 }
 
+static struct Expr *
+expr_decimal(struct Parse *parser, struct ast_expr *expr)
+{
+	char *str = xregion_alloc(&parser->region, expr->len + 1);
+	memcpy(str, expr->str, expr->len);
+	str[expr->len] = '\0';
+
+	struct Expr *res = sql_expr_new_leaf(expr->op, FIELD_TYPE_DECIMAL);
+	if (sql_dec_from_str(&res->v.d, str) == 0)
+		return res;
+
+	parser->is_aborted = true;
+	sql_expr_delete(res);
+	return NULL;
+}
+
 struct Expr *
 expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 {
@@ -643,7 +659,7 @@ expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 		res = expr_leaf(expr, FIELD_TYPE_DOUBLE);
 		break;
 	case TK_DECIMAL:
-		res = expr_leaf(expr, FIELD_TYPE_DECIMAL);
+		res = expr_decimal(parser, expr);
 		break;
 	case TK_TRUE:
 	case TK_FALSE:

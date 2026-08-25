@@ -3085,26 +3085,14 @@ codeReal(Vdbe * v, const char *z, int negateFlag, int iMem)
 }
 
 static void
-expr_code_dec(struct Parse *parser, struct Expr *expr, bool is_neg, int reg)
+expr_code_dec(struct Vdbe * v, struct Expr *expr, bool is_neg, int reg)
 {
-	const char *str = expr->u.zToken;
-	assert(str != NULL);
 	decimal_t *value = sql_xmalloc(sizeof(*value));
-	if (is_neg) {
-		decimal_t dec;
-		if (decimal_from_string(&dec, str) == NULL)
-			goto error;
-		decimal_minus(value, &dec);
-	} else if (decimal_from_string(value, str) == NULL) {
-		goto error;
-	}
-	sqlVdbeAddOp4(parser->pVdbe, OP_Decimal, 0, reg, 0, (char *)value,
-		      P4_DEC);
-	return;
-error:
-	sql_xfree(value);
-	diag_set(ClientError, ER_INVALID_DEC, str);
-	parser->is_aborted = true;
+	if (is_neg)
+		decimal_minus(value, &expr->v.d);
+	else
+		*value = expr->v.d;
+	sqlVdbeAddOp4(v, OP_Decimal, 0, reg, 0, (char *)value, P4_DEC);
 }
 
 /**
@@ -3651,10 +3639,9 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 	case TK_FALSE:
 		sqlVdbeAddOp2(v, OP_Bool, pExpr->v.b, target);
 		return target;
-	case TK_DECIMAL:{
-			expr_code_dec(pParse, pExpr, false, target);
-			return target;
-		}
+	case TK_DECIMAL:
+		expr_code_dec(v, pExpr, false, target);
+		return target;
 	case TK_FLOAT:{
 			assert(!ExprHasProperty(pExpr, EP_IntValue));
 			codeReal(v, pExpr->u.zToken, 0, target);
@@ -3797,7 +3784,7 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 				codeReal(v, pLeft->u.zToken, 1, target);
 				return target;
 			} else if (pLeft->op == TK_DECIMAL) {
-				expr_code_dec(pParse, pLeft, true, target);
+				expr_code_dec(v, pLeft, true, target);
 				return target;
 			} else {
 				tempX.op = TK_INTEGER;
@@ -4881,6 +4868,8 @@ sqlExprCompare(Expr * pA, Expr * pB, int iTab)
 	case TK_TRUE:
 	case TK_FALSE:
 		return 0;
+	case TK_DECIMAL:
+		return decimal_compare(&pA->v.d, &pB->v.d) == 0 ? 0 : 2;
 	default:
 		break;
 	}
