@@ -1303,7 +1303,6 @@ struct Expr {
 	u32 flags;		/* Various flags.  EP_* See below */
 	union {
 		char *zToken;	/* Token value. Zero terminated and dequoted */
-		int iValue;	/* Non-negative integer value if EP_IntValue */
 	} u;
 
 	/** Resolved value of the expression. */
@@ -1371,7 +1370,6 @@ struct Expr {
 /** Second lookup could be performed for the ID. */
 #define EP_Lookup2   0x000040
 #define EP_Collate   0x000100	/* Tree contains a TK_COLLATE operator */
-#define EP_IntValue  0x000400	/* Integer value contained in u.iValue */
 #define EP_xIsSelect 0x000800	/* x.pSelect is valid (otherwise x.pList is) */
 #define EP_Skip      0x001000	/* COLLATE, AS, or UNLIKELY */
 #define EP_Reduced   0x002000	/* Expr struct EXPR_REDUCEDSIZE bytes only */
@@ -2481,12 +2479,6 @@ void sqlClearTempRegCache(Parse *);
  * token argument is a single allocation obtained from
  * sql_xmalloc(). The calling function is responsible for making
  * sure the node eventually gets freed.
- *
- * Special case: If op==TK_INTEGER and token points to a string
- * that can be translated into a 32-bit integer, then the token is
- * not stored in u.zToken. Instead, the integer values is written
- * into u.iValue and the EP_IntValue flag is set. No extra storage
- * is allocated to hold the integer text.
  *
  * @param op Expression opcode (TK_*).
  * @param token Source token. Might be NULL.

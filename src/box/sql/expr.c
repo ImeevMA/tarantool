@@ -90,7 +90,6 @@ sql_expr_type(struct Expr *pExpr)
 		el = pExpr->x.pSelect->pEList;
 		return sql_expr_type(el->a[0].pExpr);
 	case TK_CAST:
-		assert(!ExprHasProperty(pExpr, EP_IntValue));
 		return pExpr->type;
 	case TK_AGG_COLUMN:
 	case TK_COLUMN_REF:
@@ -994,23 +993,6 @@ sql_expr_new_empty(int op, int extra_size)
 	return e;
 }
 
-/**
- * Try to convert a token of a specified type to integer.
- * @param op Token type.
- * @param token Token itself.
- * @param[out] res Result integer.
- * @retval 0 Success. @A res stores a result.
- * @retval -1 Error. Can not be converted. No diag.
- */
-static inline int
-sql_expr_token_to_int(int op, const struct Token *token, int *res)
-{
-	if (op == TK_INTEGER && token->z != NULL &&
-	    sqlGetInt32(token->z, res) > 0)
-		return 0;
-	return -1;
-}
-
 /** Create an expression of a constant integer. */
 static inline struct Expr *
 sql_expr_new_int(int value)
@@ -1018,8 +1000,6 @@ sql_expr_new_int(int value)
 	assert(value >= 0);
 	struct Expr *e = sql_expr_new_empty(TK_INTEGER, 0);
 	e->type = FIELD_TYPE_INTEGER;
-	e->flags |= EP_IntValue;
-	e->u.iValue = value;
 	e->v.u = value;
 	return e;
 }
@@ -1028,12 +1008,8 @@ struct Expr *
 sql_expr_new(int op, const struct Token *token)
 {
 	int extra_sz = 0;
-	if (token != NULL) {
-		int val;
-		if (sql_expr_token_to_int(op, token, &val) == 0)
-			return sql_expr_new_int(val);
+	if (token != NULL)
 		extra_sz = token->n + 1;
-	}
 	struct Expr *e = sql_expr_new_empty(op, extra_sz);
 	if (token == NULL)
 		return e;
@@ -1062,13 +1038,8 @@ struct Expr *
 sql_expr_new_dequoted(int op, const struct Token *token)
 {
 	int extra_size = 0;
-	if (token != NULL) {
-		int val;
-		assert(token->z != NULL || token->n == 0);
-		if (sql_expr_token_to_int(op, token, &val) == 0)
-			return sql_expr_new_int(val);
+	if (token != NULL)
 		extra_size = token->n + 1;
-	}
 	struct Expr *e = sql_expr_new_empty(op, extra_size);
 	if (token == NULL || token->n == 0)
 		return e;
@@ -1222,8 +1193,7 @@ sqlExprAssignVarNumber(Parse * pParse, Expr * pExpr, u32 n)
 
 	if (pExpr == 0)
 		return;
-	assert(!ExprHasProperty
-	       (pExpr, EP_IntValue | EP_Reduced | EP_TokenOnly));
+	assert(!ExprHasProperty(pExpr, EP_Reduced | EP_TokenOnly));
 	z = pExpr->u.zToken;
 	assert(z != 0);
 	assert(z[0] != 0);
@@ -1295,8 +1265,6 @@ static SQL_NOINLINE void
 sqlExprDeleteNN(struct Expr *p)
 {
 	assert(p != 0);
-	/* Sanity check: Assert that the IntValue is non-negative if it exists */
-	assert(!ExprHasProperty(p, EP_IntValue) || p->u.iValue >= 0);
 #ifdef SQL_DEBUG
 	if (ExprHasProperty(p, EP_Leaf) && !ExprHasProperty(p, EP_TokenOnly)) {
 		assert(p->pLeft == 0);
@@ -1412,7 +1380,7 @@ static int
 dupedExprNodeSize(Expr * p, int flags)
 {
 	int nByte = dupedExprStructSize(p, flags) & 0xfff;
-	if (!ExprHasProperty(p, EP_IntValue) && p->u.zToken) {
+	if (p->u.zToken != NULL) {
 		nByte += sqlStrlen30(p->u.zToken) + 1;
 	}
 	return ROUND8(nByte);
@@ -1475,7 +1443,7 @@ sql_expr_dup(struct Expr *p, int flags, char **buffer)
 	const unsigned nStructSize = dupedExprStructSize(p, flags);
 	const int nNewSize = nStructSize & 0xfff;
 	int nToken;
-	if (!ExprHasProperty(p, EP_IntValue) && p->u.zToken)
+	if (p->u.zToken != NULL)
 		nToken = sqlStrlen30(p->u.zToken) + 1;
 	else
 		nToken = 0;
@@ -3541,7 +3509,6 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 		sql_vdbe_add_op4_real(v, 0, target, 0, pExpr->v.f);
 		return target;
 	case TK_STRING:{
-			assert(!ExprHasProperty(pExpr, EP_IntValue));
 			sqlVdbeLoadString(v, target, pExpr->u.zToken);
 			return target;
 		}
@@ -3553,7 +3520,6 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			int n;
 			const char *z;
 			char *zBlob;
-			assert(!ExprHasProperty(pExpr, EP_IntValue));
 			assert(pExpr->u.zToken[0] == 'x'
 			       || pExpr->u.zToken[0] == 'X');
 			assert(pExpr->u.zToken[1] == '\'');
@@ -3566,7 +3532,6 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			return target;
 		}
 	case TK_VARIABLE:{
-			assert(!ExprHasProperty(pExpr, EP_IntValue));
 			assert(pExpr->u.zToken != 0);
 			assert(pExpr->u.zToken[0] != 0);
 			sqlVdbeAddOp2(v, OP_Variable, pExpr->iColumn,
@@ -3686,8 +3651,8 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 		}
 		tempX.op = TK_INTEGER;
 		tempX.type = FIELD_TYPE_INTEGER;
-		tempX.flags = EP_IntValue | EP_TokenOnly;
-		tempX.u.iValue = 0;
+		tempX.flags = EP_TokenOnly;
+		tempX.u.zToken = NULL;
 		tempX.v.u = 0;
 		r1 = sqlExprCodeTemp(pParse, &tempX, &regFree1);
 		r2 = sqlExprCodeTemp(pParse, pExpr->pLeft, &regFree2);
@@ -3719,7 +3684,6 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 	case TK_AGG_FUNCTION:{
 			AggInfo *pInfo = pExpr->pAggInfo;
 			if (pInfo == 0) {
-				assert(!ExprHasProperty(pExpr, EP_IntValue));
 				const char *err = "misuse of aggregate: %s()";
 				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
 					 tt_sprintf(err, pExpr->u.zToken));
@@ -3743,7 +3707,6 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 				pFarg = pExpr->x.pList;
 			}
 			nFarg = pFarg ? pFarg->nExpr : 0;
-			assert(!ExprHasProperty(pExpr, EP_IntValue));
 			struct func *func = sql_func_find(pExpr);
 			if (func == NULL) {
 				pParse->is_aborted = true;
@@ -4146,7 +4109,6 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			pParse->is_aborted = true;
 			return 0;
 		}
-		assert(!ExprHasProperty(pExpr, EP_IntValue));
 		if (pExpr->on_conflict_action == ON_CONFLICT_ACTION_IGNORE) {
 			sqlVdbeAddOp2(v, OP_Halt, 0, ON_CONFLICT_ACTION_IGNORE);
 		} else {
@@ -4740,13 +4702,6 @@ sqlExprCompare(Expr * pA, Expr * pB, int iTab)
 		return pB == pA ? 0 : 2;
 	}
 	combinedFlags = pA->flags | pB->flags;
-	if (combinedFlags & EP_IntValue) {
-		if ((pA->flags & pB->flags & EP_IntValue) != 0
-		    && pA->u.iValue == pB->u.iValue) {
-			return 0;
-		}
-		return 2;
-	}
 	if (pA->op != pB->op) {
 		if (pA->op == TK_COLLATE
 		    && sqlExprCompare(pA->pLeft, pB, iTab) < 2) {
@@ -5134,8 +5089,6 @@ analyzeAggregate(Walker * pWalker, Expr * pExpr)
 						 */
 						pParse->nMem += n;
 						pItem->iMem = ++pParse->nMem;
-						assert(!ExprHasProperty
-						       (pExpr, EP_IntValue));
 						pItem->func =
 							sql_func_find(pExpr);
 						if (pItem->func == NULL) {
