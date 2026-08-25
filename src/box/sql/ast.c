@@ -620,6 +620,33 @@ expr_getitem(struct Parse *parser, struct ast_expr *expr)
 	return res;
 }
 
+/**
+ * Build a `struct Expr` for a DECIMAL value.
+ *
+ * Return NULL on error.
+ */
+static struct Expr *
+expr_decimal(struct Parse *parser, struct ast_expr *expr)
+{
+	uint32_t used = region_used(&parser->region);
+	char *str = xregion_alloc(&parser->region, expr->len + 1);
+	memcpy(str, expr->str, expr->len);
+	str[expr->len] = '\0';
+
+	struct Expr *res = sql_expr_new_empty(expr->op, sizeof(decimal_t));
+	res->type = FIELD_TYPE_DECIMAL;
+	res->flags |= EP_Leaf;
+	res->v.d = (decimal_t *)&res[1];
+	if (sql_dec_from_str(res->v.d, str) != 0) {
+		parser->is_aborted = true;
+		sql_expr_delete(res);
+		return NULL;
+	}
+
+	region_truncate(&parser->region, used);
+	return res;
+}
+
 struct Expr *
 expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 {
@@ -640,7 +667,7 @@ expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 		res = expr_leaf(expr, FIELD_TYPE_DOUBLE);
 		break;
 	case TK_DECIMAL:
-		res = expr_leaf(expr, FIELD_TYPE_DECIMAL);
+		res = expr_decimal(parser, expr);
 		break;
 	case TK_TRUE:
 		res = sql_expr_new_empty(expr->op, 0);
