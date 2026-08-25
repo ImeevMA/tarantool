@@ -3302,6 +3302,7 @@ multiSelectOrderBy(Parse * pParse,	/* Parsing context */
 					sql_expr_new_anon(TK_INTEGER);
 				pNew->flags |= EP_IntValue;
 				pNew->u.iValue = i;
+				pNew->v.u = i;
 				pNew->type = FIELD_TYPE_INTEGER;
 				pOrderBy = sql_expr_list_append(pOrderBy, pNew);
 				pOrderBy->a[nOrderBy++].u.x.iOrderByCol = i;
