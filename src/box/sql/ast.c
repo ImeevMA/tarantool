@@ -626,11 +626,32 @@ expr_getitem(struct Parse *parser, struct ast_expr *expr)
 static struct Expr *
 expr_string(struct ast_expr *expr)
 {
-	struct Expr *res = sql_expr_new_leaf(expr->op, FIELD_TYPE_STRING,
-					     expr->len + 1);
+	uint32_t len = expr->len + 1;
+	struct Expr *res = sql_expr_new_leaf(expr->op, FIELD_TYPE_STRING, len);
 	memcpy(res->v.s, expr->str, expr->len);
+	res->v.s = (char *)&res[1];
 	res->v.s[expr->len] = '\0';
 	sqlDequote(res->v.s);
+	return res;
+}
+
+static struct Expr *
+expr_varbinary(struct ast_expr *expr)
+{
+	assert(expr->op == TK_BLOB);
+	assert(expr->str[0] == 'x' || expr->str[0] == 'X');
+	assert(expr->str[1] == '\'' && expr->str[expr->len - 1] == '\'');
+	assert(expr->len > 2 && expr->len % 2 == 1);
+
+	uint32_t len = (expr->len - 3) / 2;
+	struct Expr *res = sql_expr_new_leaf(expr->op, FIELD_TYPE_VARBINARY,
+					     len);
+	res->v.n = len;
+	res->v.z = (char *)&res[1];
+	for (uint32_t i = 0; i < len; ++i) {
+		res->v.z[i] = (sqlHexToInt(expr->str[2 + i * 2]) << 4 |
+			       sqlHexToInt(expr->str[3 + i * 2]));
+	}
 	return res;
 }
 
@@ -677,7 +698,7 @@ expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 		res = expr_string(expr);
 		break;
 	case TK_BLOB:
-		res = expr_leaf(expr, FIELD_TYPE_VARBINARY);
+		res = expr_varbinary(expr);
 		break;
 	case TK_INTEGER:
 		res = expr_integer(parser, expr);
