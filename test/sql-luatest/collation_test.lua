@@ -89,32 +89,32 @@ end
 g.test_3010_collate_after_limit = function(cg)
     cg.server:exec(function()
         -- All of these tests should throw error "near "COLLATE": syntax error"
-        local _, err = box.execute("SELECT 1 LIMIT 1 COLLATE BINARY;")
+        local _, err = box.execute("SELECT 1 LIMIT 1 COLLATE binary;")
         local exp_err = "COLLATE cannot be used in LIMIT and OFFSET"
         t.assert_equals(err.message, exp_err)
-        _, err = box.execute("SELECT 1 LIMIT 1 COLLATE BINARY OFFSET 1;")
+        _, err = box.execute("SELECT 1 LIMIT 1 COLLATE binary OFFSET 1;")
         t.assert_equals(err.message, exp_err)
-        _, err = box.execute("SELECT 1 LIMIT 1 OFFSET 1 COLLATE BINARY;")
+        _, err = box.execute("SELECT 1 LIMIT 1 OFFSET 1 COLLATE binary;")
         t.assert_equals(err.message, exp_err)
-        _, err = box.execute("SELECT 1 LIMIT 1, 1 COLLATE BINARY;")
+        _, err = box.execute("SELECT 1 LIMIT 1, 1 COLLATE binary;")
         t.assert_equals(err.message, exp_err)
-        _, err = box.execute("SELECT 1 LIMIT 1 COLLATE BINARY, 1;")
+        _, err = box.execute("SELECT 1 LIMIT 1 COLLATE binary, 1;")
         t.assert_equals(err.message, exp_err)
 
-        _, err = box.execute("SELECT 1 LIMIT '1' COLLATE BINARY;")
+        _, err = box.execute("SELECT 1 LIMIT '1' COLLATE binary;")
         t.assert_equals(err.message, exp_err)
-        _, err = box.execute("SELECT 1 LIMIT '1' COLLATE BINARY OFFSET 1;")
+        _, err = box.execute("SELECT 1 LIMIT '1' COLLATE binary OFFSET 1;")
         t.assert_equals(err.message, exp_err)
-        _, err = box.execute("SELECT 1 LIMIT '1' COLLATE BINARY, 1;")
+        _, err = box.execute("SELECT 1 LIMIT '1' COLLATE binary, 1;")
         t.assert_equals(err.message, exp_err)
-        _, err = box.execute("SELECT 1 LIMIT 1 OFFSET '1' COLLATE BINARY;")
+        _, err = box.execute("SELECT 1 LIMIT 1 OFFSET '1' COLLATE binary;")
         t.assert_equals(err.message, exp_err)
-        _, err = box.execute("SELECT 1 LIMIT 1, '1' COLLATE BINARY;")
+        _, err = box.execute("SELECT 1 LIMIT 1, '1' COLLATE binary;")
         t.assert_equals(err.message, exp_err)
 
         local cn = require('net.box').connect(box.cfg.listen)
 
-        local sql = 'SELECT 1 LIMIT ? COLLATE not_exist'
+        local sql = 'SELECT 1 LIMIT ? COLLATE binary'
         t.assert_error_msg_equals(exp_err, cn.execute, cn, sql, {1})
 
         cn:close()
