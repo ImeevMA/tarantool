@@ -148,12 +148,25 @@ select_from_ast(struct Parse *parser, struct ast_select *select)
 {
 	if (select == NULL)
 		return NULL;
+	if ((select->flags & SF_MultiValue) == 0) {
+		int count = 1;
+		struct ast_select *prev;
+		rlist_foreach_entry_reverse(prev, &select->link, link)
+			count++;
+		if (count > SQL_MAX_COMPOUND_SELECT) {
+			diag_set(ClientError, ER_SQL_PARSER_LIMIT,
+				 "The number of UNION or EXCEPT or INTERSECT "
+				 "operations", count, SQL_MAX_COMPOUND_SELECT);
+			parser->is_aborted = true;
+			return NULL;
+		}
+	}
+
 	struct Select *res = select_from_ast_single(parser, select);
 	if (parser->is_aborted)
 		return NULL;
 	struct Select *next = res;
 	struct ast_select *prev;
-	int count = 1;
 	rlist_foreach_entry_reverse(prev, &select->link, link) {
 		struct Select *prior = select_from_ast_single(parser, prev);
 		if (parser->is_aborted) {
@@ -163,16 +176,6 @@ select_from_ast(struct Parse *parser, struct ast_select *select)
 		next->pPrior = prior;
 		prior->pNext = next;
 		next = prior;
-		count++;
-	}
-	if ((res->selFlags & SF_MultiValue) == 0 &&
-	    count > SQL_MAX_COMPOUND_SELECT) {
-		diag_set(ClientError, ER_SQL_PARSER_LIMIT, "The number of "
-			 "UNION or EXCEPT or INTERSECT operations", count,
-			 SQL_MAX_COMPOUND_SELECT);
-		parser->is_aborted = true;
-		sql_select_delete(res);
-		return NULL;
 	}
 	return res;
 }
