@@ -148,6 +148,14 @@ select_from_ast(struct Parse *parser, struct ast_select *select)
 {
 	if (select == NULL)
 		return NULL;
+	if ((select->flags & SF_Values) != 0 &&
+	    (select->order_by != NULL || select->limit != NULL)) {
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+			 "ORDER BY or LIMIT clause is not allowed after "
+			 "a compound SELECT that ends with VALUES");
+		parser->is_aborted = true;
+		return NULL;
+	}
 	if ((select->flags & SF_MultiValue) == 0) {
 		int count = 1;
 		struct ast_select *prev;

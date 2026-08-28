@@ -160,7 +160,9 @@ test:do_catchsql_test(
         ORDER BY log;
     ]], {
         -- <select4-1.3>
-        1, "ORDER BY clause should come after UNION ALL not before"
+        1, "At line 2 at or near position 9: keyword 'UNION' is "..
+           "reserved. Please use double quotes if 'UNION' is an "..
+           "identifier."
         -- </select4-1.3>
     })
 
@@ -171,7 +173,9 @@ test:do_catchsql_test(
                 SELECT 0 UNION SELECT 0 ORDER BY 1);
     ]], {
         -- <select4-1.4>
-        1, "ORDER BY clause should come after UNION not before"
+        1, "At line 1 at or near position 74: keyword 'UNION' is "..
+           "reserved. Please use double quotes if 'UNION' is an "..
+           "identifier."
         -- </select4-1.4>
     })
 
@@ -214,7 +218,9 @@ test:do_catchsql_test(
         ORDER BY log;
     ]], {
         -- <select4-2.3>
-        1, "ORDER BY clause should come after UNION not before"
+        1, "At line 2 at or near position 9: keyword 'UNION' is "..
+           "reserved. Please use double quotes if 'UNION' is an "..
+           "identifier."
         -- </select4-2.3>
     })
 
@@ -224,7 +230,9 @@ test:do_catchsql_test(
         SELECT 0 ORDER BY (SELECT 0) UNION SELECT 0;
     ]], {
         -- <select4-2.4>
-        1, "ORDER BY clause should come after UNION not before"
+        1, "At line 1 at or near position 38: keyword 'UNION' is "..
+           "reserved. Please use double quotes if 'UNION' is an "..
+           "identifier."
         -- </select4-2.4>
     })
 
@@ -299,7 +307,9 @@ test:do_catchsql_test(
         ORDER BY log;
     ]], {
         -- <select4-3.3>
-        1, "ORDER BY clause should come after EXCEPT not before"
+        1, "At line 2 at or near position 9: keyword 'EXCEPT' is "..
+           "reserved. Please use double quotes if 'EXCEPT' is an "..
+           "identifier."
         -- </select4-3.3>
     })
 
@@ -379,7 +389,9 @@ test:do_catchsql_test(
         ORDER BY log;
     ]], {
         -- <select4-4.3>
-        1, "ORDER BY clause should come after INTERSECT not before"
+        1, "At line 2 at or near position 9: keyword 'INTERSECT' is "..
+           "reserved. Please use double quotes if 'INTERSECT' is an "..
+           "identifier."
         -- </select4-4.3>
     })
 
@@ -396,7 +408,7 @@ test:do_catchsql_test(
         );
     ]], {
         -- <select4-4.4>
-        1, "ORDER BY clause should come after INTERSECT not before"
+        1, "Syntax error at line 3 near 'INTERSECT'"
         -- </select4-4.4>
     })
 

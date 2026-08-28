@@ -456,9 +456,12 @@ cmd(A) ::= select(X). {
 %type selectnowith {struct ast_select *}
 %type oneselect {struct ast_select *}
 
-select(A) ::= with(W) selectnowith(X). {
+select(A) ::= with(W) selectnowith(X) orderby_opt(Z) limit_opt(L). {
   A = X;
   A->with = W;
+  A->order_by = Z;
+  A->limit = L.limit;
+  A->offset = L.offset;
 }
 
 selectnowith(A) ::= oneselect(A).
@@ -484,17 +487,14 @@ multiselect_op(A) ::= UNION ALL.             {A = TK_ALL;}
 multiselect_op(A) ::= EXCEPT|INTERSECT(OP).  {A = @OP; /*A-overwrites-OP*/}
 
 oneselect(A) ::= SELECT distinct(D) select_list(W) from(X) where_opt(Y)
-                 groupby_opt(P) having_opt(Q) orderby_opt(Z) limit_opt(L). {
+                 groupby_opt(P) having_opt(Q). {
   A = ast_select_new(ctx->region);
   A->columns = W;
   A->sources = X;
   A->where = Y;
   A->group_by = P;
   A->having = Q;
-  A->order_by = Z;
   A->flags = D;
-  A->limit = L.limit;
-  A->offset = L.offset;
 }
 oneselect(A) ::= values(A).
 

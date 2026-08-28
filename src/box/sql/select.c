@@ -2586,32 +2586,16 @@ multiSelect(Parse * pParse,	/* Parsing context */
 	int iSub1 = 0;		/* EQP id of left-hand query */
 	int iSub2 = 0;		/* EQP id of right-hand query */
 
-	/* Make sure there is no ORDER BY or LIMIT clause on prior SELECTs.  Only
-	 * the last (right-most) SELECT in the series may have an ORDER BY or LIMIT.
+	/* The grammar only ever attaches ORDER BY/LIMIT to the head of a
+	 * compound chain, so no SELECT prior to the last one can have them.
 	 */
 	assert(p && p->pPrior);	/* Calling function guarantees this much */
 	assert((p->selFlags & SF_Recursive) == 0 || p->op == TK_ALL
 	       || p->op == TK_UNION);
 	pPrior = p->pPrior;
+	assert(pPrior->pOrderBy == NULL);
+	assert(pPrior->pLimit == NULL);
 	dest = *pDest;
-	if (pPrior->pOrderBy) {
-		const char *err_msg =
-			tt_sprintf("ORDER BY clause should come after %s not "\
-				   "before", sql_select_op_name(p->op));
-		diag_set(ClientError, ER_SQL_PARSER_GENERIC, err_msg);
-		pParse->is_aborted = true;
-		rc = 1;
-		goto multi_select_end;
-	}
-	if (pPrior->pLimit) {
-		const char *err_msg =
-			tt_sprintf("LIMIT clause should come after %s not "\
-				   "before", sql_select_op_name(p->op));
-		diag_set(ClientError, ER_SQL_PARSER_GENERIC, err_msg);
-		pParse->is_aborted = true;
-		rc = 1;
-		goto multi_select_end;
-	}
 
 	v = sqlGetVdbe(pParse);
 	assert(v != 0);		/* The VDBE already created by calling function */

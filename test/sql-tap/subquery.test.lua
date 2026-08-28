@@ -887,7 +887,9 @@ test:do_catchsql_test(
 			       SELECT * FROM table1);
 	]], {
 		-- <subquery-9.1>
-		1, 'ORDER BY clause should come after UNION ALL not before'
+		1, "At line 2 at or near position 64: keyword 'UNION' is "..
+		   "reserved. Please use double quotes if 'UNION' is an "..
+		   "identifier."
 		-- <subquery-9.1>
 	})
 
@@ -911,7 +913,9 @@ test:do_catchsql_test(
 			       SELECT * FROM table1);
 	]], {
              -- <subquery-9.3>
-             1, 'ORDER BY clause should come after UNION ALL not before'
+             1, "At line 1 at or near position 50: keyword 'UNION' is "..
+                "reserved. Please use double quotes if 'UNION' is an "..
+                "identifier."
              -- <subquery-9.3>
 	})
 

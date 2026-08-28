@@ -684,7 +684,9 @@ test:do_catchsql_test(
         SELECT * FROM t7 LIMIT 3
     ]], {
         -- <limit-9.5>
-        1, "LIMIT clause should come after UNION not before"
+        1, "At line 2 at or near position 9: keyword 'UNION' is "..
+           "reserved. Please use double quotes if 'UNION' is an "..
+           "identifier."
         -- </limit-9.5>
     })
 

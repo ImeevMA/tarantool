@@ -141,7 +141,7 @@ test:do_catchsql_test(
         SELECT 1 EXCEPT SELECT 2 ORDER BY 1 COLLATE "unicode_ci" EXCEPT SELECT 3;
     ]], {
         -- <selectE-3.1>
-        1, "ORDER BY clause should come after EXCEPT not before"
+        1, "Syntax error at line 1 near 'EXCEPT'"
         -- </selectE-3.1>
     })
 

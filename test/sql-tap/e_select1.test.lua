@@ -1412,14 +1412,11 @@ data = {
 for _, val in ipairs(data) do
     local tn = val[1]
     local select = val[2]
-    local op1 = val[3]
-    local op2 = val[4]
-    local label = "e_select-7.2."..tn
-    local error = string.format("%s clause should come after %s not before", op1, op2)
-    test:do_catchsql_test(
-        label,
-        select,
-        {1, error})
+    test:do_test(
+        "e_select-7.2."..tn,
+        function()
+            return pcall(function() test:execsql(select) end)
+        end, false)
 end
 
 -- EVIDENCE-OF: R-45440-25633 ORDER BY and LIMIT clauses may only occur
