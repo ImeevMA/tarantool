@@ -57,18 +57,91 @@ ast_source_list_append(struct region *region, struct ast_source_list *list,
 	return list;
 }
 
+/**
+ * Find a CTE named `name` defined in the WITH clause of the SELECT that
+ * `scope` was built for (i.e. only the innermost level - `scope->outer` is
+ * deliberately not consulted here).
+ *
+ * This is narrower than legacy searchWith(), which also matches CTEs
+ * visible from enclosing scopes. The reason is that a match found at an
+ * outer scope would have to be converted and grafted in as a FROM-subquery
+ * at the (inner) position of the reference, while legacy withExpand()'s
+ * CTE-shadowing resolution for anything left unresolved *inside* that
+ * grafted body relies on pParse->pWith, a single mutable stack whose value
+ * at any point mirrors tree-walk order, not the AST's original lexical
+ * nesting. Grafting a scope's contents to a different tree position than
+ * where they were written breaks that assumption - a name inside the
+ * grafted body that legacy needs to resolve can end up seeing whatever
+ * WITH clause happens to be active at the graft site instead of the one
+ * actually enclosing it lexically. Restricting matches to the innermost
+ * level avoids this: the reference and the CTE it names always share the
+ * same SELECT, so the graft site's ambient WITH context is, by
+ * construction, the same one the body was written under.
+ *
+ * A potentially recursive CTE (a UNION/UNION ALL body) or one with an
+ * explicit column list is never matched here either - both cases are left
+ * for the legacy With-stack-based resolution in withExpand() to handle,
+ * since that is the only place self-reference detection and column-list
+ * renaming are currently implemented.
+ *
+ * Return NULL if no eligible match is found.
+ */
+static struct ast_with_entry *
+ast_with_scope_search(struct Parse *parser, struct ast_with_scope *scope,
+		      const struct Token *name)
+{
+	if (scope == NULL || scope->list == NULL)
+		return NULL;
+	char *name_str = sql_name_temp(parser, name->z, name->n);
+	struct ast_with_entry *entry;
+	stailq_foreach_entry(entry, &scope->list->head, link) {
+		char *entry_name = sql_name_temp(parser, entry->name.z,
+						 entry->name.n);
+		if (strcmp(name_str, entry_name) != 0)
+			continue;
+		uint8_t op = entry->select->op;
+		if (op == TK_ALL || op == TK_UNION)
+			return NULL;
+		if (entry->columns != NULL)
+			return NULL;
+		return entry;
+	}
+	return NULL;
+}
+
 struct SrcList *
-src_list_from_ast(struct Parse *parser, struct ast_source_list *list)
+src_list_from_ast(struct Parse *parser, struct ast_source_list *list,
+		  struct ast_with_scope *scope)
 {
 	if (list == NULL)
 		return NULL;
 	struct SrcList *res = NULL;
 	struct ast_source *src;
 	stailq_foreach_entry(src, &list->head, link) {
-		struct Select *select = select_from_ast(parser, src->select);
+		/*
+		 * A table-function-call source (`name(args)`) can never be
+		 * a CTE reference - leave it for legacy withExpand() to
+		 * reject with "is not a function", matching pre-existing
+		 * behavior.
+		 */
+		struct ast_with_entry *cte =
+			src->name.n > 0 && !src->is_tab_func ?
+			ast_with_scope_search(parser, scope, &src->name) :
+			NULL;
+		struct Select *select;
+		struct Token *name;
+		struct Token *alias;
+		if (cte != NULL) {
+			select = select_from_ast(parser, cte->select, scope);
+			name = NULL;
+			alias = src->alias.n > 0 ? &src->alias : &src->name;
+		} else {
+			select = select_from_ast(parser, src->select, scope);
+			name = src->name.n > 0 ? &src->name : NULL;
+			alias = &src->alias;
+		}
 		struct Expr *join_on = expr_from_ast(parser, src->join_on);
-		struct Token *name = src->name.n > 0 ? &src->name: NULL;
-		res = sqlSrcListAppendFromTerm(res, name, &src->alias, select,
+		res = sqlSrcListAppendFromTerm(res, name, alias, select,
 					       join_on, src->join_using,
 					       src->disallow_scan);
 		if (src->indexed_by.n != 0)
@@ -117,11 +190,13 @@ ast_select_new(struct region *region)
  * Return NULL on error.
  */
 static struct Select *
-select_from_ast_single(struct Parse *parser, struct ast_select *select)
+select_from_ast_single(struct Parse *parser, struct ast_select *select,
+		       struct ast_with_scope *scope)
 {
 	if (select->op != TK_SELECT && select->op != TK_ALL)
 		parser->hasCompound = 1;
-	struct SrcList *list = src_list_from_ast(parser, select->sources);
+	struct SrcList *list = src_list_from_ast(parser, select->sources,
+						 scope);
 	struct Expr *where = expr_from_ast(parser, select->where);
 	struct Expr *having = expr_from_ast(parser, select->having);
 	struct Expr *limit = expr_from_ast(parser, select->limit);
@@ -135,7 +210,7 @@ select_from_ast_single(struct Parse *parser, struct ast_select *select)
 					  group_by, having, order_by,
 					  select->flags, limit, offset);
 	res->op = select->op;
-	res->pWith = with_from_ast(parser, select->with);
+	res->pWith = with_from_ast(parser, select->with, scope);
 	if (parser->is_aborted) {
 		sql_select_delete(res);
 		return NULL;
@@ -144,7 +219,8 @@ select_from_ast_single(struct Parse *parser, struct ast_select *select)
 }
 
 struct Select *
-select_from_ast(struct Parse *parser, struct ast_select *select)
+select_from_ast(struct Parse *parser, struct ast_select *select,
+	       struct ast_with_scope *outer)
 {
 	if (select == NULL)
 		return NULL;
@@ -170,13 +246,15 @@ select_from_ast(struct Parse *parser, struct ast_select *select)
 		}
 	}
 
-	struct Select *res = select_from_ast_single(parser, select);
+	struct ast_with_scope scope = { select->with, outer };
+	struct Select *res = select_from_ast_single(parser, select, &scope);
 	if (parser->is_aborted)
 		return NULL;
 	struct Select *next = res;
 	struct ast_select *prev;
 	rlist_foreach_entry_reverse(prev, &select->link, link) {
-		struct Select *prior = select_from_ast_single(parser, prev);
+		struct Select *prior = select_from_ast_single(parser, prev,
+							      &scope);
 		if (parser->is_aborted) {
 			sql_select_delete(res);
 			return NULL;
@@ -227,7 +305,8 @@ expr_list_from_ids(struct Parse *parser, struct ast_id_list *list)
 }
 
 struct With *
-with_from_ast(struct Parse *parser, struct ast_with_list *list)
+with_from_ast(struct Parse *parser, struct ast_with_list *list,
+	     struct ast_with_scope *scope)
 {
 	if (list == NULL)
 		return NULL;
@@ -236,7 +315,8 @@ with_from_ast(struct Parse *parser, struct ast_with_list *list)
 	stailq_foreach_entry(entry, &list->head, link) {
 		struct ExprList *cols =
 			expr_list_from_ids(parser, entry->columns);
-		struct Select *select = select_from_ast(parser, entry->select);
+		struct Select *select = select_from_ast(parser, entry->select,
+							scope);
 		res = sqlWithAdd(parser, res, &entry->name, cols, select);
 	}
 	if (parser->is_aborted) {
@@ -552,7 +632,8 @@ expr_in(struct Parse *parser, struct ast_expr *expr)
 		if (parser->is_aborted)
 			return NULL;
 		struct Select *select = select_from_ast(parser,
-							expr->right->select);
+							expr->right->select,
+							NULL);
 		if (parser->is_aborted) {
 			sql_expr_delete(left);
 			return NULL;
@@ -810,7 +891,8 @@ expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 		break;
 	case TK_EXISTS:
 	case TK_SELECT: {
-		struct Select *select = select_from_ast(parser, expr->select);
+		struct Select *select = select_from_ast(parser, expr->select,
+							NULL);
 		if (parser->is_aborted)
 			return NULL;
 		res = sql_expr_new_anon(expr->op);
@@ -1037,7 +1119,7 @@ sql_trigger_step_update(struct Parse *parser, struct ast_update *stmt)
 static struct TriggerStep *
 sql_trigger_step_insert(struct Parse *parser, struct ast_insert *stmt)
 {
-	struct Select *select = select_from_ast(parser, stmt->select);
+	struct Select *select = select_from_ast(parser, stmt->select, NULL);
 	if (parser->is_aborted) {
 		sql_select_delete(select);
 		return NULL;
@@ -1067,7 +1149,7 @@ sql_trigger_step_delete(struct Parse *parser, struct ast_delete *stmt)
 static struct TriggerStep *
 sql_trigger_step_select(struct Parse *parser, struct ast_select *stmt)
 {
-	struct Select *select = select_from_ast(parser, stmt);
+	struct Select *select = select_from_ast(parser, stmt, NULL);
 	if (parser->is_aborted) {
 		sql_select_delete(select);
 		return NULL;

@@ -448,7 +448,7 @@ new_xmalloc(size_t n)
 static void
 sql_code_select(struct Parse *parser, struct ast_select *select)
 {
-	struct Select *res = select_from_ast(parser, select);
+	struct Select *res = select_from_ast(parser, select, NULL);
 	if (parser->is_aborted)
 		return;
 	struct SelectDest dest = {SRT_Output, NULL, 0, 0, 0, 0, NULL};
@@ -649,7 +649,7 @@ sql_code_create_view(struct Parse *parser, struct ast_create_view *stmt,
 	parser->disableLookaside++;
 	sql_get()->lookaside.bDisable++;
 	parser->initiateTTrans = true;
-	struct Select *select = select_from_ast(parser, stmt->select);
+	struct Select *select = select_from_ast(parser, stmt->select, NULL);
 	struct ExprList *cols = expr_list_from_ids(parser, stmt->columns);
 	if (parser->is_aborted) {
 		sql_expr_list_delete(cols);
@@ -680,11 +680,11 @@ sql_code_create_index(struct Parse *parser, struct ast_create_index *stmt)
 static void
 sql_code_insert(struct Parse *parser, struct ast_insert *insert)
 {
-	struct With *with = with_from_ast(parser, insert->with);
+	struct With *with = with_from_ast(parser, insert->with, NULL);
 	if (parser->is_aborted)
 		return;
 	sqlWithPush(parser, with, 1);
-	struct Select *select = select_from_ast(parser, insert->select);
+	struct Select *select = select_from_ast(parser, insert->select, NULL);
 	if (parser->is_aborted)
 		return;
 	struct SrcList *src = sql_src_list_append(NULL, &insert->table);
@@ -699,7 +699,7 @@ static void
 sql_code_update(struct Parse *parser, struct ast_update *update)
 {
 	assert(update->set_list != NULL);
-	struct With *with = with_from_ast(parser, update->with);
+	struct With *with = with_from_ast(parser, update->with, NULL);
 	if (parser->is_aborted)
 		return;
 	sqlWithPush(parser, with, 1);
@@ -735,7 +735,7 @@ sql_code_update(struct Parse *parser, struct ast_update *update)
 static void
 sql_code_delete(struct Parse *parser, struct ast_delete *del)
 {
-	struct With *with = with_from_ast(parser, del->with);
+	struct With *with = with_from_ast(parser, del->with, NULL);
 	if (parser->is_aborted)
 		return;
 	sqlWithPush(parser, with, 1);
@@ -1008,7 +1008,7 @@ sql_parse_view(struct Parse *parser, const char *sql)
 	if (ast == NULL)
 		return NULL;
 	assert(ast->type == SQL_AST_VIEW);
-	struct Select *res = select_from_ast(parser, ast->select);
+	struct Select *res = select_from_ast(parser, ast->select, NULL);
 	if (res != NULL && parser->nVar > 0) {
 		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
 			 "Parameters are not allowed in views");

@@ -208,6 +208,18 @@ struct ast_with_entry {
 	struct ast_select *select;
 };
 
+/**
+ * Chain of WITH clauses visible at some point of the AST, from the
+ * innermost to the outermost, mirroring the nesting of the SELECT
+ * statements the WITH clauses are attached to.
+ */
+struct ast_with_scope {
+	/** WITH clause visible at this nesting level, or NULL. */
+	struct ast_with_list *list;
+	/** Enclosing scope, or NULL if this is the outermost one. */
+	struct ast_with_scope *outer;
+};
+
 /** Description of list of expressions. */
 struct ast_expr_list {
 	/** Head of the list. */
@@ -647,7 +659,8 @@ ast_source_list_append(struct region *region, struct ast_source_list *list,
  * Return NULL on error or if `list == NULL`.
  */
 struct SrcList *
-src_list_from_ast(struct Parse *parser, struct ast_source_list *list);
+src_list_from_ast(struct Parse *parser, struct ast_source_list *list,
+		  struct ast_with_scope *scope);
 
 /** Create new empty SELECT structure. */
 struct ast_select *
@@ -659,7 +672,8 @@ ast_select_new(struct region *region);
  * Return NULL on error or if `select == NULL`.
  */
 struct Select *
-select_from_ast(struct Parse *parser, struct ast_select *select);
+select_from_ast(struct Parse *parser, struct ast_select *select,
+	       struct ast_with_scope *outer);
 
 /**
  * Append a WITH clause to the WITH clause list, creating the list if needed.
@@ -675,7 +689,8 @@ ast_with_list_append(struct region *region, struct ast_with_list *list,
  * Return NULL on error or if `list == NULL`.
  */
 struct With *
-with_from_ast(struct Parse *parser, struct ast_with_list *list);
+with_from_ast(struct Parse *parser, struct ast_with_list *list,
+	     struct ast_with_scope *scope);
 
 /** Allocate a new expression node from a token's text. */
 struct ast_expr *
