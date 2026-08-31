@@ -5336,6 +5336,140 @@ vdbe_code_raise_on_multiple_rows(struct Parse *parser, int limit_reg, int end_ma
 }
 
 /*
+ * Generate code for every subquery that appears in the FROM clause of
+ * select p. Each subquery is coded either as a co-routine that yields
+ * a single result row per invocation, or as a subroutine that fills an
+ * ephemeral space with the full result set, depending on how it is
+ * used by the parent query.
+ */
+static void
+sql_select_code_from_subqueries(struct Parse *parser, struct Select *select,
+				struct SrcList *sources, uint32_t id)
+{
+	struct SrcList_item *source = &sources->a[id];
+	Vdbe *v = sqlGetVdbe(parser);
+	SelectDest dest;
+	Select *pSub = source->pSelect;
+	if (pSub == NULL)
+		return;
+
+	/* Sometimes the code for a subquery will be generated more than
+	 * once, if the subquery is part of the WHERE clause in a LEFT JOIN,
+	 * for example.  In that case, do not regenerate the code to manifest
+	 * a view or the co-routine to implement a view.  The first instance
+	 * is sufficient, though the subroutine to manifest the view does need
+	 * to be invoked again.
+	 */
+	if (source->addrFillSub) {
+		if (source->fg.viaCoroutine == 0) {
+			sqlVdbeAddOp2(v, OP_Gosub, source->regReturn,
+				      source->addrFillSub);
+		}
+		return;
+	}
+
+	/* Increment Parse.nHeight by the height of the largest expression
+	 * tree referred to by this, the parent select. The child select
+	 * may contain expression trees of at most
+	 * (SQL_MAX_EXPR_DEPTH-Parse.nHeight) height. This is a bit
+	 * more conservative than necessary, but much easier than enforcing
+	 * an exact limit.
+	 */
+	parser->nHeight += sqlSelectExprHeight(select);
+
+	/* Make copies of constant WHERE-clause terms in the outer query down
+	 * inside the subquery.  This can help the subquery to run more efficiently.
+	 */
+	if ((source->fg.jointype & JT_OUTER) == 0 &&
+	    pushDownWhereTerms(parser, pSub, select->pWhere, source->iCursor)) {
+#ifdef SQL_DEBUG
+		if (sqlSelectTrace & 0x100) {
+			SELECTTRACE(0x100, parser, select,
+				    ("After WHERE-clause push-down:\n"));
+			sqlTreeViewSelect(0, select, 0);
+		}
+#endif
+	}
+
+	/* Generate code to implement the subquery
+	 *
+	 * The subquery is implemented as a co-routine if all of these are true:
+	 *   (1)  The subquery is guaranteed to be the outer loop (so that it
+	 *        does not need to be computed more than once)
+	 *   (2)  The ALL keyword after SELECT is omitted.  (Applications are
+	 *        allowed to say "SELECT ALL" instead of just "SELECT" to disable
+	 *        the use of co-routines.)
+	 *
+	 * TODO: Are there other reasons beside (1) to use a co-routine
+	 * implementation?
+	 */
+	if (id == 0 && (sources->nSrc == 1 || (sources->a[1].fg.jointype &
+					       (JT_LEFT | JT_CROSS)) != 0) &&
+	    (select->selFlags & SF_All) == 0 &&
+	    OptimizationEnabled(SQL_SubqCoroutine)) {
+		/* Implement a co-routine that will return a single row of the result
+		 * set on each invocation.
+		 */
+		int addrTop = sqlVdbeCurrentAddr(v) + 1;
+		source->regReturn = ++parser->nMem;
+		sqlVdbeAddOp3(v, OP_InitCoroutine, source->regReturn,
+				  0, addrTop);
+		VdbeComment((v, "%s", source->space->def->name));
+		source->addrFillSub = addrTop;
+		sqlSelectDestInit(&dest, SRT_Coroutine,
+				      source->regReturn, -1);
+		source->iSelectId = parser->iNextSelectId;
+		sqlSelect(parser, pSub, &dest);
+		source->fg.viaCoroutine = 1;
+		source->regResult = dest.iSdst;
+		sqlVdbeEndCoroutine(v, source->regReturn);
+		sqlVdbeJumpHere(v, addrTop - 1);
+		sqlClearTempRegCache(parser);
+		parser->nHeight -= sqlSelectExprHeight(select);
+		return;
+	}
+
+	/* Generate a subroutine that will fill
+	 * an ephemeral space with the content
+	 * of this subquery. source->addrFillSub
+	 * will point to the address of the
+	 * generated subroutine.
+	 * source->regReturn is a register
+	 * allocated to hold the subroutine
+	 * return address
+	 */
+	int onceAddr = 0;
+	assert(source->addrFillSub == 0);
+	source->regReturn = ++parser->nMem;
+	int topAddr = sqlVdbeAddOp2(v, OP_Integer, 0, source->regReturn);
+	source->addrFillSub = topAddr + 1;
+	if (source->fg.isCorrelated == 0) {
+		/* If the subquery is not
+		 * correlated and if we are not
+		 * inside of a trigger, then
+		 * we only need to compute the
+		 * value of the subquery once.
+		 */
+		onceAddr = sqlVdbeAddOp0(v, OP_Once);
+		VdbeComment((v, "materialize \"%s\"",
+			     source->space->def->name));
+	} else {
+		VdbeNoopComment((v, "materialize \"%s\"",
+				 source->space->def->name));
+	}
+	sqlSelectDestInit(&dest, SRT_EphemTab, source->iCursor, ++parser->nMem);
+	source->iSelectId = parser->iNextSelectId;
+	sqlSelect(parser, pSub, &dest);
+	if (onceAddr)
+		sqlVdbeJumpHere(v, onceAddr);
+	int retAddr = sqlVdbeAddOp1(v, OP_Return, source->regReturn);
+	VdbeComment((v, "end %s", source->space->def->name));
+	sqlVdbeChangeP1(v, topAddr, retAddr);
+	sqlClearTempRegCache(parser);
+	parser->nHeight -= sqlSelectExprHeight(select);
+}
+
+/*
  * Generate code for the SELECT statement given in the p argument.
  *
  * The results are returned according to the SelectDest structure.
@@ -5478,135 +5612,8 @@ sqlSelect(Parse * pParse,		/* The parser context */
 
 	/* Generate code for all sub-queries in the FROM clause
 	 */
-	for (i = 0; i < pTabList->nSrc; i++) {
-		struct SrcList_item *pItem = &pTabList->a[i];
-		SelectDest dest;
-		Select *pSub = pItem->pSelect;
-		if (pSub == 0)
-			continue;
-
-		/* Sometimes the code for a subquery will be generated more than
-		 * once, if the subquery is part of the WHERE clause in a LEFT JOIN,
-		 * for example.  In that case, do not regenerate the code to manifest
-		 * a view or the co-routine to implement a view.  The first instance
-		 * is sufficient, though the subroutine to manifest the view does need
-		 * to be invoked again.
-		 */
-		if (pItem->addrFillSub) {
-			if (pItem->fg.viaCoroutine == 0) {
-				sqlVdbeAddOp2(v, OP_Gosub, pItem->regReturn,
-						  pItem->addrFillSub);
-			}
-			continue;
-		}
-
-		/* Increment Parse.nHeight by the height of the largest expression
-		 * tree referred to by this, the parent select. The child select
-		 * may contain expression trees of at most
-		 * (SQL_MAX_EXPR_DEPTH-Parse.nHeight) height. This is a bit
-		 * more conservative than necessary, but much easier than enforcing
-		 * an exact limit.
-		 */
-		pParse->nHeight += sqlSelectExprHeight(p);
-
-		/* Make copies of constant WHERE-clause terms in the outer query down
-		 * inside the subquery.  This can help the subquery to run more efficiently.
-		 */
-		if ((pItem->fg.jointype & JT_OUTER) == 0
-		    && pushDownWhereTerms(pParse, pSub, p->pWhere,
-					  pItem->iCursor)
-		    ) {
-#ifdef SQL_DEBUG
-			if (sqlSelectTrace & 0x100) {
-				SELECTTRACE(0x100, pParse, p,
-					    ("After WHERE-clause push-down:\n"));
-				sqlTreeViewSelect(0, p, 0);
-			}
-#endif
-		}
-
-		/* Generate code to implement the subquery
-		 *
-		 * The subquery is implemented as a co-routine if all of these are true:
-		 *   (1)  The subquery is guaranteed to be the outer loop (so that it
-		 *        does not need to be computed more than once)
-		 *   (2)  The ALL keyword after SELECT is omitted.  (Applications are
-		 *        allowed to say "SELECT ALL" instead of just "SELECT" to disable
-		 *        the use of co-routines.)
-		 *
-		 * TODO: Are there other reasons beside (1) to use a co-routine
-		 * implementation?
-		 */
-		if (i == 0 && (pTabList->nSrc == 1 ||
-			       (pTabList->a[1].fg.jointype &
-				(JT_LEFT | JT_CROSS)) != 0) &&
-		    (p->selFlags & SF_All) == 0 &&
-		    OptimizationEnabled(SQL_SubqCoroutine)) {
-			/* Implement a co-routine that will return a single row of the result
-			 * set on each invocation.
-			 */
-			int addrTop = sqlVdbeCurrentAddr(v) + 1;
-			pItem->regReturn = ++pParse->nMem;
-			sqlVdbeAddOp3(v, OP_InitCoroutine, pItem->regReturn,
-					  0, addrTop);
-			VdbeComment((v, "%s", pItem->space->def->name));
-			pItem->addrFillSub = addrTop;
-			sqlSelectDestInit(&dest, SRT_Coroutine,
-					      pItem->regReturn, -1);
-			pItem->iSelectId = pParse->iNextSelectId;
-			sqlSelect(pParse, pSub, &dest);
-			pItem->fg.viaCoroutine = 1;
-			pItem->regResult = dest.iSdst;
-			sqlVdbeEndCoroutine(v, pItem->regReturn);
-			sqlVdbeJumpHere(v, addrTop - 1);
-			sqlClearTempRegCache(pParse);
-		} else {
-			/* Generate a subroutine that will fill
-			 * an ephemeral space with the content
-			 * of this subquery. pItem->addrFillSub
-			 * will point to the address of the
-			 * generated subroutine.
-			 * pItem->regReturn is a register
-			 * allocated to hold the subroutine
-			 * return address
-			 */
-			int topAddr;
-			int onceAddr = 0;
-			int retAddr;
-			assert(pItem->addrFillSub == 0);
-			pItem->regReturn = ++pParse->nMem;
-			topAddr =
-			    sqlVdbeAddOp2(v, OP_Integer, 0,
-					      pItem->regReturn);
-			pItem->addrFillSub = topAddr + 1;
-			if (pItem->fg.isCorrelated == 0) {
-				/* If the subquery is not
-				 * correlated and if we are not
-				 * inside of a trigger, then
-				 * we only need to compute the
-				 * value of the subquery once.
-				 */
-				onceAddr = sqlVdbeAddOp0(v, OP_Once);
-				VdbeComment((v, "materialize \"%s\"",
-					     pItem->space->def->name));
-			} else {
-				VdbeNoopComment((v, "materialize \"%s\"",
-						 pItem->space->def->name));
-			}
-			sqlSelectDestInit(&dest, SRT_EphemTab,
-					      pItem->iCursor, ++pParse->nMem);
-			pItem->iSelectId = pParse->iNextSelectId;
-			sqlSelect(pParse, pSub, &dest);
-			if (onceAddr)
-				sqlVdbeJumpHere(v, onceAddr);
-			retAddr =
-			    sqlVdbeAddOp1(v, OP_Return, pItem->regReturn);
-			VdbeComment((v, "end %s", pItem->space->def->name));
-			sqlVdbeChangeP1(v, topAddr, retAddr);
-			sqlClearTempRegCache(pParse);
-		}
-		pParse->nHeight -= sqlSelectExprHeight(p);
-	}
+	for (i = 0; i < pTabList->nSrc; i++)
+		sql_select_code_from_subqueries(pParse, p, pTabList, i);
 
 	/* Various elements of the SELECT copied into local variables for
 	 * convenience
