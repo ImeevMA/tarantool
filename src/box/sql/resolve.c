@@ -38,6 +38,7 @@
 #include "sqlInt.h"
 #include <stdlib.h>
 #include <string.h>
+#include "resolve.h"
 #include "box/schema.h"
 #include "box/coll_id_cache.h"
 
@@ -1625,9 +1626,39 @@ sql_coll_id(uint32_t *id, const char *name, uint32_t len)
 }
 
 /**
- * Check that the result columns of a SELECT statement reference only
- * fields of its sources: each of them is a plain column reference or
- * an asterisk.
+ * Check that the expression is a constant: a literal value, possibly
+ * with unary plus signs, or a unary minus applied to a number, which
+ * can be folded into the value.
+ */
+static bool
+rast_expr_is_constant(const struct ast_expr *expr)
+{
+	switch (expr->op) {
+	case TK_STRING:
+	case TK_BLOB:
+	case TK_INTEGER:
+	case TK_FLOAT:
+	case TK_DECIMAL:
+	case TK_TRUE:
+	case TK_FALSE:
+	case TK_NULL:
+		return true;
+	case TK_UPLUS:
+		return expr->left != NULL &&
+		       rast_expr_is_constant(expr->left);
+	case TK_UMINUS:
+		return expr->left != NULL &&
+		       (expr->left->op == TK_INTEGER ||
+			expr->left->op == TK_FLOAT ||
+			expr->left->op == TK_DECIMAL);
+	default:
+		return false;
+	}
+}
+
+/**
+ * Check that the result columns of a SELECT statement are simple:
+ * each of them is a plain column reference, an asterisk or a constant.
  */
 static bool
 rast_columns_are_simple(const struct ast_select *select)
@@ -1638,6 +1669,14 @@ rast_columns_are_simple(const struct ast_select *select)
 		switch (expr->op) {
 		case TK_ASTERISK:
 		case TK_ID:
+		case TK_STRING:
+		case TK_BLOB:
+		case TK_INTEGER:
+		case TK_FLOAT:
+		case TK_DECIMAL:
+		case TK_TRUE:
+		case TK_FALSE:
+		case TK_NULL:
 			continue;
 		case TK_DOT:
 			if (expr->left == NULL || expr->left->op != TK_ID)
@@ -1645,6 +1684,11 @@ rast_columns_are_simple(const struct ast_select *select)
 			if (expr->right == NULL ||
 			    (expr->right->op != TK_ID &&
 			     expr->right->op != TK_ASTERISK))
+				return false;
+			continue;
+		case TK_UPLUS:
+		case TK_UMINUS:
+			if (!rast_expr_is_constant(expr))
 				return false;
 			continue;
 		default:
@@ -1699,6 +1743,86 @@ rast_strndup_temp(struct Parse *parser, const char *str, uint32_t len)
 }
 
 /**
+ * Resolve a constant result column expression into a rast value. The
+ * literal is built with the legacy expression builder to reuse its
+ * parsing and error messages, then the value is copied into the region
+ * of the parsing context. A unary minus applied to a number is folded
+ * into the value, same as the legacy code generator does.
+ *
+ * Return 0 on success, -1 if parsing was aborted.
+ */
+static int
+rast_value_resolve(struct Parse *parser, struct ast_expr *ast_expr,
+		   struct rast_value *value)
+{
+	struct Expr *root = expr_from_ast(parser, ast_expr);
+	if (parser->is_aborted)
+		return -1;
+	struct Expr *expr = root;
+	bool is_neg = false;
+	int64_t i;
+	while (expr->op == TK_UPLUS)
+		expr = expr->pLeft;
+	if (expr->op == TK_UMINUS) {
+		is_neg = true;
+		expr = expr->pLeft;
+	}
+	struct region *region = &parser->region;
+	switch (expr->op) {
+	case TK_INTEGER:
+		if (!is_neg) {
+			value->type = RAST_VALUE_UNSIGNED;
+			value->v.u = expr->v.u;
+			break;
+		}
+		if (sql_neg_uint(&i, expr->v.u) != 0) {
+			parser->is_aborted = true;
+			sql_expr_delete(root);
+			return -1;
+		}
+		value->type = RAST_VALUE_INTEGER;
+		value->v.i = i;
+		break;
+	case TK_FLOAT:
+		value->type = RAST_VALUE_DOUBLE;
+		value->v.f = is_neg ? -expr->v.f : expr->v.f;
+		break;
+	case TK_DECIMAL:
+		value->type = RAST_VALUE_DECIMAL;
+		value->v.dec = xregion_alloc_object(region, decimal_t);
+		if (is_neg)
+			decimal_minus(value->v.dec, &expr->v.d);
+		else
+			*value->v.dec = expr->v.d;
+		break;
+	case TK_STRING:
+		value->type = RAST_VALUE_STRING;
+		value->v.s = rast_strndup_temp(parser, expr->v.s,
+					       strlen(expr->v.s));
+		break;
+	case TK_BLOB:
+		value->type = RAST_VALUE_BLOB;
+		value->v.blob.n = expr->v.n;
+		/* Region allocation requires a non-zero size. */
+		value->v.blob.z = xregion_alloc(region, expr->v.n + 1);
+		memcpy((void *)value->v.blob.z, expr->v.z, expr->v.n);
+		break;
+	case TK_TRUE:
+	case TK_FALSE:
+		value->type = RAST_VALUE_BOOLEAN;
+		value->v.b = expr->v.b;
+		break;
+	case TK_NULL:
+		value->type = RAST_VALUE_NULL;
+		break;
+	default:
+		unreachable();
+	}
+	sql_expr_delete(root);
+	return 0;
+}
+
+/**
  * Expand an asterisk entry of the result columns into fields of the
  * source. Mirrors expansion of asterisks in selectExpander() for a
  * single source.
@@ -1727,6 +1851,7 @@ rast_expand_asterisk(struct Parse *parser, const struct ast_expr *expr,
 	}
 	for (uint32_t i = 0; i < def->field_count; i++) {
 		columns[(*count)++] = (struct rast_column) {
+			.kind = RAST_COLUMN_FIELD,
 			.fieldno = i,
 			.alias = NULL,
 			.span = NULL,
@@ -1814,6 +1939,20 @@ rast_select_resolve(struct Parse *parser, struct ast_select *select)
 				goto cleanup;
 			continue;
 		}
+		const char *span = rast_strndup_temp(parser, ast_expr->str,
+						     ast_expr->len);
+		if (rast_expr_is_constant(ast_expr)) {
+			columns[i] = (struct rast_column) {
+				.kind = RAST_COLUMN_VALUE,
+				.alias = alias,
+				.span = span,
+			};
+			if (rast_value_resolve(parser, ast_expr,
+					       &columns[i].value) != 0)
+				goto cleanup;
+			i++;
+			continue;
+		}
 		struct Expr *expr = expr_from_ast(parser, ast_expr);
 		if (parser->is_aborted)
 			goto cleanup;
@@ -1823,10 +1962,10 @@ rast_select_resolve(struct Parse *parser, struct ast_select *select)
 		}
 		assert(expr->op == TK_COLUMN_REF);
 		columns[i++] = (struct rast_column) {
+			.kind = RAST_COLUMN_FIELD,
 			.fieldno = expr->iColumn,
 			.alias = alias,
-			.span = rast_strndup_temp(parser, ast_expr->str,
-						  ast_expr->len),
+			.span = span,
 		};
 		sql_expr_delete(expr);
 	}

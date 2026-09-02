@@ -41,6 +41,7 @@
 
 #include "say.h"
 #include "sqlInt.h"
+#include "resolve.h"
 
 /* Character classes for tokenizing
  *

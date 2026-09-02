@@ -1757,49 +1757,6 @@ struct Select {
 /** Abort subquery if its output contains more than one row. */
 #define SF_SingleRow      0x20000
 
-/**
- * Resolved description of a source of a SELECT statement. All values
- * except the cursor are already resolved during the resolve phase.
- */
-struct rast_source {
-	/** Space of the source. */
-	struct space *space;
-	/** Name of the source. */
-	const char *name;
-	/** Alias of the source, NULL if not set. */
-	const char *alias;
-	/** VDBE cursor of the source. */
-	int cursor;
-	/** True if scanning is not allowed for this source. */
-	bool disallow_scan;
-};
-
-/** Resolved description of a result column of a SELECT statement. */
-struct rast_column {
-	/** Index of the field in the source of the column. */
-	uint32_t fieldno;
-	/** Alias of the result column, NULL if not set. */
-	const char *alias;
-	/**
-	 * Original text of the expression, NULL if the column was
-	 * expanded from an asterisk.
-	 */
-	const char *span;
-};
-
-/**
- * Resolved description of a simple SELECT statement: a single source
- * and result columns referencing only fields of that source.
- */
-struct rast_select {
-	/** The only source of the query. */
-	struct rast_source source;
-	/** Array of result columns. */
-	struct rast_column *columns;
-	/** Number of result columns. */
-	uint32_t column_count;
-};
-
 /*
  * The results of a SELECT can be distributed in several ways, as defined
  * by one of the following macros.  The "SRT" prefix means "SELECT Result
@@ -4157,32 +4114,6 @@ sqlMatchSpanName(const char *span, const char *col, const char *tab,
 int sqlResolveExprNames(NameContext *, Expr *);
 int sqlResolveExprListNames(NameContext *, ExprList *);
 
-/**
- * Resolve a simple SELECT statement into struct rast_select: a single
- * plain table source and result columns referencing only fields of
- * that source.
- *
- * @param parser Parsing context.
- * @param select AST of the SELECT statement.
- *
- * @retval rast_select Resolved description of the SELECT statement.
- * @retval NULL        The statement is not simple - code it with the
- *                     legacy pipeline. If parsing was aborted, the
- *                     statement has an error and must not be coded.
- */
-struct rast_select *rast_select_resolve(struct Parse *parser,
-					struct ast_select *select);
-
-/**
- * Generate VDBE program for a SELECT statement resolved into
- * struct rast_select: a full scan of the single source emitting
- * the requested fields.
- *
- * @param parser Parsing context.
- * @param select Resolved description of the SELECT statement.
- */
-void
-vdbe_emit_rast_select(struct Parse *parser, struct rast_select *select);
 void sqlResolveSelectNames(Parse *, Select *, NameContext *);
 int sqlResolveOrderGroupBy(Parse *, Select *, ExprList *, const char *);
 

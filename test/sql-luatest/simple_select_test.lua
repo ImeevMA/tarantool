@@ -86,6 +86,128 @@ g.test_select_duplicated_columns = function()
     end)
 end
 
+g.test_select_constant = function()
+    g.server:exec(function()
+        box.execute([[SET SESSION "sql_seq_scan" = true;]])
+        local res = box.execute([[
+            SELECT 1, -1, 1.5, 1e0, 'abc', x'41', true, false, NULL
+            FROM t1;]])
+        t.assert_equals(res.metadata, {
+            {name = 'COLUMN_1', type = 'integer'},
+            {name = 'COLUMN_2', type = 'integer'},
+            {name = 'COLUMN_3', type = 'decimal'},
+            {name = 'COLUMN_4', type = 'double'},
+            {name = 'COLUMN_5', type = 'string'},
+            {name = 'COLUMN_6', type = 'varbinary'},
+            {name = 'COLUMN_7', type = 'boolean'},
+            {name = 'COLUMN_8', type = 'boolean'},
+            {name = 'COLUMN_9', type = 'scalar'},
+        })
+        t.assert_equals(#res.rows, 2)
+        t.assert_equals(res.rows[1], {1, -1, 1.5, 1.0, 'abc',
+                                      '\x41', true, false, box.NULL})
+        t.assert_equals(res.rows[2], res.rows[1])
+
+        res = box.execute([[SELECT 1 AS c, 'q' "q w", 1.2 d FROM t1;]])
+        t.assert_equals(res.metadata, {
+            {name = 'c', type = 'integer'},
+            {name = 'q w', type = 'string'},
+            {name = 'd', type = 'decimal'},
+        })
+        t.assert_equals(res.rows[1], {1, 'q', 1.2})
+
+        res = box.execute([[SELECT +1, -1.5e0, 18446744073709551615 FROM t1;]])
+        t.assert_equals(res.metadata, {
+            {name = 'COLUMN_1', type = 'integer'},
+            {name = 'COLUMN_2', type = 'double'},
+            {name = 'COLUMN_3', type = 'integer'},
+        })
+        t.assert_equals(res.rows[1][1], 1)
+        t.assert_equals(res.rows[1][2], -1.5)
+        t.assert_equals(res.rows[1][3], 18446744073709551615ULL)
+        box.execute([[SET SESSION "sql_seq_scan" = false;]])
+    end)
+end
+
+g.test_select_constant_and_fields = function()
+    g.server:exec(function()
+        box.execute([[SET SESSION "sql_seq_scan" = true;]])
+        local res = box.execute([[SELECT 1, id, 1 FROM t1;]])
+        t.assert_equals(res.metadata, {
+            {name = 'COLUMN_1', type = 'integer'},
+            {name = 'id', type = 'integer'},
+            {name = 'COLUMN_2', type = 'integer'},
+        })
+        t.assert_equals(res.rows, {{1, 1, 1}, {1, 2, 1}})
+
+        -- A constant is emitted on each occurrence, unlike a field,
+        -- which is copied from the register of its first occurrence.
+        res = box.execute([[SELECT id, 1, id, a, id FROM t1;]])
+        t.assert_equals(res.rows, {{1, 1, 1, 'abc', 1},
+                                   {2, 1, 2, 'def', 2}})
+
+        -- Auto-generated names are numbered skipping the fields and
+        -- the asterisks.
+        res = box.execute([[SELECT 1, *, 2 FROM t1;]])
+        t.assert_equals(res.metadata, {
+            {name = 'COLUMN_1', type = 'integer'},
+            {name = 'id', type = 'integer'},
+            {name = 'a', type = 'string'},
+            {name = 'b', type = 'double'},
+            {name = 'COLUMN_2', type = 'integer'},
+        })
+        t.assert_equals(res.rows, {{1, 1, 'abc', 1.5, 2},
+                                   {1, 2, 'def', -3.0, 2}})
+        box.execute([[SET SESSION "sql_seq_scan" = false;]])
+    end)
+end
+
+g.test_select_constant_full_metadata = function()
+    g.server:exec(function()
+        box.execute([[SET SESSION "sql_seq_scan" = true;]])
+        box.execute([[SET SESSION "sql_full_metadata" = true;]])
+        local res = box.execute([[SELECT 1, a, 'q' FROM t1;]])
+        t.assert_equals(res.metadata, {
+            {name = 'COLUMN_1', type = 'integer', span = '1'},
+            {name = 'a', type = 'string', is_nullable = true, span = 'a'},
+            {name = 'COLUMN_2', type = 'string', span = '\'q\''},
+        })
+        box.execute([[SET SESSION "sql_full_metadata" = false;]])
+        box.execute([[SET SESSION "sql_seq_scan" = false;]])
+    end)
+end
+
+g.test_select_constant_explain = function()
+    g.server:exec(function()
+        local res = box.execute(
+            [[EXPLAIN SELECT 1, 1.5, 'abc', true, NULL, a FROM t1;]])
+        local ops = {}
+        for _, row in ipairs(res.rows) do
+            ops[#ops + 1] = row[2]
+        end
+        t.assert_equals(ops, {'Init', 'OpenSpace', 'IteratorOpen', 'Explain',
+                              'Rewind', 'Int64', 'Decimal', 'String8', 'Bool',
+                              'Null', 'Column', 'ResultRow', 'Next', 'Halt'})
+    end)
+end
+
+g.test_select_constant_errors = function()
+    g.server:exec(function()
+        box.execute([[SET SESSION "sql_seq_scan" = true;]])
+        local _, err = box.execute(
+            [[SELECT 99999999999999999999999999 FROM t1;]])
+        t.assert_equals(err.message, 'Integer literal 99999999999999999999999999' ..
+                         ' exceeds the supported range [-9223372036854775808,' ..
+                         ' 18446744073709551615]')
+
+        _, err = box.execute([[SELECT -18446744073709551615 FROM t1;]])
+        t.assert_equals(err.message, 'Integer literal -18446744073709551615' ..
+                         ' exceeds the supported range [-9223372036854775808,' ..
+                         ' 18446744073709551615]')
+        box.execute([[SET SESSION "sql_seq_scan" = false;]])
+    end)
+end
+
 g.test_select_legacy = function()
     g.server:exec(function()
         box.execute([[SET SESSION "sql_seq_scan" = true;]])
