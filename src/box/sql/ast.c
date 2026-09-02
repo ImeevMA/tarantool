@@ -4,6 +4,7 @@
  * Copyright 2010-2026, Tarantool AUTHORS, please see AUTHORS file.
  */
 #include "sqlInt.h"
+#include "resolve.h"
 
 struct ast_id_list *
 ast_id_list_append(struct region *region, struct ast_id_list *list,
@@ -57,17 +58,76 @@ ast_source_list_append(struct region *region, struct ast_source_list *list,
 	return list;
 }
 
-struct SrcList *
-src_list_from_ast(struct Parse *parser, struct ast_source_list *list)
+struct ast_select *
+ast_select_new(struct region *region)
+{
+	struct ast_select *res = xregion_alloc_object(region, typeof(*res));
+	memset(res, 0, sizeof(*res));
+	rlist_create(&res->link);
+	res->op = TK_SELECT;
+	return res;
+}
+
+static struct Select *
+select_from_rast(struct Parse *parser, struct rast_select *select);
+
+/**
+ * Build `struct With` from the own WITH clauses of a resolved SELECT.
+ *
+ * The WITH clauses are still processed by the legacy machinery during
+ * SELECT expansion: it fills in the references to CTEs in the FROM
+ * clauses, including WITH RECURSIVE and explicit column lists of CTEs.
+ * It is a TODO to move CTE handling into the resolve phase.
+ *
+ * Return NULL on error or if there are no WITH clauses.
+ */
+static struct With *
+with_from_rast(struct Parse *parser, struct rast_with *list, uint32_t count)
+{
+	if (list == NULL)
+		return NULL;
+	struct With *res = NULL;
+	for (uint32_t i = 0; i < count; i++) {
+		struct ExprList *cols =
+			expr_list_from_ids(parser, list[i].columns);
+		struct Select *select =
+			select_from_rast(parser, list[i].select);
+		res = sqlWithAdd(parser, res, &list[i].name, cols, select);
+	}
+	if (parser->is_aborted) {
+		sqlWithDelete(res);
+		return NULL;
+	}
+	return res;
+}
+
+/**
+ * Build `struct SrcList` from the resolved sources of the FROM clause.
+ * The fields that are not resolved yet are read from the AST.
+ *
+ * Return NULL on error or if there are no sources.
+ */
+static struct SrcList *
+src_list_from_rast(struct Parse *parser, struct rast_source *list,
+		   uint32_t count)
 {
 	if (list == NULL)
 		return NULL;
 	struct SrcList *res = NULL;
-	struct ast_source *src;
-	stailq_foreach_entry(src, &list->head, link) {
-		struct Select *select = select_from_ast(parser, src->select);
+	for (uint32_t i = 0; i < count; i++) {
+		struct ast_source *src = list[i].ast;
+		/*
+		 * A source with both a name and a bound SELECT is a reference
+		 * to a CTE. The SELECT is not passed to the codegen: it is
+		 * filled in during SELECT expansion by the WITH clause
+		 * machinery, which also handles WITH RECURSIVE and explicit
+		 * column lists of CTEs.
+		 */
+		struct Select *select = NULL;
+		if (src->name.n == 0)
+			select = select_from_rast(parser, list[i].select);
 		struct Expr *join_on = expr_from_ast(parser, src->join_on);
-		struct Token *name = src->name.n > 0 ? &src->name: NULL;
+		struct Token *name = src->name.n > 0 ? &src->name : NULL;
 		res = sqlSrcListAppendFromTerm(res, name, &src->alias, select,
 					       join_on, src->join_using,
 					       src->disallow_scan);
@@ -96,41 +156,35 @@ src_list_from_ast(struct Parse *parser, struct ast_source_list *list)
 	return res;
 }
 
-struct ast_select *
-ast_select_new(struct region *region)
-{
-	struct ast_select *res = xregion_alloc_object(region, typeof(*res));
-	memset(res, 0, sizeof(*res));
-	rlist_create(&res->link);
-	res->op = TK_SELECT;
-	return res;
-}
-
 /**
- * Build single `struct Select` object from `struct ast_select` object.
+ * Build single `struct Select` object from a resolved SELECT. The fields
+ * that are not resolved yet are read from the AST.
  *
  * Return NULL on error.
  */
 static struct Select *
-select_from_ast_single(struct Parse *parser, struct ast_select *select)
+select_from_rast_single(struct Parse *parser, struct rast_select *select)
 {
-	if (select->op != TK_SELECT && select->op != TK_ALL)
+	struct ast_select *ast = select->ast;
+	if (ast->op != TK_SELECT && ast->op != TK_ALL)
 		parser->hasCompound = 1;
-	struct SrcList *list = src_list_from_ast(parser, select->sources);
-	struct Expr *where = expr_from_ast(parser, select->where);
-	struct Expr *having = expr_from_ast(parser, select->having);
-	struct Expr *limit = expr_from_ast(parser, select->limit);
-	struct Expr *offset = expr_from_ast(parser, select->offset);
-	struct ExprList *columns = expr_list_from_ast(parser, select->columns);
+	struct SrcList *list = src_list_from_rast(parser, select->sources,
+						  select->source_count);
+	struct Expr *where = expr_from_ast(parser, ast->where);
+	struct Expr *having = expr_from_ast(parser, ast->having);
+	struct Expr *limit = expr_from_ast(parser, ast->limit);
+	struct Expr *offset = expr_from_ast(parser, ast->offset);
+	struct ExprList *columns = expr_list_from_ast(parser, ast->columns);
 	struct ExprList *group_by = expr_list_from_ast(parser,
-						       select->group_by);
+						       ast->group_by);
 	struct ExprList *order_by = expr_list_from_ast(parser,
-						       select->order_by);
+						       ast->order_by);
 	struct Select *res = sqlSelectNew(parser, columns, list, where,
 					  group_by, having, order_by,
-					  select->flags, limit, offset);
-	res->op = select->op;
-	res->pWith = with_from_ast(parser, select->with);
+					  ast->flags, limit, offset);
+	res->op = ast->op;
+	res->pWith = with_from_rast(parser, select->with,
+				    select->with_count);
 	if (parser->is_aborted) {
 		sql_select_delete(res);
 		return NULL;
@@ -138,19 +192,25 @@ select_from_ast_single(struct Parse *parser, struct ast_select *select)
 	return res;
 }
 
-struct Select *
-select_from_ast(struct Parse *parser, struct ast_select *select)
+/**
+ * Build `struct Select` object from a resolved SELECT, including the other
+ * parts of the compound SELECT it belongs to.
+ *
+ * Return NULL on error or if `select == NULL`.
+ */
+static struct Select *
+select_from_rast(struct Parse *parser, struct rast_select *select)
 {
 	if (select == NULL)
 		return NULL;
-	struct Select *res = select_from_ast_single(parser, select);
+	struct Select *res = select_from_rast_single(parser, select);
 	if (parser->is_aborted)
 		return NULL;
 	struct Select *next = res;
-	struct ast_select *prev;
+	struct rast_select *prev;
 	int count = 1;
-	rlist_foreach_entry_reverse(prev, &select->link, link) {
-		struct Select *prior = select_from_ast_single(parser, prev);
+	rlist_foreach_entry(prev, &select->link, link) {
+		struct Select *prior = select_from_rast_single(parser, prev);
 		if (parser->is_aborted) {
 			sql_select_delete(res);
 			return NULL;
@@ -170,6 +230,16 @@ select_from_ast(struct Parse *parser, struct ast_select *select)
 		return NULL;
 	}
 	return res;
+}
+
+struct Select *
+select_from_ast(struct Parse *parser, struct ast_select *select)
+{
+	if (select == NULL)
+		return NULL;
+	struct rast_select *rast =
+		sql_resolve_ast_select(parser, select, NULL, 0);
+	return select_from_rast(parser, rast);
 }
 
 struct ast_with_list *

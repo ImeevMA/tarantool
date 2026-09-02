@@ -637,14 +637,6 @@ struct ast_source_list *
 ast_source_list_append(struct region *region, struct ast_source_list *list,
 		       struct ast_source *src);
 
-/**
- * Convert `struct ast_source_list` to `struct SrcList`.
- *
- * Return NULL on error or if `list == NULL`.
- */
-struct SrcList *
-src_list_from_ast(struct Parse *parser, struct ast_source_list *list);
-
 /** Create new empty SELECT structure. */
 struct ast_select *
 ast_select_new(struct region *region);

@@ -39,6 +39,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "box/schema.h"
+#include "resolve.h"
 
 /*
  * Walk the expression tree pExpr and increase the aggregate function
@@ -1585,4 +1586,176 @@ sql_resolve_self_reference(struct Parse *parser, struct space_def *def,
 	sNC.pSrcList = &sSrc;
 	sNC.ncFlags = NC_IdxExpr;
 	sqlResolveExprNames(&sNC, expr);
+}
+
+/**
+ * Return the left-most part of a (possibly compound) SELECT, i.e. the base
+ * case of a `UNION [ALL]` chain. If `select` is not a compound SELECT,
+ * return it as is.
+ */
+static struct ast_select *
+ast_select_base(struct ast_select *select)
+{
+	struct ast_select *res = select;
+	struct ast_select *part;
+	rlist_foreach_entry_reverse(part, &select->link, link)
+		res = part;
+	return res;
+}
+
+/**
+ * Find a CTE with the given name. The list is searched from the end, so
+ * that the own WITH clauses of a SELECT shadow the outer ones.
+ */
+static struct rast_with *
+rast_with_lookup(struct region *region, struct rast_with *list,
+		 uint32_t count, const char *name)
+{
+	for (uint32_t i = count; i > 0; i--) {
+		const char *with_name =
+			sql_region_name(region, list[i - 1].name.z,
+					list[i - 1].name.n);
+		if (strcmp(with_name, name) == 0)
+			return &list[i - 1];
+	}
+	return NULL;
+}
+
+/**
+ * Resolve the sources of the FROM clause. Each source is bound to the AST
+ * it is built from, and a reference to a CTE is bound to the resolved
+ * SELECT statement of the CTE. Subqueries are resolved recursively.
+ *
+ * Return an array of resolved sources, or NULL if there is no FROM clause.
+ */
+static struct rast_source *
+sql_resolve_ast_sources(struct Parse *parser, struct ast_source_list *sources,
+			struct rast_with *with_list, uint32_t with_count)
+{
+	if (sources == NULL)
+		return NULL;
+	struct region *region = &parser->region;
+	struct rast_source *res =
+		xregion_alloc_array(region, typeof(*res), sources->len);
+	uint32_t i = 0;
+	struct ast_source *src;
+	stailq_foreach_entry(src, &sources->head, link) {
+		struct rast_source *r = &res[i++];
+		r->ast = src;
+		r->select = NULL;
+		if (src->select != NULL) {
+			r->select = sql_resolve_ast_select(parser, src->select,
+							   with_list,
+							   with_count);
+			continue;
+		}
+		/* TODO: Resolve the space and the index by name. */
+		if (src->name.n == 0)
+			continue;
+		const char *name = sql_region_name(region, src->name.z,
+						   src->name.n);
+		struct rast_with *with =
+			rast_with_lookup(region, with_list, with_count, name);
+		if (with != NULL)
+			r->select = with->select;
+	}
+	return res;
+}
+
+/**
+ * Resolve a single SELECT, without the other parts of the compound SELECT
+ * it belongs to.
+ */
+static struct rast_select *
+sql_resolve_ast_select_single(struct Parse *parser, struct ast_select *select,
+			      struct rast_with *with_list, uint32_t with_count)
+{
+	struct region *region = &parser->region;
+	struct rast_select *res = xregion_alloc_object(region, typeof(*res));
+	memset(res, 0, sizeof(*res));
+	rlist_create(&res->link);
+	res->ast = select;
+	res->sources = sql_resolve_ast_sources(parser, select->sources,
+					       with_list, with_count);
+	res->source_count = select->sources == NULL ? 0 :
+			    select->sources->len;
+	return res;
+}
+
+struct rast_select *
+sql_resolve_ast_select(struct Parse *parser, struct ast_select *select,
+		       struct rast_with *with_list, uint32_t with_count)
+{
+	struct region *region = &parser->region;
+	struct rast_with *new_list = with_list;
+	uint32_t count = with_count;
+	if (select->with != NULL) {
+		/*
+		 * Own WITH clauses are placed after the outer ones, so that
+		 * they shadow them during lookup. A CTE sees all the CTEs
+		 * defined before it, including itself, which is required for
+		 * WITH RECURSIVE.
+		 */
+		count += select->with->len;
+		new_list = xregion_alloc_array(region, typeof(*new_list),
+					       count);
+		for (uint32_t i = 0; i < with_count; i++)
+			new_list[i] = with_list[i];
+		uint32_t i = with_count;
+		struct ast_with_entry *entry;
+		stailq_foreach_entry(entry, &select->with->head, link) {
+			struct rast_with *next = &new_list[i++];
+			next->name = entry->name;
+			next->columns = entry->columns;
+			next->select = NULL;
+			/*
+			 * A `UNION [ALL]` CTE may be recursive: one of the
+			 * other parts may reference this CTE by name. While
+			 * the whole body is resolved below, such a reference
+			 * would have to resolve against `next->select`, which
+			 * is not built yet. The base (left-most) part can not
+			 * reference the CTE itself, since the recursive
+			 * reference is only allowed in the other parts of the
+			 * compound, so it is always safe to resolve it here
+			 * and bind the CTE to it in the meantime. This is
+			 * only naming/shape information (akin to legacy
+			 * `withExpand()`'s use of the base part's `pEList`
+			 * before the recursive part is walked); it is
+			 * replaced with the fully resolved SELECT below.
+			 */
+			if (entry->select->op == TK_ALL ||
+			    entry->select->op == TK_UNION) {
+				struct ast_select *base =
+					ast_select_base(entry->select);
+				next->select =
+					sql_resolve_ast_select_single(parser,
+								      base,
+								      new_list,
+								      i);
+			}
+			next->select = sql_resolve_ast_select(parser,
+							      entry->select,
+							      new_list, i);
+		}
+	}
+	struct rast_select *res =
+		sql_resolve_ast_select_single(parser, select, new_list, count);
+	if (select->with != NULL) {
+		res->with = &new_list[with_count];
+		res->with_count = select->with->len;
+	}
+	/*
+	 * The parts of a compound SELECT form a circular list without a head,
+	 * and `select` is the rightmost part. The iteration stops when it
+	 * returns to `select`. The WITH clauses of a compound SELECT are
+	 * visible in all its parts.
+	 */
+	struct ast_select *prev;
+	rlist_foreach_entry_reverse(prev, &select->link, link) {
+		struct rast_select *p =
+			sql_resolve_ast_select_single(parser, prev, new_list,
+						      count);
+		rlist_add_tail(&res->link, &p->link);
+	}
+	return res;
 }
