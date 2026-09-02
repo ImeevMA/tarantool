@@ -448,6 +448,19 @@ new_xmalloc(size_t n)
 static void
 sql_code_select(struct Parse *parser, struct ast_select *select)
 {
+	/*
+	 * Simple SELECT statements are resolved and coded directly,
+	 * without the legacy expand and resolve machinery. If the
+	 * statement turned out to be not simple, or has an error,
+	 * fall back to the legacy pipeline.
+	 */
+	struct rast_select *rast = rast_select_resolve(parser, select);
+	if (rast != NULL) {
+		vdbe_emit_rast_select(parser, rast);
+		return;
+	}
+	if (parser->is_aborted)
+		return;
 	struct Select *res = select_from_ast(parser, select, NULL);
 	if (parser->is_aborted)
 		return;

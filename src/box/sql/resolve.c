@@ -1623,3 +1623,222 @@ sql_coll_id(uint32_t *id, const char *name, uint32_t len)
 	sql_xfree(name_str);
 	return -1;
 }
+
+/**
+ * Check that the result columns of a SELECT statement reference only
+ * fields of its sources: each of them is a plain column reference or
+ * an asterisk.
+ */
+static bool
+rast_columns_are_simple(const struct ast_select *select)
+{
+	struct ast_expr_list_entry *entry;
+	stailq_foreach_entry(entry, &select->columns->head, link) {
+		const struct ast_expr *expr = entry->expr;
+		switch (expr->op) {
+		case TK_ASTERISK:
+		case TK_ID:
+			continue;
+		case TK_DOT:
+			if (expr->left == NULL || expr->left->op != TK_ID)
+				return false;
+			if (expr->right == NULL ||
+			    (expr->right->op != TK_ID &&
+			     expr->right->op != TK_ASTERISK))
+				return false;
+			continue;
+		default:
+			return false;
+		}
+	}
+	return true;
+}
+
+/**
+ * Check that a SELECT statement can be resolved into struct rast_select:
+ * it is not a compound query, has a single source which is a plain
+ * table, and has no clauses besides the result columns.
+ */
+static bool
+rast_select_is_simple(const struct ast_select *select)
+{
+	if ((select->flags & ~SF_All) != 0)
+		return false;
+	if (!rlist_empty(&select->link))
+		return false;
+	if (select->with != NULL || select->group_by != NULL ||
+	    select->having != NULL || select->where != NULL ||
+	    select->order_by != NULL || select->limit != NULL ||
+	    select->offset != NULL)
+		return false;
+	if (select->sources == NULL || select->sources->len != 1)
+		return false;
+	const struct ast_source *src =
+		stailq_first_entry(&select->sources->head,
+				   struct ast_source, link);
+	if (src->name.n == 0 || src->select != NULL || src->is_tab_func ||
+	    src->indexed_by.n != 0 || src->join_on != NULL ||
+	    src->join_using != NULL || src->join_type != 0)
+		return false;
+	if (select->columns == NULL)
+		return false;
+	return rast_columns_are_simple(select);
+}
+
+/**
+ * Copy a string to the region of the parsing context as is, without
+ * dequoting it.
+ */
+static const char *
+rast_strndup_temp(struct Parse *parser, const char *str, uint32_t len)
+{
+	char *res = xregion_alloc(&parser->region, len + 1);
+	memcpy(res, str, len);
+	res[len] = '\0';
+	return res;
+}
+
+/**
+ * Expand an asterisk entry of the result columns into fields of the
+ * source. Mirrors expansion of asterisks in selectExpander() for a
+ * single source.
+ */
+static void
+rast_expand_asterisk(struct Parse *parser, const struct ast_expr *expr,
+		     const struct rast_source *source,
+		     struct rast_column *columns, uint32_t *count)
+{
+	const struct space_def *def = source->space->def;
+	const char *tab_name = source->alias != NULL ? source->alias :
+			       def->name;
+	if (expr->op == TK_DOT) {
+		/*
+		 * Qualifier of a "table.*" entry is compared with the
+		 * name of the source as is, without the legacy name
+		 * lookup, same as in selectExpander().
+		 */
+		const char *qual = sql_name_temp(parser, expr->left->str,
+						 expr->left->len);
+		if (strcmp(qual, tab_name) != 0) {
+			diag_set(ClientError, ER_NO_SUCH_SPACE, qual);
+			parser->is_aborted = true;
+			return;
+		}
+	}
+	for (uint32_t i = 0; i < def->field_count; i++) {
+		columns[(*count)++] = (struct rast_column) {
+			.fieldno = i,
+			.alias = NULL,
+			.span = NULL,
+		};
+	}
+}
+
+struct rast_select *
+rast_select_resolve(struct Parse *parser, struct ast_select *select)
+{
+	if (parser->triggered_space != NULL ||
+	    !rast_select_is_simple(select))
+		return NULL;
+	struct rast_select *rast = NULL;
+	struct SrcList *src_list = NULL;
+	struct ast_expr_list_entry *entry;
+	struct region *region = &parser->region;
+
+	src_list = src_list_from_ast(parser, select->sources, NULL);
+	if (parser->is_aborted)
+		goto cleanup;
+	struct SrcList_item *item = &src_list->a[0];
+	struct space *space = sql_lookup_space(parser, item);
+	if (space == NULL)
+		goto cleanup;
+	if (space->def->opts.is_view)
+		goto cleanup;
+	sqlSrcListAssignCursors(parser, src_list);
+
+	/* Count result columns to allocate them in one chunk. */
+	uint32_t count = 0;
+	stailq_foreach_entry(entry, &select->columns->head, link) {
+		const struct ast_expr *expr = entry->expr;
+		if (expr->op == TK_ASTERISK ||
+		    (expr->op == TK_DOT && expr->right->op == TK_ASTERISK))
+			count += space->def->field_count;
+		else
+			count++;
+	}
+	if (count > SQL_MAX_COLUMN) {
+		diag_set(ClientError, ER_SQL_PARSER_LIMIT,
+			 "The number of columns in result set",
+			 (int)count, SQL_MAX_COLUMN);
+		parser->is_aborted = true;
+		goto cleanup;
+	}
+	struct rast_column *columns = xregion_alloc_array(region,
+							  typeof(*columns),
+							  count);
+
+	struct rast_source source = {
+		.space = space,
+		.name = rast_strndup_temp(parser, item->zName,
+					  strlen(item->zName)),
+		.cursor = item->iCursor,
+		.disallow_scan = item->fg.disallow_scan != 0,
+	};
+	if (item->zAlias != NULL) {
+		source.alias = rast_strndup_temp(parser, item->zAlias,
+						 strlen(item->zAlias));
+	}
+
+	NameContext nc;
+	memset(&nc, 0, sizeof(nc));
+	nc.pParse = parser;
+	nc.pSrcList = src_list;
+
+	uint32_t i = 0;
+	stailq_foreach_entry(entry, &select->columns->head, link) {
+		struct ast_expr *ast_expr = entry->expr;
+		const char *alias = NULL;
+		if (entry->name.n > 0) {
+			alias = sql_name_temp(parser, entry->name.z,
+					      entry->name.n);
+			if (sqlCheckIdentifierName(parser, (char *)alias) != 0)
+				goto cleanup;
+		}
+		if (ast_expr->op == TK_ASTERISK ||
+		    (ast_expr->op == TK_DOT &&
+		     ast_expr->right->op == TK_ASTERISK)) {
+			/* An asterisk cannot have an alias. */
+			rast_expand_asterisk(parser, ast_expr, &source,
+					     columns, &i);
+			if (parser->is_aborted)
+				goto cleanup;
+			continue;
+		}
+		struct Expr *expr = expr_from_ast(parser, ast_expr);
+		if (parser->is_aborted)
+			goto cleanup;
+		if (sqlResolveExprNames(&nc, expr) != 0) {
+			sql_expr_delete(expr);
+			goto cleanup;
+		}
+		assert(expr->op == TK_COLUMN_REF);
+		columns[i++] = (struct rast_column) {
+			.fieldno = expr->iColumn,
+			.alias = alias,
+			.span = rast_strndup_temp(parser, ast_expr->str,
+						  ast_expr->len),
+		};
+		sql_expr_delete(expr);
+	}
+	assert(i == count);
+
+	rast = xregion_alloc_object(region, typeof(*rast));
+	*rast = (struct rast_select) {
+		.source = source,
+		.columns = columns,
+		.column_count = count,
+	};
+cleanup:
+	sqlSrcListDelete(src_list);
+	return rast;
+}
