@@ -117,6 +117,23 @@ sqlDequote(char *z)
 	}
 }
 
+/**
+ * Convert the string to uppercase, write it to a buffer `buf` of size 'size',
+ * and return the length of the resulting string. If the returned length is
+ * less than `size`, the resulting string is null-terminated.
+ * Otherwise, this function writes `size` bytes of the resulted string to `buf`.
+ */
+static int
+sql_upper(char *buf, int size, const char *str, int len)
+{
+	UErrorCode status = U_ZERO_ERROR;
+	assert(icu_ucase_default_map != NULL);
+	int res = ucasemap_utf8ToUpper(icu_ucase_default_map, buf, size, str,
+				       len, &status);
+	assert(U_SUCCESS(status) || status == U_BUFFER_OVERFLOW_ERROR);
+	return res;
+}
+
 char *
 sql_name_new(const char *name, int len)
 {
@@ -129,14 +146,32 @@ sql_name_new(const char *name, int len)
 }
 
 char *
-sql_name_temp(struct Parse *parser, const char *name, int len)
+sql_region_name(struct region *region, const char *name, int len)
 {
-	struct region *r = &parser->region;
 	int size = len + 1;
-	char *res = xregion_alloc(r, size);
+	char *res = xregion_alloc(region, size);
 	memcpy(res, name, len);
 	res[len] = '\0';
 	sqlDequote(res);
+	return res;
+}
+
+char *
+sql_region_legacy_name(struct region *region, const char *name, int len)
+{
+	if (sqlIsquote(name[0]))
+		return sql_region_name(region, name, len);
+
+	int size = len + 1;
+	char *res = xregion_alloc(region, size);
+	int new_len = sql_upper(res, size, name, len);
+	if (new_len > len) {
+		size = new_len + 1;
+		res = xregion_alloc(region, size);
+		new_len = sql_upper(res, size, name, len);
+		assert(new_len < size);
+		(void)new_len;
+	}
 	return res;
 }
 

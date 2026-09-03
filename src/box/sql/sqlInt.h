@@ -2344,11 +2344,18 @@ char *
 sql_name_new(const char *name, int len);
 
 /**
- * Duplicate the string onto parser region and remove the double quotes if
- * necessary.
+ * Extract the unquoted name from the string and store it
+ * in memory allocated on region.
  */
 char *
-sql_name_temp(struct Parse *parser, const char *name, int len);
+sql_region_name(struct region *region, const char *name, int len);
+
+/**
+ * Extract the unquoted legacy-normalized name from the string and store it
+ * in memory allocated on region.
+ */
+char *
+sql_region_legacy_name(struct region *region, const char *name, int len);
 
 /** Normalize the given name and write it to the newly allocated memory. */
 char *
