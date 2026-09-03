@@ -251,17 +251,23 @@ lookupName(struct Parse *pParse, struct Expr *pExpr, struct NameContext *pNC)
 	if (pExpr->op == TK_DOT) {
 		assert(pExpr->pLeft->op == TK_ID && pExpr->pRight->op == TK_ID);
 		zTab = pExpr->pLeft->u.zToken;
-		if ((pExpr->pLeft->flags & EP_Lookup2) != 0)
-			old_tab = sql_legacy_name_new0(zTab);
+		if ((pExpr->pLeft->flags & EP_Lookup2) != 0) {
+			old_tab = sql_region_legacy_name(&pParse->region,
+							 zTab, strlen(zTab));
+		}
 		zCol = pExpr->pRight->u.zToken;
-		if ((pExpr->pRight->flags & EP_Lookup2) != 0)
-			old_col = sql_legacy_name_new0(zCol);
+		if ((pExpr->pRight->flags & EP_Lookup2) != 0) {
+			old_col = sql_region_legacy_name(&pParse->region,
+							 zCol, strlen(zCol));
+		}
 		col = pExpr->pRight;
 	} else {
 		assert(pExpr->op == TK_ID);
 		zCol = pExpr->u.zToken;
-		if ((pExpr->flags & EP_Lookup2) != 0)
-			old_col = sql_legacy_name_new0(zCol);
+		if ((pExpr->flags & EP_Lookup2) != 0) {
+			old_col = sql_region_legacy_name(&pParse->region,
+							 zCol, strlen(zCol));
+		}
 		col = pExpr;
 	}
 
@@ -518,8 +524,6 @@ lookupName(struct Parse *pParse, struct Expr *pExpr, struct NameContext *pNC)
 	pExpr->pRight = 0;
 	pExpr->op = (isTrigger ? TK_TRIGGER : TK_COLUMN_REF);
  lookupname_end:
-	sql_xfree(old_tab);
-	sql_xfree(old_col);
 	if (cnt == 1 && !pParse->is_aborted) {
 		assert(pNC != 0);
 		/* Increment the nRef value on all name contexts from TopNC up to
