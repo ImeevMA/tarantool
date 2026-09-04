@@ -1588,6 +1588,50 @@ sql_resolve_self_reference(struct Parse *parser, struct space_def *def,
 	sqlResolveExprNames(&sNC, expr);
 }
 
+struct rast_with_entry *
+rast_with_entry_from_list(struct rast_with_entry *list, int size,
+			  const char *name)
+{
+	for (int i = 0; i < size; ++i) {
+		if (strcmp(name, list[i].name) == 0)
+			return &list[i];
+	}
+	return NULL;
+}
+
+struct rast_with_list *
+rast_with_list_new(struct region *region, struct ast_with_list *ast)
+{
+	assert(ast != NULL);
+	struct rast_with_list *res = xregion_alloc_object(region, typeof(*res));
+	res->list = xregion_alloc_array(region, typeof(*res->list), ast->len);
+	res->len = ast->len;
+
+	int count = 0;
+	struct ast_with_entry *entry;
+	stailq_foreach_entry(entry, &ast->head, link) {
+		const char *name = sql_region_name(region, entry->name.z,
+						   entry->name.n);
+		if (rast_with_entry_from_list(res->list, count, name) != NULL) {
+			const char *err = tt_sprintf("Ambiguous table name "
+						     "in WITH query: %s", name);
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC, err);
+			return NULL;
+		}
+		struct rast_with_entry *with_entry = &res->list[count];
+		with_entry->name = name;
+		with_entry->ast = entry;
+		if (entry->select->with != NULL) {
+			with_entry->with_list = rast_with_list_new(region,
+				entry->select->with);
+			if (with_entry->with_list == NULL)
+				return NULL;
+		}
+		count++;
+	}
+	return res;
+}
+
 struct sql_rast *
 sql_resolve_ast(struct region *region, struct sql_ast *ast)
 {
@@ -1595,5 +1639,29 @@ sql_resolve_ast(struct region *region, struct sql_ast *ast)
 	memset(rast, 0, sizeof(*rast));
 	rast->type = ast->type;
 	rast->ast = ast;
+	switch (rast->type) {
+	case SQL_AST_SELECT:
+		if (ast->select->with != NULL &&
+		    rast_with_list_new(region, ast->select->with) == NULL)
+			return NULL;
+		break;
+	case SQL_AST_INSERT:
+		if (ast->insert->with != NULL &&
+		    rast_with_list_new(region, ast->insert->with) == NULL)
+			return NULL;
+		break;
+	case SQL_AST_UPDATE:
+		if (ast->update->with != NULL &&
+		    rast_with_list_new(region, ast->update->with) == NULL)
+			return NULL;
+		break;
+	case SQL_AST_DELETE:
+		if (ast->del->with != NULL &&
+		    rast_with_list_new(region, ast->del->with) == NULL)
+			return NULL;
+		break;
+	default:
+		break;
+	}
 	return rast;
 }

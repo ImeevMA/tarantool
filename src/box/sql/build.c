@@ -3282,36 +3282,11 @@ sqlSavepoint(Parse * pParse, int op, Token * pName)
 	sqlVdbeAddOp4(v, OP_Savepoint, op, 0, old_name_reg, zName, P4_DYNAMIC);
 }
 
-/*
- * This routine is invoked once per CTE by the parser while parsing a
- * WITH clause.
- */
-With *
-sqlWithAdd(Parse * pParse,	/* Parsing context */
-	       With * pWith,	/* Existing WITH clause, or NULL */
-	       Token * pName,	/* Name of the common-table */
-	       ExprList * pArglist,	/* Optional column name list for the table */
-	       Select * pQuery	/* Query used to initialize the table */
-    )
+struct With *
+sqlWithAdd(struct With *pWith, struct Token *pName, struct ExprList *pArglist,
+	   struct Select *pQuery)
 {
 	With *pNew;
-
-	/*
-	 * Check that the CTE name is unique within this WITH
-	 * clause. If not, store an error in the Parse structure.
-	 */
-	char *name = sql_name_from_token(pName);
-	if (pWith != NULL) {
-		int i;
-		const char *err = "Ambiguous table name in WITH query: %s";
-		for (i = 0; i < pWith->nCte; i++) {
-			if (strcmp(name, pWith->a[i].zName) == 0) {
-				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-					 tt_sprintf(err, name));
-				pParse->is_aborted = true;
-			}
-		}
-	}
 
 	if (pWith) {
 		int nByte =
@@ -3323,7 +3298,7 @@ sqlWithAdd(Parse * pParse,	/* Parsing context */
 
 	pNew->a[pNew->nCte].pSelect = pQuery;
 	pNew->a[pNew->nCte].pCols = pArglist;
-	pNew->a[pNew->nCte].zName = name;
+	pNew->a[pNew->nCte].zName = sql_name_from_token(pName);
 	pNew->a[pNew->nCte].zCteErr = 0;
 	pNew->nCte++;
 	return pNew;

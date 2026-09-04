@@ -4349,7 +4349,14 @@ collations_check_compatibility(uint32_t lhs_id, bool is_lhs_forced,
 int
 sql_binary_compare_coll_seq(Parse *parser, Expr *left, Expr *right,
 			    uint32_t *id);
-With *sqlWithAdd(Parse *, With *, Token *, ExprList *, Select *);
+
+/*
+ * This routine is invoked once per CTE by the parser while parsing a
+ * WITH clause.
+ */
+struct With *
+sqlWithAdd(struct With *pWith, struct Token *pName, struct ExprList *pArglist,
+	   struct Select *pQuery);
 
 /** Free the contents of the With object and remove the object. */
 void

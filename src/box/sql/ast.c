@@ -221,7 +221,7 @@ with_from_ast(struct Parse *parser, struct ast_with_list *list)
 		struct ExprList *cols =
 			expr_list_from_ids(parser, entry->columns);
 		struct Select *select = select_from_ast(parser, entry->select);
-		res = sqlWithAdd(parser, res, &entry->name, cols, select);
+		res = sqlWithAdd(res, &entry->name, cols, select);
 	}
 	if (parser->is_aborted) {
 		sqlWithDelete(res);
