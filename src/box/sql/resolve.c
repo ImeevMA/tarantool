@@ -36,6 +36,7 @@
  * table and column.
  */
 #include "sqlInt.h"
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include "box/schema.h"
@@ -1756,6 +1757,55 @@ sql_resolve_ast_select(struct Parse *parser, struct ast_select *select,
 			sql_resolve_ast_select_single(parser, prev, new_list,
 						      count);
 		rlist_add_tail(&res->link, &p->link);
+	}
+	return res;
+}
+
+/**
+ * Resolve a TK_INTEGER literal into @a res, mirroring the value computation
+ * performed by expr_code_int() for a non-negated integer literal, but
+ * without emitting any VDBE code.
+ */
+static struct rast_expr *
+sql_resolve_ast_expr_integer(struct ast_expr *ast, struct rast_expr *res)
+{
+	if (ast->str[0] == '0' && (ast->str[1] == 'x' || ast->str[1] == 'X')) {
+		const char *z = tt_cstr(ast->str, ast->len);
+		errno = 0;
+		uint64_t value = strtoull(z, NULL, 16);
+		if (errno != 0) {
+			diag_set(ClientError, ER_HEX_LITERAL_MAX, z,
+				 ast->len - 2, 16);
+			return NULL;
+		}
+		res->type = FIELD_TYPE_UNSIGNED;
+		res->uval = value;
+		return res;
+	}
+	int64_t value;
+	bool is_neg;
+	if (sql_atoi64(ast->str, &value, &is_neg, ast->len) != 0) {
+		diag_set(ClientError, ER_INT_LITERAL_MAX,
+			 tt_cstr(ast->str, ast->len));
+		return NULL;
+	}
+	assert(!is_neg);
+	res->type = FIELD_TYPE_UNSIGNED;
+	res->uval = (uint64_t)value;
+	return res;
+}
+
+struct rast_expr *
+sql_resolve_ast_expr(struct Parse *parser, struct ast_expr *ast)
+{
+	struct rast_expr *res =
+		xregion_alloc_object(&parser->region, typeof(*res));
+	res->op = ast->op;
+	switch (ast->op) {
+	case TK_INTEGER:
+		return sql_resolve_ast_expr_integer(ast, res);
+	default:
+		res->ast = ast;
 	}
 	return res;
 }

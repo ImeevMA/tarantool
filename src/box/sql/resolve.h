@@ -5,6 +5,8 @@
  */
 #pragma once
 
+#include "box/field_def.h"
+
 /** Element of a WITH clause after resolve. */
 struct rast_with {
 	/** Name of the CTE. */
@@ -54,3 +56,26 @@ struct rast_select {
 struct rast_select *
 sql_resolve_ast_select(struct Parse *parser, struct ast_select *select,
 		       struct rast_with *with_list, uint32_t with_count);
+
+/** Resolved expression. */
+struct rast_expr {
+	/** Parser token code identifying the kind of expression. */
+	uint8_t op;
+	/** Resolved type of the expression. */
+	enum field_type type;
+	union {
+		/**
+		 * Original AST node, for opcodes not yet resolved directly
+		 * by sql_resolve_ast_expr().
+		 */
+		struct ast_expr *ast;
+		/** TK_INTEGER value, when type is FIELD_TYPE_INTEGER. */
+		int64_t ival;
+		/** TK_INTEGER value, when type is FIELD_TYPE_UNSIGNED. */
+		uint64_t uval;
+	};
+};
+
+/** Build a resolved expression from a parsed one. */
+struct rast_expr *
+sql_resolve_ast_expr(struct Parse *parser, struct ast_expr *ast);
