@@ -1588,12 +1588,139 @@ sql_resolve_self_reference(struct Parse *parser, struct space_def *def,
 	sqlResolveExprNames(&sNC, expr);
 }
 
+static struct rast_select *
+sql_resolve_select(struct region *region, struct ast_select *ast,
+		   struct stailq *with);
+
+static struct rast_source *
+sql_resolve_source(struct region *region, struct ast_source *ast,
+		   struct stailq *with)
+{
+	if (ast == NULL)
+		return NULL;
+
+	struct rast_source *res = xregion_alloc_object(region, typeof(*res));
+	res->ast = ast;
+	if (ast->select != NULL) {
+		res->type = SQL_RAST_SELECT;
+		res->select = sql_resolve_select(region, ast->select, with);
+		return res->select == NULL ? NULL : res;
+	}
+
+	assert(ast->name.n > 0);
+	const char *name = sql_region_name(region, ast->name.z, ast->name.n);
+	struct rast_with *entry;
+	stailq_foreach_entry(entry, with, link) {
+		if (strcmp(entry->name, name) == 0) {
+			res->type = SQL_RAST_WITH;
+			res->with = entry;
+			return res;
+		}
+	}
+	return res;
+}
+
+/**
+ * Resolve a single SELECT, without the other parts of the compound SELECT
+ * it belongs to.
+ */
+static struct rast_select *
+sql_resolve_select_single(struct region *region, struct ast_select *ast,
+			  struct stailq *with)
+{
+	struct rast_select *res = xregion_alloc_object(region, typeof(*res));
+	memset(res, 0, sizeof(*res));
+	rlist_create(&res->link);
+	stailq_create(&res->sources);
+	res->ast = ast;
+
+	struct ast_source *src;
+	stailq_foreach_entry(src, &ast->sources->head, link) {
+		struct rast_source *s = sql_resolve_source(region, src, with);
+		if (s == NULL)
+			return NULL;
+		stailq_add_tail(&res->sources, &s->link);
+	}
+	return res;
+}
+
+static struct stailq *
+sql_resolve_with(struct region *region, struct ast_with_entry *ast,
+		 struct stailq *with)
+{
+	struct rast_with *entry = xregion_alloc_object(region, typeof(*entry));
+	memset(entry, 0, sizeof(*entry));
+
+	entry->name = sql_region_name(region, ast->name.z, ast->name.n);
+	entry->columns = xregion_alloc_array(region, char *, ast->columns->len);
+	int i = 0;
+	struct ast_id_entry *column;
+	stailq_foreach_entry(column, &ast->columns->head, link) {
+		entry->columns[i++] = sql_region_name(region, column->id.z,
+						      column->id.n);
+	}
+	stailq_add(with, &entry->link);
+
+	entry->select = sql_resolve_select(region, ast->select, with);
+	if (entry->select == NULL)
+		return NULL;
+	if (entry->select->ast->columns->len != ast->columns->len) {
+		// Error: wrong column number.
+		return NULL;
+	}
+	return with;
+}
+
+static struct rast_select *
+sql_resolve_select(struct region *region, struct ast_select *ast,
+		   struct stailq *with)
+{
+	struct stailq empty_with_list;
+	if (with == NULL) {
+		with = &empty_with_list;
+		stailq_create(with);
+	}
+
+	struct ast_with_entry *entry;
+	stailq_foreach_entry(entry, &ast->with->head, link) {
+		if (sql_resolve_with(region, entry, with) == NULL)
+			return NULL;
+	}
+
+	struct rast_select *res = sql_resolve_select_single(region, ast, with);
+	/*
+	 * The parts of a compound SELECT form a circular list without a head,
+	 * and `select` is the rightmost part. The iteration stops when it
+	 * returns to `select`. The WITH clauses of a compound SELECT are
+	 * visible in all its parts.
+	 */
+	struct ast_select *ast_prev;
+	rlist_foreach_entry_reverse(ast_prev, &ast->link, link) {
+		struct rast_select *prev =
+			sql_resolve_select_single(region, ast_prev, with);
+		rlist_add_tail(&res->link, &prev->link);
+	}
+
+	/* Pop this SELECT's WITH items from the list. */
+	if (with != &empty_with_list) {
+		for (uint32_t i = 0; i < ast->with->len; ++i)
+			stailq_shift(with);
+	}
+	return res;
+}
+
 struct sql_rast *
 sql_resolve_ast(struct region *region, struct sql_ast *ast)
 {
 	struct sql_rast *rast = xregion_alloc_object(region, typeof(*rast));
 	memset(rast, 0, sizeof(*rast));
 	rast->type = ast->type;
-	rast->ast = ast;
+	switch (rast->type) {
+	case SQL_AST_SELECT:
+		rast->select = sql_resolve_select(region, ast->select, NULL);
+		break;
+	default:
+		rast->ast = ast;
+	}
 	return rast;
 }
