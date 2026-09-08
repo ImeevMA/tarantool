@@ -1618,6 +1618,21 @@ ast_select_columns_unknown(struct ast_select *ast)
 }
 
 /**
+ * Return the leftmost part of a possibly compound SELECT @a ast. Like
+ * `sql_resolve_select`, this relies on `ast` being the rightmost part of a
+ * headless circular list of compound parts.
+ */
+static struct ast_select *
+ast_select_leftmost(struct ast_select *ast)
+{
+	struct ast_select *leftmost = ast;
+	struct ast_select *prev;
+	rlist_foreach_entry_reverse(prev, &ast->link, link)
+		leftmost = prev;
+	return leftmost;
+}
+
+/**
  * Look up a CTE named @a name in @a with_list. Entries are pushed to the
  * head of the list, so this search naturally finds the innermost visible
  * definition first: one from the same WITH clause shadows one from an outer
@@ -1681,20 +1696,47 @@ sql_resolve_source(struct region *region, struct ast_source *ast,
 		/*
 		 * A declared column list (e.g. `i(x)`) adds a legacy-only
 		 * check that compares the declared column count against the
-		 * body's leftmost part, using a wildcard-aware column count
-		 * that requires column-list resolution we don't implement
-		 * yet. That check can preempt the ordinary compound-arity
-		 * check below with a different message (see with1.test.lua
-		 * 5.6.4-5.6.7), so entries with declared columns are left
-		 * fully unresolved here and deferred to legacy codegen.
+		 * body's leftmost part. Legacy computes that count *after*
+		 * attempting to expand any `*`/`tbl.*` wildcard there, which
+		 * for a wildcard without a FROM clause to expand against
+		 * doesn't abort immediately but silently contributes 0 (the
+		 * "Failed to expand '*'..." error itself only surfaces later,
+		 * and only if this count check passes) — replicating that
+		 * exactly needs column-list resolution we don't have yet. So
+		 * only check when the leftmost part's columns are fully known
+		 * (no wildcard, see `ast_select_columns_unknown`); otherwise
+		 * leave the entry unresolved and defer entirely to legacy,
+		 * to avoid reporting a different error than legacy would.
 		 */
-		if (with->state == RAST_WITH_UNRESOLVED && with->columns == NULL) {
-			with->state = RAST_WITH_RESOLVING;
-			with->select = sql_resolve_select(region, with->ast,
-							  with_list);
-			if (with->select == NULL)
-				return NULL;
-			with->state = RAST_WITH_RESOLVED;
+		if (with->state == RAST_WITH_UNRESOLVED) {
+			bool skip = false;
+			if (with->columns != NULL) {
+				struct ast_select *left =
+					ast_select_leftmost(with->ast);
+				if (ast_select_columns_unknown(left)) {
+					skip = true;
+				} else if (left->columns->len !=
+					   with->column_count) {
+					diag_set(ClientError,
+						 ER_SQL_PARSER_GENERIC,
+						 tt_sprintf(
+							 "table %s has %u "
+							 "values for %u "
+							 "columns", with->name,
+							 left->columns->len,
+							 with->column_count));
+					return NULL;
+				}
+			}
+			if (!skip) {
+				with->state = RAST_WITH_RESOLVING;
+				with->select = sql_resolve_select(region,
+								  with->ast,
+								  with_list);
+				if (with->select == NULL)
+					return NULL;
+				with->state = RAST_WITH_RESOLVED;
+			}
 		}
 		res->type = SQL_RAST_WITH;
 		res->with = with;
@@ -1778,10 +1820,12 @@ sql_resolve_select(struct region *region, struct ast_select *ast,
 			with->name = sql_region_name(region, entry->name.z,
 						     entry->name.n);
 			with->columns = NULL;
+			with->column_count = 0;
 			with->ast = entry->select;
 			with->state = RAST_WITH_UNRESOLVED;
 			with->select = NULL;
 			if (entry->columns != NULL) {
+				with->column_count = entry->columns->len;
 				with->columns = xregion_alloc_array(
 					region, char *, entry->columns->len);
 				uint32_t j = 0;
@@ -1804,13 +1848,11 @@ sql_resolve_select(struct region *region, struct ast_select *ast,
 			 * clause. Resolving every entry's body eagerly here,
 			 * in definition order, would both reject unreferenced
 			 * CTEs with errors in their body and fail to see
-			 * later siblings. Deferring the body (and its
-			 * declared-column-count check) to a later step, once
-			 * `sources` resolution can follow references on
-			 * demand, preserves both properties. Only the entry's
-			 * name and declared columns are recorded here, which
-			 * is enough for `sources` resolution to bind a
-			 * reference to it.
+			 * later siblings. The body (and its declared-column-
+			 * count check) is instead resolved on first reference,
+			 * in `sql_resolve_source`. Only the entry's name and
+			 * declared columns are recorded here, which is enough
+			 * for `sources` resolution to bind a reference to it.
 			 */
 			stailq_add(with_list, &with->link);
 			++pushed;

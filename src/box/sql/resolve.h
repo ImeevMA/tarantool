@@ -35,9 +35,11 @@ struct rast_with {
 	char *name;
 	/**
 	 * Column names of the WITH clause, if specified explicitly. If not
-	 * NULL, the number of columns is equal to select->ast->columns->len.
+	 * NULL, has `column_count` elements.
 	 */
 	char **columns;
+	/** Number of elements in `columns`. Valid iff `columns` is not NULL. */
+	uint32_t column_count;
 	/** Unresolved body of the WITH clause, as received from the parser. */
 	struct ast_select *ast;
 	/** State of resolving `ast` into `select`, see `rast_with_state`. */
