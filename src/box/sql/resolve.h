@@ -19,12 +19,37 @@ enum rast_with_state {
 	RAST_WITH_UNRESOLVED = 0,
 	/**
 	 * The body is currently being resolved. Seeing this state again
-	 * while looking up the same entry means a circular, non-recursive
-	 * reference.
+	 * while looking up the same entry means a circular reference, unless
+	 * it is a legal WITH RECURSIVE self-reference, see `rast_with_zone`.
 	 */
 	RAST_WITH_RESOLVING,
 	/** The body has been resolved, `select` is set. */
 	RAST_WITH_RESOLVED,
+};
+
+/**
+ * Which part of a WITH RECURSIVE entry's body is currently being resolved,
+ * used to pick the right message for a self-reference found while it is
+ * RAST_WITH_RESOLVING. Meaningless (and left at NONE) for a body that isn't
+ * shaped like WITH RECURSIVE (a UNION/UNION ALL compound).
+ */
+enum rast_with_zone {
+	/** Not resolving a WITH RECURSIVE body right now. */
+	RAST_WITH_ZONE_NONE = 0,
+	/**
+	 * Resolving the anchor: every compound part except the rightmost.
+	 * Any self-reference found here, FROM-clause or expression-embedded,
+	 * is illegal ("circular reference: %s").
+	 */
+	RAST_WITH_ZONE_ANCHOR,
+	/**
+	 * Resolving the recursive term (the rightmost compound part). Its own
+	 * top-level FROM clause may name the entry once, recorded in
+	 * `direct_refs`; any other self-reference found here is illegal
+	 * ("multiple recursive references: %s" if a direct one exists,
+	 * "recursive reference in a subquery: %s" otherwise).
+	 */
+	RAST_WITH_ZONE_RECURSIVE,
 };
 
 /** Element of a WITH clause after resolve. */
@@ -50,6 +75,18 @@ struct rast_with {
 	 * RAST_WITH_RESOLVED.
 	 */
 	struct rast_select *select;
+	/** See `rast_with_zone`. Only meaningful while `state` is RESOLVING. */
+	enum rast_with_zone zone;
+	/**
+	 * FROM items in the recursive term's (`ast`'s) own top-level FROM
+	 * clause that directly name this entry - the legal, direct
+	 * recursive-base-case self-references. Resolving one of these is not
+	 * an error regardless of `zone`. NULL unless `ast` is shaped like
+	 * WITH RECURSIVE (a UNION/UNION ALL compound).
+	 */
+	struct ast_source **direct_refs;
+	/** Number of elements in `direct_refs`. */
+	uint32_t direct_ref_count;
 };
 
 /** Element of the FROM clause after resolve. */

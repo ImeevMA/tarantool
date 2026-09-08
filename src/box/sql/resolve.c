@@ -1592,6 +1592,10 @@ static struct rast_select *
 sql_resolve_select(struct region *region, struct ast_select *ast,
 		   struct stailq *with_list);
 
+static struct rast_select *
+sql_resolve_select_single(struct region *region, struct ast_select *ast,
+			  struct stailq *with_list);
+
 /**
  * Return true if the column count of @a ast is not known from its own AST
  * alone: either it has no column list of its own (a multi-row VALUES clause
@@ -1721,6 +1725,200 @@ rast_with_lookup(struct stailq *with_list, const char *name)
 	return NULL;
 }
 
+static bool
+ast_expr_list_walk_selects(struct region *region, struct ast_expr_list *list,
+			   struct stailq *with_list);
+
+/**
+ * Recursively locate every SELECT embedded in @a expr - via TK_SELECT,
+ * TK_EXISTS, or the subquery form of TK_IN - and resolve it with
+ * `sql_resolve_select`, so that a self-reference to a WITH RECURSIVE entry
+ * nested inside a WHERE/HAVING/etc. subquery is found the same way one
+ * nested in a FROM clause already is. This is a purely structural walk (no
+ * name binding, no type inference): it mirrors the exact per-op union-member
+ * layout `expr_from_ast` uses to lower `ast_expr` into `Expr`, since
+ * `ast_expr`'s union makes any other assumption about which member is
+ * populated for a given op unsafe. Returns false and sets diag on error.
+ */
+static bool
+ast_expr_walk_selects(struct region *region, struct ast_expr *expr,
+		      struct stailq *with_list)
+{
+	if (expr == NULL)
+		return true;
+	switch (expr->op) {
+	case TK_EXISTS:
+	case TK_SELECT:
+		return sql_resolve_select(region, expr->select,
+					 with_list) != NULL;
+	case TK_AND:
+	case TK_OR:
+	case TK_LT:
+	case TK_LE:
+	case TK_GT:
+	case TK_GE:
+	case TK_EQ:
+	case TK_NE:
+	case TK_BITAND:
+	case TK_BITOR:
+	case TK_LSHIFT:
+	case TK_RSHIFT:
+	case TK_PLUS:
+	case TK_MINUS:
+	case TK_STAR:
+	case TK_SLASH:
+	case TK_REM:
+	case TK_CONCAT:
+	case TK_DOT:
+	case TK_IN:
+		return ast_expr_walk_selects(region, expr->left, with_list) &&
+		       ast_expr_walk_selects(region, expr->right, with_list);
+	case TK_PARENTHESES:
+		while (expr->op == TK_PARENTHESES)
+			expr = expr->left;
+		return ast_expr_walk_selects(region, expr, with_list);
+	case TK_COLLATE:
+	case TK_CAST:
+	case TK_NOT:
+	case TK_BITNOT:
+	case TK_UMINUS:
+	case TK_UPLUS:
+	case TK_NOTNULL:
+	case TK_ISNULL:
+		return ast_expr_walk_selects(region, expr->left, with_list);
+	case TK_ARRAY:
+	case TK_MAP:
+	case TK_VECTOR:
+		return ast_expr_list_walk_selects(region, expr->list,
+						  with_list);
+	case TK_GETITEM:
+	case TK_BETWEEN:
+		return ast_expr_walk_selects(region, expr->left, with_list) &&
+		       ast_expr_list_walk_selects(region, expr->list,
+						  with_list);
+	case TK_FUNCTION:
+		if (expr->right == NULL)
+			return true;
+		return ast_expr_list_walk_selects(region, expr->right->list,
+						  with_list);
+	case TK_CASE:
+		if (expr->left != NULL &&
+		    !ast_expr_walk_selects(region, expr->left, with_list))
+			return false;
+		return ast_expr_list_walk_selects(region, expr->list,
+						  with_list);
+	default:
+		return true;
+	}
+}
+
+/** Same as `ast_expr_walk_selects`, but for every expression in @a list. */
+static bool
+ast_expr_list_walk_selects(struct region *region, struct ast_expr_list *list,
+			   struct stailq *with_list)
+{
+	if (list == NULL)
+		return true;
+	struct ast_expr_list_entry *entry;
+	stailq_foreach_entry(entry, &list->head, link) {
+		if (!ast_expr_walk_selects(region, entry->expr, with_list))
+			return false;
+	}
+	return true;
+}
+
+/**
+ * Resolve @a with's body (`with->ast`), a WITH RECURSIVE-shaped compound
+ * (its rightmost part, the recursive term, may reference @a with itself),
+ * matching legacy `withExpand`'s validation: `with->zone` and
+ * `with->direct_refs`/`direct_ref_count` (already computed by the caller)
+ * are consulted by `sql_resolve_source` to tell a legal self-reference from
+ * an illegal one and to pick the right error message. `with->state` must
+ * already be RAST_WITH_RESOLVING. Returns NULL and sets diag on error.
+ *
+ * The anchor (every part but the recursive term) is resolved first, with
+ * `zone` set to ANCHOR, then the recursive term itself, with `zone` set to
+ * RECURSIVE - the reverse of legacy's order (which resolves the recursive
+ * term first), which only matters for error-message choice when a query is
+ * simultaneously invalid in both zones, a case no test covers.
+ *
+ * Unlike `sql_resolve_select`, this does not push `with->ast`'s own WITH
+ * clause, if it has one: a WITH RECURSIVE body nesting its own further WITH
+ * clause is not supported by this resolver and is left to legacy.
+ */
+static struct rast_select *
+rast_resolve_with_recursive(struct region *region, struct rast_with *with,
+			    struct stailq *with_list)
+{
+	struct ast_select *ast = with->ast;
+	with->zone = RAST_WITH_ZONE_ANCHOR;
+	struct rast_select *res = NULL;
+	struct rast_select *right = NULL;
+	struct ast_select *prev;
+	rlist_foreach_entry_reverse(prev, &ast->link, link) {
+		struct rast_select *p =
+			sql_resolve_select_single(region, prev, with_list);
+		if (p == NULL)
+			return NULL;
+		if (right != NULL &&
+		    !ast_select_columns_unknown(p->ast) &&
+		    !ast_select_columns_unknown(right->ast) &&
+		    p->ast->columns->len != right->ast->columns->len) {
+			if ((right->ast->flags & SF_Values) != 0) {
+				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+					 "all VALUES must have the same "
+					 "number of terms");
+			} else {
+				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+					 tt_sprintf("SELECTs to the left and "
+						    "right of %s do not have "
+						    "the same number of "
+						    "result columns",
+						    sql_select_op_name(
+							right->ast->op)));
+			}
+			return NULL;
+		}
+		if (res == NULL) {
+			res = p;
+			rlist_create(&res->link);
+		} else {
+			rlist_add_tail(&res->link, &p->link);
+		}
+		right = p;
+	}
+	with->zone = RAST_WITH_ZONE_RECURSIVE;
+	struct rast_select *last = sql_resolve_select_single(region, ast,
+							     with_list);
+	if (last == NULL)
+		return NULL;
+	if (right != NULL &&
+	    !ast_select_columns_unknown(last->ast) &&
+	    !ast_select_columns_unknown(right->ast) &&
+	    last->ast->columns->len != right->ast->columns->len) {
+		if ((last->ast->flags & SF_Values) != 0) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 "all VALUES must have the same number of "
+				 "terms");
+		} else {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 tt_sprintf("SELECTs to the left and right of "
+					    "%s do not have the same number "
+					    "of result columns",
+					    sql_select_op_name(last->ast->op)));
+		}
+		return NULL;
+	}
+	if (res == NULL) {
+		res = last;
+		rlist_create(&res->link);
+	} else {
+		rlist_add_tail(&res->link, &last->link);
+	}
+	with->zone = RAST_WITH_ZONE_NONE;
+	return res;
+}
+
 /** Resolve one element of a FROM clause into @a res. */
 static struct rast_source *
 sql_resolve_source(struct region *region, struct ast_source *ast,
@@ -1742,27 +1940,23 @@ sql_resolve_source(struct region *region, struct ast_source *ast,
 	struct rast_with *with = rast_with_lookup(with_list, name);
 	if (with != NULL) {
 		if (with->state == RAST_WITH_RESOLVING) {
-			/*
-			 * A WITH entry whose own body is a UNION/UNION ALL
-			 * compound may legally reference itself: this is a
-			 * WITH RECURSIVE query (the RECURSIVE keyword itself
-			 * is dropped by the parser, so this shape is the only
-			 * signal available here). Resolving such a reference
-			 * is not implemented yet; leave it to legacy codegen,
-			 * which compiles and validates it (including e.g.
-			 * "multiple references to recursive table") from the
-			 * untouched AST. Anything else seeing its own entry
-			 * still being resolved is a genuine circular, non-
-			 * recursive reference.
-			 */
-			if (with->ast->op == TK_ALL || with->ast->op == TK_UNION) {
-				res->type = SQL_RAST_WITH;
-				res->with = with;
-				return res;
+			for (uint32_t i = 0; i < with->direct_ref_count; i++) {
+				if (with->direct_refs[i] == ast) {
+					res->type = SQL_RAST_TABLE;
+					res->space = NULL;
+					res->index = NULL;
+					return res;
+				}
 			}
+			const char *msg;
+			if (with->zone != RAST_WITH_ZONE_RECURSIVE)
+				msg = "circular reference: %s";
+			else if (with->direct_ref_count == 1)
+				msg = "multiple recursive references: %s";
+			else
+				msg = "recursive reference in a subquery: %s";
 			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-				 tt_sprintf("circular reference: %s",
-					    with->name));
+				 tt_sprintf(msg, with->name));
 			return NULL;
 		}
 		/*
@@ -1796,10 +1990,62 @@ sql_resolve_source(struct region *region, struct ast_source *ast,
 				}
 			}
 			if (!skip) {
+				/*
+				 * A WITH entry whose own body is a UNION/UNION
+				 * ALL compound may legally reference itself:
+				 * this is a WITH RECURSIVE query (the
+				 * RECURSIVE keyword itself is dropped by the
+				 * parser, so this shape is the only signal
+				 * available here). Its recursive term's own
+				 * top-level FROM clause may name it at most
+				 * once; bind all such items now (mirroring
+				 * legacy binding them before erroring), so
+				 * `direct_refs` is available regardless of
+				 * whether the count check below passes.
+				 */
+				bool may_recursive =
+					with->ast->op == TK_ALL ||
+					with->ast->op == TK_UNION;
+				if (may_recursive &&
+				    with->ast->sources != NULL) {
+					uint32_t total =
+						with->ast->sources->len;
+					with->direct_refs = xregion_alloc_array(
+						region, struct ast_source *,
+						total);
+					struct ast_source *s;
+					stailq_foreach_entry(
+						s, &with->ast->sources->head,
+						link) {
+						if (s->select != NULL ||
+						    s->name.n == 0)
+							continue;
+						const char *sname =
+							sql_region_name(
+								region,
+								s->name.z,
+								s->name.n);
+						if (strcmp(sname,
+							   with->name) == 0)
+							with->direct_refs[
+								with->direct_ref_count++] = s;
+					}
+				}
+				if (with->direct_ref_count > 1) {
+					diag_set(ClientError,
+						 ER_SQL_PARSER_GENERIC,
+						 tt_sprintf(
+							 "multiple references "
+							 "to recursive table: "
+							 "%s", with->name));
+					return NULL;
+				}
 				with->state = RAST_WITH_RESOLVING;
-				with->select = sql_resolve_select(region,
-								  with->ast,
-								  with_list);
+				with->select = may_recursive ?
+					rast_resolve_with_recursive(
+						region, with, with_list) :
+					sql_resolve_select(region, with->ast,
+							   with_list);
 				if (with->select == NULL)
 					return NULL;
 				with->state = RAST_WITH_RESOLVED;
@@ -1854,18 +2100,29 @@ sql_resolve_select_single(struct region *region, struct ast_select *ast,
 	memset(res, 0, sizeof(*res));
 	rlist_create(&res->link);
 	res->ast = ast;
-	if (ast->sources == NULL)
-		return res;
-	res->source_count = ast->sources->len;
-	res->sources = xregion_alloc_array(region, typeof(*res->sources),
-					   res->source_count);
-	uint32_t i = 0;
-	struct ast_source *src;
-	stailq_foreach_entry(src, &ast->sources->head, link) {
-		if (sql_resolve_source(region, src, with_list,
-				       &res->sources[i++]) == NULL)
-			return NULL;
+	if (ast->sources != NULL) {
+		res->source_count = ast->sources->len;
+		res->sources = xregion_alloc_array(region, typeof(*res->sources),
+						   res->source_count);
+		uint32_t i = 0;
+		struct ast_source *src;
+		stailq_foreach_entry(src, &ast->sources->head, link) {
+			if (sql_resolve_source(region, src, with_list,
+					       &res->sources[i++]) == NULL)
+				return NULL;
+			if (!ast_expr_walk_selects(region, src->join_on,
+						  with_list))
+				return NULL;
+		}
 	}
+	if (!ast_expr_list_walk_selects(region, ast->columns, with_list) ||
+	    !ast_expr_walk_selects(region, ast->where, with_list) ||
+	    !ast_expr_walk_selects(region, ast->having, with_list) ||
+	    !ast_expr_list_walk_selects(region, ast->group_by, with_list) ||
+	    !ast_expr_list_walk_selects(region, ast->order_by, with_list) ||
+	    !ast_expr_walk_selects(region, ast->limit, with_list) ||
+	    !ast_expr_walk_selects(region, ast->offset, with_list))
+		return NULL;
 	return res;
 }
 
@@ -1891,6 +2148,9 @@ sql_resolve_select(struct region *region, struct ast_select *ast,
 			with->ast = entry->select;
 			with->state = RAST_WITH_UNRESOLVED;
 			with->select = NULL;
+			with->zone = RAST_WITH_ZONE_NONE;
+			with->direct_refs = NULL;
+			with->direct_ref_count = 0;
 			if (entry->columns != NULL) {
 				with->column_count = entry->columns->len;
 				with->columns = xregion_alloc_array(
