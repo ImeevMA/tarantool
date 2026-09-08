@@ -1633,6 +1633,78 @@ ast_select_leftmost(struct ast_select *ast)
 }
 
 /**
+ * Compute how many columns @a ast's column list would produce, expanding
+ * any `*`/`tbl.*` wildcard the way legacy `selectExpander` does: a wildcard
+ * that matches a real table source in @a ast's FROM clause expands to that
+ * table's real column count; one that matches nothing at all (no FROM
+ * clause, or a `tbl.*` naming a source that isn't present) contributes 0
+ * rather than failing immediately — the "Failed to expand '*'..." error is
+ * only raised later by legacy, and only if it's still reached. If a
+ * wildcard would need to expand against a subquery or WITH source, or a
+ * table source that doesn't itself resolve, this returns false: replicating
+ * that precisely needs resolution this function doesn't have, so the caller
+ * should defer to legacy entirely instead of guessing. This also returns
+ * false if every single entry turned out to be a wildcard contributing 0,
+ * mirroring legacy's column list itself becoming NULL in that case, which
+ * skips the check that uses this count altogether.
+ */
+static bool
+ast_select_column_count(struct ast_select *ast, uint32_t *count)
+{
+	assert(ast->columns != NULL);
+	uint32_t total = 0;
+	uint32_t kept = 0;
+	struct ast_expr_list_entry *entry;
+	stailq_foreach_entry(entry, &ast->columns->head, link) {
+		struct ast_expr *expr = entry->expr;
+		struct ast_expr *table = NULL;
+		bool is_wildcard = expr->op == TK_ASTERISK;
+		if (expr->op == TK_DOT && expr->right->op == TK_ASTERISK) {
+			is_wildcard = true;
+			table = expr->left;
+		}
+		if (!is_wildcard) {
+			total++;
+			kept++;
+			continue;
+		}
+		if (ast->sources == NULL)
+			continue;
+		uint32_t matched = 0;
+		bool found = false;
+		struct ast_source *src;
+		stailq_foreach_entry(src, &ast->sources->head, link) {
+			if (table != NULL) {
+				const struct Token *alias = src->alias.n > 0 ?
+					&src->alias : &src->name;
+				if (alias->n != table->len ||
+				    memcmp(alias->z, table->str,
+					   alias->n) != 0)
+					continue;
+			}
+			if (src->select != NULL)
+				return false;
+			const struct space *space =
+				sql_space_by_token(&src->name);
+			if (space == NULL)
+				return false;
+			matched += space->def->field_count;
+			found = true;
+			if (table != NULL)
+				break;
+		}
+		if (found) {
+			total += matched;
+			kept++;
+		}
+	}
+	if (kept == 0)
+		return false;
+	*count = total;
+	return true;
+}
+
+/**
  * Look up a CTE named @a name in @a with_list. Entries are pushed to the
  * head of the list, so this search naturally finds the innermost visible
  * definition first: one from the same WITH clause shadows one from an outer
@@ -1696,34 +1768,29 @@ sql_resolve_source(struct region *region, struct ast_source *ast,
 		/*
 		 * A declared column list (e.g. `i(x)`) adds a legacy-only
 		 * check that compares the declared column count against the
-		 * body's leftmost part. Legacy computes that count *after*
-		 * attempting to expand any `*`/`tbl.*` wildcard there, which
-		 * for a wildcard without a FROM clause to expand against
-		 * doesn't abort immediately but silently contributes 0 (the
-		 * "Failed to expand '*'..." error itself only surfaces later,
-		 * and only if this count check passes) — replicating that
-		 * exactly needs column-list resolution we don't have yet. So
-		 * only check when the leftmost part's columns are fully known
-		 * (no wildcard, see `ast_select_columns_unknown`); otherwise
-		 * leave the entry unresolved and defer entirely to legacy,
-		 * to avoid reporting a different error than legacy would.
+		 * body's leftmost part, computed after wildcard expansion
+		 * (see `ast_select_column_count`). When that count can't be
+		 * determined precisely enough to match legacy, leave the
+		 * entry unresolved and defer entirely to legacy, to avoid
+		 * reporting a different error than legacy would.
 		 */
 		if (with->state == RAST_WITH_UNRESOLVED) {
 			bool skip = false;
 			if (with->columns != NULL) {
 				struct ast_select *left =
 					ast_select_leftmost(with->ast);
-				if (ast_select_columns_unknown(left)) {
+				uint32_t actual;
+				if (left->columns == NULL ||
+				    !ast_select_column_count(left, &actual)) {
 					skip = true;
-				} else if (left->columns->len !=
-					   with->column_count) {
+				} else if (actual != with->column_count) {
 					diag_set(ClientError,
 						 ER_SQL_PARSER_GENERIC,
 						 tt_sprintf(
 							 "table %s has %u "
 							 "values for %u "
 							 "columns", with->name,
-							 left->columns->len,
+							 actual,
 							 with->column_count));
 					return NULL;
 				}
