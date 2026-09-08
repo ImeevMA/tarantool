@@ -13,6 +13,20 @@ enum rast_source_type {
 	SQL_RAST_WITH,
 };
 
+/** State of resolving a WITH clause's body, see `rast_with`. */
+enum rast_with_state {
+	/** The body has not been referenced yet, `select` is not set. */
+	RAST_WITH_UNRESOLVED = 0,
+	/**
+	 * The body is currently being resolved. Seeing this state again
+	 * while looking up the same entry means a circular, non-recursive
+	 * reference.
+	 */
+	RAST_WITH_RESOLVING,
+	/** The body has been resolved, `select` is set. */
+	RAST_WITH_RESOLVED,
+};
+
 /** Element of a WITH clause after resolve. */
 struct rast_with {
 	/** Link to other WITH entries visible in the current scope. */
@@ -24,7 +38,15 @@ struct rast_with {
 	 * NULL, the number of columns is equal to select->ast->columns->len.
 	 */
 	char **columns;
-	/** Resolved SELECT statement of the WITH clause. */
+	/** Unresolved body of the WITH clause, as received from the parser. */
+	struct ast_select *ast;
+	/** State of resolving `ast` into `select`, see `rast_with_state`. */
+	enum rast_with_state state;
+	/**
+	 * Resolved SELECT statement of the WITH clause, lazily filled in by
+	 * the first reference to this entry. Valid iff `state` is
+	 * RAST_WITH_RESOLVED.
+	 */
 	struct rast_select *select;
 };
 

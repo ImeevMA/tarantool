@@ -1654,6 +1654,48 @@ sql_resolve_source(struct region *region, struct ast_source *ast,
 	const char *name = sql_region_name(region, ast->name.z, ast->name.n);
 	struct rast_with *with = rast_with_lookup(with_list, name);
 	if (with != NULL) {
+		if (with->state == RAST_WITH_RESOLVING) {
+			/*
+			 * A WITH entry whose own body is a UNION/UNION ALL
+			 * compound may legally reference itself: this is a
+			 * WITH RECURSIVE query (the RECURSIVE keyword itself
+			 * is dropped by the parser, so this shape is the only
+			 * signal available here). Resolving such a reference
+			 * is not implemented yet; leave it to legacy codegen,
+			 * which compiles and validates it (including e.g.
+			 * "multiple references to recursive table") from the
+			 * untouched AST. Anything else seeing its own entry
+			 * still being resolved is a genuine circular, non-
+			 * recursive reference.
+			 */
+			if (with->ast->op == TK_ALL || with->ast->op == TK_UNION) {
+				res->type = SQL_RAST_WITH;
+				res->with = with;
+				return res;
+			}
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 tt_sprintf("circular reference: %s",
+					    with->name));
+			return NULL;
+		}
+		/*
+		 * A declared column list (e.g. `i(x)`) adds a legacy-only
+		 * check that compares the declared column count against the
+		 * body's leftmost part, using a wildcard-aware column count
+		 * that requires column-list resolution we don't implement
+		 * yet. That check can preempt the ordinary compound-arity
+		 * check below with a different message (see with1.test.lua
+		 * 5.6.4-5.6.7), so entries with declared columns are left
+		 * fully unresolved here and deferred to legacy codegen.
+		 */
+		if (with->state == RAST_WITH_UNRESOLVED && with->columns == NULL) {
+			with->state = RAST_WITH_RESOLVING;
+			with->select = sql_resolve_select(region, with->ast,
+							  with_list);
+			if (with->select == NULL)
+				return NULL;
+			with->state = RAST_WITH_RESOLVED;
+		}
 		res->type = SQL_RAST_WITH;
 		res->with = with;
 		return res;
@@ -1736,6 +1778,8 @@ sql_resolve_select(struct region *region, struct ast_select *ast,
 			with->name = sql_region_name(region, entry->name.z,
 						     entry->name.n);
 			with->columns = NULL;
+			with->ast = entry->select;
+			with->state = RAST_WITH_UNRESOLVED;
 			with->select = NULL;
 			if (entry->columns != NULL) {
 				with->columns = xregion_alloc_array(
