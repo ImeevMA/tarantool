@@ -1641,7 +1641,7 @@ struct rast_scope {
 	struct rast_with_list with;
 };
 
-struct rast_with_entry *
+static struct rast_with_entry *
 rast_with_entry_from_scope(struct rast_scope *scope, const char *name)
 {
 	if (scope == NULL)
@@ -1656,15 +1656,413 @@ rast_with_entry_from_scope(struct rast_scope *scope, const char *name)
 	return rast_with_entry_from_scope(scope->parent, name);
 }
 
-int
-rast_validate_expr(struct ast_expr *ast, struct rast_scope *scope)
+static int
+sql_validate_select(struct region *region, struct ast_select *ast,
+		    struct rast_scope *parent);
+
+static int
+rast_validate_expr(struct region *region, struct ast_expr *expr,
+		   struct rast_scope *scope);
+
+static int
+rast_validate_expr_list(struct region *region, struct ast_expr_list *list,
+			struct rast_scope *scope);
+
+/** Context threaded through the `self_ref_*` family of functions. */
+struct self_ref_walk {
+	/** Region for scratch dequoted-name allocations. */
+	struct region *region;
+	/** Dequoted name of the WITH entry being checked. */
+	const char *name;
+	/**
+	 * True while walking a compound member other than the rightmost one
+	 * (or anything reached from a subquery, FROM- or expression-based):
+	 * matches found there are never "direct", always "other".
+	 */
+	bool in_anchor;
+	/** References directly in the rightmost member's own FROM. */
+	uint32_t direct_count;
+	/** References anywhere else in the body. */
+	uint32_t other_count;
+};
+
+static bool
+self_ref_name_eq(struct self_ref_walk *w, const struct Token *tok)
 {
-	(void)ast;
-	(void)scope;
+	size_t used = region_used(w->region);
+	const char *s = sql_region_name(w->region, tok->z, tok->n);
+	bool eq = strcmp(s, w->name) == 0;
+	region_truncate(w->region, used);
+	return eq;
+}
+
+static bool
+self_ref_shadows(struct self_ref_walk *w, struct ast_select *ast)
+{
+	if (ast->with == NULL)
+		return false;
+	struct ast_with_entry *e;
+	stailq_foreach_entry(e, &ast->with->head, link) {
+		if (self_ref_name_eq(w, &e->name))
+			return true;
+	}
+	return false;
+}
+
+static void
+self_ref_walk_select(struct self_ref_walk *w, struct ast_select *ast,
+		     bool top_level);
+
+static void
+self_ref_walk_expr_list(struct self_ref_walk *w, struct ast_expr_list *list);
+
+/**
+ * Visit every FROM-clause subquery and expression-embedded subquery
+ * reachable from @a expr, counting occurrences of @a w->name found as a
+ * source name along the way. Mirrors the op-to-union-member mapping in
+ * `expr_from_ast()` - only walks children that function actually recurses
+ * into when building a runtime `struct Expr`.
+ */
+static void
+self_ref_walk_expr(struct self_ref_walk *w, struct ast_expr *expr)
+{
+	if (expr == NULL)
+		return;
+	switch (expr->op) {
+	case TK_AND:
+	case TK_OR:
+	case TK_LT:
+	case TK_LE:
+	case TK_GT:
+	case TK_GE:
+	case TK_EQ:
+	case TK_NE:
+	case TK_BITAND:
+	case TK_BITOR:
+	case TK_LSHIFT:
+	case TK_RSHIFT:
+	case TK_PLUS:
+	case TK_MINUS:
+	case TK_STAR:
+	case TK_SLASH:
+	case TK_REM:
+	case TK_CONCAT:
+	case TK_DOT:
+		self_ref_walk_expr(w, expr->left);
+		self_ref_walk_expr(w, expr->right);
+		return;
+	case TK_PARENTHESES:
+	case TK_NOT:
+	case TK_BITNOT:
+	case TK_UMINUS:
+	case TK_UPLUS:
+	case TK_NOTNULL:
+	case TK_ISNULL:
+	case TK_CAST:
+	case TK_COLLATE:
+		self_ref_walk_expr(w, expr->left);
+		return;
+	case TK_ARRAY:
+	case TK_MAP:
+	case TK_VECTOR:
+		self_ref_walk_expr_list(w, expr->list);
+		return;
+	case TK_GETITEM:
+		self_ref_walk_expr(w, expr->left);
+		self_ref_walk_expr_list(w, expr->list);
+		return;
+	case TK_FUNCTION:
+		if (expr->right != NULL)
+			self_ref_walk_expr_list(w, expr->right->list);
+		return;
+	case TK_BETWEEN:
+	case TK_CASE:
+		self_ref_walk_expr(w, expr->left);
+		self_ref_walk_expr_list(w, expr->list);
+		return;
+	case TK_IN:
+		self_ref_walk_expr(w, expr->left);
+		if (expr->right->op == TK_SELECT)
+			self_ref_walk_select(w, expr->right->select, false);
+		else
+			self_ref_walk_expr_list(w, expr->right->list);
+		return;
+	case TK_EXISTS:
+	case TK_SELECT:
+		self_ref_walk_select(w, expr->select, false);
+		return;
+	default:
+		return;
+	}
+}
+
+static void
+self_ref_walk_expr_list(struct self_ref_walk *w, struct ast_expr_list *list)
+{
+	if (list == NULL)
+		return;
+	struct ast_expr_list_entry *entry;
+	stailq_foreach_entry(entry, &list->head, link)
+		self_ref_walk_expr(w, entry->expr);
+}
+
+static void
+self_ref_walk_select(struct self_ref_walk *w, struct ast_select *ast,
+		     bool top_level)
+{
+	if (self_ref_shadows(w, ast))
+		return;
+	if (ast->sources != NULL) {
+		struct ast_source *src;
+		stailq_foreach_entry(src, &ast->sources->head, link) {
+			if (src->select == NULL &&
+			    self_ref_name_eq(w, &src->name)) {
+				if (top_level && !w->in_anchor)
+					w->direct_count++;
+				else
+					w->other_count++;
+			}
+			if (src->select != NULL)
+				self_ref_walk_select(w, src->select, false);
+			self_ref_walk_expr(w, src->join_on);
+		}
+	}
+	self_ref_walk_expr_list(w, ast->columns);
+	self_ref_walk_expr_list(w, ast->group_by);
+	self_ref_walk_expr_list(w, ast->order_by);
+	self_ref_walk_expr(w, ast->where);
+	self_ref_walk_expr(w, ast->having);
+	self_ref_walk_expr(w, ast->limit);
+	self_ref_walk_expr(w, ast->offset);
+}
+
+/**
+ * Check whether @a entry's body is a legal WITH RECURSIVE CTE and record the
+ * verdict in @a entry->is_recursive: its rightmost compound member must be
+ * joined by UNION/UNION ALL, and @a entry's name must appear exactly once,
+ * directly in that member's own top-level FROM, and nowhere else in the body
+ * (no other member's FROM, no FROM-clause subquery, no subquery embedded in
+ * an expression). Allocates transient scratch data on @a region. On an
+ * illegal self-reference, sets diag with the matching legacy message and
+ * returns -1.
+ */
+static int
+rast_with_entry_check_recursive(struct region *region,
+				struct rast_with_entry *entry)
+{
+	struct ast_select *rightmost = entry->ast->select;
+	bool may_recursive = rightmost->op == TK_UNION ||
+			     rightmost->op == TK_ALL;
+	struct self_ref_walk w = {
+		.region = region,
+		.name = entry->name,
+		.in_anchor = true,
+		.direct_count = 0,
+		.other_count = 0,
+	};
+
+	struct ast_select *prev;
+	rlist_foreach_entry_reverse(prev, &rightmost->link, link)
+		self_ref_walk_select(&w, prev, true);
+
+	w.in_anchor = !may_recursive;
+	self_ref_walk_select(&w, rightmost, true);
+
+	if (w.direct_count == 0 && w.other_count == 0) {
+		entry->is_recursive = false;
+		return 0;
+	}
+	if (!may_recursive) {
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+			 tt_sprintf("circular reference: %s", entry->name));
+		return -1;
+	}
+	if (w.direct_count > 1) {
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+			 tt_sprintf("multiple references to recursive "
+				    "table: %s", entry->name));
+		return -1;
+	}
+	if (w.other_count > 0) {
+		const char *msg = w.direct_count == 1 ?
+			"multiple recursive references: %s" :
+			"recursive reference in a subquery: %s";
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+			 tt_sprintf(msg, entry->name));
+		return -1;
+	}
+	entry->is_recursive = true;
 	return 0;
 }
 
-int
+/**
+ * Build the scope introduced by the WITH clause @a ast as a child of
+ * @a parent, storing it in @a scope. Catches ambiguous CTE names, checks
+ * each entry's recursion legality, and validates each entry's own body
+ * against @a scope (so a CTE can see itself and any CTEs declared earlier
+ * in the same clause). Returns 0 on success, -1 and sets diag on error.
+ */
+static int
+sql_validate_with(struct region *region, struct ast_with_list *ast,
+		  struct rast_scope *parent, struct rast_scope *scope)
+{
+	struct rast_with_list *with = rast_with_list_new(region, ast);
+	if (with == NULL)
+		return -1;
+	scope->parent = parent;
+	scope->with.list = with->list;
+	scope->with.len = 0;
+	for (int i = 0; i < with->len; ++i) {
+		scope->with.len++;
+		struct rast_with_entry *entry = &with->list[i];
+		if (rast_with_entry_check_recursive(region, entry) != 0)
+			return -1;
+		if (sql_validate_select(region, entry->ast->select,
+					scope) != 0)
+			return -1;
+	}
+	return 0;
+}
+
+static int
+rast_validate_expr_list(struct region *region, struct ast_expr_list *list,
+			struct rast_scope *scope)
+{
+	if (list == NULL)
+		return 0;
+	struct ast_expr_list_entry *entry;
+	stailq_foreach_entry(entry, &list->head, link) {
+		if (rast_validate_expr(region, entry->expr, scope) != 0)
+			return -1;
+	}
+	return 0;
+}
+
+/**
+ * Validate every subquery reachable from @a expr against @a scope. Mirrors
+ * the op-to-union-member mapping in `expr_from_ast()` - only walks children
+ * that function actually recurses into when building a runtime
+ * `struct Expr`.
+ */
+static int
+rast_validate_expr(struct region *region, struct ast_expr *expr,
+		   struct rast_scope *scope)
+{
+	if (expr == NULL)
+		return 0;
+	switch (expr->op) {
+	case TK_AND:
+	case TK_OR:
+	case TK_LT:
+	case TK_LE:
+	case TK_GT:
+	case TK_GE:
+	case TK_EQ:
+	case TK_NE:
+	case TK_BITAND:
+	case TK_BITOR:
+	case TK_LSHIFT:
+	case TK_RSHIFT:
+	case TK_PLUS:
+	case TK_MINUS:
+	case TK_STAR:
+	case TK_SLASH:
+	case TK_REM:
+	case TK_CONCAT:
+	case TK_DOT:
+		if (rast_validate_expr(region, expr->left, scope) != 0)
+			return -1;
+		return rast_validate_expr(region, expr->right, scope);
+	case TK_PARENTHESES:
+	case TK_NOT:
+	case TK_BITNOT:
+	case TK_UMINUS:
+	case TK_UPLUS:
+	case TK_NOTNULL:
+	case TK_ISNULL:
+	case TK_CAST:
+	case TK_COLLATE:
+		return rast_validate_expr(region, expr->left, scope);
+	case TK_ARRAY:
+	case TK_MAP:
+	case TK_VECTOR:
+		return rast_validate_expr_list(region, expr->list, scope);
+	case TK_GETITEM:
+		if (rast_validate_expr(region, expr->left, scope) != 0)
+			return -1;
+		return rast_validate_expr_list(region, expr->list, scope);
+	case TK_FUNCTION:
+		return expr->right == NULL ? 0 :
+		       rast_validate_expr_list(region, expr->right->list,
+					       scope);
+	case TK_BETWEEN:
+	case TK_CASE:
+		if (rast_validate_expr(region, expr->left, scope) != 0)
+			return -1;
+		return rast_validate_expr_list(region, expr->list, scope);
+	case TK_IN:
+		if (rast_validate_expr(region, expr->left, scope) != 0)
+			return -1;
+		if (expr->right->op == TK_SELECT)
+			return sql_validate_select(region, expr->right->select,
+						   scope);
+		return rast_validate_expr_list(region, expr->right->list,
+					       scope);
+	case TK_EXISTS:
+	case TK_SELECT:
+		return sql_validate_select(region, expr->select, scope);
+	default:
+		return 0;
+	}
+}
+
+/** Validate the FROM/columns/WHERE/etc. of a single select, no compound. */
+static int
+sql_validate_select_body(struct region *region, struct ast_select *ast,
+			 struct rast_scope *scope)
+{
+	if (ast->sources != NULL) {
+		struct ast_source *src;
+		stailq_foreach_entry(src, &ast->sources->head, link) {
+			if (src->select != NULL) {
+				if (sql_validate_select(region, src->select,
+							scope) != 0)
+					return -1;
+			} else {
+				uint32_t used = region_used(region);
+				const char *name =
+					sql_region_name(region, src->name.z,
+							src->name.n);
+				struct rast_with_entry *with_entry =
+					rast_with_entry_from_scope(scope,
+								   name);
+				if (with_entry != NULL)
+					with_entry->is_used = true;
+				region_truncate(region, used);
+			}
+			if (rast_validate_expr(region, src->join_on,
+					       scope) != 0)
+				return -1;
+		}
+	}
+	if (rast_validate_expr_list(region, ast->columns, scope) != 0)
+		return -1;
+	if (rast_validate_expr_list(region, ast->group_by, scope) != 0)
+		return -1;
+	if (rast_validate_expr_list(region, ast->order_by, scope) != 0)
+		return -1;
+	if (rast_validate_expr(region, ast->where, scope) != 0)
+		return -1;
+	if (rast_validate_expr(region, ast->having, scope) != 0)
+		return -1;
+	if (rast_validate_expr(region, ast->limit, scope) != 0)
+		return -1;
+	if (rast_validate_expr(region, ast->offset, scope) != 0)
+		return -1;
+	return 0;
+}
+
+static int
 sql_validate_select(struct region *region, struct ast_select *ast,
 		    struct rast_scope *parent)
 {
@@ -1672,68 +2070,17 @@ sql_validate_select(struct region *region, struct ast_select *ast,
 	scope.parent = parent;
 	scope.with.list = NULL;
 	scope.with.len = 0;
-	struct rast_with_list *with = NULL;
-	if (ast->with != NULL) {
-		with = rast_with_list_new(region, ast->with);
-		if (with == NULL)
-			return -1;
-		scope.parent = parent;
-		scope.with.list = with->list;
-		for (int i = 0; i < with->len; ++i) {
-			scope.with.len++;
-			struct ast_select *next = with->list[i].ast->select;
-			if (sql_validate_select(region, next, &scope) != 0)
-				return -1;
-		}
-	}
+	if (ast->with != NULL &&
+	    sql_validate_with(region, ast->with, parent, &scope) != 0)
+		return -1;
 
-	if (ast->sources != NULL) {
-		struct ast_source *src;
-		stailq_foreach_entry(src, &ast->sources->head, link) {
-			uint32_t used = region_used(region);
-			const char *name = sql_region_name(region, src->name.z,
-							   src->name.n);
-			struct rast_with_entry *with_entry =
-				rast_with_entry_from_scope(&scope, name);
-			if (with_entry != NULL)
-				with_entry->is_used = true;
-			region_truncate(region, used);
-		}
-	}
-
-	struct ast_expr_list_entry *expr_entry;
-	stailq_foreach_entry(expr_entry, &ast->columns->head, link) {
-		if (rast_validate_expr(expr_entry->expr, &scope) != 0)
+	/* `ast` is the rightmost member of its own compound, if any. */
+	struct ast_select *prev;
+	rlist_foreach_entry_reverse(prev, &ast->link, link) {
+		if (sql_validate_select_body(region, prev, &scope) != 0)
 			return -1;
 	}
-
-	if (ast->group_by != NULL) {
-		stailq_foreach_entry(expr_entry, &ast->group_by->head, link) {
-			if (rast_validate_expr(expr_entry->expr, &scope) != 0)
-				return -1;
-		}
-	}
-
-	if (ast->order_by != NULL) {
-		stailq_foreach_entry(expr_entry, &ast->order_by->head, link) {
-			if (rast_validate_expr(expr_entry->expr, &scope) != 0)
-				return -1;
-		}
-	}
-
-	if (rast_validate_expr(ast->where, &scope) != 0)
-		return -1;
-
-	if (rast_validate_expr(ast->having, &scope) != 0)
-		return -1;
-
-	if (rast_validate_expr(ast->limit, &scope) != 0)
-		return -1;
-
-	if (rast_validate_expr(ast->offset, &scope) != 0)
-		return -1;
-
-	return 0;
+	return sql_validate_select_body(region, ast, &scope);
 }
 
 struct sql_rast *
@@ -1743,6 +2090,10 @@ sql_resolve_ast(struct region *region, struct sql_ast *ast)
 	memset(rast, 0, sizeof(*rast));
 	rast->type = ast->type;
 	rast->ast = ast;
+	struct rast_scope scope;
+	scope.parent = NULL;
+	scope.with.list = NULL;
+	scope.with.len = 0;
 	switch (rast->type) {
 	case SQL_AST_SELECT:
 		if (sql_validate_select(region, ast->select, NULL) != 0)
@@ -1750,17 +2101,37 @@ sql_resolve_ast(struct region *region, struct sql_ast *ast)
 		break;
 	case SQL_AST_INSERT:
 		if (ast->insert->with != NULL &&
-		    rast_with_list_new(region, ast->insert->with) == NULL)
+		    sql_validate_with(region, ast->insert->with, NULL,
+				      &scope) != 0)
+			return NULL;
+		if (ast->insert->select != NULL &&
+		    sql_validate_select(region, ast->insert->select,
+					&scope) != 0)
 			return NULL;
 		break;
-	case SQL_AST_UPDATE:
+	case SQL_AST_UPDATE: {
 		if (ast->update->with != NULL &&
-		    rast_with_list_new(region, ast->update->with) == NULL)
+		    sql_validate_with(region, ast->update->with, NULL,
+				      &scope) != 0)
+			return NULL;
+		struct ast_set_list_entry *set_entry;
+		stailq_foreach_entry(set_entry, &ast->update->set_list->head,
+				    link) {
+			if (rast_validate_expr(region, set_entry->expr,
+					       &scope) != 0)
+				return NULL;
+		}
+		if (rast_validate_expr(region, ast->update->where,
+				       &scope) != 0)
 			return NULL;
 		break;
+	}
 	case SQL_AST_DELETE:
 		if (ast->del->with != NULL &&
-		    rast_with_list_new(region, ast->del->with) == NULL)
+		    sql_validate_with(region, ast->del->with, NULL,
+				      &scope) != 0)
+			return NULL;
+		if (rast_validate_expr(region, ast->del->where, &scope) != 0)
 			return NULL;
 		break;
 	default:

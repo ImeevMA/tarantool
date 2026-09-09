@@ -12,6 +12,7 @@ struct rast_with_entry {
 	struct rast_with_list *with_list;
 	struct ast_with_entry *ast;
 	bool is_used;
+	bool is_recursive;
 };
 
 struct rast_with_list {
