@@ -1618,29 +1618,121 @@ rast_with_list_new(struct region *region, struct ast_with_list *ast)
 			diag_set(ClientError, ER_SQL_PARSER_GENERIC, err);
 			return NULL;
 		}
+
+		struct rast_with_list *list = NULL;
+		if (entry->select->with != NULL) {
+			list = rast_with_list_new(region, entry->select->with);
+			if (list == NULL)
+				return NULL;
+		}
+
 		struct rast_with_entry *with_entry = &res->list[count];
 		with_entry->name = name;
 		with_entry->ast = entry;
-		if (entry->select->with != NULL) {
-			with_entry->with_list = rast_with_list_new(region,
-				entry->select->with);
-			if (with_entry->with_list == NULL)
-				return NULL;
-		}
+		with_entry->with_list = list;
+		with_entry->is_used = false;
 		count++;
 	}
 	return res;
 }
 
-int
-sql_resolve_select(struct region *region, struct ast_select *ast)
+struct rast_scope {
+	struct rast_scope *parent;
+	struct rast_with_list with;
+};
+
+struct rast_with_entry *
+rast_with_entry_from_scope(struct rast_scope *scope, const char *name)
 {
+	if (scope == NULL)
+		return NULL;
+
+	struct rast_with_entry *res =
+		rast_with_entry_from_list(scope->with.list, scope->with.len,
+					  name);
+	if (res != NULL)
+		return res;
+
+	return rast_with_entry_from_scope(scope->parent, name);
+}
+
+int
+rast_validate_expr(struct ast_expr *ast, struct rast_scope *scope)
+{
+	(void)ast;
+	(void)scope;
+	return 0;
+}
+
+int
+sql_validate_select(struct region *region, struct ast_select *ast,
+		    struct rast_scope *parent)
+{
+	struct rast_scope scope;
+	scope.parent = parent;
+	scope.with.list = NULL;
+	scope.with.len = 0;
 	struct rast_with_list *with = NULL;
 	if (ast->with != NULL) {
 		with = rast_with_list_new(region, ast->with);
 		if (with == NULL)
 			return -1;
+		scope.parent = parent;
+		scope.with.list = with->list;
+		for (int i = 0; i < with->len; ++i) {
+			scope.with.len++;
+			struct ast_select *next = with->list[i].ast->select;
+			if (sql_validate_select(region, next, &scope) != 0)
+				return -1;
+		}
 	}
+
+	if (ast->sources != NULL) {
+		struct ast_source *src;
+		stailq_foreach_entry(src, &ast->sources->head, link) {
+			uint32_t used = region_used(region);
+			const char *name = sql_region_name(region, src->name.z,
+							   src->name.n);
+			struct rast_with_entry *with_entry =
+				rast_with_entry_from_scope(&scope, name);
+			if (with_entry != NULL)
+				with_entry->is_used = true;
+			region_truncate(region, used);
+		}
+	}
+
+	struct ast_expr_list_entry *expr_entry;
+	stailq_foreach_entry(expr_entry, &ast->columns->head, link) {
+		if (rast_validate_expr(expr_entry->expr, &scope) != 0)
+			return -1;
+	}
+
+	if (ast->group_by != NULL) {
+		stailq_foreach_entry(expr_entry, &ast->group_by->head, link) {
+			if (rast_validate_expr(expr_entry->expr, &scope) != 0)
+				return -1;
+		}
+	}
+
+	if (ast->order_by != NULL) {
+		stailq_foreach_entry(expr_entry, &ast->order_by->head, link) {
+			if (rast_validate_expr(expr_entry->expr, &scope) != 0)
+				return -1;
+		}
+	}
+
+	if (rast_validate_expr(ast->where, &scope) != 0)
+		return -1;
+
+	if (rast_validate_expr(ast->having, &scope) != 0)
+		return -1;
+
+	if (rast_validate_expr(ast->limit, &scope) != 0)
+		return -1;
+
+	if (rast_validate_expr(ast->offset, &scope) != 0)
+		return -1;
+
 	return 0;
 }
 
@@ -1653,7 +1745,7 @@ sql_resolve_ast(struct region *region, struct sql_ast *ast)
 	rast->ast = ast;
 	switch (rast->type) {
 	case SQL_AST_SELECT:
-		if (sql_resolve_select(region, ast->select) != 0)
+		if (sql_validate_select(region, ast->select, NULL) != 0)
 			return NULL;
 		break;
 	case SQL_AST_INSERT:

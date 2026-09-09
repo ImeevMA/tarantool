@@ -11,6 +11,7 @@ struct rast_with_entry {
 	const char *name;
 	struct rast_with_list *with_list;
 	struct ast_with_entry *ast;
+	bool is_used;
 };
 
 struct rast_with_list {
