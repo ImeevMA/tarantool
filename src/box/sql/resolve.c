@@ -1668,6 +1668,103 @@ static int
 rast_validate_expr_list(struct region *region, struct ast_expr_list *list,
 			struct rast_scope *scope);
 
+/** Callback invoked by `ast_expr_walk_selects()` for each reachable select. */
+typedef int (*ast_select_visitor)(void *ctx, struct ast_select *select);
+
+static int
+ast_expr_list_walk_selects(struct ast_expr_list *list, ast_select_visitor cb,
+			   void *ctx);
+
+/**
+ * Invoke @a cb for every FROM-clause subquery and expression-embedded
+ * subquery reachable from @a expr. Mirrors the op-to-union-member mapping in
+ * `expr_from_ast()` - only descends into children that function actually
+ * recurses into when building a runtime `struct Expr`. Stops and returns -1
+ * as soon as @a cb does.
+ */
+static int
+ast_expr_walk_selects(struct ast_expr *expr, ast_select_visitor cb, void *ctx)
+{
+	if (expr == NULL)
+		return 0;
+	switch (expr->op) {
+	case TK_AND:
+	case TK_OR:
+	case TK_LT:
+	case TK_LE:
+	case TK_GT:
+	case TK_GE:
+	case TK_EQ:
+	case TK_NE:
+	case TK_BITAND:
+	case TK_BITOR:
+	case TK_LSHIFT:
+	case TK_RSHIFT:
+	case TK_PLUS:
+	case TK_MINUS:
+	case TK_STAR:
+	case TK_SLASH:
+	case TK_REM:
+	case TK_CONCAT:
+	case TK_DOT:
+		if (ast_expr_walk_selects(expr->left, cb, ctx) != 0)
+			return -1;
+		return ast_expr_walk_selects(expr->right, cb, ctx);
+	case TK_PARENTHESES:
+	case TK_NOT:
+	case TK_BITNOT:
+	case TK_UMINUS:
+	case TK_UPLUS:
+	case TK_NOTNULL:
+	case TK_ISNULL:
+	case TK_CAST:
+	case TK_COLLATE:
+		return ast_expr_walk_selects(expr->left, cb, ctx);
+	case TK_ARRAY:
+	case TK_MAP:
+	case TK_VECTOR:
+		return ast_expr_list_walk_selects(expr->list, cb, ctx);
+	case TK_GETITEM:
+		if (ast_expr_walk_selects(expr->left, cb, ctx) != 0)
+			return -1;
+		return ast_expr_list_walk_selects(expr->list, cb, ctx);
+	case TK_FUNCTION:
+		return expr->right == NULL ? 0 :
+		       ast_expr_list_walk_selects(expr->right->list, cb, ctx);
+	case TK_BETWEEN:
+	case TK_CASE:
+		if (ast_expr_walk_selects(expr->left, cb, ctx) != 0)
+			return -1;
+		return ast_expr_list_walk_selects(expr->list, cb, ctx);
+	case TK_IN:
+		if (ast_expr_walk_selects(expr->left, cb, ctx) != 0)
+			return -1;
+		if (expr->right->op == TK_SELECT)
+			return cb(ctx, expr->right->select);
+		return ast_expr_list_walk_selects(expr->right->list, cb, ctx);
+	case TK_EXISTS:
+	case TK_SELECT:
+		return cb(ctx, expr->select);
+	default:
+		return 0;
+	}
+}
+
+/** Invoke `ast_expr_walk_selects()` for every expression in @a list. */
+static int
+ast_expr_list_walk_selects(struct ast_expr_list *list, ast_select_visitor cb,
+			   void *ctx)
+{
+	if (list == NULL)
+		return 0;
+	struct ast_expr_list_entry *entry;
+	stailq_foreach_entry(entry, &list->head, link) {
+		if (ast_expr_walk_selects(entry->expr, cb, ctx) != 0)
+			return -1;
+	}
+	return 0;
+}
+
 /** Context threaded through the `self_ref_*` family of functions. */
 struct self_ref_walk {
 	/** Region for scratch dequoted-name allocations. */
@@ -1713,97 +1810,25 @@ static void
 self_ref_walk_select(struct self_ref_walk *w, struct ast_select *ast,
 		     bool top_level);
 
-static void
-self_ref_walk_expr_list(struct self_ref_walk *w, struct ast_expr_list *list);
+static int
+self_ref_walk_expr_cb(void *ctx, struct ast_select *select)
+{
+	self_ref_walk_select(ctx, select, false);
+	return 0;
+}
 
-/**
- * Visit every FROM-clause subquery and expression-embedded subquery
- * reachable from @a expr, counting occurrences of @a w->name found as a
- * source name along the way. Mirrors the op-to-union-member mapping in
- * `expr_from_ast()` - only walks children that function actually recurses
- * into when building a runtime `struct Expr`.
- */
+/** Visit every subquery reachable from @a expr, counting self-references. */
 static void
 self_ref_walk_expr(struct self_ref_walk *w, struct ast_expr *expr)
 {
-	if (expr == NULL)
-		return;
-	switch (expr->op) {
-	case TK_AND:
-	case TK_OR:
-	case TK_LT:
-	case TK_LE:
-	case TK_GT:
-	case TK_GE:
-	case TK_EQ:
-	case TK_NE:
-	case TK_BITAND:
-	case TK_BITOR:
-	case TK_LSHIFT:
-	case TK_RSHIFT:
-	case TK_PLUS:
-	case TK_MINUS:
-	case TK_STAR:
-	case TK_SLASH:
-	case TK_REM:
-	case TK_CONCAT:
-	case TK_DOT:
-		self_ref_walk_expr(w, expr->left);
-		self_ref_walk_expr(w, expr->right);
-		return;
-	case TK_PARENTHESES:
-	case TK_NOT:
-	case TK_BITNOT:
-	case TK_UMINUS:
-	case TK_UPLUS:
-	case TK_NOTNULL:
-	case TK_ISNULL:
-	case TK_CAST:
-	case TK_COLLATE:
-		self_ref_walk_expr(w, expr->left);
-		return;
-	case TK_ARRAY:
-	case TK_MAP:
-	case TK_VECTOR:
-		self_ref_walk_expr_list(w, expr->list);
-		return;
-	case TK_GETITEM:
-		self_ref_walk_expr(w, expr->left);
-		self_ref_walk_expr_list(w, expr->list);
-		return;
-	case TK_FUNCTION:
-		if (expr->right != NULL)
-			self_ref_walk_expr_list(w, expr->right->list);
-		return;
-	case TK_BETWEEN:
-	case TK_CASE:
-		self_ref_walk_expr(w, expr->left);
-		self_ref_walk_expr_list(w, expr->list);
-		return;
-	case TK_IN:
-		self_ref_walk_expr(w, expr->left);
-		if (expr->right->op == TK_SELECT)
-			self_ref_walk_select(w, expr->right->select, false);
-		else
-			self_ref_walk_expr_list(w, expr->right->list);
-		return;
-	case TK_EXISTS:
-	case TK_SELECT:
-		self_ref_walk_select(w, expr->select, false);
-		return;
-	default:
-		return;
-	}
+	ast_expr_walk_selects(expr, self_ref_walk_expr_cb, w);
 }
 
+/** Visit every subquery reachable from @a list, counting self-references. */
 static void
 self_ref_walk_expr_list(struct self_ref_walk *w, struct ast_expr_list *list)
 {
-	if (list == NULL)
-		return;
-	struct ast_expr_list_entry *entry;
-	stailq_foreach_entry(entry, &list->head, link)
-		self_ref_walk_expr(w, entry->expr);
+	ast_expr_list_walk_selects(list, self_ref_walk_expr_cb, w);
 }
 
 static void
@@ -1924,96 +1949,34 @@ sql_validate_with(struct region *region, struct ast_with_list *ast,
 	return 0;
 }
 
+struct rast_validate_expr_ctx {
+	struct region *region;
+	struct rast_scope *scope;
+};
+
+static int
+rast_validate_expr_cb(void *ctx_, struct ast_select *select)
+{
+	struct rast_validate_expr_ctx *ctx = ctx_;
+	return sql_validate_select(ctx->region, select, ctx->scope);
+}
+
+/** Validate every subquery reachable from @a list against @a scope. */
 static int
 rast_validate_expr_list(struct region *region, struct ast_expr_list *list,
 			struct rast_scope *scope)
 {
-	if (list == NULL)
-		return 0;
-	struct ast_expr_list_entry *entry;
-	stailq_foreach_entry(entry, &list->head, link) {
-		if (rast_validate_expr(region, entry->expr, scope) != 0)
-			return -1;
-	}
-	return 0;
+	struct rast_validate_expr_ctx ctx = { region, scope };
+	return ast_expr_list_walk_selects(list, rast_validate_expr_cb, &ctx);
 }
 
-/**
- * Validate every subquery reachable from @a expr against @a scope. Mirrors
- * the op-to-union-member mapping in `expr_from_ast()` - only walks children
- * that function actually recurses into when building a runtime
- * `struct Expr`.
- */
+/** Validate every subquery reachable from @a expr against @a scope. */
 static int
 rast_validate_expr(struct region *region, struct ast_expr *expr,
 		   struct rast_scope *scope)
 {
-	if (expr == NULL)
-		return 0;
-	switch (expr->op) {
-	case TK_AND:
-	case TK_OR:
-	case TK_LT:
-	case TK_LE:
-	case TK_GT:
-	case TK_GE:
-	case TK_EQ:
-	case TK_NE:
-	case TK_BITAND:
-	case TK_BITOR:
-	case TK_LSHIFT:
-	case TK_RSHIFT:
-	case TK_PLUS:
-	case TK_MINUS:
-	case TK_STAR:
-	case TK_SLASH:
-	case TK_REM:
-	case TK_CONCAT:
-	case TK_DOT:
-		if (rast_validate_expr(region, expr->left, scope) != 0)
-			return -1;
-		return rast_validate_expr(region, expr->right, scope);
-	case TK_PARENTHESES:
-	case TK_NOT:
-	case TK_BITNOT:
-	case TK_UMINUS:
-	case TK_UPLUS:
-	case TK_NOTNULL:
-	case TK_ISNULL:
-	case TK_CAST:
-	case TK_COLLATE:
-		return rast_validate_expr(region, expr->left, scope);
-	case TK_ARRAY:
-	case TK_MAP:
-	case TK_VECTOR:
-		return rast_validate_expr_list(region, expr->list, scope);
-	case TK_GETITEM:
-		if (rast_validate_expr(region, expr->left, scope) != 0)
-			return -1;
-		return rast_validate_expr_list(region, expr->list, scope);
-	case TK_FUNCTION:
-		return expr->right == NULL ? 0 :
-		       rast_validate_expr_list(region, expr->right->list,
-					       scope);
-	case TK_BETWEEN:
-	case TK_CASE:
-		if (rast_validate_expr(region, expr->left, scope) != 0)
-			return -1;
-		return rast_validate_expr_list(region, expr->list, scope);
-	case TK_IN:
-		if (rast_validate_expr(region, expr->left, scope) != 0)
-			return -1;
-		if (expr->right->op == TK_SELECT)
-			return sql_validate_select(region, expr->right->select,
-						   scope);
-		return rast_validate_expr_list(region, expr->right->list,
-					       scope);
-	case TK_EXISTS:
-	case TK_SELECT:
-		return sql_validate_select(region, expr->select, scope);
-	default:
-		return 0;
-	}
+	struct rast_validate_expr_ctx ctx = { region, scope };
+	return ast_expr_walk_selects(expr, rast_validate_expr_cb, &ctx);
 }
 
 /** Validate the FROM/columns/WHERE/etc. of a single select, no compound. */
