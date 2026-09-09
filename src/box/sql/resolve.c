@@ -1632,6 +1632,18 @@ rast_with_list_new(struct region *region, struct ast_with_list *ast)
 	return res;
 }
 
+int
+sql_resolve_select(struct region *region, struct ast_select *ast)
+{
+	struct rast_with_list *with = NULL;
+	if (ast->with != NULL) {
+		with = rast_with_list_new(region, ast->with);
+		if (with == NULL)
+			return -1;
+	}
+	return 0;
+}
+
 struct sql_rast *
 sql_resolve_ast(struct region *region, struct sql_ast *ast)
 {
@@ -1641,8 +1653,7 @@ sql_resolve_ast(struct region *region, struct sql_ast *ast)
 	rast->ast = ast;
 	switch (rast->type) {
 	case SQL_AST_SELECT:
-		if (ast->select->with != NULL &&
-		    rast_with_list_new(region, ast->select->with) == NULL)
+		if (sql_resolve_select(region, ast->select) != 0)
 			return NULL;
 		break;
 	case SQL_AST_INSERT:
