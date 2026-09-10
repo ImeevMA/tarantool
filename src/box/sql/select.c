@@ -730,7 +730,8 @@ sqlProcessJoin(Parse * pParse, Select * p)
 		/* When the NATURAL keyword is present, add WHERE clause terms for
 		 * every column that the two tables have in common.
 		 */
-		if (pRight->fg.jointype & JT_NATURAL) {
+		if (!pRight->fg.join_resolved &&
+		    (pRight->fg.jointype & JT_NATURAL) != 0) {
 			if (pRight->pOn || pRight->pUsing) {
 				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
 					 "a NATURAL join may not have "
@@ -771,6 +772,21 @@ sqlProcessJoin(Parse * pParse, Select * p)
 				setJoinExpr(pRight->pOn, pRight->iCursor);
 			p->pWhere = sql_and_expr_new(p->pWhere, pRight->pOn);
 			pRight->pOn = 0;
+		}
+
+		/* The USING or NATURAL JOIN constraint was already resolved, so
+		 * add WHERE clause terms using the resolved column pairs.
+		 */
+		if (pRight->fg.join_resolved) {
+			for (uint32_t k = 0; k < pRight->join_column_count; ++k) {
+				struct sql_join_column *column =
+					&pRight->join_columns[k];
+				addWhereTerm(pParse, pSrc, column->left_source,
+					     column->left_column, i + 1,
+					     column->right_column, isOuter,
+					     &p->pWhere);
+			}
+			continue;
 		}
 
 		if (pRight->pUsing == NULL)
@@ -4349,7 +4365,8 @@ is_simple_count(struct Select *select, struct AggInfo *agg_info)
 int
 sqlIndexedByLookup(Parse * pParse, struct SrcList_item *pFrom)
 {
-	if (pFrom->space == NULL || pFrom->fg.isIndexedBy == 0)
+	if (pFrom->space == NULL || pFrom->fg.isIndexedBy == 0 ||
+	    pFrom->pIBIndex != NULL)
 		return 0;
 	uint32_t index_id = sql_index_id_by_src(pFrom);
 	if (index_id == UINT32_MAX) {
@@ -4709,11 +4726,13 @@ selectExpander(Walker * pWalker, Select * p)
 		assert(pFrom->fg.isRecursive == 0 || pFrom->space != NULL);
 		if (pFrom->fg.isRecursive)
 			continue;
-		assert(pFrom->space == NULL);
 
-		if (withExpand(pWalker, pFrom))
-			return WRC_Abort;
 		if (pFrom->space != NULL) {
+			/* Eagerly resolved by sql_resolve_source(). */
+		} else if (withExpand(pWalker, pFrom)) {
+			return WRC_Abort;
+		} else if (pFrom->space != NULL) {
+			/* Resolved by a CTE match inside withExpand(). */
 		} else
 
 		if (pFrom->zName == 0) {

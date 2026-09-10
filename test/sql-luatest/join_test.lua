@@ -52,6 +52,47 @@ g.test_valid_join_types = function()
 end
 
 --
+-- Check USING join constraints.
+--
+g.test_join_using = function()
+    g.server:exec(function()
+        local sql = [[SELECT t1.a, t2.a FROM t1 JOIN t2 USING(a);]]
+        t.assert_equals(box.execute(sql).rows, {{1, 1}})
+
+        sql = [[SELECT * FROM t1 JOIN t2 USING(a);]]
+        t.assert_equals(box.execute(sql).rows, {{1, 10, 100}})
+
+        sql = [[SELECT * FROM t1 NATURAL JOIN t2 USING(a);]]
+        local exp_err = 'a NATURAL join may not have an ON or USING clause'
+        local _, err = box.execute(sql)
+        t.assert_equals(err.message, exp_err)
+    end)
+end
+
+--
+-- Check errors of JOIN constraints.
+--
+g.test_join_constraint_errors = function()
+    g.server:exec(function()
+        local exp_err = 'a NATURAL join may not have an ON or USING clause'
+        local sql = [[SELECT * FROM t1 NATURAL JOIN t2 ON t1.a = t2.a;]]
+        local _, err = box.execute(sql)
+        t.assert_equals(err.message, exp_err)
+
+        exp_err = 'cannot have both ON and USING clauses in the same join'
+        sql = [[SELECT * FROM t1 JOIN t2 ON t1.a = t2.a USING(a);]]
+        _, err = box.execute(sql)
+        t.assert_equals(err.message, exp_err)
+
+        exp_err = 'cannot join using column c - column not present in ' ..
+                  'both tables'
+        sql = [[SELECT * FROM t1 JOIN t2 USING(c);]]
+        _, err = box.execute(sql)
+        t.assert_equals(err.message, exp_err)
+    end)
+end
+
+--
 -- Check invalid JOIN types.
 --
 g.test_join_cannot_be_both_inner_and_outer = function()

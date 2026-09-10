@@ -1623,21 +1623,267 @@ sql_resolve_expr_list(struct region *region, struct ast_expr_list *ast,
 
 static int
 sql_resolve_select(struct region *region, struct ast_select *ast,
+		   struct rast_select *res);
+
+static int
+sql_resolve_source(struct region *region, struct ast_source *ast,
+		   struct rast_source *res)
+{
+	memset(res, 0, sizeof(*res));
+	res->ast = ast;
+	res->join_type = ast->join_type;
+	if (ast->alias.n > 0) {
+		res->alias = sql_region_name(region, ast->alias.z,
+					     ast->alias.n);
+	}
+	if (sql_resolve_expr(ast->join_on, &res->join_on) != 0)
+		return -1;
+
+	if ((res->join_type & JT_INNER) != 0 &&
+	    (res->join_type & JT_OUTER) != 0) {
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+			 "JOIN cannot be both OUTER and INNER");
+		return -1;
+	}
+	if ((res->join_type & JT_OUTER) != 0 &&
+	    (res->join_type & (JT_LEFT | JT_RIGHT)) != JT_LEFT) {
+		diag_set(ClientError, ER_UNSUPPORTED, "Tarantool",
+			 "RIGHT and FULL OUTER JOINs");
+		return -1;
+	}
+
+	if (ast->select != NULL) {
+		res->type = RAST_SOURCE_SELECT;
+		return sql_resolve_select(region, ast->select, &res->select);
+	}
+
+	const struct space *space = sql_space_by_token(&ast->name);
+	if (space == NULL) {
+		diag_set(ClientError, ER_NO_SUCH_SPACE,
+			 sql_tt_name_from_token(&ast->name));
+		return -1;
+	}
+	if (space->def->opts.is_view) {
+		res->type = RAST_SOURCE_VIEW;
+		const char *sql = space->def->opts.sql;
+		struct ast_select *view = sql_parse_view_ast(region, sql);
+		if (view == NULL)
+			return -1;
+		if (sql_resolve_select(region, view, &res->select) != 0)
+			return -1;
+	} else {
+		res->type = RAST_SOURCE_SPACE;
+		if (space->def->field_count == 0) {
+			diag_set(ClientError, ER_UNSUPPORTED, "SQL",
+				 "space without format");
+			return -1;
+		}
+		if (space->index_count == 0) {
+			diag_set(ClientError, ER_UNSUPPORTED, "SQL",
+				 "spaces without primary key");
+			return -1;
+		}
+	}
+	res->space_id = space->def->id;
+
+	if (ast->indexed_by.n != 0 && ast->indexed_by.z != NULL) {
+		uint32_t index_id = sql_index_id_by_token(space,
+							  &ast->indexed_by);
+		if (index_id == UINT32_MAX) {
+			diag_set(ClientError, ER_NO_SUCH_INDEX_NAME,
+				 sql_tt_name_from_token(&ast->indexed_by),
+				 space->def->name);
+			return -1;
+		}
+		res->is_indexed_by = true;
+		res->index_id = index_id;
+	}
+
+	res->disallow_scan = ast->disallow_scan;
+	return 0;
+}
+
+/*
+ * Return the resolved space of the given source. The source must not be a
+ * subquery.
+ */
+static const struct space *
+rast_source_space(const struct rast_source *source)
+{
+	assert(source->space_id != 0);
+	const struct space *space = space_by_id(source->space_id);
+	assert(space != NULL);
+	return space;
+}
+
+/*
+ * Return the number of the field with the given name in the given resolved
+ * source, or UINT32_MAX if there is no such field. The legacy name, if any, is
+ * used as a second lookup the same way as in sql_fieldno_by_id().
+ */
+static uint32_t
+rast_source_fieldno(const struct rast_source *source, const char *name,
+		    const char *legacy_name)
+{
+	const struct space *space = rast_source_space(source);
+	uint32_t fieldno = sql_space_fieldno(space, name);
+	if (fieldno != UINT32_MAX || legacy_name == NULL)
+		return fieldno;
+	return sql_space_fieldno(space, legacy_name);
+}
+
+/*
+ * Resolve the USING and NATURAL JOIN constraints of the resolved source list.
+ * For each joined source, find the pairs of columns the join is performed on
+ * and store them in the source. A join is left to codegen if any of its
+ * sources is a subquery, since the columns of a subquery are not resolved yet.
+ */
+static int
+sql_resolve_joins(struct region *region, struct rast_source *sources,
+		  uint32_t count)
+{
+	for (uint32_t i = 1; i < count; ++i) {
+		struct rast_source *right = &sources[i];
+		struct ast_source *ast = right->ast;
+		bool is_resolvable = true;
+		for (uint32_t k = 0; k <= i; ++k) {
+			if (sources[k].type == RAST_SOURCE_SELECT) {
+				is_resolvable = false;
+				break;
+			}
+		}
+		if (!is_resolvable)
+			continue;
+
+		if ((right->join_type & JT_NATURAL) != 0) {
+			if (ast->join_on != NULL || ast->join_using != NULL) {
+				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+					 "a NATURAL join may not have "
+					 "an ON or USING clause");
+				return -1;
+			}
+			const struct space_def *right_def =
+				rast_source_space(right)->def;
+			struct sql_join_column *columns = xregion_alloc_array(
+				region, typeof(*columns), right_def->field_count);
+			uint32_t column_count = 0;
+			for (uint32_t j = 0; j < right_def->field_count; ++j) {
+				const char *name = right_def->fields[j].name;
+				for (uint32_t k = 0; k < i; ++k) {
+					uint32_t fieldno = sql_space_fieldno(
+						rast_source_space(&sources[k]),
+						name);
+					if (fieldno == UINT32_MAX)
+						continue;
+					columns[column_count].left_source = k;
+					columns[column_count].left_column = fieldno;
+					columns[column_count].right_column = j;
+					++column_count;
+					break;
+				}
+			}
+			right->join_columns = columns;
+			right->join_column_count = column_count;
+			right->join_resolved = true;
+			continue;
+		}
+
+		if (ast->join_on != NULL && ast->join_using != NULL) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 "cannot have both ON and USING clauses in "
+				 "the same join");
+			return -1;
+		}
+		if (ast->join_using == NULL)
+			continue;
+
+		struct sql_join_column *columns = xregion_alloc_array(
+			region, typeof(*columns), ast->join_using->len);
+		uint32_t column_count = 0;
+		struct ast_id_entry *entry;
+		stailq_foreach_entry(entry, &ast->join_using->head, link) {
+			const char *name = sql_region_name(region, entry->id.z,
+							   entry->id.n);
+			const char *legacy_name =
+				entry->id.z[0] == '"' ? NULL :
+				sql_region_legacy_name(region, entry->id.z,
+						       entry->id.n);
+			uint32_t right_fieldno = rast_source_fieldno(
+				right, name, legacy_name);
+			uint32_t left_fieldno = UINT32_MAX;
+			uint32_t left_source = 0;
+			for (uint32_t k = 0; k < i; ++k) {
+				uint32_t fieldno = rast_source_fieldno(
+					&sources[k], name, legacy_name);
+				if (fieldno != UINT32_MAX) {
+					left_source = k;
+					left_fieldno = fieldno;
+					break;
+				}
+			}
+			if (left_fieldno == UINT32_MAX ||
+			    right_fieldno == UINT32_MAX) {
+				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+					 tt_sprintf("cannot join using column "
+						    "%s - column not present "
+						    "in both tables", name));
+				return -1;
+			}
+			columns[column_count].left_source = left_source;
+			columns[column_count].left_column = left_fieldno;
+			columns[column_count].right_column = right_fieldno;
+			++column_count;
+		}
+		right->join_columns = columns;
+		right->join_column_count = column_count;
+		right->join_resolved = true;
+	}
+	return 0;
+}
+
+static int
+sql_resolve_source_list(struct region *region, struct ast_source_list *ast,
+			struct rast_source *res)
+{
+	int i = 0;
+	struct ast_source *entry;
+	stailq_foreach_entry(entry, &ast->head, link) {
+		if (sql_resolve_source(region, entry, &res[i++]) != 0)
+			return -1;
+	}
+	return sql_resolve_joins(region, res, ast->len);
+}
+
+static int
+sql_resolve_select(struct region *region, struct ast_select *ast,
 		   struct rast_select *res)
 {
 	memset(res, 0, sizeof(*res));
 	res->ast = ast;
 	/* For now resolve only very simple select. */
-	if (ast->op != TK_SELECT || ast->sources != NULL ||
+	if (ast->op != TK_SELECT || ast->columns == NULL ||
 	    ast->group_by != NULL || ast->order_by != NULL ||
-	    ast->where != NULL || ast->limit != NULL || ast->offset != NULL ||
-	    ast->with != NULL)
+	    ast->where != NULL || ast->having != NULL ||
+	    ast->limit != NULL || ast->offset != NULL || ast->with != NULL)
 		return 0;
+
+	struct rast_source *sources = NULL;
+	uint32_t source_count = 0;
+	if (ast->sources != NULL) {
+		source_count = ast->sources->len;
+		sources = xregion_alloc_array(region, typeof(*sources),
+					      source_count);
+		if (sql_resolve_source_list(region, ast->sources, sources) != 0)
+			return -1;
+	}
+
 	res->columns = xregion_alloc_array(region, typeof(*res->columns),
 					   ast->columns->len);
 	if (sql_resolve_expr_list(region, ast->columns, res->columns) != 0)
 		return -1;
 	res->column_count = ast->columns->len;
+	res->sources = sources;
+	res->source_count = source_count;
 	return 0;
 }
 

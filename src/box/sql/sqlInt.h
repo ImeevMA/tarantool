@@ -1509,6 +1509,16 @@ typedef u64 Bitmask;
 #define MASKBIT32(n) (((unsigned int)1)<<(n))
 #define ALLBITS      ((Bitmask)-1)
 
+/** Resolved column pair of a USING or NATURAL JOIN constraint. */
+struct sql_join_column {
+	/** Index in the FROM list of the source owning the left column. */
+	uint32_t left_source;
+	/** Column number in the left source. */
+	uint32_t left_column;
+	/** Column number in the right source (the joined one). */
+	uint32_t right_column;
+};
+
 /*
  * The following structure describes the FROM clause of a SELECT statement.
  * Each table or subquery in the FROM clause is a separate element of
@@ -1554,11 +1564,22 @@ struct SrcList {
 			 * only in SELECT scanning can be prohibited.
 			 */
 			unsigned disallow_scan:1;
+			/**
+			 * True if the USING or NATURAL JOIN constraint of
+			 * this source was already resolved, so the join
+			 * columns must be taken from join_columns instead
+			 * of being looked up by name.
+			 */
+			unsigned join_resolved:1;
 		} fg;
 		u8 iSelectId;	/* If pSelect!=0, the id of the sub-select in EQP */
 		int iCursor;	/* The VDBE cursor number used to access this table */
 		Expr *pOn;	/* The ON clause of a join */
 		IdList *pUsing;	/* The USING clause of a join */
+		/** Resolved join columns, if fg.join_resolved is set. */
+		struct sql_join_column *join_columns;
+		/** Number of entries in join_columns. */
+		uint32_t join_column_count;
 		Bitmask colUsed;	/* Bit N (1<<N) set if column N of space is used */
 		/** Identifier from "INDEXED BY <index>" clause. */
 		char *indexed_by;
@@ -2403,6 +2424,13 @@ sql_parse_function(struct Parse *parser, const char *sql);
  */
 struct Select *
 sql_parse_view(struct Parse *parser, const char *sql);
+
+/**
+ * Run the parser on the given view definition.
+ * Return the parsed SELECT AST on success, or NULL on error.
+ */
+struct ast_select *
+sql_parse_view_ast(struct region *region, const char *sql);
 
 /**
  * Run the parser on the given trigger definition.

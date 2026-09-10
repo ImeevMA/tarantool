@@ -476,3 +476,67 @@ g.test_wrong_view_def = function(cg)
         box.execute([[DROP TABLE t;]])
     end)
 end
+
+--
+-- Make sure a view can be used as a data source in the FROM clause.
+--
+g.test_view_in_from = function(cg)
+    cg.server:exec(function()
+        box.execute([[CREATE TABLE t (id INT PRIMARY KEY, a INT);]])
+        box.execute([[INSERT INTO t VALUES (1, 10), (2, 20);]])
+        box.execute([[CREATE VIEW v AS SELECT * FROM t;]])
+        box.execute([[CREATE VIEW vv AS SELECT * FROM v;]])
+        box.execute([[CREATE VIEW av AS SELECT a, count(*) AS c
+                      FROM t GROUP BY a;]])
+
+        local exp = {
+            metadata = {
+                {name = 'id', type = 'integer'},
+                {name = 'a', type = 'integer'},
+            },
+            rows = {{1, 10}, {2, 20}},
+        }
+        t.assert_equals(box.execute([[SELECT * FROM v;]]), exp)
+        t.assert_equals(box.execute([[SELECT * FROM vv;]]), exp)
+
+        exp.rows = {{2, 20}}
+        t.assert_equals(box.execute([[SELECT * FROM v WHERE a = 20;]]), exp)
+
+        exp = {
+            metadata = {
+                {name = 'x.id', type = 'integer'},
+                {name = 'x.a', type = 'integer'},
+            },
+            rows = {{1, 10}, {2, 20}},
+        }
+        t.assert_equals(box.execute([[SELECT x.id, x.a FROM v AS x;]]), exp)
+
+        exp = {
+            metadata = {
+                {name = 't.a', type = 'integer'},
+                {name = 'v.a', type = 'integer'},
+            },
+            rows = {{10, 10}, {20, 20}},
+        }
+        t.assert_equals(box.execute(
+            [[SELECT t.a, v.a FROM t, v WHERE t.id = v.id;]]), exp)
+
+        exp = {
+            metadata = {
+                {name = 'a', type = 'integer'},
+                {name = 'c', type = 'integer'},
+            },
+            rows = {{10, 1}, {20, 1}},
+        }
+        t.assert_equals(box.execute([[SELECT * FROM av;]]), exp)
+
+        local exp_err = "No index 'foo' is defined in space 'v'"
+        local _, err = box.execute([[SELECT * FROM v INDEXED BY foo;]])
+        t.assert_equals(err.message, exp_err)
+
+        box.execute([[DROP VIEW av;]])
+        box.execute([[DROP VIEW vv;]])
+        box.execute([[DROP VIEW v;]])
+        box.execute([[DROP TABLE t;]])
+    end)
+end

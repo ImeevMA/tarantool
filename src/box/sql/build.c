@@ -3636,8 +3636,11 @@ expr_list_from_rast(struct Parse *parser, struct rast_expr *exprs, uint32_t len)
 			break;
 		res = sql_expr_list_append(res, res_expr);
 		struct ExprList_item *item = &res->a[res->nExpr - 1];
-		if (expr->name != NULL)
+		if (expr->name != NULL) {
 			item->zName = sql_xstrdup(expr->name);
+			if (sqlCheckIdentifierName(parser, item->zName) != 0)
+				break;
+		}
 		if (expr->span != NULL)
 			sqlExprListSetSpan(res, expr->span, expr->span_len);
 		if (expr->order != SORT_ORDER_ASC)
@@ -3652,6 +3655,70 @@ expr_list_from_rast(struct Parse *parser, struct rast_expr *exprs, uint32_t len)
 }
 
 static struct Select *
+select_from_rast(struct Parse *parser, struct rast_select *select);
+
+static struct SrcList *
+src_list_from_rast(struct Parse *parser, struct rast_source *sources,
+		   uint32_t len)
+{
+	if (len == 0)
+		return NULL;
+
+	/*
+	 * The array is pre-allocated at its final size instead of being
+	 * grown one source at a time, since len is already known.
+	 */
+	uint32_t size = sizeof(struct SrcList) +
+			(len - 1) * sizeof(struct SrcList_item);
+	struct SrcList *res = sql_xmalloc(size);
+	memset(res, 0, size);
+	res->nAlloc = len;
+	res->nSrc = len;
+
+	for (uint32_t i = 0; i < len; ++i) {
+		struct rast_source *src = &sources[i];
+		struct Select *subquery = src->type != RAST_SOURCE_SPACE ?
+			select_from_rast(parser, &src->select) : NULL;
+		const struct space *space = NULL;
+		if (src->type != RAST_SOURCE_SELECT) {
+			space = space_by_id(src->space_id);
+			assert(space != NULL);
+		}
+		struct Expr *join_on = expr_from_ast(parser, src->join_on.ast);
+		struct SrcList_item *item = &res->a[i];
+		item->iCursor = -1;
+		/* TODO: set zName for `WITH` clauses. */
+		if (space != NULL)
+			item->zName = sql_xstrdup(space->def->name);
+		if (src->alias != NULL)
+			item->zAlias = sql_xstrdup(src->alias);
+		item->pSelect = subquery;
+		item->pOn = join_on;
+		item->pUsing = id_list_from_ast(src->ast->join_using);
+		item->fg.disallow_scan = src->disallow_scan;
+		item->space = space;
+		if (src->is_indexed_by)
+			item->pIBIndex = space->index_map[src->index_id]->def;
+		/*
+		 * sqlIndexedByLookup() already no-ops once pIBIndex is set,
+		 * so the only remaining role of isIndexedBy is to inform
+		 * the query planner (see where_loop_builder_shortcut())
+		 * that this source has an INDEXED BY constraint.
+		 */
+		item->fg.isIndexedBy = src->is_indexed_by;
+		item->fg.jointype = src->join_type;
+		item->fg.join_resolved = src->join_resolved;
+		item->join_columns = src->join_columns;
+		item->join_column_count = src->join_column_count;
+	}
+	if (parser->is_aborted) {
+		sqlSrcListDelete(res);
+		return NULL;
+	}
+	return res;
+}
+
+static struct Select *
 select_from_rast(struct Parse *parser, struct rast_select *select)
 {
 	if (select->columns == NULL)
@@ -3659,7 +3726,14 @@ select_from_rast(struct Parse *parser, struct rast_select *select)
 
 	struct ExprList *columns = expr_list_from_rast(parser, select->columns,
 						       select->column_count);
-	struct Select *res = sqlSelectNew(parser, columns, NULL, NULL, NULL,
+	struct SrcList *sources = src_list_from_rast(parser, select->sources,
+						     select->source_count);
+	if (parser->is_aborted) {
+		sql_expr_list_delete(columns);
+		sqlSrcListDelete(sources);
+		return NULL;
+	}
+	struct Select *res = sqlSelectNew(parser, columns, sources, NULL, NULL,
 					  NULL, NULL, select->ast->flags, NULL,
 					  NULL);
 	return res;

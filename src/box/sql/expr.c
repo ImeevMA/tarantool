@@ -1637,6 +1637,8 @@ sqlSrcListDup(struct SrcList *p, int flags)
 		pNewItem->pSelect = sqlSelectDup(pOldItem->pSelect, flags);
 		pNewItem->pOn = sqlExprDup(pOldItem->pOn, flags);
 		pNewItem->pUsing = sqlIdListDup(pOldItem->pUsing);
+		pNewItem->join_columns = pOldItem->join_columns;
+		pNewItem->join_column_count = pOldItem->join_column_count;
 		pNewItem->colUsed = pOldItem->colUsed;
 	}
 	return pNew;

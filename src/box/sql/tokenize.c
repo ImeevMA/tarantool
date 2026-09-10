@@ -1042,6 +1042,16 @@ sql_parse_view(struct Parse *parser, const char *sql)
 	return res;
 }
 
+struct ast_select *
+sql_parse_view_ast(struct region *region, const char *sql)
+{
+	struct sql_ast *ast = sql_run_parser(region, sql, TK_VIEW_ENTRY);
+	if (ast == NULL)
+		return NULL;
+	assert(ast->type == SQL_AST_VIEW);
+	return ast->select;
+}
+
 struct sql_trigger *
 sql_parse_trigger(struct Parse *parser, const char *sql)
 {
