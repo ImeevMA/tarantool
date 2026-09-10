@@ -3551,14 +3551,109 @@ sql_emit_show_create_table_all(struct Parse *parse)
 	sqlVdbeJumpHere(v, addr1);
 }
 
+/** Create an expression of a string literal from a resolved expression. */
+static struct Expr *
+expr_string(struct rast_expr *expr)
+{
+	struct Expr *res = sql_expr_new_leaf(TK_STRING, FIELD_TYPE_STRING,
+					     expr->n + 1);
+	memcpy(res->v.s, expr->s, expr->n);
+	res->v.s[expr->n] = '\0';
+	return res;
+}
+
+/**
+ * Create an expression from the given resolved expression. A resolved
+ * operation is built from its resolved form, the rest is built from the AST.
+ *
+ * Returns NULL if the expression is NULL or on error.
+ */
+static struct Expr *
+expr_from_rast(struct Parse *parser, struct rast_expr *expr)
+{
+	if (expr == NULL)
+		return NULL;
+	struct Expr *res = NULL;
+	switch (expr->op) {
+	case TK_STRING:
+		res = expr_string(expr);
+		break;
+	default:
+		res = expr_from_ast(parser, expr->ast);
+		break;
+	}
+	return res;
+}
+
+/**
+ * Create an expression list from the given resolved expression list. The
+ * names and the sort order of the entries are taken from the resolved list.
+ *
+ * Returns NULL if the list is empty or on error.
+ */
+static struct ExprList *
+expr_list_from_rast(struct Parse *parser, struct rast_expr_list *list)
+{
+	if (list->len == 0)
+		return NULL;
+
+	struct ExprList *res = NULL;
+	for (uint32_t i = 0; i < list->len; ++i) {
+		struct rast_expr_list_entry *expr = &list->exprs[i];
+		struct Expr *res_expr = expr_from_rast(parser, &expr->expr);
+		if (res_expr == NULL)
+			break;
+		res = sql_expr_list_append(res, res_expr);
+		struct ExprList_item *item = &res->a[res->nExpr - 1];
+		if (expr->name != NULL) {
+			item->zName = sql_xstrdup(expr->name);
+			item->legacy_name = sql_xstrdup(expr->legacy_name);
+		}
+		if (expr->span != NULL)
+			sqlExprListSetSpan(res, expr->span, expr->span_len);
+		if (expr->order != SORT_ORDER_ASC)
+			sqlExprListSetSortOrder(res, expr->order);
+	}
+
+	if (parser->is_aborted) {
+		sql_expr_list_delete(res);
+		return NULL;
+	}
+	return res;
+}
+
+/**
+ * Create a SELECT statement from the given resolved SELECT. A statement that
+ * is not resolved is built from the AST.
+ *
+ * Returns NULL on error.
+ */
+static struct Select *
+select_from_rast(struct Parse *parser, struct rast_select *select)
+{
+	if (!select->is_resolved)
+		return select_from_ast(parser, select->ast);
+
+	struct ExprList *columns = expr_list_from_rast(parser,
+						       &select->columns);
+	if (parser->is_aborted)
+		return NULL;
+
+	struct Select *res = sqlSelectNew(columns, NULL, NULL, NULL, NULL, NULL,
+					  select->ast->flags, NULL, NULL);
+	return res;
+}
+
 void
 sql_emit_bytecode(struct Parse *parser, struct sql_rast *rast, const char *sql)
 {
 	switch (rast->type) {
 	case SQL_AST_SELECT: {
-		struct Select *res = select_from_ast(parser, rast->select->ast);
-		if (parser->is_aborted)
+		struct Select *res = select_from_rast(parser, &rast->select);
+		if (parser->is_aborted) {
+			sql_select_delete(res);
 			return;
+		}
 		struct SelectDest dest = {SRT_Output, NULL, 0, 0, 0, 0, NULL};
 		sqlSelect(parser, res, &dest);
 		sql_select_delete(res);

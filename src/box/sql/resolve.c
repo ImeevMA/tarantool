@@ -1614,13 +1614,136 @@ sql_coll_id(uint32_t *id, const char *name, uint32_t len)
 	return -1;
 }
 
-struct rast_select *
-sql_resolve_select(struct region *region, struct ast_select *ast)
+/**
+ * Make a copy of the given name, remove the quotes if necessary, then check
+ * that the result is a legal identifier. The copy is allocated on the given
+ * region and is NULL-terminated.
+ *
+ * Returns NULL and sets a diag on error.
+ */
+static const char *
+sql_region_name(struct region *region, const char *name, uint32_t size)
 {
-	struct rast_select *res = xregion_alloc_object(region, typeof(*res));
+	char *res = sql_name_temp(region, name, size);
+	if (sql_check_identifier_name(res, strlen(res)) != 0)
+		return NULL;
+	return res;
+}
+
+/**
+ * Resolve a string literal: copy its text to the given region and dequote the
+ * copy. The result is stored in rast_expr::s with its length in rast_expr::n.
+ */
+static void
+resolve_expr_string(struct region *region, struct ast_expr *ast,
+		    struct rast_expr *res)
+{
+	res->op = TK_STRING;
+	res->s = xregion_alloc(region, ast->len);
+	memcpy(res->s, ast->str, ast->len);
+	res->n = sql_dequote(res->s, ast->len);
+}
+
+/**
+ * Resolve the given AST expression into the given rast_expr. An operation that
+ * has no resolved form yet is stored as is in rast_expr::ast.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_expr(struct region *region, struct ast_expr *ast, struct rast_expr *res)
+{
+	memset(res, 0, sizeof(*res));
+	switch (ast->op) {
+	case TK_STRING:
+		resolve_expr_string(region, ast, res);
+		break;
+	default:
+		res->op = ast->op;
+		res->ast = ast;
+		break;
+	}
+	return 0;
+}
+
+/**
+ * Resolve every entry of the given AST expression list into the given
+ * rast_expr_list. The alias of an entry is stored in both the dequoted and the
+ * legacy form. The text of an entry is stored for a select list only.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_expr_list(struct region *region, struct ast_expr_list *ast,
+		  struct rast_expr_list *res)
+{
+	res->exprs = xregion_alloc_array(region, typeof(*res->exprs), ast->len);
+	res->len = ast->len;
+	memset(res->exprs, 0, sizeof(*res->exprs) * res->len);
+
+	int i = 0;
+	struct ast_expr_list_entry *entry = NULL;
+	stailq_foreach_entry(entry, &ast->head, link) {
+		struct rast_expr_list_entry *expr = &res->exprs[i++];
+		if (resolve_expr(region, entry->expr, &expr->expr) != 0)
+			return -1;
+		expr->autoinc = entry->autoinc;
+		expr->order = entry->order;
+		if (entry->name.n > 0) {
+			expr->name = sql_region_name(region, entry->name.z,
+						     entry->name.n);
+			if (expr->name == NULL)
+				return -1;
+			expr->legacy_name = sql_legacy_name_temp(region,
+								 entry->name.z,
+								 entry->name.n);
+		}
+		if (ast->is_select_list) {
+			expr->span = entry->expr->str;
+			expr->span_len = entry->expr->len;
+		}
+	}
+	return 0;
+}
+
+/**
+ * Check if the given SELECT can be resolved, that is, whether its columns can
+ * be lowered into rast. This is possible for a select with no sources, WHERE,
+ * GROUP BY, ORDER BY, HAVING, LIMIT, OFFSET and WITH.
+ *
+ * A compound select has the compound operation set on its head node (see the
+ * selectnowith rule in parse.y), so the TK_SELECT check below also rules out
+ * compound selects. This is important: the build stage rebuilds a single
+ * Select and does not walk the link chain.
+ */
+static bool
+can_resolve(struct ast_select *ast)
+{
+	return ast->op == TK_SELECT && ast->sources == NULL &&
+	       ast->group_by == NULL && ast->order_by == NULL &&
+	       ast->where == NULL && ast->having == NULL &&
+	       ast->limit == NULL && ast->offset == NULL && ast->with == NULL;
+}
+
+/**
+ * Resolve the given AST SELECT statement into the given rast_select. A
+ * statement that cannot be resolved yet keeps rast_select::is_resolved false
+ * and its columns remain in the AST.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_select(struct region *region, struct ast_select *ast,
+	       struct rast_select *res)
+{
 	memset(res, 0, sizeof(*res));
 	res->ast = ast;
-	return res;
+	res->is_resolved = can_resolve(ast);
+	if (!res->is_resolved)
+		return 0;
+	if (resolve_expr_list(region, ast->columns, &res->columns) != 0)
+		return -1;
+	return 0;
 }
 
 struct sql_rast *
@@ -1634,8 +1757,7 @@ sql_resolve_ast(struct Parse *parser, struct sql_ast *ast)
 
 	switch (ast->type) {
 	case SQL_AST_SELECT:
-		rast->select = sql_resolve_select(region, ast->select);
-		if (rast->select == NULL) {
+		if (resolve_select(region, ast->select, &rast->select) != 0) {
 			rast = NULL;
 			break;
 		}
