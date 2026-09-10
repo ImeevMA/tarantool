@@ -7,10 +7,15 @@
 
 #include "ast.h"
 
+struct rast_select {
+	struct ast_select *ast;
+};
+
 struct sql_rast {
 	enum sql_ast_type type;
 	union {
 		struct sql_ast *ast;
+		struct rast_select *select;
 	};
 };
 

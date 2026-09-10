@@ -1614,6 +1614,15 @@ sql_coll_id(uint32_t *id, const char *name, uint32_t len)
 	return -1;
 }
 
+struct rast_select *
+sql_resolve_select(struct region *region, struct ast_select *ast)
+{
+	struct rast_select *res = xregion_alloc_object(region, typeof(*res));
+	memset(res, 0, sizeof(*res));
+	res->ast = ast;
+	return res;
+}
+
 struct sql_rast *
 sql_resolve_ast(struct Parse *parser, struct sql_ast *ast)
 {
@@ -1622,5 +1631,19 @@ sql_resolve_ast(struct Parse *parser, struct sql_ast *ast)
 	memset(rast, 0, sizeof(*rast));
 	rast->type = ast->type;
 	rast->ast = ast;
+
+	switch (ast->type) {
+	case SQL_AST_SELECT:
+		rast->select = sql_resolve_select(region, ast->select);
+		if (rast->select == NULL) {
+			rast = NULL;
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+
+	parser->is_aborted = rast == NULL;
 	return rast;
 }
