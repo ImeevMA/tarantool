@@ -3625,5 +3625,21 @@ sql_emit_show_create_table_all(struct Parse *parse)
 void
 sql_emit_bytecode(struct Parse *parser, struct sql_rast *rast, const char *sql)
 {
-	sql_code_ast(parser, rast->ast, sql);
+	switch (rast->type) {
+	case SQL_AST_SELECT: {
+		struct Select *res = select_from_ast(parser, rast->select->ast);
+		if (parser->is_aborted)
+			return;
+		struct SelectDest dest = {SRT_Output, NULL, 0, 0, 0, 0, NULL};
+		sqlSelect(parser, res, &dest);
+		sql_select_delete(res);
+		if (parser->is_aborted)
+			return;
+		sql_finish_coding(parser);
+		break;
+	}
+	default:
+		sql_code_ast(parser, rast->ast, sql);
+		break;
+	}
 }

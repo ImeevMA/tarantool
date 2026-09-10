@@ -1588,6 +1588,15 @@ sql_resolve_self_reference(struct Parse *parser, struct space_def *def,
 	sqlResolveExprNames(&sNC, expr);
 }
 
+struct rast_select *
+sql_resolve_select(struct region *region, struct ast_select *ast)
+{
+	struct rast_select *res = xregion_alloc_object(region, typeof(*res));
+	memset(res, 0, sizeof(*res));
+	res->ast = ast;
+	return res;
+}
+
 struct sql_rast *
 sql_resolve_ast(struct region *region, struct sql_ast *ast)
 {
@@ -1595,5 +1604,14 @@ sql_resolve_ast(struct region *region, struct sql_ast *ast)
 	memset(rast, 0, sizeof(*rast));
 	rast->type = ast->type;
 	rast->ast = ast;
+	switch (ast->type) {
+	case SQL_AST_SELECT:
+		rast->select = sql_resolve_select(region, ast->select);
+		if (rast->select == NULL)
+			return NULL;
+		break;
+	default:
+		break;
+	}
 	return rast;
 }
