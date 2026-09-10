@@ -3622,12 +3622,55 @@ sql_emit_show_create_table_all(struct Parse *parse)
 	sqlVdbeJumpHere(v, addr1);
 }
 
+static struct ExprList *
+expr_list_from_rast(struct Parse *parser, struct rast_expr *exprs, uint32_t len)
+{
+	if (len == 0)
+		return NULL;
+
+	struct ExprList *res = NULL;
+	for (uint32_t i = 0; i < len; ++i) {
+		struct rast_expr *expr = &exprs[i];
+		struct Expr *res_expr = expr_from_ast(parser, expr->ast);
+		if (res_expr == NULL)
+			break;
+		res = sql_expr_list_append(res, res_expr);
+		struct ExprList_item *item = &res->a[res->nExpr - 1];
+		if (expr->name != NULL)
+			item->zName = sql_xstrdup(expr->name);
+		if (expr->span != NULL)
+			sqlExprListSetSpan(res, expr->span, expr->span_len);
+		if (expr->order != SORT_ORDER_ASC)
+			sqlExprListSetSortOrder(res, expr->order);
+	}
+
+	if (parser->is_aborted) {
+		sql_expr_list_delete(res);
+		return NULL;
+	}
+	return res;
+}
+
+static struct Select *
+select_from_rast(struct Parse *parser, struct rast_select *select)
+{
+	if (select->columns == NULL)
+		return select_from_ast(parser, select->ast);
+
+	struct ExprList *columns = expr_list_from_rast(parser, select->columns,
+						       select->column_count);
+	struct Select *res = sqlSelectNew(parser, columns, NULL, NULL, NULL,
+					  NULL, NULL, select->ast->flags, NULL,
+					  NULL);
+	return res;
+}
+
 void
 sql_emit_bytecode(struct Parse *parser, struct sql_rast *rast, const char *sql)
 {
 	switch (rast->type) {
 	case SQL_AST_SELECT: {
-		struct Select *res = select_from_ast(parser, rast->select->ast);
+		struct Select *res = select_from_rast(parser, &rast->select);
 		if (parser->is_aborted)
 			return;
 		struct SelectDest dest = {SRT_Output, NULL, 0, 0, 0, 0, NULL};

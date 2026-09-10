@@ -148,6 +148,7 @@ sql_name_new(const char *name, int len)
 char *
 sql_region_name(struct region *region, const char *name, int len)
 {
+	// TODO: Add validation.
 	int size = len + 1;
 	char *res = xregion_alloc(region, size);
 	memcpy(res, name, len);
@@ -162,6 +163,7 @@ sql_region_legacy_name(struct region *region, const char *name, int len)
 	if (sqlIsquote(name[0]))
 		return sql_region_name(region, name, len);
 
+	// TODO: Add validation.
 	int size = len + 1;
 	char *res = xregion_alloc(region, size);
 	int new_len = sql_upper(res, size, name, len);

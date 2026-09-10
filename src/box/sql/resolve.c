@@ -1588,13 +1588,57 @@ sql_resolve_self_reference(struct Parse *parser, struct space_def *def,
 	sqlResolveExprNames(&sNC, expr);
 }
 
-struct rast_select *
-sql_resolve_select(struct region *region, struct ast_select *ast)
+static int
+sql_resolve_expr(struct ast_expr *ast, struct rast_expr *res)
 {
-	struct rast_select *res = xregion_alloc_object(region, typeof(*res));
 	memset(res, 0, sizeof(*res));
 	res->ast = ast;
-	return res;
+	return 0;
+}
+
+static int
+sql_resolve_expr_list(struct region *region, struct ast_expr_list *ast,
+		      struct rast_expr *res)
+{
+	int i = 0;
+	struct ast_expr_list_entry *entry = NULL;
+	stailq_foreach_entry(entry, &ast->head, link) {
+		struct rast_expr *expr = &res[i++];
+		if (sql_resolve_expr(entry->expr, expr) != 0)
+			return -1;
+		// Validate autoinc?
+		expr->autoinc = entry->autoinc;
+		expr->order = entry->order;
+		if (entry->name.n > 0) {
+			expr->name = sql_region_name(region, entry->name.z,
+						     entry->name.n);
+		}
+		if (ast->is_select_list) {
+			expr->span = entry->expr->str;
+			expr->span_len = entry->expr->len;
+		}
+	}
+	return 0;
+}
+
+static int
+sql_resolve_select(struct region *region, struct ast_select *ast,
+		   struct rast_select *res)
+{
+	memset(res, 0, sizeof(*res));
+	res->ast = ast;
+	/* For now resolve only very simple select. */
+	if (ast->op != TK_SELECT || ast->sources != NULL ||
+	    ast->group_by != NULL || ast->order_by != NULL ||
+	    ast->where != NULL || ast->limit != NULL || ast->offset != NULL ||
+	    ast->with != NULL)
+		return 0;
+	res->columns = xregion_alloc_array(region, typeof(*res->columns),
+					   ast->columns->len);
+	if (sql_resolve_expr_list(region, ast->columns, res->columns) != 0)
+		return -1;
+	res->column_count = ast->columns->len;
+	return 0;
 }
 
 struct sql_rast *
@@ -1606,8 +1650,7 @@ sql_resolve_ast(struct region *region, struct sql_ast *ast)
 	rast->ast = ast;
 	switch (ast->type) {
 	case SQL_AST_SELECT:
-		rast->select = sql_resolve_select(region, ast->select);
-		if (rast->select == NULL)
+		if (sql_resolve_select(region, ast->select, &rast->select) != 0)
 			return NULL;
 		break;
 	default:
