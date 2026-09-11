@@ -1071,7 +1071,7 @@ enum trim_side_mask {
  *         if there is no corresponding space for given table.
  */
 LogEst
-sql_space_tuple_log_count(struct space *space);
+sql_space_tuple_log_count(const struct space *space);
 
 /*
  * Each foreign key constraint is an instance of the following structure.
@@ -1534,7 +1534,7 @@ struct SrcList {
 		/** Normalized name for the second lookup. */
 		char *legacy_name;
 		/** A space corresponding to zName */
-		struct space *space;
+		const struct space *space;
 		Select *pSelect;	/* A SELECT statement used in place of a table name */
 		int addrFillSub;	/* Address of subroutine to manifest a subquery */
 		int regReturn;	/* Register holding return address of addrFillSub */

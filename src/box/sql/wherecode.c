@@ -1016,9 +1016,8 @@ sqlWhereCodeOneLoopStart(WhereInfo * pWInfo,	/* Complete information about the W
 		int ii;		/* Loop counter */
 		u16 wctrlFlags;	/* Flags for sub-WHERE clause */
 		Expr *pAndExpr = 0;	/* An ".. AND (...)" expression */
-		struct space *space = pTabItem->space;
-		struct key_def *pk_key_def =
-			space_index(space, 0)->def->key_def;
+		const struct space *space = pTabItem->space;
+		const struct key_def *pk_key_def = space->index[0]->def->key_def;
 		uint32_t pk_part_count = pk_key_def->part_count;
 
 		pTerm = pLoop->aLTerm[0];

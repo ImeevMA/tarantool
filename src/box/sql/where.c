@@ -596,7 +596,7 @@ isDistinctRedundant(Parse * pParse,		/* Parsing context */
 	if (pTabList->nSrc != 1)
 		return 0;
 	iBase = pTabList->a[0].iCursor;
-	struct space *space = pTabList->a[0].space;
+	const struct space *space = pTabList->a[0].space;
 
 	/* If any of the expressions is an IPK column on table iBase, then return
 	 * true. Note: The (p->iTable==iBase) part of this test may be false if the
@@ -811,7 +811,7 @@ constructAutomaticIndex(Parse * pParse,			/* The parsing context */
 	 * if they go out of sync.
 	 */
 	extraCols = pSrc->colUsed & (~idxCols | MASKBIT(BMS - 1));
-	struct space *space = pSrc->space;
+	const struct space *space = pSrc->space;
 	mxBitCol = MIN(BMS - 1, space->def->field_count);
 	for (i = 0; i < mxBitCol; i++) {
 		if (extraCols & MASKBIT(i))
@@ -2096,7 +2096,7 @@ whereLoopAddBtree(WhereLoopBuilder * pBuilder,	/* WHERE clause information */
 	pSrc = pTabList->a + pNew->iTab;
 	pWC = pBuilder->pWC;
 
-	struct space *space = pSrc->space;
+	const struct space *space = pSrc->space;
 	if (pSrc->pIBIndex) {
 		/* An INDEXED BY clause specifies a particular index to use */
 		probe = pSrc->pIBIndex;
@@ -3382,7 +3382,7 @@ where_loop_builder_shortcut(struct WhereLoopBuilder *builder)
 		loop->rRun = 33;
 	} else {
 		assert(loop->aLTermSpace == loop->aLTerm);
-		struct space *space = item->space;
+		const struct space *space = item->space;
 		if (space != NULL) {
 			for (uint32_t i = 0; i < space->index_count; ++i) {
 				struct index_def *idx_def =
@@ -3819,7 +3819,7 @@ sqlWhereBegin(Parse * pParse,	/* The parser context */
 		struct SrcList_item *pTabItem = &pTabList->a[pLevel->iFrom];
 		struct space_def *space_def = pTabItem->space->def;
 		pLoop = pLevel->pWLoop;
-		struct space *space = pTabItem->space;
+		const struct space *space = pTabItem->space;
 		if (space_def->id == 0 || space_def->opts.is_view) {
 			/* Do nothing */
 		} else if ((pLoop->wsFlags & WHERE_IDX_ONLY) == 0 &&

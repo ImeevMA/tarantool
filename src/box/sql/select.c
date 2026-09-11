@@ -719,8 +719,8 @@ sqlProcessJoin(Parse * pParse, Select * p)
 	pLeft = &pSrc->a[0];
 	pRight = &pLeft[1];
 	for (i = 0; i < pSrc->nSrc - 1; i++, pRight++, pLeft++) {
-		struct space *left_space = pLeft->space;
-		struct space *right_space = pRight->space;
+		const struct space *left_space = pLeft->space;
+		const struct space *right_space = pRight->space;
 		int isOuter;
 
 		if (NEVER(left_space == NULL || right_space == NULL))
@@ -1884,7 +1884,7 @@ generate_column_metadata(struct Parse *pParse, struct SrcList *pTabList,
 					break;
 			}
 			assert(j < pTabList->nSrc);
-			struct space *space = pTabList->a[j].space;
+			const struct space *space = pTabList->a[j].space;
 			struct space_def *space_def = space->def;
 			assert(iCol >= 0 && iCol < (int)space_def->field_count);
 			zCol = space_def->fields[iCol].name;
@@ -4314,7 +4314,7 @@ minMaxQuery(AggInfo * pAggInfo, ExprList ** ppMinMax)
  * @retval Pointer to space representing the table,
  *         if the query matches this pattern. NULL otherwise.
  */
-static struct space*
+static const struct space*
 is_simple_count(struct Select *select, struct AggInfo *agg_info)
 {
 	assert(select->pGroupBy == NULL);
@@ -4322,7 +4322,7 @@ is_simple_count(struct Select *select, struct AggInfo *agg_info)
 	    select->pSrc->nSrc != 1 || select->pSrc->a[0].pSelect != NULL) {
 		return NULL;
 	}
-	struct space *space = select->pSrc->a[0].space;
+	const struct space *space = select->pSrc->a[0].space;
 	assert(space != NULL && !space->def->opts.is_view);
 	struct Expr *expr = select->pEList->a[0].pExpr;
 	assert(expr != NULL);
@@ -4852,7 +4852,7 @@ selectExpander(Walker * pWalker, Select * p)
 		}
 		for (i = 0, pFrom = pTabList->a;
 		     i < pTabList->nSrc; i++, pFrom++) {
-			struct space *space = pFrom->space;
+			const struct space *space = pFrom->space;
 			struct Select *pSub = pFrom->pSelect;
 			char *zTabName = pFrom->zAlias;
 			if (zTabName == NULL)
@@ -5033,7 +5033,7 @@ selectAddSubqueryTypeInfo(Walker * pWalker, Select * p)
 	pParse = pWalker->pParse;
 	pTabList = p->pSrc;
 	for (i = 0, pFrom = pTabList->a; i < pTabList->nSrc; i++, pFrom++) {
-		struct space *space = pFrom->space;
+		const struct space *space = pFrom->space;
 		assert(space != NULL);
 		if (space->def->id == 0) {
 			/* A sub-query in the FROM clause of a SELECT */
@@ -5419,7 +5419,7 @@ sqlSelect(Parse * pParse,		/* The parser context */
 		struct SrcList_item *pItem = &pTabList->a[i];
 		Select *pSub = pItem->pSelect;
 		int isAggSub;
-		struct space *space = pItem->space;
+		const struct space *space = pItem->space;
 		if (pSub == 0)
 			continue;
 
@@ -6158,7 +6158,7 @@ sqlSelect(Parse * pParse,		/* The parser context */
 
 		} /* endif pGroupBy.  Begin aggregate queries without GROUP BY: */
 		else {
-			struct space *space = is_simple_count(p, &sAggInfo);
+			const struct space *space = is_simple_count(p, &sAggInfo);
 			if (space != NULL) {
 				/*
 				 * If is_simple_count() returns a pointer to

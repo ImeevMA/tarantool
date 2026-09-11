@@ -115,7 +115,7 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 	/* Allocate cursor on primary index. */
 	int pk_cursor = pParse->nTab++;
 	pTabList->a[0].iCursor = pk_cursor;
-	struct index *pPk = space_index(space, 0);
+	struct index *pPk = space->index[0];
 	aXRef = xregion_alloc_array(&pParse->region, typeof(aXRef[0]),
 				    def->field_count);
 	memset(aXRef, -1, sizeof(aXRef[0]) * def->field_count);

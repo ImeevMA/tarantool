@@ -2322,7 +2322,7 @@ sqlFindInIndex(Parse * pParse,	/* Parsing context */
 		bool type_is_suitable = true;
 		int i;
 
-		struct space *space = p->pSrc->a[0].space;
+		const struct space *space = p->pSrc->a[0].space;
 		/* Check that the type that will be used to perform each
 		 * comparison is the same as the type of each column in table
 		 * on the RHS of the IN operator.  If it not, it is not possible to
