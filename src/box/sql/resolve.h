@@ -11,7 +11,7 @@
 struct rast_expr {
 	union {
 		/** AST of an expression that is not resolved yet. */
-		struct ast_expr *ast;
+		const struct ast_expr *ast;
 		struct {
 			/** Dequoted string value. */
 			const char *s;

@@ -49,7 +49,7 @@
  * Returns 0 on success and -1 on error.
  */
 static int
-resolve_expr(struct region *region, struct ast_expr *ast,
+resolve_expr(struct region *region, const struct ast_expr *ast,
 	     struct rast_expr *res);
 
 
@@ -1646,7 +1646,7 @@ sql_region_name(struct region *region, const char *name, uint32_t size)
  * copy. The result is stored in rast_expr::s with its length in rast_expr::n.
  */
 static void
-resolve_expr_string(struct region *region, struct ast_expr *ast,
+resolve_expr_string(struct region *region, const struct ast_expr *ast,
 		    struct rast_expr *res)
 {
 	char *str = xregion_alloc(region, ast->len);
@@ -1657,7 +1657,7 @@ resolve_expr_string(struct region *region, struct ast_expr *ast,
 }
 
 static void
-resolve_expr_varbinary(struct region *region, struct ast_expr *ast,
+resolve_expr_varbinary(struct region *region, const struct ast_expr *ast,
 		       struct rast_expr *res)
 {
 	assert(ast->op == TK_BLOB);
@@ -1680,7 +1680,7 @@ resolve_expr_varbinary(struct region *region, struct ast_expr *ast,
 }
 
 static int
-resolve_expr_integer(struct region *region, struct ast_expr *ast,
+resolve_expr_integer(struct region *region, const struct ast_expr *ast,
 		     struct rast_expr *res)
 {
 	char *str = xregion_alloc(region, ast->len + 1);
@@ -1692,7 +1692,7 @@ resolve_expr_integer(struct region *region, struct ast_expr *ast,
 }
 
 static int
-resolve_expr_decimal(struct region *region, struct ast_expr *ast,
+resolve_expr_decimal(struct region *region, const struct ast_expr *ast,
 		     struct rast_expr *res)
 {
 	char *str = xregion_alloc(region, ast->len + 1);
@@ -1704,7 +1704,7 @@ resolve_expr_decimal(struct region *region, struct ast_expr *ast,
 }
 
 static int
-resolve_expr_variable(struct ast_expr *ast, struct rast_expr *res)
+resolve_expr_variable(const struct ast_expr *ast, struct rast_expr *res)
 {
 	/*
 	 * The check exists only for the `:` case, because the other
@@ -1723,7 +1723,7 @@ resolve_expr_variable(struct ast_expr *ast, struct rast_expr *res)
 }
 
 static int
-resolve_expr_binary(struct region *region, struct ast_expr *ast,
+resolve_expr_binary(struct region *region, const struct ast_expr *ast,
 		    struct rast_expr *res)
 {
 	res->op = ast->op;
@@ -1741,7 +1741,7 @@ resolve_expr_binary(struct region *region, struct ast_expr *ast,
 }
 
 static int
-resolve_expr(struct region *region, struct ast_expr *ast, struct rast_expr *res)
+resolve_expr(struct region *region, const struct ast_expr *ast, struct rast_expr *res)
 {
 	memset(res, 0, sizeof(*res));
 	switch (ast->op) {

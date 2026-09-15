@@ -3675,7 +3675,7 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 		res = expr_binary(parser, expr);
 		break;
 	default:
-		res = expr_from_ast(parser, expr->ast);
+		res = expr_from_ast(parser, (struct ast_expr *)expr->ast);
 		break;
 	}
 	return res;
