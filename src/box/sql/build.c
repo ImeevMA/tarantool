@@ -129,6 +129,17 @@ sql_space_column_is_in_pk(const struct space *space, uint32_t column)
 	return false;
 }
 
+int
+sql_check_identifier_name(const char *name, uint32_t len)
+{
+	if (len > BOX_NAME_MAX) {
+		diag_set(ClientError, ER_IDENTIFIER,
+			 tt_cstr(name, BOX_INVALID_NAME_MAX));
+		return -1;
+	}
+	return identifier_check(name, len);
+}
+
 /*
  * This routine is used to check if the UTF-8 string zName is a legal
  * unqualified name for an identifier.
@@ -146,14 +157,7 @@ sql_space_column_is_in_pk(const struct space *space, uint32_t column)
 int
 sqlCheckIdentifierName(Parse *pParse, char *zName)
 {
-	ssize_t len = strlen(zName);
-	if (len > BOX_NAME_MAX) {
-		diag_set(ClientError, ER_IDENTIFIER,
-			 tt_cstr(zName, BOX_INVALID_NAME_MAX));
-		pParse->is_aborted = true;
-		return -1;
-	}
-	if (identifier_check(zName, len) != 0) {
+	if (sql_check_identifier_name(zName, strlen(zName)) != 0) {
 		pParse->is_aborted = true;
 		return -1;
 	}
@@ -326,7 +330,7 @@ sql_create_column_start(struct Parse *parse, struct Token *table,
 	}
 #endif
 
-	char *column_name = sql_name_temp(parse, name->z, name->n);
+	char *column_name = sql_name_temp(&parse->region, name->z, name->n);
 
 	/*
 	 * Format can be set in Lua, then exact_field_count can be

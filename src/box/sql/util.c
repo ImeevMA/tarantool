@@ -80,41 +80,52 @@ sqlStrlen30(const char *z)
  * input does not begin with a quote character, then this routine
  * is a no-op.
  *
- * The input string must be zero-terminated. The resulting dequoted
- * string will also be zero-terminated.
+ * The string is defined by a pointer and its size, so it does not have
+ * to be zero-terminated, and the resulting dequoted string is not
+ * zero-terminated either.
  *
- * The return value is -1 if no dequoting occurs or the length of the
- * dequoted string, exclusive of the zero terminator, if dequoting does
- * occur.
+ * The return value is the length of the dequoted string, or size if no
+ * dequoting occurs.
  *
  * 2002-Feb-14: This routine is extended to remove MS-Access style
  * brackets from around identifiers.  For example:  "[a-b-c]" becomes
  * "a-b-c".
  */
+uint32_t
+sql_dequote(char *str, uint32_t size)
+{
+	if (size == 0)
+		return 0;
+
+	char quote = str[0];
+	if (sqlIsquote(quote) == 0)
+		return size;
+
+	uint32_t len = 0;
+	for (uint32_t i = 1; i < size; i++) {
+		if (str[i] == quote) {
+			if (i + 1 < size && str[i + 1] == quote) {
+				str[len++] = quote;
+				i++;
+			}
+		} else {
+			str[len++] = str[i];
+		}
+	}
+	return len;
+}
+
+/*
+ * Same as sql_dequote(), but the string is zero-terminated and the
+ * resulting dequoted string remains zero-terminated.
+ */
 void
 sqlDequote(char *z)
 {
-	char quote;
-	int i, j;
-	if (z == 0)
+	if (z == NULL)
 		return;
-	quote = z[0];
-	if (!sqlIsquote(quote))
-		return;
-	for (i = 1, j = 0;; i++) {
-		if (z[i] == quote) {
-			if (z[i + 1] == quote) {
-				z[j++] = quote;
-				i++;
-			}
-		} else if (z[i] == 0) {
-			z[j] = 0;
-			return;
-		} else {
-			z[j++] = z[i];
-		}
-		assert(z[i] != 0);
-	}
+	uint32_t len = sql_dequote(z, strlen(z));
+	z[len] = '\0';
 }
 
 char *
@@ -129,11 +140,10 @@ sql_name_new(const char *name, int len)
 }
 
 char *
-sql_name_temp(struct Parse *parser, const char *name, int len)
+sql_name_temp(struct region *region, const char *name, int len)
 {
-	struct region *r = &parser->region;
 	int size = len + 1;
-	char *res = xregion_alloc(r, size);
+	char *res = xregion_alloc(region, size);
 	memcpy(res, name, len);
 	res[len] = '\0';
 	sqlDequote(res);
@@ -1178,6 +1188,17 @@ sql_legacy_name_new(const char *name, int len)
 	assert((size_t)new_len < size);
 	(void)new_len;
 	return res;
+}
+
+char *
+sql_legacy_name_temp(struct region *region, const char *name, int len)
+{
+	char *res = sql_legacy_name_new(name, len);
+	size_t size = strlen(res) + 1;
+	char *temp = xregion_alloc(region, size);
+	memcpy(temp, res, size);
+	sql_xfree(res);
+	return temp;
 }
 
 int

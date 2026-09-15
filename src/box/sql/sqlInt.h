@@ -2359,18 +2359,31 @@ void sqlTreeViewSelect(TreeView *, const Select *, u8);
 void sqlTreeViewWith(TreeView *, const With *);
 #endif
 
+/**
+ * Dequote the given zero-terminated string in place, that is, remove the
+ * quotes around it and collapse each doubled quote inside into one. Does
+ * nothing if the string does not begin with a quote character.
+ */
 void sqlDequote(char *);
+
+/**
+ * Dequote SQL string and return the length of the resulting string.
+ *
+ * Note that the resulting string is not guaranteed to be NULL-terminated.
+ */
+uint32_t
+sql_dequote(char *str, uint32_t size);
 
 /** Duplicate the string and remove the double quotes if necessary. */
 char *
 sql_name_new(const char *name, int len);
 
 /**
- * Duplicate the string onto parser region and remove the double quotes if
+ * Duplicate the string onto the given region and remove the double quotes if
  * necessary.
  */
 char *
-sql_name_temp(struct Parse *parser, const char *name, int len);
+sql_name_temp(struct region *region, const char *name, int len);
 
 /** Normalize the given name and write it to the newly allocated memory. */
 char *
@@ -2385,6 +2398,10 @@ sql_legacy_name_new0(const char *name)
 {
 	return sql_legacy_name_new(name, strlen(name));
 }
+
+/** Same as sql_legacy_name_new(), but allocated on the given region. */
+char *
+sql_legacy_name_temp(struct region *region, const char *name, int len);
 
 /**
  * Return an escaped version of the original name in memory allocated with
@@ -3982,6 +3999,25 @@ sql_expr_coll(Parse *parse, Expr *p, bool *is_explicit_coll, uint32_t *coll_id,
 	      struct coll **coll);
 
 Expr *sqlExprSkipCollate(Expr *);
+
+/**
+ * Check if the given identifier is legal. A name is legal unless it is empty,
+ * contains non-printable characters or is longer than BOX_NAME_MAX. Sets a
+ * diag on failure.
+ *
+ * @retval 0 on success.
+ * @retval -1 on error.
+ */
+int
+sql_check_identifier_name(const char *name, uint32_t len);
+
+/**
+ * Same as sql_check_identifier_name(), but for a zero-terminated name. Aborts
+ * the parser on failure.
+ *
+ * @retval 0 on success.
+ * @retval -1 on error.
+ */
 int sqlCheckIdentifierName(Parse *, char *);
 
 /**
