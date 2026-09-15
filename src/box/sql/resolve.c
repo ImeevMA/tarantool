@@ -1778,6 +1778,12 @@ resolve_expr(struct region *region, const struct ast_expr *ast, struct rast_expr
 		if (resolve_expr_variable(ast, res) != 0)
 			return -1;
 		break;
+	case TK_PARENTHESES:
+		while (ast->op == TK_PARENTHESES)
+			ast = ast->left;
+		if (resolve_expr(region, ast, res) != 0)
+			return -1;
+		break;
 	case TK_AND:
 	case TK_OR:
 	case TK_LT:
