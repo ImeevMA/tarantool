@@ -14,7 +14,7 @@ struct rast_expr {
 		struct ast_expr *ast;
 		struct {
 			/** Dequoted string value. */
-			char *s;
+			const char *s;
 			/** Length of the dequoted string above. */
 			uint32_t n;
 		};

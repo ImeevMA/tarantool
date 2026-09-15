@@ -1638,10 +1638,11 @@ static void
 resolve_expr_string(struct region *region, struct ast_expr *ast,
 		    struct rast_expr *res)
 {
+	char *str = xregion_alloc(region, ast->len);
+	memcpy(str, ast->str, ast->len);
 	res->op = TK_STRING;
-	res->s = xregion_alloc(region, ast->len);
-	memcpy(res->s, ast->str, ast->len);
-	res->n = sql_dequote(res->s, ast->len);
+	res->n = sql_dequote(str, ast->len);
+	res->s = str;
 }
 
 static void
@@ -1659,11 +1660,12 @@ resolve_expr_varbinary(struct region *region, struct ast_expr *ast,
 		res->s = NULL;
 		return;
 	}
-	res->s = xregion_alloc(region, res->n);
+	char *str = xregion_alloc(region, res->n);
 	for (uint32_t i = 0; i < res->n; ++i) {
-		res->s[i] = (sqlHexToInt(ast->str[2 + i * 2]) << 4 |
-			     sqlHexToInt(ast->str[3 + i * 2]));
+		str[i] = (sqlHexToInt(ast->str[2 + i * 2]) << 4 |
+			  sqlHexToInt(ast->str[3 + i * 2]));
 	}
+	res->s = str;
 }
 
 static int
@@ -1688,6 +1690,25 @@ resolve_expr_decimal(struct region *region, struct ast_expr *ast,
 
 	res->op = TK_DECIMAL;
 	return sql_dec_from_str(&res->d, str);
+}
+
+static int
+resolve_expr_variable(struct ast_expr *ast, struct rast_expr *res)
+{
+	/*
+	 * The check exists only for the `:` case, because the other
+	 * variants (`@`, `#`, `?`, `$`)  are checked during tokenization.
+	 */
+	if (ast->str[0] == ':' && (IdChar(ast->str[1]) == 0)) {
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+			 tt_sprintf("Wrong bind variable name '%.*s'", ast->len,
+				    ast->str));
+		return -1;
+	}
+	res->op = ast->op;
+	res->s = ast->str;
+	res->n = ast->len;
+	return 0;
 }
 
 /**
@@ -1727,6 +1748,12 @@ resolve_expr(struct region *region, struct ast_expr *ast, struct rast_expr *res)
 	case TK_UNKNOWN:
 		res->op = ast->op;
 		res->b = false;
+		break;
+	case TK_VAR_ANON:
+	case TK_VAR_NAME:
+	case TK_VAR_NUM:
+		if (resolve_expr_variable(ast, res) != 0)
+			return -1;
 		break;
 	default:
 		res->op = ast->op;
