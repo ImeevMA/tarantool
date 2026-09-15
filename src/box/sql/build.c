@@ -3604,6 +3604,12 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_DECIMAL, 0);
 		res->v.d = expr->d;
 		break;
+	case TK_TRUE:
+	case TK_FALSE:
+	case TK_UNKNOWN:
+		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_BOOLEAN, 0);
+		res->v.b = expr->b;
+		break;
 	default:
 		res = expr_from_ast(parser, expr->ast);
 		break;

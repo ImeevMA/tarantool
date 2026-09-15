@@ -1719,6 +1719,15 @@ resolve_expr(struct region *region, struct ast_expr *ast, struct rast_expr *res)
 		if (resolve_expr_decimal(region, ast, res) != 0)
 			return -1;
 		break;
+	case TK_TRUE:
+		res->op = TK_TRUE;
+		res->b = true;
+		break;
+	case TK_FALSE:
+	case TK_UNKNOWN:
+		res->op = ast->op;
+		res->b = false;
+		break;
 	default:
 		res->op = ast->op;
 		res->ast = ast;
