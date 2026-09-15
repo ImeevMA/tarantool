@@ -1699,6 +1699,10 @@ resolve_expr(struct region *region, struct ast_expr *ast, struct rast_expr *res)
 		if (resolve_expr_integer(region, ast, res) != 0)
 			return -1;
 		break;
+	case TK_FLOAT:
+		res->op = TK_FLOAT;
+		sqlAtoF(ast->str, &res->f, ast->len);
+		break;
 	default:
 		res->op = ast->op;
 		res->ast = ast;

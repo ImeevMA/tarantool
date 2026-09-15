@@ -3596,6 +3596,10 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_INTEGER, 0);
 		res->v.u = expr->u;
 		break;
+	case TK_FLOAT:
+		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_DOUBLE, 0);
+		res->v.f = expr->f;
+		break;
 	default:
 		res = expr_from_ast(parser, expr->ast);
 		break;
