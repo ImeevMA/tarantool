@@ -42,6 +42,17 @@
 #include "box/schema.h"
 #include "box/coll_id_cache.h"
 
+/**
+ * Resolve the given AST expression into the given rast_expr. An operation that
+ * has no resolved form yet is stored as is in rast_expr::ast.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_expr(struct region *region, struct ast_expr *ast,
+	     struct rast_expr *res);
+
+
 /*
  * Walk the expression tree pExpr and increase the aggregate function
  * depth (the Expr.op2 field) by N on every TK_AGG_FUNCTION node.
@@ -1711,12 +1722,24 @@ resolve_expr_variable(struct ast_expr *ast, struct rast_expr *res)
 	return 0;
 }
 
-/**
- * Resolve the given AST expression into the given rast_expr. An operation that
- * has no resolved form yet is stored as is in rast_expr::ast.
- *
- * Returns 0 on success and -1 on error.
- */
+static int
+resolve_expr_binary(struct region *region, struct ast_expr *ast,
+		    struct rast_expr *res)
+{
+	res->op = ast->op;
+	if (ast->left != NULL) {
+		res->left = xregion_alloc_object(region, typeof(*res->left));
+		if (resolve_expr(region, ast->left, res->left) != 0)
+			return -1;
+	}
+	if (ast->right != NULL) {
+		res->right = xregion_alloc_object(region, typeof(*res->right));
+		if (resolve_expr(region, ast->right, res->right) != 0)
+			return -1;
+	}
+	return 0;
+}
+
 static int
 resolve_expr(struct region *region, struct ast_expr *ast, struct rast_expr *res)
 {
@@ -1753,6 +1776,28 @@ resolve_expr(struct region *region, struct ast_expr *ast, struct rast_expr *res)
 	case TK_VAR_NAME:
 	case TK_VAR_NUM:
 		if (resolve_expr_variable(ast, res) != 0)
+			return -1;
+		break;
+	case TK_AND:
+	case TK_OR:
+	case TK_LT:
+	case TK_LE:
+	case TK_GT:
+	case TK_GE:
+	case TK_EQ:
+	case TK_NE:
+	case TK_BITAND:
+	case TK_BITOR:
+	case TK_LSHIFT:
+	case TK_RSHIFT:
+	case TK_PLUS:
+	case TK_MINUS:
+	case TK_STAR:
+	case TK_SLASH:
+	case TK_REM:
+	case TK_CONCAT:
+	case TK_DOT:
+		if (resolve_expr_binary(region, ast, res) != 0)
 			return -1;
 		break;
 	default:

@@ -22,6 +22,10 @@ struct rast_expr {
 		double f;
 		decimal_t d;
 		bool b;
+		struct {
+			struct rast_expr *left;
+			struct rast_expr *right;
+		};
 	};
 	/**
 	 * Operation of the expression. The same as ast_expr::op and defines

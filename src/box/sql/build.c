@@ -3551,6 +3551,15 @@ sql_emit_show_create_table_all(struct Parse *parse)
 	sqlVdbeJumpHere(v, addr1);
 }
 
+/**
+ * Create an expression from the given resolved expression. A resolved
+ * operation is built from its resolved form, the rest is built from the AST.
+ *
+ * Returns NULL if the expression is NULL or on error.
+ */
+static struct Expr *
+expr_from_rast(struct Parse *parser, struct rast_expr *expr);
+
 /** Create an expression of a string literal from a resolved expression. */
 static struct Expr *
 expr_string(struct rast_expr *expr)
@@ -3589,12 +3598,25 @@ expr_variable(struct Parse *parser, struct rast_expr *expr)
 	return res;
 }
 
-/**
- * Create an expression from the given resolved expression. A resolved
- * operation is built from its resolved form, the rest is built from the AST.
- *
- * Returns NULL if the expression is NULL or on error.
- */
+static struct Expr *
+expr_binary(struct Parse *parser, struct rast_expr *expr)
+{
+	struct Expr *left = expr_from_rast(parser, expr->left);
+	if (parser->is_aborted)
+		return NULL;
+	struct Expr *right = expr_from_rast(parser, expr->right);
+	if (parser->is_aborted) {
+		sql_expr_delete(left);
+		return NULL;
+	}
+	struct Expr *res = sqlPExpr(parser, expr->op, left, right);
+	if (parser->is_aborted) {
+		sql_expr_delete(res);
+		return NULL;
+	}
+	return res;
+}
+
 static struct Expr *
 expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 {
@@ -3630,6 +3652,27 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 	case TK_VAR_NUM:
 	case TK_VAR_NAME:
 		res = expr_variable(parser, expr);
+		break;
+	case TK_AND:
+	case TK_OR:
+	case TK_LT:
+	case TK_LE:
+	case TK_GT:
+	case TK_GE:
+	case TK_EQ:
+	case TK_NE:
+	case TK_BITAND:
+	case TK_BITOR:
+	case TK_LSHIFT:
+	case TK_RSHIFT:
+	case TK_PLUS:
+	case TK_MINUS:
+	case TK_STAR:
+	case TK_SLASH:
+	case TK_REM:
+	case TK_CONCAT:
+	case TK_DOT:
+		res = expr_binary(parser, expr);
 		break;
 	default:
 		res = expr_from_ast(parser, expr->ast);
