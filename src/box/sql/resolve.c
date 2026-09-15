@@ -1666,6 +1666,18 @@ resolve_expr_varbinary(struct region *region, struct ast_expr *ast,
 	}
 }
 
+static int
+resolve_expr_integer(struct region *region, struct ast_expr *ast,
+		     struct rast_expr *res)
+{
+	char *str = xregion_alloc(region, ast->len + 1);
+	memcpy(str, ast->str, ast->len);
+	str[ast->len] = '\0';
+
+	res->op = TK_INTEGER;
+	return sql_uint_from_str(&res->u, str);
+}
+
 /**
  * Resolve the given AST expression into the given rast_expr. An operation that
  * has no resolved form yet is stored as is in rast_expr::ast.
@@ -1682,6 +1694,10 @@ resolve_expr(struct region *region, struct ast_expr *ast, struct rast_expr *res)
 		break;
 	case TK_BLOB:
 		resolve_expr_varbinary(region, ast, res);
+		break;
+	case TK_INTEGER:
+		if (resolve_expr_integer(region, ast, res) != 0)
+			return -1;
 		break;
 	default:
 		res->op = ast->op;

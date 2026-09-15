@@ -18,6 +18,7 @@ struct rast_expr {
 			/** Length of the dequoted string above. */
 			uint32_t n;
 		};
+		uint64_t u;
 	};
 	/**
 	 * Operation of the expression. The same as ast_expr::op and defines

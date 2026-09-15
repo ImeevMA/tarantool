@@ -3592,6 +3592,10 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 	case TK_BLOB:
 		res = expr_varbinary(expr);
 		break;
+	case TK_INTEGER:
+		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_INTEGER, 0);
+		res->v.u = expr->u;
+		break;
 	default:
 		res = expr_from_ast(parser, expr->ast);
 		break;
