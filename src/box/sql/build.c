@@ -3562,6 +3562,17 @@ expr_string(struct rast_expr *expr)
 	return res;
 }
 
+static struct Expr *
+expr_varbinary(struct rast_expr *expr)
+{
+	struct Expr *res = sql_expr_new_leaf(TK_BLOB, FIELD_TYPE_VARBINARY,
+					     expr->n);
+	res->v.n = expr->n;
+	res->v.z = (char *)&res[1];
+	memcpy(res->v.z, expr->s, expr->n);
+	return res;
+}
+
 /**
  * Create an expression from the given resolved expression. A resolved
  * operation is built from its resolved form, the rest is built from the AST.
@@ -3577,6 +3588,9 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 	switch (expr->op) {
 	case TK_STRING:
 		res = expr_string(expr);
+		break;
+	case TK_BLOB:
+		res = expr_varbinary(expr);
 		break;
 	default:
 		res = expr_from_ast(parser, expr->ast);

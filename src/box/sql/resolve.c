@@ -1644,6 +1644,28 @@ resolve_expr_string(struct region *region, struct ast_expr *ast,
 	res->n = sql_dequote(res->s, ast->len);
 }
 
+static void
+resolve_expr_varbinary(struct region *region, struct ast_expr *ast,
+		       struct rast_expr *res)
+{
+	assert(ast->op == TK_BLOB);
+	assert(ast->str[0] == 'x' || ast->str[0] == 'X');
+	assert(ast->str[1] == '\'' && ast->str[ast->len - 1] == '\'');
+	assert(ast->len > 2 && ast->len % 2 == 1);
+
+	res->op = TK_BLOB;
+	res->n = (ast->len - 3) / 2;
+	if (res->n == 0) {
+		res->s = NULL;
+		return;
+	}
+	res->s = xregion_alloc(region, res->n);
+	for (uint32_t i = 0; i < res->n; ++i) {
+		res->s[i] = (sqlHexToInt(ast->str[2 + i * 2]) << 4 |
+			     sqlHexToInt(ast->str[3 + i * 2]));
+	}
+}
+
 /**
  * Resolve the given AST expression into the given rast_expr. An operation that
  * has no resolved form yet is stored as is in rast_expr::ast.
@@ -1657,6 +1679,9 @@ resolve_expr(struct region *region, struct ast_expr *ast, struct rast_expr *res)
 	switch (ast->op) {
 	case TK_STRING:
 		resolve_expr_string(region, ast, res);
+		break;
+	case TK_BLOB:
+		resolve_expr_varbinary(region, ast, res);
 		break;
 	default:
 		res->op = ast->op;
