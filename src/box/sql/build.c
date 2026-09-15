@@ -3600,6 +3600,10 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_DOUBLE, 0);
 		res->v.f = expr->f;
 		break;
+	case TK_DECIMAL:
+		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_DECIMAL, 0);
+		res->v.d = expr->d;
+		break;
 	default:
 		res = expr_from_ast(parser, expr->ast);
 		break;

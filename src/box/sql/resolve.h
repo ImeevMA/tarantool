@@ -20,6 +20,7 @@ struct rast_expr {
 		};
 		uint64_t u;
 		double f;
+		decimal_t d;
 	};
 	/**
 	 * Operation of the expression. The same as ast_expr::op and defines

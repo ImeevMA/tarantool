@@ -1678,6 +1678,18 @@ resolve_expr_integer(struct region *region, struct ast_expr *ast,
 	return sql_uint_from_str(&res->u, str);
 }
 
+static int
+resolve_expr_decimal(struct region *region, struct ast_expr *ast,
+		     struct rast_expr *res)
+{
+	char *str = xregion_alloc(region, ast->len + 1);
+	memcpy(str, ast->str, ast->len);
+	str[ast->len] = '\0';
+
+	res->op = TK_DECIMAL;
+	return sql_dec_from_str(&res->d, str);
+}
+
 /**
  * Resolve the given AST expression into the given rast_expr. An operation that
  * has no resolved form yet is stored as is in rast_expr::ast.
@@ -1702,6 +1714,10 @@ resolve_expr(struct region *region, struct ast_expr *ast, struct rast_expr *res)
 	case TK_FLOAT:
 		res->op = TK_FLOAT;
 		sqlAtoF(ast->str, &res->f, ast->len);
+		break;
+	case TK_DECIMAL:
+		if (resolve_expr_decimal(region, ast, res) != 0)
+			return -1;
 		break;
 	default:
 		res->op = ast->op;
