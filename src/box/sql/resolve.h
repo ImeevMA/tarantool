@@ -30,6 +30,12 @@ struct rast_expr {
 		} coll;
 	};
 	/**
+	 * Height of the tree headed by this node. Checked against
+	 * SQL_MAX_EXPR_DEPTH during resolution so expr_from_rast() never has
+	 * to fail on it.
+	 */
+	int height;
+	/**
 	 * Operation of the expression. The same as ast_expr::op and defines
 	 * which of the union members above is used.
 	 */

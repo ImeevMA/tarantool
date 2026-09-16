@@ -1659,6 +1659,7 @@ resolve_expr_string(struct region *region, const struct ast_expr *ast,
 	res->op = TK_STRING;
 	res->n = sql_dequote(str, ast->len);
 	res->s = str;
+	res->height = 1;
 }
 
 static void
@@ -1672,6 +1673,7 @@ resolve_expr_varbinary(struct region *region, const struct ast_expr *ast,
 
 	res->op = TK_BLOB;
 	res->n = (ast->len - 3) / 2;
+	res->height = 1;
 	if (res->n == 0) {
 		res->s = NULL;
 		return;
@@ -1693,6 +1695,7 @@ resolve_expr_integer(struct region *region, const struct ast_expr *ast,
 	str[ast->len] = '\0';
 
 	res->op = TK_INTEGER;
+	res->height = 1;
 	return sql_uint_from_str(&res->u, str);
 }
 
@@ -1705,7 +1708,25 @@ resolve_expr_decimal(struct region *region, const struct ast_expr *ast,
 	str[ast->len] = '\0';
 
 	res->op = TK_DECIMAL;
+	res->height = 1;
 	return sql_dec_from_str(&res->d, str);
+}
+
+/**
+ * Check that the height of the given resolved expression does not exceed the
+ * maximum allowed expression depth. This mirrors sqlExprCheckHeight(), but
+ * runs at resolution time so expr_from_rast() never has to fail on it.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_expr_check_height(struct rast_expr *res)
+{
+	if (res->height <= SQL_MAX_EXPR_DEPTH)
+		return 0;
+	diag_set(ClientError, ER_SQL_PARSER_LIMIT, "Number of nodes "
+		 "in expression tree", res->height, SQL_MAX_EXPR_DEPTH);
+	return -1;
 }
 
 static int
@@ -1718,12 +1739,28 @@ resolve_expr_binary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	res->left = xregion_alloc_object(ctx->region, typeof(*res->left));
 	if (resolve_expr(ctx, ast->left, res->left) != 0)
 		return -1;
+	if (!ctx->can_resolve)
+		return 0;
 	res->right = xregion_alloc_object(ctx->region, typeof(*res->right));
 	if (resolve_expr(ctx, ast->right, res->right) != 0)
 		return -1;
-	return 0;
+	if (!ctx->can_resolve)
+		return 0;
+	res->height = MAX(res->left->height, res->right->height) + 1;
+	return resolve_expr_check_height(res);
 }
 
+/*
+ * TODO: Do not extend this short-circuit to skip resolving the other operand
+ * without first checking whether this AND could end up as an ON-clause
+ * condition of an OUTER JOIN. sql_and_expr_new()'s exprAlwaysFalse()
+ * deliberately excludes expressions with EP_FromJoin set, because for an
+ * unmatched row of an outer join the row must still be emitted with NULLs
+ * rather than eliminated as if the whole condition were a constant false.
+ * EP_FromJoin is only assigned later, once the Select's join structure is
+ * known, so at this AST-resolution stage we cannot yet tell whether that
+ * concern applies here.
+ */
 static int
 resolve_expr_and(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		 struct rast_expr *res)
@@ -1749,7 +1786,10 @@ resolve_expr_collate(struct sql_resolve_context *ctx,
 	assert(ast->left != NULL);
 	res->coll.expr = xregion_alloc_object(ctx->region,
 					      typeof(*res->coll.expr));
-	return resolve_expr(ctx, ast->left, res->coll.expr);
+	if (resolve_expr(ctx, ast->left, res->coll.expr) != 0)
+		return -1;
+	res->height = res->coll.expr->height + 1;
+	return resolve_expr_check_height(res);
 }
 
 static int
@@ -1774,6 +1814,7 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	case TK_FLOAT:
 		res->op = TK_FLOAT;
 		sqlAtoF(ast->str, &res->f, ast->len);
+		res->height = 1;
 		break;
 	case TK_DECIMAL:
 		if (resolve_expr_decimal(ctx->region, ast, res) != 0)
@@ -1782,11 +1823,13 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	case TK_TRUE:
 		res->op = TK_TRUE;
 		res->b = true;
+		res->height = 1;
 		break;
 	case TK_FALSE:
 	case TK_UNKNOWN:
 		res->op = ast->op;
 		res->b = false;
+		res->height = 1;
 		break;
 	case TK_PARENTHESES:
 		while (ast->op == TK_PARENTHESES)
