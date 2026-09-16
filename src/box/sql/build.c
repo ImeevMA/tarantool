@@ -3627,6 +3627,26 @@ expr_unary(struct rast_expr *expr)
 }
 
 static struct Expr *
+expr_list(struct rast_expr *expr, enum field_type type)
+{
+	int height = 0;
+	struct ExprList *res_list = NULL;
+	for (uint32_t i = 0; i < expr->list.len; ++i) {
+		struct Expr *res_expr = expr_from_rast(&expr->list.exprs[i]);
+		res_list = sql_expr_list_append(res_list, res_expr);
+		if (height < res_expr->nHeight)
+			height = res_expr->nHeight;
+	}
+
+	struct Expr *res = sql_expr_new_anon(expr->op);
+	res->x.pList = res_list;
+	res->type = type;
+	res->flags |= EP_Propagate & sqlExprListFlags(res->x.pList);
+	res->nHeight = height + 1;
+	return res;
+}
+
+static struct Expr *
 expr_from_rast(struct rast_expr *expr)
 {
 	if (expr == NULL)
@@ -3691,6 +3711,15 @@ expr_from_rast(struct rast_expr *expr)
 	case TK_NOTNULL:
 	case TK_ISNULL:
 		res = expr_unary(expr);
+		break;
+	case TK_ARRAY:
+		res = expr_list(expr, FIELD_TYPE_ARRAY);
+		break;
+	case TK_MAP:
+		res = expr_list(expr, FIELD_TYPE_MAP);
+		break;
+	case TK_VECTOR:
+		res = expr_list(expr, FIELD_TYPE_ANY);
 		break;
 	default:
 		unreachable();

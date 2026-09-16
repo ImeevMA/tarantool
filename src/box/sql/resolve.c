@@ -1736,12 +1736,12 @@ resolve_expr_binary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	assert(ast->left != NULL && ast->right != NULL);
 
 	res->op = ast->op;
-	res->left = xregion_alloc_object(ctx->region, typeof(*res->left));
+	res->left = xregion_alloc_object(ctx->region, struct rast_expr);
 	if (resolve_expr(ctx, ast->left, res->left) != 0)
 		return -1;
 	if (!ctx->can_resolve)
 		return 0;
-	res->right = xregion_alloc_object(ctx->region, typeof(*res->right));
+	res->right = xregion_alloc_object(ctx->region, struct rast_expr);
 	if (resolve_expr(ctx, ast->right, res->right) != 0)
 		return -1;
 	if (!ctx->can_resolve)
@@ -1801,8 +1801,7 @@ resolve_expr_collate(struct sql_resolve_context *ctx,
 	if (sql_coll_id(&res->coll.id, ast->right->str, ast->right->len) != 0)
 		return -1;
 	res->op = TK_COLLATE;
-	res->coll.expr = xregion_alloc_object(ctx->region,
-					      typeof(*res->coll.expr));
+	res->coll.expr = xregion_alloc_object(ctx->region, struct rast_expr);
 	if (resolve_expr(ctx, ast->left, res->coll.expr) != 0)
 		return -1;
 	res->height = res->coll.expr->height + 1;
@@ -1817,8 +1816,7 @@ resolve_expr_cast(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 
 	res->op = TK_CAST;
 	res->cast.type = ast->type;
-	res->cast.expr = xregion_alloc_object(ctx->region,
-					      typeof(*res->cast.expr));
+	res->cast.expr = xregion_alloc_object(ctx->region, struct rast_expr);
 	if (resolve_expr(ctx, ast->left, res->cast.expr) != 0)
 		return -1;
 	res->height = res->cast.expr->height + 1;
@@ -1832,10 +1830,43 @@ resolve_expr_unary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	assert(ast->left != NULL);
 
 	res->op = ast->op;
-	res->expr = xregion_alloc_object(ctx->region, typeof(*res->cast.expr));
+	res->expr = xregion_alloc_object(ctx->region, struct rast_expr);
 	if (resolve_expr(ctx, ast->left, res->expr) != 0)
 		return -1;
 	res->height = res->expr->height + 1;
+	return resolve_expr_check_height(res);
+}
+
+static int
+resolve_expr_list(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+		  struct rast_expr *res)
+{
+	res->op = ast->op;
+	if (ast->list == NULL || ast->list->len == 0) {
+		res->list.len = 0;
+		res->list.exprs = NULL;
+		res->height = 1;
+		return 0;
+	}
+
+	res->list.exprs = xregion_alloc_array(ctx->region, struct rast_expr,
+					      ast->list->len);
+	res->list.len = ast->list->len;
+	memset(res->list.exprs, 0, sizeof(*res->list.exprs) * res->list.len);
+
+	int height = 0;
+	int i = 0;
+	struct ast_expr_list_entry *entry = NULL;
+	stailq_foreach_entry(entry, &ast->list->head, link) {
+		struct rast_expr *expr = &res->list.exprs[i++];
+		if (resolve_expr(ctx, entry->expr, expr) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+		if (height < expr->height)
+			height = expr->height;
+	}
+	res->height = height + 1;
 	return resolve_expr_check_height(res);
 }
 
@@ -1926,6 +1957,12 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		if (resolve_expr_unary(ctx, ast, res) != 0)
 			return -1;
 		break;
+	case TK_ARRAY:
+	case TK_MAP:
+	case TK_VECTOR:
+		if (resolve_expr_list(ctx, ast, res) != 0)
+			return -1;
+		break;
 	default:
 		ctx->can_resolve = false;
 		break;
@@ -1934,15 +1971,16 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 }
 
 /**
- * Resolve every entry of the given AST expression list into the given
- * rast_expr_list. The alias of an entry is stored in both the dequoted and the
- * legacy form. The text of an entry is stored for a select list only.
+ * Resolve every entry of the given AST expression list, that represents columns
+ * of SELECT, into the given rast_expr_list. The alias of an entry is stored in
+ * both the dequoted and the legacy form. The text of an entry is stored for
+ * a select list only.
  *
  * Returns 0 on success and -1 on error.
  */
 static int
-resolve_expr_list(struct sql_resolve_context *ctx, struct ast_expr_list *ast,
-		  struct rast_expr_list *res)
+resolve_column_list(struct sql_resolve_context *ctx, struct ast_expr_list *ast,
+		    struct rast_expr_list *res)
 {
 	res->exprs = xregion_alloc_array(ctx->region, typeof(*res->exprs),
 					 ast->len);
@@ -1959,6 +1997,8 @@ resolve_expr_list(struct sql_resolve_context *ctx, struct ast_expr_list *ast,
 			return 0;
 		expr->autoinc = entry->autoinc;
 		expr->order = entry->order;
+		expr->span = entry->expr->str;
+		expr->span_len = entry->expr->len;
 		if (entry->name.n > 0) {
 			expr->name = sql_region_name(ctx->region, entry->name.z,
 						     entry->name.n);
@@ -1967,10 +2007,6 @@ resolve_expr_list(struct sql_resolve_context *ctx, struct ast_expr_list *ast,
 			expr->legacy_name = sql_legacy_name_temp(ctx->region,
 								 entry->name.z,
 								 entry->name.n);
-		}
-		if (ast->is_select_list) {
-			expr->span = entry->expr->str;
-			expr->span_len = entry->expr->len;
 		}
 	}
 	return 0;
@@ -2010,7 +2046,7 @@ resolve_select(struct sql_resolve_context *ctx, struct ast_select *ast,
 	ctx->can_resolve = can_resolve(ast);
 	if (!ctx->can_resolve)
 		return 0;
-	if (resolve_expr_list(ctx, ast->columns, &res->columns) != 0)
+	if (resolve_column_list(ctx, ast->columns, &res->columns) != 0)
 		return -1;
 	res->flags = ast->flags;
 	return 0;

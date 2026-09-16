@@ -33,6 +33,10 @@ struct rast_expr {
 			struct rast_expr *expr;
 			enum field_type type;
 		} cast;
+		struct {
+			struct rast_expr *exprs;
+			uint32_t len;
+		} list;
 	};
 	/**
 	 * Height of the tree headed by this node. Checked against
