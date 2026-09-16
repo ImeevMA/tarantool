@@ -3583,22 +3583,6 @@ expr_varbinary(struct rast_expr *expr)
 }
 
 static struct Expr *
-expr_variable(struct Parse *parser, struct rast_expr *expr)
-{
-	struct Expr *res = sql_expr_new_leaf(expr->op, FIELD_TYPE_BOOLEAN,
-					     expr->n + 1);
-	res->u.zToken = (char *)&res[1];
-	memcpy(res->u.zToken, expr->s, expr->n);
-	res->u.zToken[expr->n] = '\0';
-	sqlExprAssignVarNumber(parser, res, expr->n);
-	if (parser->is_aborted) {
-		sql_expr_delete(res);
-		return NULL;
-	}
-	return res;
-}
-
-static struct Expr *
 expr_binary(struct Parse *parser, struct rast_expr *expr)
 {
 	struct Expr *left = expr_from_rast(parser, expr->left);
@@ -3656,11 +3640,6 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 	case TK_UNKNOWN:
 		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_BOOLEAN, 0);
 		res->v.b = expr->b;
-		break;
-	case TK_VAR_ANON:
-	case TK_VAR_NUM:
-	case TK_VAR_NAME:
-		res = expr_variable(parser, expr);
 		break;
 	case TK_AND:
 	case TK_OR:

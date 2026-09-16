@@ -1709,25 +1709,6 @@ resolve_expr_decimal(struct region *region, const struct ast_expr *ast,
 }
 
 static int
-resolve_expr_variable(const struct ast_expr *ast, struct rast_expr *res)
-{
-	/*
-	 * The check exists only for the `:` case, because the other
-	 * variants (`@`, `#`, `?`, `$`)  are checked during tokenization.
-	 */
-	if (ast->str[0] == ':' && (IdChar(ast->str[1]) == 0)) {
-		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-			 tt_sprintf("Wrong bind variable name '%.*s'", ast->len,
-				    ast->str));
-		return -1;
-	}
-	res->op = ast->op;
-	res->s = ast->str;
-	res->n = ast->len;
-	return 0;
-}
-
-static int
 resolve_expr_binary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		    struct rast_expr *res)
 {
@@ -1793,12 +1774,6 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	case TK_UNKNOWN:
 		res->op = ast->op;
 		res->b = false;
-		break;
-	case TK_VAR_ANON:
-	case TK_VAR_NAME:
-	case TK_VAR_NUM:
-		if (resolve_expr_variable(ast, res) != 0)
-			return -1;
 		break;
 	case TK_PARENTHESES:
 		while (ast->op == TK_PARENTHESES)
