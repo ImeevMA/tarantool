@@ -60,6 +60,23 @@
 #include "box/session_settings.h"
 #include "box/tuple_constraint_def.h"
 
+/**
+ * Create a SELECT statement from the given resolved SELECT. A statement that
+ * is not resolved is built from the AST.
+ *
+ * Returns NULL on error.
+ */
+static struct Select *
+select_from_rast(struct rast_select *select);
+
+/**
+ * Create an expression from the given resolved expression.
+ *
+ * Returns NULL if the expression is NULL.
+ */
+static struct Expr *
+expr_from_rast(struct rast_expr *expr);
+
 void
 sql_finish_coding(struct Parse *parse_context)
 {
@@ -3551,14 +3568,6 @@ sql_emit_show_create_table_all(struct Parse *parse)
 	sqlVdbeJumpHere(v, addr1);
 }
 
-/**
- * Create an expression from the given resolved expression.
- *
- * Returns NULL if the expression is NULL.
- */
-static struct Expr *
-expr_from_rast(struct rast_expr *expr);
-
 /** Create an expression of a string literal from a resolved expression. */
 static struct Expr *
 expr_string(struct rast_expr *expr)
@@ -3670,14 +3679,18 @@ expr_in(struct rast_expr *expr)
 	res->iAgg = -1;
 	sqlExprAttachSubtrees(res, expr_from_rast(expr->in.expr), NULL);
 
-	struct ExprList *res_list = NULL;
-	for (uint32_t i = 0; i < expr->in.len; ++i) {
-		struct Expr *res_expr = expr_from_rast(&expr->in.list[i]);
-		res_list = sql_expr_list_append(res_list, res_expr);
+	if (expr->in.select != NULL) {
+		res->x.pSelect = select_from_rast(expr->in.select);
+		ExprSetProperty(res, EP_xIsSelect | EP_Subquery);
+	} else {
+		struct ExprList *res_list = NULL;
+		for (uint32_t i = 0; i < expr->in.len; ++i) {
+			struct Expr *res_expr = expr_from_rast(&expr->in.list[i]);
+			res_list = sql_expr_list_append(res_list, res_expr);
+		}
+		res->x.pList = res_list;
+		res->flags |= EP_Propagate & sqlExprListFlags(res->x.pList);
 	}
-
-	res->x.pList = res_list;
-	res->flags |= EP_Propagate & sqlExprListFlags(res->x.pList);
 	res->nHeight = expr->height;
 	return res;
 }
@@ -3764,6 +3777,13 @@ expr_from_rast(struct rast_expr *expr)
 	case TK_IN:
 		res = expr_in(expr);
 		break;
+	case TK_EXISTS:
+	case TK_SELECT:
+		res = sql_expr_new_anon(expr->op);
+		res->x.pSelect = select_from_rast(expr->select);
+		res->nHeight = expr->height;
+		ExprSetProperty(res, EP_xIsSelect | EP_Subquery);
+		break;
 	default:
 		unreachable();
 	}
@@ -3800,14 +3820,8 @@ expr_list_from_rast(struct rast_expr_list *list)
 	return res;
 }
 
-/**
- * Create a SELECT statement from the given resolved SELECT. A statement that
- * is not resolved is built from the AST.
- *
- * Returns NULL on error.
- */
 static struct Select *
-select_from_rast(struct Parse *parser, struct rast_select *select)
+select_from_rast(struct rast_select *select)
 {
 	struct ExprList *columns = expr_list_from_rast(&select->columns);
 	struct Select *res = sqlSelectNew(columns, NULL, NULL, NULL, NULL, NULL,
@@ -3823,7 +3837,7 @@ sql_emit_bytecode(struct Parse *parser, struct sql_rast *rast, const char *sql)
 
 	switch (rast->type) {
 	case SQL_AST_SELECT: {
-		struct Select *res = select_from_rast(parser, &rast->select);
+		struct Select *res = select_from_rast(&rast->select);
 		if (parser->is_aborted) {
 			sql_select_delete(res);
 			return;

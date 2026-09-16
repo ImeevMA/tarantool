@@ -21,6 +21,7 @@ struct rast_expr {
 		decimal_t d;
 		bool b;
 		struct rast_expr *expr;
+		struct rast_select *select;
 		struct {
 			struct rast_expr *left;
 			struct rast_expr *right;
@@ -44,6 +45,7 @@ struct rast_expr {
 		} between;
 		struct {
 			struct rast_expr *expr;
+			struct rast_select *select;
 			struct rast_expr *list;
 			uint32_t len;
 		} in;
@@ -99,6 +101,8 @@ struct rast_select {
 	/** Resolved list of columns. */
 	struct rast_expr_list columns;
 	uint32_t flags;
+	/** Height of the tallest expression among the columns above. */
+	int height;
 };
 
 /** Statement resolved into the form the build stage consumes. */

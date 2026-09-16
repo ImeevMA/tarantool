@@ -57,6 +57,16 @@ static int
 resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	     struct rast_expr *res);
 
+/**
+ * Resolve the given AST SELECT statement into the given rast_select. A
+ * statement that cannot be resolved yet keeps rast_select::is_resolved false
+ * and its columns remain in the AST.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_select(struct sql_resolve_context *ctx, struct ast_select *ast,
+	       struct rast_select *res);
 
 /*
  * Walk the expression tree pExpr and increase the aggregate function
@@ -1953,8 +1963,26 @@ resolve_expr_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		struct rast_expr *res)
 {
 	if (ast->right->op == TK_SELECT) {
-		ctx->can_resolve = false;
-		return 0;
+		res->op = TK_IN;
+
+		res->in.expr = xregion_alloc_object(ctx->region,
+						    struct rast_expr);
+		if (resolve_expr(ctx, ast->left, res->in.expr) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+
+		res->in.select = xregion_alloc_object(ctx->region,
+						      struct rast_select);
+		if (resolve_select(ctx, ast->right->select,
+				   res->in.select) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+
+		res->height = MAX(res->in.expr->height,
+				  res->in.select->height) + 1;
+		return resolve_expr_check_height(res);
 	}
 
 	assert(ast->right->op == TK_VECTOR);
@@ -2010,6 +2038,20 @@ resolve_expr_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 			height = expr->height;
 	}
 	res->height = height + 1;
+	return resolve_expr_check_height(res);
+}
+
+static int
+resolve_expr_select(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+		    struct rast_expr *res)
+{
+	res->op = ast->op;
+	res->select = xregion_alloc_object(ctx->region, typeof(*res->select));
+	if (resolve_select(ctx, ast->select, res->select) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	res->height = res->select->height + 1;
 	return resolve_expr_check_height(res);
 }
 
@@ -2118,11 +2160,27 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		if (resolve_expr_in(ctx, ast, res) != 0)
 			return -1;
 		break;
+	case TK_EXISTS:
+	case TK_SELECT:
+		if (resolve_expr_select(ctx, ast, res) != 0)
+			return -1;
+		break;
 	default:
 		ctx->can_resolve = false;
 		break;
 	}
 	return 0;
+}
+
+static int
+expr_list_height(struct rast_expr_list *list)
+{
+	int height = 0;
+	for (uint32_t i = 0; i < list->len; ++i) {
+		if (list->exprs[i].expr.height > height)
+			height = list->exprs[i].expr.height;
+	}
+	return height;
 }
 
 /**
@@ -2186,13 +2244,6 @@ can_resolve(struct ast_select *ast)
 	       ast->limit == NULL && ast->offset == NULL && ast->with == NULL;
 }
 
-/**
- * Resolve the given AST SELECT statement into the given rast_select. A
- * statement that cannot be resolved yet keeps rast_select::is_resolved false
- * and its columns remain in the AST.
- *
- * Returns 0 on success and -1 on error.
- */
 static int
 resolve_select(struct sql_resolve_context *ctx, struct ast_select *ast,
 	       struct rast_select *res)
@@ -2203,7 +2254,10 @@ resolve_select(struct sql_resolve_context *ctx, struct ast_select *ast,
 		return 0;
 	if (resolve_column_list(ctx, ast->columns, &res->columns) != 0)
 		return -1;
+	if (!ctx->can_resolve)
+		return 0;
 	res->flags = ast->flags;
+	res->height = expr_list_height(&res->columns);
 	return 0;
 }
 
