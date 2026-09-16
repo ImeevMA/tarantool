@@ -3719,6 +3719,7 @@ expr_from_rast(struct rast_expr *expr)
 		res = expr_list(expr, FIELD_TYPE_MAP);
 		break;
 	case TK_VECTOR:
+	case TK_GETITEM:
 		res = expr_list(expr, FIELD_TYPE_ANY);
 		break;
 	default:

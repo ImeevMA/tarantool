@@ -1849,9 +1849,9 @@ resolve_expr_list(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		return 0;
 	}
 
-	res->list.exprs = xregion_alloc_array(ctx->region, struct rast_expr,
-					      ast->list->len);
 	res->list.len = ast->list->len;
+	res->list.exprs = xregion_alloc_array(ctx->region, struct rast_expr,
+					      res->list.len);
 	memset(res->list.exprs, 0, sizeof(*res->list.exprs) * res->list.len);
 
 	int height = 0;
@@ -1867,6 +1867,40 @@ resolve_expr_list(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 			height = expr->height;
 	}
 	res->height = height + 1;
+	return resolve_expr_check_height(res);
+}
+
+static int
+resolve_expr_getitem(struct sql_resolve_context *ctx,
+		     const struct ast_expr *ast, struct rast_expr *res)
+{
+	assert(ast->left != NULL);
+	res->op = ast->op;
+	res->list.len = ast->list->len + 1;
+	res->list.exprs = xregion_alloc_array(ctx->region, struct rast_expr,
+					      res->list.len);
+	memset(res->list.exprs, 0, sizeof(*res->list.exprs) * res->list.len);
+
+	int height = 0;
+	int i = 0;
+	if (ast->list != NULL && ast->list->len > 0) {
+		struct ast_expr_list_entry *entry = NULL;
+		stailq_foreach_entry(entry, &ast->list->head, link) {
+			struct rast_expr *expr = &res->list.exprs[i++];
+			if (resolve_expr(ctx, entry->expr, expr) != 0)
+				return -1;
+			if (!ctx->can_resolve)
+				return 0;
+			if (height < expr->height)
+				height = expr->height;
+		}
+	}
+
+	if (resolve_expr(ctx, ast->left, &res->list.exprs[i]) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	res->height = MAX(height, res->list.exprs[i].height) + 1;
 	return resolve_expr_check_height(res);
 }
 
@@ -1961,6 +1995,10 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	case TK_MAP:
 	case TK_VECTOR:
 		if (resolve_expr_list(ctx, ast, res) != 0)
+			return -1;
+		break;
+	case TK_GETITEM:
+		if (resolve_expr_getitem(ctx, ast, res) != 0)
 			return -1;
 		break;
 	default:
