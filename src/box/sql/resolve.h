@@ -24,6 +24,10 @@ struct rast_expr {
 			struct rast_expr *left;
 			struct rast_expr *right;
 		};
+		struct {
+			struct rast_expr *expr;
+			uint32_t id;
+		} coll;
 	};
 	/**
 	 * Operation of the expression. The same as ast_expr::op and defines

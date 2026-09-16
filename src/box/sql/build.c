@@ -3618,6 +3618,15 @@ expr_binary(struct Parse *parser, struct rast_expr *expr)
 }
 
 static struct Expr *
+expr_collate(struct Parse *parser, struct rast_expr *expr)
+{
+	struct Expr *left = expr_from_rast(parser, expr->coll.expr);
+	if (parser->is_aborted)
+		return NULL;
+	return sql_expr_new_collate(left, expr->coll.id);
+}
+
+static struct Expr *
 expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 {
 	if (expr == NULL)
@@ -3673,6 +3682,9 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 	case TK_CONCAT:
 	case TK_DOT:
 		res = expr_binary(parser, expr);
+		break;
+	case TK_COLLATE:
+		res = expr_collate(parser, expr);
 		break;
 	default:
 		unreachable();

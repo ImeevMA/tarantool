@@ -1746,6 +1746,19 @@ resolve_expr_binary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 }
 
 static int
+resolve_expr_collate(struct sql_resolve_context *ctx,
+		     const struct ast_expr *ast, struct rast_expr *res)
+{
+	if (sql_coll_id(&res->coll.id, ast->right->str, ast->right->len) != 0)
+		return -1;
+	res->op = TK_COLLATE;
+	assert(ast->left != NULL);
+	res->coll.expr = xregion_alloc_object(ctx->region,
+					      typeof(*res->coll.expr));
+	return resolve_expr(ctx, ast->left, res->coll.expr);
+}
+
+static int
 resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	     struct rast_expr *res)
 {
@@ -1813,6 +1826,10 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	case TK_CONCAT:
 	case TK_DOT:
 		if (resolve_expr_binary(ctx, ast, res) != 0)
+			return -1;
+		break;
+	case TK_COLLATE:
+		if (resolve_expr_collate(ctx, ast, res) != 0)
 			return -1;
 		break;
 	default:
