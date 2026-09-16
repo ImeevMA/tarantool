@@ -42,6 +42,11 @@
 #include "box/schema.h"
 #include "box/coll_id_cache.h"
 
+struct sql_resolve_context {
+	struct region *region;
+	bool can_resolve;
+};
+
 /**
  * Resolve the given AST expression into the given rast_expr. An operation that
  * has no resolved form yet is stored as is in rast_expr::ast.
@@ -49,7 +54,7 @@
  * Returns 0 on success and -1 on error.
  */
 static int
-resolve_expr(struct region *region, const struct ast_expr *ast,
+resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	     struct rast_expr *res);
 
 
@@ -1723,36 +1728,40 @@ resolve_expr_variable(const struct ast_expr *ast, struct rast_expr *res)
 }
 
 static int
-resolve_expr_binary(struct region *region, const struct ast_expr *ast,
+resolve_expr_binary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		    struct rast_expr *res)
 {
 	res->op = ast->op;
 	if (ast->left != NULL) {
-		res->left = xregion_alloc_object(region, typeof(*res->left));
-		if (resolve_expr(region, ast->left, res->left) != 0)
+		res->left = xregion_alloc_object(ctx->region, typeof(*res->left));
+		if (resolve_expr(ctx, ast->left, res->left) != 0)
 			return -1;
 	}
 	if (ast->right != NULL) {
-		res->right = xregion_alloc_object(region, typeof(*res->right));
-		if (resolve_expr(region, ast->right, res->right) != 0)
+		res->right = xregion_alloc_object(ctx->region, typeof(*res->right));
+		if (resolve_expr(ctx, ast->right, res->right) != 0)
 			return -1;
 	}
 	return 0;
 }
 
 static int
-resolve_expr(struct region *region, const struct ast_expr *ast, struct rast_expr *res)
+resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+	     struct rast_expr *res)
 {
+	if (!ctx->can_resolve)
+		return 0;
+
 	memset(res, 0, sizeof(*res));
 	switch (ast->op) {
 	case TK_STRING:
-		resolve_expr_string(region, ast, res);
+		resolve_expr_string(ctx->region, ast, res);
 		break;
 	case TK_BLOB:
-		resolve_expr_varbinary(region, ast, res);
+		resolve_expr_varbinary(ctx->region, ast, res);
 		break;
 	case TK_INTEGER:
-		if (resolve_expr_integer(region, ast, res) != 0)
+		if (resolve_expr_integer(ctx->region, ast, res) != 0)
 			return -1;
 		break;
 	case TK_FLOAT:
@@ -1760,7 +1769,7 @@ resolve_expr(struct region *region, const struct ast_expr *ast, struct rast_expr
 		sqlAtoF(ast->str, &res->f, ast->len);
 		break;
 	case TK_DECIMAL:
-		if (resolve_expr_decimal(region, ast, res) != 0)
+		if (resolve_expr_decimal(ctx->region, ast, res) != 0)
 			return -1;
 		break;
 	case TK_TRUE:
@@ -1781,7 +1790,7 @@ resolve_expr(struct region *region, const struct ast_expr *ast, struct rast_expr
 	case TK_PARENTHESES:
 		while (ast->op == TK_PARENTHESES)
 			ast = ast->left;
-		if (resolve_expr(region, ast, res) != 0)
+		if (resolve_expr(ctx, ast, res) != 0)
 			return -1;
 		break;
 	case TK_AND:
@@ -1803,12 +1812,11 @@ resolve_expr(struct region *region, const struct ast_expr *ast, struct rast_expr
 	case TK_REM:
 	case TK_CONCAT:
 	case TK_DOT:
-		if (resolve_expr_binary(region, ast, res) != 0)
+		if (resolve_expr_binary(ctx, ast, res) != 0)
 			return -1;
 		break;
 	default:
-		res->op = ast->op;
-		res->ast = ast;
+		ctx->can_resolve = false;
 		break;
 	}
 	return 0;
@@ -1822,10 +1830,11 @@ resolve_expr(struct region *region, const struct ast_expr *ast, struct rast_expr
  * Returns 0 on success and -1 on error.
  */
 static int
-resolve_expr_list(struct region *region, struct ast_expr_list *ast,
+resolve_expr_list(struct sql_resolve_context *ctx, struct ast_expr_list *ast,
 		  struct rast_expr_list *res)
 {
-	res->exprs = xregion_alloc_array(region, typeof(*res->exprs), ast->len);
+	res->exprs = xregion_alloc_array(ctx->region, typeof(*res->exprs),
+					 ast->len);
 	res->len = ast->len;
 	memset(res->exprs, 0, sizeof(*res->exprs) * res->len);
 
@@ -1833,16 +1842,18 @@ resolve_expr_list(struct region *region, struct ast_expr_list *ast,
 	struct ast_expr_list_entry *entry = NULL;
 	stailq_foreach_entry(entry, &ast->head, link) {
 		struct rast_expr_list_entry *expr = &res->exprs[i++];
-		if (resolve_expr(region, entry->expr, &expr->expr) != 0)
+		if (resolve_expr(ctx, entry->expr, &expr->expr) != 0)
 			return -1;
+		if (!ctx->can_resolve)
+			return 0;
 		expr->autoinc = entry->autoinc;
 		expr->order = entry->order;
 		if (entry->name.n > 0) {
-			expr->name = sql_region_name(region, entry->name.z,
+			expr->name = sql_region_name(ctx->region, entry->name.z,
 						     entry->name.n);
 			if (expr->name == NULL)
 				return -1;
-			expr->legacy_name = sql_legacy_name_temp(region,
+			expr->legacy_name = sql_legacy_name_temp(ctx->region,
 								 entry->name.z,
 								 entry->name.n);
 		}
@@ -1881,39 +1892,42 @@ can_resolve(struct ast_select *ast)
  * Returns 0 on success and -1 on error.
  */
 static int
-resolve_select(struct region *region, struct ast_select *ast,
+resolve_select(struct sql_resolve_context *ctx, struct ast_select *ast,
 	       struct rast_select *res)
 {
 	memset(res, 0, sizeof(*res));
-	res->ast = ast;
-	res->is_resolved = can_resolve(ast);
-	if (!res->is_resolved)
+	ctx->can_resolve = can_resolve(ast);
+	if (!ctx->can_resolve)
 		return 0;
-	if (resolve_expr_list(region, ast->columns, &res->columns) != 0)
+	if (resolve_expr_list(ctx, ast->columns, &res->columns) != 0)
 		return -1;
+	res->flags = ast->flags;
 	return 0;
 }
 
 struct sql_rast *
 sql_resolve_ast(struct Parse *parser, struct sql_ast *ast)
 {
-	struct region *region = &parser->region;
-	struct sql_rast *rast = xregion_alloc_object(region, typeof(*rast));
+	struct sql_resolve_context ctx;
+	memset(&ctx, 0, sizeof(ctx));
+	ctx.region = &parser->region;
+	struct sql_rast *rast = xregion_alloc_object(ctx.region, typeof(*rast));
 	memset(rast, 0, sizeof(*rast));
 	rast->type = ast->type;
-	rast->ast = ast;
 
 	switch (ast->type) {
 	case SQL_AST_SELECT:
-		if (resolve_select(region, ast->select, &rast->select) != 0) {
-			rast = NULL;
-			break;
+		if (resolve_select(&ctx, ast->select, &rast->select) != 0) {
+			parser->is_aborted = true;
+			return NULL;
 		}
 		break;
 	default:
 		break;
 	}
 
-	parser->is_aborted = rast == NULL;
+	rast->is_resolved = ctx.can_resolve;
+	if (!rast->is_resolved)
+		rast->ast = ast;
 	return rast;
 }

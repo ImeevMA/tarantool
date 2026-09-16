@@ -10,8 +10,6 @@
 /** Expression resolved into the form the build stage consumes. */
 struct rast_expr {
 	union {
-		/** AST of an expression that is not resolved yet. */
-		const struct ast_expr *ast;
 		struct {
 			/** Dequoted string value. */
 			const char *s;
@@ -69,16 +67,9 @@ struct rast_expr_list {
 
 /** Resolved SELECT statement. */
 struct rast_select {
-	/** AST of the statement. */
-	struct ast_select *ast;
-	/**
-	 * Whether the statement is resolved, that is, whether the fields
-	 * below are filled in.
-	 */
-	bool is_resolved;
-
 	/** Resolved list of columns. */
 	struct rast_expr_list columns;
+	uint32_t flags;
 };
 
 /** Statement resolved into the form the build stage consumes. */
@@ -91,6 +82,7 @@ struct sql_rast {
 		/** Resolved SELECT statement. */
 		struct rast_select select;
 	};
+	bool is_resolved;
 };
 
 struct sql_rast *

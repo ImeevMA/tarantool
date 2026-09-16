@@ -3675,8 +3675,7 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 		res = expr_binary(parser, expr);
 		break;
 	default:
-		res = expr_from_ast(parser, (struct ast_expr *)expr->ast);
-		break;
+		unreachable();
 	}
 	return res;
 }
@@ -3727,22 +3726,22 @@ expr_list_from_rast(struct Parse *parser, struct rast_expr_list *list)
 static struct Select *
 select_from_rast(struct Parse *parser, struct rast_select *select)
 {
-	if (!select->is_resolved)
-		return select_from_ast(parser, select->ast);
-
 	struct ExprList *columns = expr_list_from_rast(parser,
 						       &select->columns);
 	if (parser->is_aborted)
 		return NULL;
 
 	struct Select *res = sqlSelectNew(columns, NULL, NULL, NULL, NULL, NULL,
-					  select->ast->flags, NULL, NULL);
+					  select->flags, NULL, NULL);
 	return res;
 }
 
 void
 sql_emit_bytecode(struct Parse *parser, struct sql_rast *rast, const char *sql)
 {
+	if (!rast->is_resolved)
+		return sql_code_ast(parser, rast->ast, sql);
+
 	switch (rast->type) {
 	case SQL_AST_SELECT: {
 		struct Select *res = select_from_rast(parser, &rast->select);
@@ -3759,7 +3758,6 @@ sql_emit_bytecode(struct Parse *parser, struct sql_rast *rast, const char *sql)
 		break;
 	}
 	default:
-		sql_code_ast(parser, rast->ast, sql);
-		break;
+		unreachable();
 	}
 }
