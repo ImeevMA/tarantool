@@ -1949,6 +1949,71 @@ resolve_expr_between(struct sql_resolve_context *ctx,
 }
 
 static int
+resolve_expr_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+		struct rast_expr *res)
+{
+	if (ast->right->op == TK_SELECT) {
+		ctx->can_resolve = false;
+		return 0;
+	}
+
+	assert(ast->right->op == TK_VECTOR);
+	if (ast->right->list == NULL || ast->right->list->len == 0) {
+		res->op = TK_FALSE;
+		res->b = false;
+		res->height = 1;
+		return 0;
+	}
+
+	if (ast->right->list->len == 1) {
+		res->op = TK_EQ;
+
+		res->left = xregion_alloc_object(ctx->region, struct rast_expr);
+		if (resolve_expr(ctx, ast->left, res->left) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+
+		struct ast_expr_list_entry *entry =
+			stailq_first_entry(&ast->right->list->head,
+					   typeof(*entry), link);
+		res->right = xregion_alloc_object(ctx->region,
+						  struct rast_expr);
+		if (resolve_expr(ctx, entry->expr, res->right) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+		res->height = MAX(res->left->height, res->right->height) + 1;
+		return resolve_expr_check_height(res);
+	}
+
+	res->op = TK_IN;
+	res->in.expr = xregion_alloc_object(ctx->region, struct rast_expr);
+	if (resolve_expr(ctx, ast->left, res->in.expr) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+
+	res->in.len = ast->right->list->len;
+	res->in.list = xregion_alloc_array(ctx->region, struct rast_expr,
+					   res->in.len);
+	int height = res->in.expr->height;
+	int i = 0;
+	struct ast_expr_list_entry *entry = NULL;
+	stailq_foreach_entry(entry, &ast->right->list->head, link) {
+		struct rast_expr *expr = &res->in.list[i++];
+		if (resolve_expr(ctx, entry->expr, expr) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+		if (height < expr->height)
+			height = expr->height;
+	}
+	res->height = height + 1;
+	return resolve_expr_check_height(res);
+}
+
+static int
 resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	     struct rast_expr *res)
 {
@@ -2047,6 +2112,10 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		break;
 	case TK_BETWEEN:
 		if (resolve_expr_between(ctx, ast, res) != 0)
+			return -1;
+		break;
+	case TK_IN:
+		if (resolve_expr_in(ctx, ast, res) != 0)
 			return -1;
 		break;
 	default:

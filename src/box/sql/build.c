@@ -3662,6 +3662,27 @@ expr_between(struct rast_expr *expr)
 }
 
 static struct Expr *
+expr_in(struct rast_expr *expr)
+{
+	struct Expr *res = sql_xmalloc(sizeof(*res));
+	memset(res, 0, sizeof(*res));
+	res->op = expr->op;
+	res->iAgg = -1;
+	sqlExprAttachSubtrees(res, expr_from_rast(expr->in.expr), NULL);
+
+	struct ExprList *res_list = NULL;
+	for (uint32_t i = 0; i < expr->in.len; ++i) {
+		struct Expr *res_expr = expr_from_rast(&expr->in.list[i]);
+		res_list = sql_expr_list_append(res_list, res_expr);
+	}
+
+	res->x.pList = res_list;
+	res->flags |= EP_Propagate & sqlExprListFlags(res->x.pList);
+	res->nHeight = expr->height;
+	return res;
+}
+
+static struct Expr *
 expr_from_rast(struct rast_expr *expr)
 {
 	if (expr == NULL)
@@ -3739,6 +3760,9 @@ expr_from_rast(struct rast_expr *expr)
 		break;
 	case TK_BETWEEN:
 		res = expr_between(expr);
+		break;
+	case TK_IN:
+		res = expr_in(expr);
 		break;
 	default:
 		unreachable();
