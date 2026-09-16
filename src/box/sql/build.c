@@ -3602,6 +3602,19 @@ expr_collate(struct rast_expr *expr)
 }
 
 static struct Expr *
+expr_cast(struct rast_expr *expr)
+{
+	struct Expr *left = expr_from_rast(expr->cast.expr);
+	struct Expr *res = sql_xmalloc(sizeof(*res));
+	memset(res, 0, sizeof(*res));
+	res->op = expr->op;
+	res->iAgg = -1;
+	res->type = expr->cast.type;
+	sqlExprAttachSubtrees(res, left, NULL);
+	return res;
+}
+
+static struct Expr *
 expr_from_rast(struct rast_expr *expr)
 {
 	if (expr == NULL)
@@ -3655,6 +3668,9 @@ expr_from_rast(struct rast_expr *expr)
 		break;
 	case TK_COLLATE:
 		res = expr_collate(expr);
+		break;
+	case TK_CAST:
+		res = expr_cast(expr);
 		break;
 	default:
 		unreachable();

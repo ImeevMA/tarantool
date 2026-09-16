@@ -1796,15 +1796,32 @@ static int
 resolve_expr_collate(struct sql_resolve_context *ctx,
 		     const struct ast_expr *ast, struct rast_expr *res)
 {
+	assert(ast->left != NULL);
+
 	if (sql_coll_id(&res->coll.id, ast->right->str, ast->right->len) != 0)
 		return -1;
 	res->op = TK_COLLATE;
-	assert(ast->left != NULL);
 	res->coll.expr = xregion_alloc_object(ctx->region,
 					      typeof(*res->coll.expr));
 	if (resolve_expr(ctx, ast->left, res->coll.expr) != 0)
 		return -1;
 	res->height = res->coll.expr->height + 1;
+	return resolve_expr_check_height(res);
+}
+
+static int
+resolve_expr_cast(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+		  struct rast_expr *res)
+{
+	assert(ast->left != NULL);
+
+	res->op = TK_CAST;
+	res->cast.type = ast->type;
+	res->cast.expr = xregion_alloc_object(ctx->region,
+					      typeof(*res->cast.expr));
+	if (resolve_expr(ctx, ast->left, res->cast.expr) != 0)
+		return -1;
+	res->height = res->cast.expr->height + 1;
 	return resolve_expr_check_height(res);
 }
 
@@ -1880,6 +1897,10 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		break;
 	case TK_COLLATE:
 		if (resolve_expr_collate(ctx, ast, res) != 0)
+			return -1;
+		break;
+	case TK_CAST:
+		if (resolve_expr_cast(ctx, ast, res) != 0)
 			return -1;
 		break;
 	default:
