@@ -1712,18 +1712,31 @@ static int
 resolve_expr_binary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		    struct rast_expr *res)
 {
+	assert(ast->left != NULL && ast->right != NULL);
+
 	res->op = ast->op;
-	if (ast->left != NULL) {
-		res->left = xregion_alloc_object(ctx->region, typeof(*res->left));
-		if (resolve_expr(ctx, ast->left, res->left) != 0)
-			return -1;
-	}
-	if (ast->right != NULL) {
-		res->right = xregion_alloc_object(ctx->region, typeof(*res->right));
-		if (resolve_expr(ctx, ast->right, res->right) != 0)
-			return -1;
-	}
+	res->left = xregion_alloc_object(ctx->region, typeof(*res->left));
+	if (resolve_expr(ctx, ast->left, res->left) != 0)
+		return -1;
+	res->right = xregion_alloc_object(ctx->region, typeof(*res->right));
+	if (resolve_expr(ctx, ast->right, res->right) != 0)
+		return -1;
 	return 0;
+}
+
+static int
+resolve_expr_and(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+		 struct rast_expr *res)
+{
+	assert(ast->left != NULL && ast->right != NULL);
+
+	if (ast->left->op == TK_FALSE)
+		return resolve_expr(ctx, ast->left, res);
+
+	if (ast->right->op == TK_FALSE)
+		return resolve_expr(ctx, ast->right, res);
+
+	return resolve_expr_binary(ctx, ast, res);
 }
 
 static int
@@ -1782,6 +1795,9 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 			return -1;
 		break;
 	case TK_AND:
+		if (resolve_expr_and(ctx, ast, res) != 0)
+			return -1;
+		break;
 	case TK_OR:
 	case TK_LT:
 	case TK_LE:
