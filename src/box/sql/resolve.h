@@ -20,6 +20,7 @@ struct rast_expr {
 		double f;
 		decimal_t d;
 		bool b;
+		struct rast_expr *expr;
 		struct {
 			struct rast_expr *left;
 			struct rast_expr *right;

@@ -3615,6 +3615,18 @@ expr_cast(struct rast_expr *expr)
 }
 
 static struct Expr *
+expr_unary(struct rast_expr *expr)
+{
+	struct Expr *left = expr_from_rast(expr->expr);
+	struct Expr *res = sql_xmalloc(sizeof(*res));
+	memset(res, 0, sizeof(*res));
+	res->op = expr->op;
+	res->iAgg = -1;
+	sqlExprAttachSubtrees(res, left, NULL);
+	return res;
+}
+
+static struct Expr *
 expr_from_rast(struct rast_expr *expr)
 {
 	if (expr == NULL)
@@ -3671,6 +3683,14 @@ expr_from_rast(struct rast_expr *expr)
 		break;
 	case TK_CAST:
 		res = expr_cast(expr);
+		break;
+	case TK_NOT:
+	case TK_BITNOT:
+	case TK_UMINUS:
+	case TK_UPLUS:
+	case TK_NOTNULL:
+	case TK_ISNULL:
+		res = expr_unary(expr);
 		break;
 	default:
 		unreachable();

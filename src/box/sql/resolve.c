@@ -1826,6 +1826,20 @@ resolve_expr_cast(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 }
 
 static int
+resolve_expr_unary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+		   struct rast_expr *res)
+{
+	assert(ast->left != NULL);
+
+	res->op = ast->op;
+	res->expr = xregion_alloc_object(ctx->region, typeof(*res->cast.expr));
+	if (resolve_expr(ctx, ast->left, res->expr) != 0)
+		return -1;
+	res->height = res->expr->height + 1;
+	return resolve_expr_check_height(res);
+}
+
+static int
 resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	     struct rast_expr *res)
 {
@@ -1901,6 +1915,15 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		break;
 	case TK_CAST:
 		if (resolve_expr_cast(ctx, ast, res) != 0)
+			return -1;
+		break;
+	case TK_NOT:
+	case TK_BITNOT:
+	case TK_UMINUS:
+	case TK_UPLUS:
+	case TK_NOTNULL:
+	case TK_ISNULL:
+		if (resolve_expr_unary(ctx, ast, res) != 0)
 			return -1;
 		break;
 	default:
