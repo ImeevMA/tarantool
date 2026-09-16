@@ -37,6 +37,11 @@ struct rast_expr {
 			struct rast_expr *exprs;
 			uint32_t len;
 		} list;
+		struct {
+			struct rast_expr *expr;
+			struct rast_expr *first;
+			struct rast_expr *last;
+		} between;
 	};
 	/**
 	 * Height of the tree headed by this node. Checked against

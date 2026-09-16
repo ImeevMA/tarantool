@@ -3604,25 +3604,23 @@ expr_collate(struct rast_expr *expr)
 static struct Expr *
 expr_cast(struct rast_expr *expr)
 {
-	struct Expr *left = expr_from_rast(expr->cast.expr);
 	struct Expr *res = sql_xmalloc(sizeof(*res));
 	memset(res, 0, sizeof(*res));
 	res->op = expr->op;
 	res->iAgg = -1;
 	res->type = expr->cast.type;
-	sqlExprAttachSubtrees(res, left, NULL);
+	sqlExprAttachSubtrees(res, expr_from_rast(expr->cast.expr), NULL);
 	return res;
 }
 
 static struct Expr *
 expr_unary(struct rast_expr *expr)
 {
-	struct Expr *left = expr_from_rast(expr->expr);
 	struct Expr *res = sql_xmalloc(sizeof(*res));
 	memset(res, 0, sizeof(*res));
 	res->op = expr->op;
 	res->iAgg = -1;
-	sqlExprAttachSubtrees(res, left, NULL);
+	sqlExprAttachSubtrees(res, expr_from_rast(expr->expr), NULL);
 	return res;
 }
 
@@ -3643,6 +3641,23 @@ expr_list(struct rast_expr *expr, enum field_type type)
 	res->type = type;
 	res->flags |= EP_Propagate & sqlExprListFlags(res->x.pList);
 	res->nHeight = height + 1;
+	return res;
+}
+
+static struct Expr *
+expr_between(struct rast_expr *expr)
+{
+	struct Expr *res = sql_xmalloc(sizeof(*res));
+	memset(res, 0, sizeof(*res));
+	res->op = expr->op;
+	res->iAgg = -1;
+	sqlExprAttachSubtrees(res, expr_from_rast(expr->between.expr), NULL);
+	struct Expr *first = expr_from_rast(expr->between.first);
+	res->x.pList = sql_expr_list_append(NULL, first);
+	struct Expr *last = expr_from_rast(expr->between.last);
+	res->x.pList = sql_expr_list_append(res->x.pList, last);
+	res->flags |= EP_Propagate & sqlExprListFlags(res->x.pList);
+	res->nHeight = expr->height;
 	return res;
 }
 
@@ -3721,6 +3736,9 @@ expr_from_rast(struct rast_expr *expr)
 	case TK_VECTOR:
 	case TK_GETITEM:
 		res = expr_list(expr, FIELD_TYPE_ANY);
+		break;
+	case TK_BETWEEN:
+		res = expr_between(expr);
 		break;
 	default:
 		unreachable();

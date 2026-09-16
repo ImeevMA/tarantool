@@ -1905,6 +1905,50 @@ resolve_expr_getitem(struct sql_resolve_context *ctx,
 }
 
 static int
+resolve_expr_between(struct sql_resolve_context *ctx,
+		     const struct ast_expr *ast, struct rast_expr *res)
+{
+	assert(ast->left != NULL);
+	assert(ast->list != NULL && ast->list->len == 2);
+
+	res->op = ast->op;
+
+	const struct ast_expr *expr = ast->left;
+	res->between.expr = xregion_alloc_object(ctx->region,
+						  struct rast_expr);
+	if (resolve_expr(ctx, expr, res->between.expr) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	int height = res->between.expr->height;
+
+	expr = stailq_first_entry(&ast->list->head, struct ast_expr_list_entry,
+				  link)->expr;
+	res->between.first = xregion_alloc_object(ctx->region,
+						  struct rast_expr);
+	if (resolve_expr(ctx, expr, res->between.first) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	if (height < res->between.first->height)
+		height = res->between.first->height;
+
+	expr = stailq_last_entry(&ast->list->head, struct ast_expr_list_entry,
+				 link)->expr;
+	res->between.last = xregion_alloc_object(ctx->region,
+						  struct rast_expr);
+	if (resolve_expr(ctx, expr, res->between.last) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	if (height < res->between.last->height)
+		height = res->between.last->height;
+
+	res->height = height + 1;
+	return resolve_expr_check_height(res);
+}
+
+static int
 resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	     struct rast_expr *res)
 {
@@ -1999,6 +2043,10 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		break;
 	case TK_GETITEM:
 		if (resolve_expr_getitem(ctx, ast, res) != 0)
+			return -1;
+		break;
+	case TK_BETWEEN:
+		if (resolve_expr_between(ctx, ast, res) != 0)
 			return -1;
 		break;
 	default:
