@@ -1750,6 +1750,21 @@ resolve_expr_binary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	return resolve_expr_check_height(res);
 }
 
+static bool
+ast_is_false(const struct ast_expr *ast)
+{
+	while (ast->op == TK_PARENTHESES)
+		ast = ast->left;
+	if (ast->op == TK_FALSE)
+		return true;
+	if (ast->op == TK_AND)
+		return ast_is_false(ast->left) || ast_is_false(ast->right);
+	if (ast->op == TK_IN && ast->right->op == TK_VECTOR &&
+	    (ast->right->list == NULL || ast->right->list->len == 0))
+		return true;
+	return false;
+}
+
 /*
  * TODO: Do not extend this short-circuit to skip resolving the other operand
  * without first checking whether this AND could end up as an ON-clause
@@ -1767,11 +1782,12 @@ resolve_expr_and(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 {
 	assert(ast->left != NULL && ast->right != NULL);
 
-	if (ast->left->op == TK_FALSE)
-		return resolve_expr(ctx, ast->left, res);
-
-	if (ast->right->op == TK_FALSE)
-		return resolve_expr(ctx, ast->right, res);
+	if (ast_is_false(ast->left) || ast_is_false(ast->right)) {
+		res->op = TK_FALSE;
+		res->b = false;
+		res->height = 1;
+		return 0;
+	}
 
 	return resolve_expr_binary(ctx, ast, res);
 }

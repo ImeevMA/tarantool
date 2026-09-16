@@ -3552,13 +3552,12 @@ sql_emit_show_create_table_all(struct Parse *parse)
 }
 
 /**
- * Create an expression from the given resolved expression. A resolved
- * operation is built from its resolved form, the rest is built from the AST.
+ * Create an expression from the given resolved expression.
  *
- * Returns NULL if the expression is NULL or on error.
+ * Returns NULL if the expression is NULL.
  */
 static struct Expr *
-expr_from_rast(struct Parse *parser, struct rast_expr *expr);
+expr_from_rast(struct rast_expr *expr);
 
 /** Create an expression of a string literal from a resolved expression. */
 static struct Expr *
@@ -3583,35 +3582,27 @@ expr_varbinary(struct rast_expr *expr)
 }
 
 static struct Expr *
-expr_binary(struct Parse *parser, struct rast_expr *expr)
+expr_binary(struct rast_expr *expr)
 {
-	struct Expr *left = expr_from_rast(parser, expr->left);
-	if (parser->is_aborted)
-		return NULL;
-	struct Expr *right = expr_from_rast(parser, expr->right);
-	if (parser->is_aborted) {
-		sql_expr_delete(left);
-		return NULL;
-	}
-	struct Expr *res = sqlPExpr(parser, expr->op, left, right);
-	if (parser->is_aborted) {
-		sql_expr_delete(res);
-		return NULL;
-	}
+	struct Expr *left = expr_from_rast(expr->left);
+	struct Expr *right = expr_from_rast(expr->right);
+	struct Expr *res = sql_xmalloc(sizeof(*res));
+	memset(res, 0, sizeof(*res));
+	res->op = expr->op;
+	res->iAgg = -1;
+	sqlExprAttachSubtrees(res, left, right);
 	return res;
 }
 
 static struct Expr *
-expr_collate(struct Parse *parser, struct rast_expr *expr)
+expr_collate(struct rast_expr *expr)
 {
-	struct Expr *left = expr_from_rast(parser, expr->coll.expr);
-	if (parser->is_aborted)
-		return NULL;
+	struct Expr *left = expr_from_rast(expr->coll.expr);
 	return sql_expr_new_collate(left, expr->coll.id);
 }
 
 static struct Expr *
-expr_from_rast(struct Parse *parser, struct rast_expr *expr)
+expr_from_rast(struct rast_expr *expr)
 {
 	if (expr == NULL)
 		return NULL;
@@ -3660,10 +3651,10 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 	case TK_REM:
 	case TK_CONCAT:
 	case TK_DOT:
-		res = expr_binary(parser, expr);
+		res = expr_binary(expr);
 		break;
 	case TK_COLLATE:
-		res = expr_collate(parser, expr);
+		res = expr_collate(expr);
 		break;
 	default:
 		unreachable();
@@ -3675,10 +3666,10 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
  * Create an expression list from the given resolved expression list. The
  * names and the sort order of the entries are taken from the resolved list.
  *
- * Returns NULL if the list is empty or on error.
+ * Returns NULL if the list is empty.
  */
 static struct ExprList *
-expr_list_from_rast(struct Parse *parser, struct rast_expr_list *list)
+expr_list_from_rast(struct rast_expr_list *list)
 {
 	if (list->len == 0)
 		return NULL;
@@ -3686,9 +3677,7 @@ expr_list_from_rast(struct Parse *parser, struct rast_expr_list *list)
 	struct ExprList *res = NULL;
 	for (uint32_t i = 0; i < list->len; ++i) {
 		struct rast_expr_list_entry *expr = &list->exprs[i];
-		struct Expr *res_expr = expr_from_rast(parser, &expr->expr);
-		if (res_expr == NULL)
-			break;
+		struct Expr *res_expr = expr_from_rast(&expr->expr);
 		res = sql_expr_list_append(res, res_expr);
 		struct ExprList_item *item = &res->a[res->nExpr - 1];
 		if (expr->name != NULL) {
@@ -3699,11 +3688,6 @@ expr_list_from_rast(struct Parse *parser, struct rast_expr_list *list)
 			sqlExprListSetSpan(res, expr->span, expr->span_len);
 		if (expr->order != SORT_ORDER_ASC)
 			sqlExprListSetSortOrder(res, expr->order);
-	}
-
-	if (parser->is_aborted) {
-		sql_expr_list_delete(res);
-		return NULL;
 	}
 	return res;
 }
@@ -3717,11 +3701,7 @@ expr_list_from_rast(struct Parse *parser, struct rast_expr_list *list)
 static struct Select *
 select_from_rast(struct Parse *parser, struct rast_select *select)
 {
-	struct ExprList *columns = expr_list_from_rast(parser,
-						       &select->columns);
-	if (parser->is_aborted)
-		return NULL;
-
+	struct ExprList *columns = expr_list_from_rast(&select->columns);
 	struct Select *res = sqlSelectNew(columns, NULL, NULL, NULL, NULL, NULL,
 					  select->flags, NULL, NULL);
 	return res;
