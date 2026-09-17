@@ -49,6 +49,15 @@ struct rast_expr {
 			struct rast_expr *list;
 			uint32_t len;
 		} in;
+		struct {
+			/**
+			 * Message of the RAISE, a resolved TK_STRING expression,
+			 * or NULL if there is none, that is, for RAISE(IGNORE).
+			 */
+			struct rast_expr *expr;
+			/** Conflict resolution action of the RAISE. */
+			enum on_conflict_action action;
+		} raise;
 	};
 	/**
 	 * Height of the tree headed by this node. Checked against

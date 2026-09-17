@@ -2042,6 +2042,28 @@ resolve_expr_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 }
 
 static int
+resolve_expr_raise(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+		   struct rast_expr *res)
+{
+	assert(ast->on_conflict_action != ON_CONFLICT_ACTION_NONE);
+	assert((ast->on_conflict_action == ON_CONFLICT_ACTION_IGNORE) ==
+	       (ast->left == NULL));
+
+	res->op = TK_RAISE;
+	res->raise.action = ast->on_conflict_action;
+	if (ast->left == NULL) {
+		/* RAISE(IGNORE) has no message. */
+		res->height = 1;
+		return 0;
+	}
+	res->raise.expr = xregion_alloc_object(ctx->region, struct rast_expr);
+	if (resolve_expr(ctx, ast->left, res->raise.expr) != 0)
+		return -1;
+	res->height = res->raise.expr->height + 1;
+	return resolve_expr_check_height(res);
+}
+
+static int
 resolve_expr_select(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		    struct rast_expr *res)
 {
@@ -2177,6 +2199,10 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		break;
 	case TK_IN:
 		if (resolve_expr_in(ctx, ast, res) != 0)
+			return -1;
+		break;
+	case TK_RAISE:
+		if (resolve_expr_raise(ctx, ast, res) != 0)
 			return -1;
 		break;
 	case TK_EXISTS:

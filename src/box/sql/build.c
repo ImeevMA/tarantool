@@ -3695,6 +3695,32 @@ expr_in(struct rast_expr *expr)
 	return res;
 }
 
+/**
+ * Create an expression of a RAISE from a resolved expression. The message of
+ * the RAISE is stored as a token, because this is how the code generation
+ * expects it, see expr.c. The conflict resolution action shares its storage
+ * with the type of the expression, so it is assigned last.
+ */
+static struct Expr *
+expr_raise(struct rast_expr *expr)
+{
+	assert(expr->raise.action != ON_CONFLICT_ACTION_NONE);
+	struct Expr *res;
+	if (expr->raise.expr == NULL) {
+		/* RAISE(IGNORE) has no message. */
+		res = sql_expr_new_anon(TK_RAISE);
+	} else {
+		assert(expr->raise.expr->op == TK_STRING);
+		uint32_t n = expr->raise.expr->n;
+		res = sql_expr_new_leaf(TK_RAISE, FIELD_TYPE_STRING, n + 1);
+		res->u.zToken = (char *)&res[1];
+		memcpy(res->u.zToken, expr->raise.expr->s, n);
+		res->u.zToken[n] = '\0';
+	}
+	res->on_conflict_action = expr->raise.action;
+	return res;
+}
+
 static struct Expr *
 expr_from_rast(struct rast_expr *expr)
 {
@@ -3779,6 +3805,9 @@ expr_from_rast(struct rast_expr *expr)
 		break;
 	case TK_IN:
 		res = expr_in(expr);
+		break;
+	case TK_RAISE:
+		res = expr_raise(expr);
 		break;
 	case TK_EXISTS:
 	case TK_SELECT:
