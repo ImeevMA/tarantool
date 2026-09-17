@@ -81,6 +81,14 @@ struct rast_expr {
 	 * which of the union members above is used.
 	 */
 	uint8_t op;
+	/**
+	 * Type of the result of the expression, the same as sql_expr_type()
+	 * returns for the legacy expression this node is built into. Note
+	 * that not every legacy expression stores this type in its own type
+	 * field: for operations like arithmetic the type is computed from
+	 * the operands when it is needed.
+	 */
+	enum field_type type;
 };
 
 /** Resolved expression of an expression list. */

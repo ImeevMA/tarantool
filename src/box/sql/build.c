@@ -3572,7 +3572,7 @@ sql_emit_show_create_table_all(struct Parse *parse)
 static struct Expr *
 expr_string(struct rast_expr *expr)
 {
-	struct Expr *res = sql_expr_new_leaf(TK_STRING, FIELD_TYPE_STRING,
+	struct Expr *res = sql_expr_new_leaf(TK_STRING, expr->type,
 					     expr->n + 1);
 	memcpy(res->v.s, expr->s, expr->n);
 	res->v.s[expr->n] = '\0';
@@ -3582,8 +3582,7 @@ expr_string(struct rast_expr *expr)
 static struct Expr *
 expr_varbinary(struct rast_expr *expr)
 {
-	struct Expr *res = sql_expr_new_leaf(TK_BLOB, FIELD_TYPE_VARBINARY,
-					     expr->n);
+	struct Expr *res = sql_expr_new_leaf(TK_BLOB, expr->type, expr->n);
 	res->v.n = expr->n;
 	res->v.z = (char *)&res[1];
 	memcpy(res->v.z, expr->s, expr->n);
@@ -3633,8 +3632,13 @@ expr_unary(struct rast_expr *expr)
 	return res;
 }
 
+/**
+ * Create an expression with a list operand from a resolved expression. Used
+ * for a vector, an array, a map and a GETITEM, which are built the same way:
+ * the list of resolved expressions becomes the list of the expression.
+ */
 static struct Expr *
-expr_list(struct rast_expr *expr, enum field_type type)
+expr_list(struct rast_expr *expr)
 {
 	int height = 0;
 	struct ExprList *res_list = NULL;
@@ -3647,7 +3651,7 @@ expr_list(struct rast_expr *expr, enum field_type type)
 
 	struct Expr *res = sql_expr_new_anon(expr->op);
 	res->x.pList = res_list;
-	res->type = type;
+	res->type = expr->type;
 	res->flags |= EP_Propagate & sqlExprListFlags(res->x.pList);
 	res->nHeight = height + 1;
 	return res;
@@ -3763,25 +3767,25 @@ expr_from_rast(struct rast_expr *expr)
 		res = expr_varbinary(expr);
 		break;
 	case TK_INTEGER:
-		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_INTEGER, 0);
+		res = sql_expr_new_leaf(expr->op, expr->type, 0);
 		res->v.u = expr->u;
 		break;
 	case TK_FLOAT:
-		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_DOUBLE, 0);
+		res = sql_expr_new_leaf(expr->op, expr->type, 0);
 		res->v.f = expr->f;
 		break;
 	case TK_DECIMAL:
-		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_DECIMAL, 0);
+		res = sql_expr_new_leaf(expr->op, expr->type, 0);
 		res->v.d = expr->d;
 		break;
 	case TK_TRUE:
 	case TK_FALSE:
 	case TK_UNKNOWN:
-		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_BOOLEAN, 0);
+		res = sql_expr_new_leaf(expr->op, expr->type, 0);
 		res->v.b = expr->b;
 		break;
 	case TK_NULL:
-		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_SCALAR, 0);
+		res = sql_expr_new_leaf(expr->op, expr->type, 0);
 		break;
 	case TK_AND:
 	case TK_OR:
@@ -3819,14 +3823,10 @@ expr_from_rast(struct rast_expr *expr)
 		res = expr_unary(expr);
 		break;
 	case TK_ARRAY:
-		res = expr_list(expr, FIELD_TYPE_ARRAY);
-		break;
 	case TK_MAP:
-		res = expr_list(expr, FIELD_TYPE_MAP);
-		break;
 	case TK_VECTOR:
 	case TK_GETITEM:
-		res = expr_list(expr, FIELD_TYPE_ANY);
+		res = expr_list(expr);
 		break;
 	case TK_BETWEEN:
 		res = expr_between(expr);

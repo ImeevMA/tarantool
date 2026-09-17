@@ -1667,6 +1667,7 @@ resolve_expr_string(struct region *region, const struct ast_expr *ast,
 	char *str = xregion_alloc(region, ast->len);
 	memcpy(str, ast->str, ast->len);
 	res->op = TK_STRING;
+	res->type = FIELD_TYPE_STRING;
 	res->n = sql_dequote(str, ast->len);
 	res->s = str;
 	res->height = 1;
@@ -1682,6 +1683,7 @@ resolve_expr_varbinary(struct region *region, const struct ast_expr *ast,
 	assert(ast->len > 2 && ast->len % 2 == 1);
 
 	res->op = TK_BLOB;
+	res->type = FIELD_TYPE_VARBINARY;
 	res->n = (ast->len - 3) / 2;
 	res->height = 1;
 	if (res->n == 0) {
@@ -1705,6 +1707,7 @@ resolve_expr_integer(struct region *region, const struct ast_expr *ast,
 	str[ast->len] = '\0';
 
 	res->op = TK_INTEGER;
+	res->type = FIELD_TYPE_INTEGER;
 	res->height = 1;
 	return sql_uint_from_str(&res->u, str);
 }
@@ -1718,6 +1721,7 @@ resolve_expr_decimal(struct region *region, const struct ast_expr *ast,
 	str[ast->len] = '\0';
 
 	res->op = TK_DECIMAL;
+	res->type = FIELD_TYPE_DECIMAL;
 	res->height = 1;
 	return sql_dec_from_str(&res->d, str);
 }
@@ -1756,6 +1760,31 @@ resolve_expr_binary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		return -1;
 	if (!ctx->can_resolve)
 		return 0;
+	switch (res->op) {
+	case TK_AND:
+	case TK_OR:
+	case TK_LT:
+	case TK_LE:
+	case TK_GT:
+	case TK_GE:
+	case TK_EQ:
+	case TK_NE:
+		res->type = FIELD_TYPE_BOOLEAN;
+		break;
+	case TK_CONCAT:
+		res->type = FIELD_TYPE_STRING;
+		break;
+	case TK_DOT:
+		/*
+		 * sql_expr_type() does not compute the type of a DOT, it
+		 * returns the type of the expression, which is not set.
+		 */
+		res->type = FIELD_TYPE_ANY;
+		break;
+	default:
+		res->type = sql_type_result(res->left->type, res->right->type);
+		break;
+	}
 	res->height = MAX(res->left->height, res->right->height) + 1;
 	return resolve_expr_check_height(res);
 }
@@ -1794,6 +1823,7 @@ resolve_expr_and(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 
 	if (ast_is_false(ast->left) || ast_is_false(ast->right)) {
 		res->op = TK_FALSE;
+		res->type = FIELD_TYPE_BOOLEAN;
 		res->b = false;
 		res->height = 1;
 		return 0;
@@ -1814,6 +1844,7 @@ resolve_expr_collate(struct sql_resolve_context *ctx,
 	res->coll.expr = xregion_alloc_object(ctx->region, struct rast_expr);
 	if (resolve_expr(ctx, ast->left, res->coll.expr) != 0)
 		return -1;
+	res->type = res->coll.expr->type;
 	res->height = res->coll.expr->height + 1;
 	return resolve_expr_check_height(res);
 }
@@ -1829,6 +1860,7 @@ resolve_expr_cast(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	res->cast.expr = xregion_alloc_object(ctx->region, struct rast_expr);
 	if (resolve_expr(ctx, ast->left, res->cast.expr) != 0)
 		return -1;
+	res->type = res->cast.type;
 	res->height = res->cast.expr->height + 1;
 	return resolve_expr_check_height(res);
 }
@@ -1843,6 +1875,16 @@ resolve_expr_unary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	res->expr = xregion_alloc_object(ctx->region, struct rast_expr);
 	if (resolve_expr(ctx, ast->left, res->expr) != 0)
 		return -1;
+	switch (res->op) {
+	case TK_NOT:
+	case TK_ISNULL:
+	case TK_NOTNULL:
+		res->type = FIELD_TYPE_BOOLEAN;
+		break;
+	default:
+		res->type = res->expr->type;
+		break;
+	}
 	res->height = res->expr->height + 1;
 	return resolve_expr_check_height(res);
 }
@@ -1852,6 +1894,18 @@ resolve_expr_list(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		  struct rast_expr *res)
 {
 	res->op = ast->op;
+	switch (res->op) {
+	case TK_ARRAY:
+		res->type = FIELD_TYPE_ARRAY;
+		break;
+	case TK_MAP:
+		res->type = FIELD_TYPE_MAP;
+		break;
+	default:
+		assert(res->op == TK_VECTOR);
+		res->type = FIELD_TYPE_ANY;
+		break;
+	}
 	if (ast->list == NULL || ast->list->len == 0) {
 		res->list.len = 0;
 		res->list.exprs = NULL;
@@ -1886,6 +1940,7 @@ resolve_expr_getitem(struct sql_resolve_context *ctx,
 {
 	assert(ast->left != NULL);
 	res->op = ast->op;
+	res->type = FIELD_TYPE_ANY;
 	res->list.len = ast->list->len + 1;
 	res->list.exprs = xregion_alloc_array(ctx->region, struct rast_expr,
 					      res->list.len);
@@ -1922,6 +1977,7 @@ resolve_expr_between(struct sql_resolve_context *ctx,
 	assert(ast->list != NULL && ast->list->len == 2);
 
 	res->op = ast->op;
+	res->type = FIELD_TYPE_BOOLEAN;
 
 	const struct ast_expr *expr = ast->left;
 	res->between.expr = xregion_alloc_object(ctx->region,
@@ -1964,6 +2020,7 @@ resolve_expr_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 {
 	if (ast->right->op == TK_SELECT) {
 		res->op = TK_IN;
+		res->type = FIELD_TYPE_BOOLEAN;
 
 		res->in.expr = xregion_alloc_object(ctx->region,
 						    struct rast_expr);
@@ -1988,6 +2045,7 @@ resolve_expr_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	assert(ast->right->op == TK_VECTOR);
 	if (ast->right->list == NULL || ast->right->list->len == 0) {
 		res->op = TK_FALSE;
+		res->type = FIELD_TYPE_BOOLEAN;
 		res->b = false;
 		res->height = 1;
 		return 0;
@@ -1995,6 +2053,7 @@ resolve_expr_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 
 	if (ast->right->list->len == 1) {
 		res->op = TK_EQ;
+		res->type = FIELD_TYPE_BOOLEAN;
 
 		res->left = xregion_alloc_object(ctx->region, struct rast_expr);
 		if (resolve_expr(ctx, ast->left, res->left) != 0)
@@ -2016,6 +2075,7 @@ resolve_expr_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	}
 
 	res->op = TK_IN;
+	res->type = FIELD_TYPE_BOOLEAN;
 	res->in.expr = xregion_alloc_object(ctx->region, struct rast_expr);
 	if (resolve_expr(ctx, ast->left, res->in.expr) != 0)
 		return -1;
@@ -2053,14 +2113,61 @@ resolve_expr_raise(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	res->raise.action = ast->on_conflict_action;
 	if (ast->left == NULL) {
 		/* RAISE(IGNORE) has no message. */
+		res->type = FIELD_TYPE_ANY;
 		res->height = 1;
 		return 0;
 	}
+	res->type = FIELD_TYPE_STRING;
 	res->raise.expr = xregion_alloc_object(ctx->region, struct rast_expr);
 	if (resolve_expr(ctx, ast->left, res->raise.expr) != 0)
 		return -1;
 	res->height = res->raise.expr->height + 1;
 	return resolve_expr_check_height(res);
+}
+
+/**
+ * Determine the highest type between the given type and the type of the given
+ * resolved expression. This mirrors sql_highest_type(), except that there is
+ * no need to check for a bind variable: such an expression is not resolved,
+ * so the whole statement falls back to the legacy code.
+ */
+static enum field_type
+resolve_expr_highest_type(enum field_type type, const struct rast_expr *expr)
+{
+	if (type == FIELD_TYPE_ANY)
+		return FIELD_TYPE_ANY;
+	if (expr->op == TK_NULL)
+		return type;
+	return sql_highest_type(type, expr->type);
+}
+
+/**
+ * Determine the type of a resolved CASE expression: the highest type among its
+ * THEN expressions and its ELSE expression, if there is one. This mirrors the
+ * CASE part of sql_expr_type(), except that, as in
+ * resolve_expr_highest_type(), there is no bind variable to check for.
+ */
+static enum field_type
+resolve_expr_case_type(const struct rast_expr *expr)
+{
+	const struct rast_expr *list = expr->cs.list;
+	uint32_t count = expr->cs.len;
+	/*
+	 * A CASE comes with at least one WHEN and one THEN, so the first THEN
+	 * is the second expression and every other one is next after it.
+	 */
+	uint32_t i = 1;
+	while (i < count && list[i].op == TK_NULL)
+		i += 2;
+	if (i >= count)
+		return FIELD_TYPE_ANY;
+	enum field_type type = list[i].type;
+	for (i += 2; i < count; i += 2)
+		type = resolve_expr_highest_type(type, &list[i]);
+	/* The ELSE clause is here only if the number of expressions is odd. */
+	if (count % 2 == 0)
+		return type;
+	return resolve_expr_highest_type(type, &list[count - 1]);
 }
 
 /**
@@ -2102,6 +2209,7 @@ resolve_expr_case(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		if (height < res->cs.expr->height)
 			height = res->cs.expr->height;
 	}
+	res->type = resolve_expr_case_type(res);
 	res->height = height + 1;
 	return resolve_expr_check_height(res);
 }
@@ -2116,6 +2224,17 @@ resolve_expr_select(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		return -1;
 	if (!ctx->can_resolve)
 		return 0;
+	if (res->op == TK_EXISTS) {
+		res->type = FIELD_TYPE_BOOLEAN;
+	} else {
+		/*
+		 * The type of a subquery is the type of its first column.
+		 * Only a list of columns is resolved, so there is always at
+		 * least one of them.
+		 */
+		assert(res->select->columns.len > 0);
+		res->type = res->select->columns.exprs[0].expr.type;
+	}
 	res->height = res->select->height + 1;
 	return resolve_expr_check_height(res);
 }
@@ -2141,6 +2260,7 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		break;
 	case TK_FLOAT:
 		res->op = TK_FLOAT;
+		res->type = FIELD_TYPE_DOUBLE;
 		sqlAtoF(ast->str, &res->f, ast->len);
 		res->height = 1;
 		break;
@@ -2150,31 +2270,37 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		break;
 	case TK_NULL:
 		res->op = TK_NULL;
+		res->type = FIELD_TYPE_SCALAR;
 		res->height = 1;
 		break;
 	case TK_LEADING:
 		res->op = TK_INTEGER;
+		res->type = FIELD_TYPE_INTEGER;
 		res->u = TRIM_LEADING;
 		res->height = 1;
 		break;
 	case TK_TRAILING:
 		res->op = TK_INTEGER;
+		res->type = FIELD_TYPE_INTEGER;
 		res->u = TRIM_TRAILING;
 		res->height = 1;
 		break;
 	case TK_BOTH:
 		res->op = TK_INTEGER;
+		res->type = FIELD_TYPE_INTEGER;
 		res->u = TRIM_BOTH;
 		res->height = 1;
 		break;
 	case TK_TRUE:
 		res->op = TK_TRUE;
+		res->type = FIELD_TYPE_BOOLEAN;
 		res->b = true;
 		res->height = 1;
 		break;
 	case TK_FALSE:
 	case TK_UNKNOWN:
 		res->op = ast->op;
+		res->type = FIELD_TYPE_BOOLEAN;
 		res->b = false;
 		res->height = 1;
 		break;

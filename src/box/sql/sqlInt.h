@@ -3936,6 +3936,10 @@ sql_emit_table_types(struct Vdbe *v, struct space_def *def, int reg);
 enum field_type
 sql_type_result(enum field_type lhs, enum field_type rhs);
 
+/** Determine the highest type between the two given types. */
+enum field_type
+sql_highest_type(enum field_type lhs, enum field_type rhs);
+
 /**
  * pExpr is a comparison operator. Return the type affinity
  * that should be applied to both operands prior to doing

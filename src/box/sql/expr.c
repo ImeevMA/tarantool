@@ -50,30 +50,13 @@ static int exprCodeVector(Parse * pParse, Expr * p, int *piToFree);
  * expression.
  */
 static enum field_type
-sql_highest_type(enum field_type a, struct Expr *expr)
+sql_highest_type_expr(enum field_type type, struct Expr *expr)
 {
-	if (a == FIELD_TYPE_ANY || sql_token_is_variable(expr->op))
+	if (type == FIELD_TYPE_ANY || sql_token_is_variable(expr->op))
 		return FIELD_TYPE_ANY;
 	if (expr->op == TK_NULL)
-		return a;
-	enum field_type b = sql_expr_type(expr);
-	if (a == b)
-		return a;
-	if (b == FIELD_TYPE_ANY || a == FIELD_TYPE_MAP || b == FIELD_TYPE_MAP ||
-	    a == FIELD_TYPE_ARRAY || b == FIELD_TYPE_ARRAY ||
-	    a == FIELD_TYPE_INTERVAL || b == FIELD_TYPE_INTERVAL)
-		return FIELD_TYPE_ANY;
-	if (!sql_type_is_numeric(a) || !sql_type_is_numeric(b))
-		return FIELD_TYPE_SCALAR;
-	if (a == FIELD_TYPE_NUMBER || b == FIELD_TYPE_NUMBER)
-		return FIELD_TYPE_NUMBER;
-	if (a == FIELD_TYPE_DECIMAL || b == FIELD_TYPE_DECIMAL)
-		return FIELD_TYPE_DECIMAL;
-	if (a == FIELD_TYPE_DOUBLE || b == FIELD_TYPE_DOUBLE)
-		return FIELD_TYPE_DOUBLE;
-	assert((a == FIELD_TYPE_INTEGER || a == FIELD_TYPE_UNSIGNED));
-	assert((b == FIELD_TYPE_INTEGER || b == FIELD_TYPE_UNSIGNED));
-	return FIELD_TYPE_INTEGER;
+		return type;
+	return sql_highest_type(type, sql_expr_type(expr));
 }
 
 enum field_type
@@ -136,14 +119,15 @@ sql_expr_type(struct Expr *pExpr)
 		if (sql_token_is_variable(cs->a[i].pExpr->op))
 			res_type = FIELD_TYPE_ANY;
 		for (i += 2; i < count; i += 2)
-			res_type = sql_highest_type(res_type, cs->a[i].pExpr);
+			res_type = sql_highest_type_expr(res_type,
+							      cs->a[i].pExpr);
 		/*
 		 * ELSE clause is optional but we should check
 		 * its type as well.
 		 */
 		if (count % 2 == 0)
 			return res_type;
-		return sql_highest_type(res_type, cs->a[count - 1].pExpr);
+		return sql_highest_type_expr(res_type, cs->a[count - 1].pExpr);
 	}
 	case TK_LT:
 	case TK_GT:
@@ -413,6 +397,28 @@ sql_type_result(enum field_type lhs, enum field_type rhs)
 	    (lhs == FIELD_TYPE_DATETIME && rhs == FIELD_TYPE_INTERVAL))
 		return FIELD_TYPE_DATETIME;
 	return FIELD_TYPE_SCALAR;
+}
+
+enum field_type
+sql_highest_type(enum field_type a, enum field_type b)
+{
+	if (a == b)
+		return a;
+	if (b == FIELD_TYPE_ANY || a == FIELD_TYPE_MAP || b == FIELD_TYPE_MAP ||
+	    a == FIELD_TYPE_ARRAY || b == FIELD_TYPE_ARRAY ||
+	    a == FIELD_TYPE_INTERVAL || b == FIELD_TYPE_INTERVAL)
+		return FIELD_TYPE_ANY;
+	if (!sql_type_is_numeric(a) || !sql_type_is_numeric(b))
+		return FIELD_TYPE_SCALAR;
+	if (a == FIELD_TYPE_NUMBER || b == FIELD_TYPE_NUMBER)
+		return FIELD_TYPE_NUMBER;
+	if (a == FIELD_TYPE_DECIMAL || b == FIELD_TYPE_DECIMAL)
+		return FIELD_TYPE_DECIMAL;
+	if (a == FIELD_TYPE_DOUBLE || b == FIELD_TYPE_DOUBLE)
+		return FIELD_TYPE_DOUBLE;
+	assert((a == FIELD_TYPE_INTEGER || a == FIELD_TYPE_UNSIGNED));
+	assert((b == FIELD_TYPE_INTEGER || b == FIELD_TYPE_UNSIGNED));
+	return FIELD_TYPE_INTEGER;
 }
 
 enum field_type
