@@ -69,6 +69,28 @@ struct rast_expr {
 			/** Number of expressions in the list above. */
 			uint32_t len;
 		} cs;
+		struct {
+			/**
+			 * Name of the function as it appears in the SQL, with
+			 * the quotes if there are any. For an operator such as
+			 * LIKE, this is the name of the operator.
+			 */
+			const char *name;
+			/** Length of the name above. */
+			uint32_t name_len;
+			/**
+			 * Whether the DISTINCT keyword is set in front of the
+			 * arguments.
+			 */
+			bool is_distinct;
+			/**
+			 * Arguments of the function, or NULL if there are
+			 * none.
+			 */
+			struct rast_expr *args;
+			/** Number of arguments above. */
+			uint32_t n_args;
+		} func;
 	};
 	/**
 	 * Height of the tree headed by this node. Checked against

@@ -4482,9 +4482,32 @@ sql_func_flag_is_set(struct func *func, uint16_t flag)
 	return (((struct func_sql_builtin *)func)->flags & flag) != 0;
 }
 
+/**
+ * Description of a function argument that does not depend on the stage the
+ * function is looked up at.
+ */
+struct sql_func_arg {
+	/** Operation of the expression of the argument. */
+	uint8_t op;
+	/** Type of the expression of the argument. */
+	enum field_type type;
+};
+
 /** Return a function that matches the parameters described in given expr. */
 struct func *
 sql_func_find(struct Expr *expr);
+
+/**
+ * Return a function with the given name that accepts the given arguments. The
+ * name must not be quoted. The name is looked up in the legacy form, that is,
+ * converted to upper case, only if is_legacy is set. A COLLATE expression is
+ * not an argument on its own, so its operand must be passed in its place.
+ *
+ * Sets a diag and returns NULL if there is no such function.
+ */
+struct func *
+sql_func_find_by_name(const char *name, bool is_legacy,
+		      const struct sql_func_arg *args, uint32_t n_args);
 
 /** Code an OP_ApplyType opcode that will force types onto arguments. */
 int

@@ -2214,6 +2214,104 @@ resolve_expr_case(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	return resolve_expr_check_height(res);
 }
 
+/**
+ * Resolve a function call expression: its name and its arguments. The
+ * resolution fails if there is no such function, that is, if it is neither
+ * a built-in SQL function nor a function exported to SQL, or if it accepts
+ * a different number of arguments.
+ */
+static int
+resolve_expr_function(struct sql_resolve_context *ctx,
+		      const struct ast_expr *ast, struct rast_expr *res)
+{
+	/*
+	 * The parser puts the name of the function, and the name of an operator
+	 * such as LIKE, into a string expression.
+	 */
+	assert(ast->left != NULL && ast->left->op == TK_STRING);
+	res->op = TK_FUNCTION;
+	res->func.name = ast->left->str;
+	res->func.name_len = ast->left->len;
+
+	int height = 0;
+	if (ast->right != NULL) {
+		res->func.is_distinct = ast->right->op == TK_DISTINCT;
+		struct ast_expr_list *list = ast->right->list;
+		if (list != NULL && list->len > 0) {
+			res->func.n_args = list->len;
+			res->func.args = xregion_alloc_array(ctx->region,
+							     struct rast_expr,
+							     res->func.n_args);
+			memset(res->func.args, 0,
+			       sizeof(*res->func.args) * res->func.n_args);
+
+			int i = 0;
+			struct ast_expr_list_entry *entry = NULL;
+			stailq_foreach_entry(entry, &list->head, link) {
+				struct rast_expr *arg = &res->func.args[i++];
+				if (resolve_expr(ctx, entry->expr, arg) != 0)
+					return -1;
+				if (!ctx->can_resolve)
+					return 0;
+				if (height < arg->height)
+					height = arg->height;
+			}
+		}
+	}
+
+	/*
+	 * The name of the function is stored in the AST as is, so it is copied
+	 * to the region to make it NUL-terminated, and it is dequoted the same
+	 * way the build stage does it, since that is the form the name is looked
+	 * up in.
+	 */
+	const char *name = sql_name_temp(ctx->region, res->func.name,
+					 res->func.name_len);
+	/*
+	 * The limit is checked by the legacy code when it converts the AST into
+	 * an expression, and the resolved path does not do that conversion, so
+	 * the check is repeated here.
+	 */
+	if (res->func.n_args > SQL_MAX_FUNCTION_ARG) {
+		const char *err = tt_sprintf("Number of arguments to function %s",
+					     name);
+		diag_set(ClientError, ER_SQL_PARSER_LIMIT, err, res->func.n_args,
+			 SQL_MAX_FUNCTION_ARG);
+		return -1;
+	}
+
+	struct sql_func_arg args[SQL_MAX_FUNCTION_ARG];
+	for (uint32_t i = 0; i < res->func.n_args; ++i) {
+		const struct rast_expr *arg = &res->func.args[i];
+		/*
+		 * A COLLATE expression is not an argument on its own: the
+		 * function accepts its operand, not the expression with the
+		 * collation.
+		 */
+		if (arg->op == TK_COLLATE)
+			arg = arg->coll.expr;
+		args[i].op = arg->op;
+		args[i].type = arg->type;
+	}
+	struct func *func = sql_func_find_by_name(name, ast->left->str[0] != '"',
+						  args, res->func.n_args);
+	if (func == NULL)
+		return -1;
+	res->type = func->def->returns;
+	/*
+	 * In case a user-defined aggregate function was called, the result type
+	 * will be the result type of the FINALIZE part of the function.
+	 */
+	if (func->def->language != FUNC_LANGUAGE_SQL_BUILTIN &&
+	    func->def->aggregate == FUNC_AGGREGATE_GROUP) {
+		struct func *finalize = sql_func_finalize(name);
+		if (finalize != NULL)
+			res->type = finalize->def->returns;
+	}
+	res->height = height + 1;
+	return resolve_expr_check_height(res);
+}
+
 static int
 resolve_expr_select(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		    struct rast_expr *res)
@@ -2376,6 +2474,10 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		break;
 	case TK_CASE:
 		if (resolve_expr_case(ctx, ast, res) != 0)
+			return -1;
+		break;
+	case TK_FUNCTION:
+		if (resolve_expr_function(ctx, ast, res) != 0)
 			return -1;
 		break;
 	case TK_EXISTS:

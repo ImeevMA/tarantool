@@ -3753,6 +3753,37 @@ expr_case(struct rast_expr *expr)
 	return res;
 }
 
+/**
+ * Create an expression of a function call from a resolved expression. The
+ * expression itself holds the name of the function, and its list holds the
+ * arguments, the same way the legacy code builds it.
+ */
+static struct Expr *
+expr_function(struct rast_expr *expr)
+{
+	struct Token name = {
+		.z = expr->func.name,
+		.n = expr->func.name_len,
+		.isReserved = false,
+	};
+	struct Expr *res = sql_expr_new_dequoted(TK_FUNCTION, &name);
+	res->type = FIELD_TYPE_SCALAR;
+	if (expr->func.is_distinct)
+		res->flags |= EP_Distinct;
+
+	int height = 0;
+	for (uint32_t i = 0; i < expr->func.n_args; ++i) {
+		struct Expr *arg = expr_from_rast(&expr->func.args[i]);
+		res->x.pList = sql_expr_list_append(res->x.pList, arg);
+		if (height < arg->nHeight)
+			height = arg->nHeight;
+	}
+	if (res->x.pList != NULL)
+		res->flags |= EP_Propagate & sqlExprListFlags(res->x.pList);
+	res->nHeight = height + 1;
+	return res;
+}
+
 static struct Expr *
 expr_from_rast(struct rast_expr *expr)
 {
@@ -3839,6 +3870,9 @@ expr_from_rast(struct rast_expr *expr)
 		break;
 	case TK_CASE:
 		res = expr_case(expr);
+		break;
+	case TK_FUNCTION:
+		res = expr_function(expr);
 		break;
 	case TK_EXISTS:
 	case TK_SELECT:
