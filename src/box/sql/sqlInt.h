@@ -3933,12 +3933,84 @@ int sqlVarintLen(u64 v);
 void
 sql_emit_table_types(struct Vdbe *v, struct space_def *def, int reg);
 
+/** Determine the result type of an operation on the given field types. */
 enum field_type
-sql_type_result(enum field_type lhs, enum field_type rhs);
+sql_field_type_result(enum field_type lhs, enum field_type rhs);
 
-/** Determine the highest type between the two given types. */
+/** Determine the highest type between the two given field types. */
 enum field_type
-sql_highest_type(enum field_type lhs, enum field_type rhs);
+sql_highest_field_type(enum field_type lhs, enum field_type rhs);
+
+/**
+ * Type of an SQL value, for example the value of a column or the result of an
+ * expression. This is the SQL notion of type, as opposed to the storage notion
+ * of type described by enum field_type: one SQL type can correspond to several
+ * storage types, for example an INTEGER value can be stored as int8. A value
+ * whose type is only known when it is evaluated, for example a bind variable,
+ * has no SQL type, which is what UNKNOWN means.
+ */
+enum sql_type {
+	/** The type is unknown until the value is evaluated. */
+	SQL_TYPE_UNKNOWN = 0,
+	/** A value of any type. */
+	SQL_TYPE_ANY,
+	/** An unsigned integer. */
+	SQL_TYPE_UNSIGNED,
+	/** A string. */
+	SQL_TYPE_STRING,
+	/** A number of any representation. */
+	SQL_TYPE_NUMBER,
+	/** A double. */
+	SQL_TYPE_DOUBLE,
+	/** A signed integer. */
+	SQL_TYPE_INTEGER,
+	/** A boolean. */
+	SQL_TYPE_BOOLEAN,
+	/** A binary string. */
+	SQL_TYPE_VARBINARY,
+	/** A scalar, that is, neither an array nor a map. */
+	SQL_TYPE_SCALAR,
+	/** A decimal. */
+	SQL_TYPE_DECIMAL,
+	/** A UUID. */
+	SQL_TYPE_UUID,
+	/** A date and time. */
+	SQL_TYPE_DATETIME,
+	/** A time interval. */
+	SQL_TYPE_INTERVAL,
+	/** An array. */
+	SQL_TYPE_ARRAY,
+	/** A map. */
+	SQL_TYPE_MAP,
+};
+
+/**
+ * Return the storage type of a value of the given SQL type. The type UNKNOWN is
+ * reported as ANY, since a value of an unknown type can have any type at run
+ * time.
+ */
+enum field_type
+sql_type_to_field_type(enum sql_type type);
+
+/**
+ * Return the SQL type of a value of the given storage type. A storage type that
+ * describes only a part of its SQL type, for example int8, is reported as that
+ * SQL type, for example INTEGER.
+ */
+enum sql_type
+sql_type_from_field_type(enum field_type type);
+
+/** Determine the type of the result of an operation on the given types. */
+enum sql_type
+sql_type_result(enum sql_type lhs, enum sql_type rhs);
+
+/**
+ * Determine the highest type between the two given types. The result is
+ * UNKNOWN if at least one of the types is UNKNOWN, since a value of an unknown
+ * type can have any type at run time.
+ */
+enum sql_type
+sql_highest_type(enum sql_type lhs, enum sql_type rhs);
 
 /**
  * pExpr is a comparison operator. Return the type affinity

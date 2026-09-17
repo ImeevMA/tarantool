@@ -6,6 +6,7 @@
 #pragma once
 
 #include "ast.h"
+#include "sqlInt.h"
 
 /** Expression resolved into the form the build stage consumes. */
 struct rast_expr {
@@ -32,7 +33,8 @@ struct rast_expr {
 		} coll;
 		struct {
 			struct rast_expr *expr;
-			enum field_type type;
+			/** Type of the result of the CAST expression. */
+			enum sql_type type;
 		} cast;
 		struct {
 			struct rast_expr *exprs;
@@ -104,13 +106,15 @@ struct rast_expr {
 	 */
 	uint8_t op;
 	/**
-	 * Type of the result of the expression, the same as sql_expr_type()
-	 * returns for the legacy expression this node is built into. Note
-	 * that not every legacy expression stores this type in its own type
-	 * field: for operations like arithmetic the type is computed from
-	 * the operands when it is needed.
+	 * Type of the result of the expression. This is the SQL type of the
+	 * value, which is converted into the storage type of the legacy
+	 * expression this node is built into, since not every SQL type maps
+	 * to a distinct storage type and an unknown SQL type has no storage
+	 * type at all. Note that not every legacy expression stores this type
+	 * in its own type field: for operations like arithmetic the type is
+	 * computed from the operands when it is needed.
 	 */
-	enum field_type type;
+	enum sql_type type;
 };
 
 /** Resolved expression of an expression list. */

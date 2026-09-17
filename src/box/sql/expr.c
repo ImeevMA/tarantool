@@ -56,7 +56,7 @@ sql_highest_type_expr(enum field_type type, struct Expr *expr)
 		return FIELD_TYPE_ANY;
 	if (expr->op == TK_NULL)
 		return type;
-	return sql_highest_type(type, sql_expr_type(expr));
+	return sql_highest_field_type(type, sql_expr_type(expr));
 }
 
 enum field_type
@@ -95,7 +95,7 @@ sql_expr_type(struct Expr *pExpr)
 		assert(pExpr->pRight != NULL && pExpr->pLeft != NULL);
 		enum field_type lhs_type = sql_expr_type(pExpr->pLeft);
 		enum field_type rhs_type = sql_expr_type(pExpr->pRight);
-		return sql_type_result(rhs_type, lhs_type);
+		return sql_field_type_result(rhs_type, lhs_type);
 	case TK_GETITEM:
 		return FIELD_TYPE_ANY;
 	case TK_CONCAT:
@@ -376,7 +376,7 @@ sql_expr_coll(Parse *parse, Expr *p, bool *is_explicit_coll, uint32_t *coll_id,
 }
 
 enum field_type
-sql_type_result(enum field_type lhs, enum field_type rhs)
+sql_field_type_result(enum field_type lhs, enum field_type rhs)
 {
 	if (sql_type_is_numeric(lhs) || sql_type_is_numeric(rhs)) {
 		if (lhs == FIELD_TYPE_NUMBER || rhs == FIELD_TYPE_NUMBER)
@@ -400,7 +400,7 @@ sql_type_result(enum field_type lhs, enum field_type rhs)
 }
 
 enum field_type
-sql_highest_type(enum field_type a, enum field_type b)
+sql_highest_field_type(enum field_type a, enum field_type b)
 {
 	if (a == b)
 		return a;
@@ -422,6 +422,125 @@ sql_highest_type(enum field_type a, enum field_type b)
 }
 
 enum field_type
+sql_type_to_field_type(enum sql_type type)
+{
+	switch (type) {
+	case SQL_TYPE_UNKNOWN:
+		/* A value of an unknown type can have any type at run time. */
+		return FIELD_TYPE_ANY;
+	case SQL_TYPE_ANY:
+		return FIELD_TYPE_ANY;
+	case SQL_TYPE_UNSIGNED:
+		return FIELD_TYPE_UNSIGNED;
+	case SQL_TYPE_STRING:
+		return FIELD_TYPE_STRING;
+	case SQL_TYPE_NUMBER:
+		return FIELD_TYPE_NUMBER;
+	case SQL_TYPE_DOUBLE:
+		return FIELD_TYPE_DOUBLE;
+	case SQL_TYPE_INTEGER:
+		return FIELD_TYPE_INTEGER;
+	case SQL_TYPE_BOOLEAN:
+		return FIELD_TYPE_BOOLEAN;
+	case SQL_TYPE_VARBINARY:
+		return FIELD_TYPE_VARBINARY;
+	case SQL_TYPE_SCALAR:
+		return FIELD_TYPE_SCALAR;
+	case SQL_TYPE_DECIMAL:
+		return FIELD_TYPE_DECIMAL;
+	case SQL_TYPE_UUID:
+		return FIELD_TYPE_UUID;
+	case SQL_TYPE_DATETIME:
+		return FIELD_TYPE_DATETIME;
+	case SQL_TYPE_INTERVAL:
+		return FIELD_TYPE_INTERVAL;
+	case SQL_TYPE_ARRAY:
+		return FIELD_TYPE_ARRAY;
+	case SQL_TYPE_MAP:
+		return FIELD_TYPE_MAP;
+	}
+	unreachable();
+}
+
+enum sql_type
+sql_type_from_field_type(enum field_type type)
+{
+	switch (type) {
+	case FIELD_TYPE_ANY:
+		return SQL_TYPE_ANY;
+	case FIELD_TYPE_UNSIGNED:
+	case FIELD_TYPE_UINT8:
+	case FIELD_TYPE_UINT16:
+	case FIELD_TYPE_UINT32:
+	case FIELD_TYPE_UINT64:
+		return SQL_TYPE_UNSIGNED;
+	case FIELD_TYPE_STRING:
+		return SQL_TYPE_STRING;
+	case FIELD_TYPE_NUMBER:
+		return SQL_TYPE_NUMBER;
+	case FIELD_TYPE_DOUBLE:
+	case FIELD_TYPE_FLOAT32:
+	case FIELD_TYPE_FLOAT64:
+		return SQL_TYPE_DOUBLE;
+	case FIELD_TYPE_INTEGER:
+	case FIELD_TYPE_INT8:
+	case FIELD_TYPE_INT16:
+	case FIELD_TYPE_INT32:
+	case FIELD_TYPE_INT64:
+		return SQL_TYPE_INTEGER;
+	case FIELD_TYPE_BOOLEAN:
+		return SQL_TYPE_BOOLEAN;
+	case FIELD_TYPE_VARBINARY:
+		return SQL_TYPE_VARBINARY;
+	case FIELD_TYPE_SCALAR:
+		return SQL_TYPE_SCALAR;
+	case FIELD_TYPE_DECIMAL:
+	case FIELD_TYPE_DECIMAL32:
+	case FIELD_TYPE_DECIMAL64:
+	case FIELD_TYPE_DECIMAL128:
+	case FIELD_TYPE_DECIMAL256:
+		return SQL_TYPE_DECIMAL;
+	case FIELD_TYPE_UUID:
+		return SQL_TYPE_UUID;
+	case FIELD_TYPE_DATETIME:
+		return SQL_TYPE_DATETIME;
+	case FIELD_TYPE_INTERVAL:
+		return SQL_TYPE_INTERVAL;
+	case FIELD_TYPE_ARRAY:
+		return SQL_TYPE_ARRAY;
+	case FIELD_TYPE_MAP:
+		return SQL_TYPE_MAP;
+	case field_type_MAX:
+		break;
+	}
+	unreachable();
+}
+
+enum sql_type
+sql_type_result(enum sql_type lhs, enum sql_type rhs)
+{
+	/*
+	 * A value of an unknown type can have any type at run time, so the
+	 * type of the result of an operation on it is unknown as well.
+	 */
+	if (lhs == SQL_TYPE_UNKNOWN || rhs == SQL_TYPE_UNKNOWN)
+		return SQL_TYPE_UNKNOWN;
+	return sql_type_from_field_type(
+		sql_field_type_result(sql_type_to_field_type(lhs),
+				sql_type_to_field_type(rhs)));
+}
+
+enum sql_type
+sql_highest_type(enum sql_type lhs, enum sql_type rhs)
+{
+	if (lhs == SQL_TYPE_UNKNOWN || rhs == SQL_TYPE_UNKNOWN)
+		return SQL_TYPE_UNKNOWN;
+	return sql_type_from_field_type(
+		sql_highest_field_type(sql_type_to_field_type(lhs),
+				 sql_type_to_field_type(rhs)));
+}
+
+enum field_type
 expr_cmp_mutual_type(struct Expr *pExpr)
 {
 	assert(pExpr->op == TK_EQ || pExpr->op == TK_IN || pExpr->op == TK_LT ||
@@ -431,11 +550,11 @@ expr_cmp_mutual_type(struct Expr *pExpr)
 	enum field_type type = sql_expr_type(pExpr->pLeft);
 	if (pExpr->pRight) {
 		enum field_type rhs_type = sql_expr_type(pExpr->pRight);
-		type = sql_type_result(rhs_type, type);
+		type = sql_field_type_result(rhs_type, type);
 	} else if (ExprHasProperty(pExpr, EP_xIsSelect)) {
 		enum field_type rhs_type =
 			sql_expr_type(pExpr->x.pSelect->pEList->a[0].pExpr);
-		type = sql_type_result(rhs_type, type);
+		type = sql_field_type_result(rhs_type, type);
 	} else {
 		type = FIELD_TYPE_SCALAR;
 	}
@@ -452,7 +571,7 @@ binaryCompareP5(Expr * pExpr1, Expr * pExpr2, int jumpIfNull)
 {
 	enum field_type lhs = sql_expr_type(pExpr2);
 	enum field_type rhs = sql_expr_type(pExpr1);
-	u8 type_mask = sql_type_result(rhs, lhs) | (u8) jumpIfNull;
+	u8 type_mask = sql_field_type_result(rhs, lhs) | (u8) jumpIfNull;
 	return type_mask;
 }
 
@@ -2485,7 +2604,7 @@ expr_in_type(struct Expr *pExpr)
 		if (pSelect != NULL) {
 			struct Expr *e = pSelect->pEList->a[i].pExpr;
 			enum field_type rhs = sql_expr_type(e);
-			zRet[i] = sql_type_result(rhs, lhs);
+			zRet[i] = sql_field_type_result(rhs, lhs);
 		} else {
 			zRet[i] = lhs;
 		}

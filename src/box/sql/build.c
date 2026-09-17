@@ -3572,8 +3572,9 @@ sql_emit_show_create_table_all(struct Parse *parse)
 static struct Expr *
 expr_string(struct rast_expr *expr)
 {
-	struct Expr *res = sql_expr_new_leaf(TK_STRING, expr->type,
-					     expr->n + 1);
+	struct Expr *res = sql_expr_new_leaf(
+		TK_STRING, sql_type_to_field_type(expr->type),
+		expr->n + 1);
 	memcpy(res->v.s, expr->s, expr->n);
 	res->v.s[expr->n] = '\0';
 	return res;
@@ -3582,7 +3583,8 @@ expr_string(struct rast_expr *expr)
 static struct Expr *
 expr_varbinary(struct rast_expr *expr)
 {
-	struct Expr *res = sql_expr_new_leaf(TK_BLOB, expr->type, expr->n);
+	struct Expr *res = sql_expr_new_leaf(
+		TK_BLOB, sql_type_to_field_type(expr->type), expr->n);
 	res->v.n = expr->n;
 	res->v.z = (char *)&res[1];
 	memcpy(res->v.z, expr->s, expr->n);
@@ -3616,7 +3618,7 @@ expr_cast(struct rast_expr *expr)
 	memset(res, 0, sizeof(*res));
 	res->op = expr->op;
 	res->iAgg = -1;
-	res->type = expr->cast.type;
+	res->type = sql_type_to_field_type(expr->cast.type);
 	sqlExprAttachSubtrees(res, expr_from_rast(expr->cast.expr), NULL);
 	return res;
 }
@@ -3651,7 +3653,7 @@ expr_list(struct rast_expr *expr)
 
 	struct Expr *res = sql_expr_new_anon(expr->op);
 	res->x.pList = res_list;
-	res->type = expr->type;
+	res->type = sql_type_to_field_type(expr->type);
 	res->flags |= EP_Propagate & sqlExprListFlags(res->x.pList);
 	res->nHeight = height + 1;
 	return res;
@@ -3789,6 +3791,11 @@ expr_from_rast(struct rast_expr *expr)
 {
 	if (expr == NULL)
 		return NULL;
+	/*
+	 * The result type of a resolved expression is an SQL type, while a
+	 * legacy expression holds a storage type, so it is converted here.
+	 */
+	enum field_type type = sql_type_to_field_type(expr->type);
 	struct Expr *res = NULL;
 	switch (expr->op) {
 	case TK_STRING:
@@ -3798,25 +3805,25 @@ expr_from_rast(struct rast_expr *expr)
 		res = expr_varbinary(expr);
 		break;
 	case TK_INTEGER:
-		res = sql_expr_new_leaf(expr->op, expr->type, 0);
+		res = sql_expr_new_leaf(expr->op, type, 0);
 		res->v.u = expr->u;
 		break;
 	case TK_FLOAT:
-		res = sql_expr_new_leaf(expr->op, expr->type, 0);
+		res = sql_expr_new_leaf(expr->op, type, 0);
 		res->v.f = expr->f;
 		break;
 	case TK_DECIMAL:
-		res = sql_expr_new_leaf(expr->op, expr->type, 0);
+		res = sql_expr_new_leaf(expr->op, type, 0);
 		res->v.d = expr->d;
 		break;
 	case TK_TRUE:
 	case TK_FALSE:
 	case TK_UNKNOWN:
-		res = sql_expr_new_leaf(expr->op, expr->type, 0);
+		res = sql_expr_new_leaf(expr->op, type, 0);
 		res->v.b = expr->b;
 		break;
 	case TK_NULL:
-		res = sql_expr_new_leaf(expr->op, expr->type, 0);
+		res = sql_expr_new_leaf(expr->op, type, 0);
 		break;
 	case TK_AND:
 	case TK_OR:
