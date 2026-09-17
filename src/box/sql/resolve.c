@@ -2083,6 +2083,25 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		if (resolve_expr_decimal(ctx->region, ast, res) != 0)
 			return -1;
 		break;
+	case TK_NULL:
+		res->op = TK_NULL;
+		res->height = 1;
+		break;
+	case TK_LEADING:
+		res->op = TK_INTEGER;
+		res->u = TRIM_LEADING;
+		res->height = 1;
+		break;
+	case TK_TRAILING:
+		res->op = TK_INTEGER;
+		res->u = TRIM_TRAILING;
+		res->height = 1;
+		break;
+	case TK_BOTH:
+		res->op = TK_INTEGER;
+		res->u = TRIM_BOTH;
+		res->height = 1;
+		break;
 	case TK_TRUE:
 		res->op = TK_TRUE;
 		res->b = true;

@@ -3726,6 +3726,9 @@ expr_from_rast(struct rast_expr *expr)
 		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_BOOLEAN, 0);
 		res->v.b = expr->b;
 		break;
+	case TK_NULL:
+		res = sql_expr_new_leaf(expr->op, FIELD_TYPE_SCALAR, 0);
+		break;
 	case TK_AND:
 	case TK_OR:
 	case TK_LT:
