@@ -44,7 +44,14 @@ struct Vdbe *
 sql_stmt_compile(const char *zSql, struct Vdbe *pReprepare)
 {
 	Parse sParse;		/* Parsing context */
-	sql_parser_create(&sParse, current_session()->sql_flags);
+	uint32_t flags = current_session()->sql_flags;
+
+#ifdef SQL_DEBUG
+	if ((flags & SQL_SelectTrace) != 0)
+		sql_enable_select_tracing();
+#endif
+
+	sql_parser_create(&sParse, flags);
 	sParse.pReprepare = pReprepare;
 
 	struct sql_ast *ast = sql_parse_statement(&sParse, zSql);

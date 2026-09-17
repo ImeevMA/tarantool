@@ -52,6 +52,12 @@
     sqlDebugPrintf("%*s%s.%p: ",(P)->nSelectIndent*2-2,"",\
         (S)->zSelName,(S)),\
     sqlDebugPrintf X
+
+void
+sql_enable_select_tracing(void)
+{
+	sqlSelectTrace = 0xfff;
+}
 #else
 #define SELECTTRACE(K,P,S,X)
 #endif
@@ -356,21 +362,11 @@ is_same_sorting_direction(const struct ExprList *expr_list)
 	return true;
 }
 
-/*
- * Allocate a new Select structure and return a pointer to that
- * structure.
- */
-Select *
-sqlSelectNew(Parse * pParse,	/* Parsing context */
-		 ExprList * pEList,	/* which columns to include in the result */
-		 SrcList * pSrc,	/* the FROM clause -- which tables to scan */
-		 Expr * pWhere,		/* the WHERE clause */
-		 ExprList * pGroupBy,	/* the GROUP BY clause */
-		 Expr * pHaving,	/* the HAVING clause */
-		 ExprList * pOrderBy,	/* the ORDER BY clause */
-		 u32 selFlags,		/* Flag parameters, such as SF_Distinct */
-		 Expr * pLimit,		/* LIMIT value.  NULL means not used */
-		 Expr * pOffset)	/* OFFSET value.  NULL means no offset */
+struct Select *
+sqlSelectNew(struct ExprList *pEList, struct SrcList *pSrc, struct Expr *pWhere,
+	     struct ExprList *pGroupBy, struct Expr *pHaving,
+	     struct ExprList *pOrderBy, uint32_t selFlags, struct Expr *pLimit,
+	     struct Expr *pOffset)
 {
 	Select standin;
 	if (pEList == 0) {
@@ -384,12 +380,6 @@ sqlSelectNew(Parse * pParse,	/* Parsing context */
 	standin.iOffset = 0;
 #ifdef SQL_DEBUG
 	standin.zSelName[0] = 0;
-	if ((pParse->sql_flags & SQL_SelectTrace) != 0)
-		sqlSelectTrace = 0xfff;
-	else
-		sqlSelectTrace = 0;
-#else
-	(void)pParse;
 #endif
 	standin.addrOpenEphm[0] = -1;
 	standin.addrOpenEphm[1] = -1;
@@ -406,9 +396,7 @@ sqlSelectNew(Parse * pParse,	/* Parsing context */
 	standin.pLimit = pLimit;
 	standin.pOffset = pOffset;
 	standin.pWith = 0;
-	assert(pOffset == NULL || pLimit != NULL || pParse->is_aborted);
 	Select *pNew = sql_xmalloc(sizeof(*pNew));
-	assert(standin.pSrc != 0 || pParse->is_aborted);
 	memcpy(pNew, &standin, sizeof(standin));
 	return pNew;
 }
