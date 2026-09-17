@@ -3642,20 +3642,16 @@ expr_unary(struct rast_expr *expr)
 static struct Expr *
 expr_list(struct rast_expr *expr)
 {
-	int height = 0;
 	struct ExprList *res_list = NULL;
 	for (uint32_t i = 0; i < expr->list.len; ++i) {
 		struct Expr *res_expr = expr_from_rast(&expr->list.exprs[i]);
 		res_list = sql_expr_list_append(res_list, res_expr);
-		if (height < res_expr->nHeight)
-			height = res_expr->nHeight;
 	}
 
 	struct Expr *res = sql_expr_new_anon(expr->op);
 	res->x.pList = res_list;
 	res->type = sql_type_to_field_type(expr->type);
 	res->flags |= EP_Propagate & sqlExprListFlags(res->x.pList);
-	res->nHeight = height + 1;
 	return res;
 }
 
@@ -3672,7 +3668,6 @@ expr_between(struct rast_expr *expr)
 	struct Expr *last = expr_from_rast(expr->between.last);
 	res->x.pList = sql_expr_list_append(res->x.pList, last);
 	res->flags |= EP_Propagate & sqlExprListFlags(res->x.pList);
-	res->nHeight = expr->height;
 	return res;
 }
 
@@ -3697,7 +3692,6 @@ expr_in(struct rast_expr *expr)
 		res->x.pList = res_list;
 		res->flags |= EP_Propagate & sqlExprListFlags(res->x.pList);
 	}
-	res->nHeight = expr->height;
 	return res;
 }
 
@@ -3751,7 +3745,6 @@ expr_case(struct rast_expr *expr)
 	}
 	res->x.pList = list;
 	res->flags |= EP_Propagate & sqlExprListFlags(list);
-	res->nHeight = expr->height;
 	return res;
 }
 
@@ -3773,16 +3766,12 @@ expr_function(struct rast_expr *expr)
 	if (expr->func.is_distinct)
 		res->flags |= EP_Distinct;
 
-	int height = 0;
 	for (uint32_t i = 0; i < expr->func.n_args; ++i) {
 		struct Expr *arg = expr_from_rast(&expr->func.args[i]);
 		res->x.pList = sql_expr_list_append(res->x.pList, arg);
-		if (height < arg->nHeight)
-			height = arg->nHeight;
 	}
 	if (res->x.pList != NULL)
 		res->flags |= EP_Propagate & sqlExprListFlags(res->x.pList);
-	res->nHeight = height + 1;
 	return res;
 }
 
@@ -3885,12 +3874,18 @@ expr_from_rast(struct rast_expr *expr)
 	case TK_SELECT:
 		res = sql_expr_new_anon(expr->op);
 		res->x.pSelect = select_from_rast(expr->select);
-		res->nHeight = expr->height;
 		ExprSetProperty(res, EP_xIsSelect | EP_Subquery);
 		break;
 	default:
 		unreachable();
 	}
+	/*
+	 * The height is not recomputed from the subtrees but taken from the
+	 * resolved expression, where it is already computed and checked
+	 * against the limit.
+	 */
+	if (res != NULL)
+		res->nHeight = expr->height;
 	return res;
 }
 
