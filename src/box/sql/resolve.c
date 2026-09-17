@@ -2063,6 +2063,49 @@ resolve_expr_raise(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	return resolve_expr_check_height(res);
 }
 
+/**
+ * Resolve a CASE expression: its optional operand and its list of WHEN and
+ * THEN expressions, the last of which is the ELSE one if their number is odd.
+ */
+static int
+resolve_expr_case(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+		  struct rast_expr *res)
+{
+	assert(ast->list != NULL && ast->list->len > 0);
+
+	res->op = ast->op;
+	res->cs.len = ast->list->len;
+	res->cs.list = xregion_alloc_array(ctx->region, struct rast_expr,
+					   res->cs.len);
+	memset(res->cs.list, 0, sizeof(*res->cs.list) * res->cs.len);
+
+	int height = 0;
+	int i = 0;
+	struct ast_expr_list_entry *entry = NULL;
+	stailq_foreach_entry(entry, &ast->list->head, link) {
+		struct rast_expr *expr = &res->cs.list[i++];
+		if (resolve_expr(ctx, entry->expr, expr) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+		if (height < expr->height)
+			height = expr->height;
+	}
+
+	if (ast->left != NULL) {
+		res->cs.expr = xregion_alloc_object(ctx->region,
+						    struct rast_expr);
+		if (resolve_expr(ctx, ast->left, res->cs.expr) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+		if (height < res->cs.expr->height)
+			height = res->cs.expr->height;
+	}
+	res->height = height + 1;
+	return resolve_expr_check_height(res);
+}
+
 static int
 resolve_expr_select(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		    struct rast_expr *res)
@@ -2203,6 +2246,10 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		break;
 	case TK_RAISE:
 		if (resolve_expr_raise(ctx, ast, res) != 0)
+			return -1;
+		break;
+	case TK_CASE:
+		if (resolve_expr_case(ctx, ast, res) != 0)
 			return -1;
 		break;
 	case TK_EXISTS:

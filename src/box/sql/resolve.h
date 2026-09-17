@@ -58,6 +58,17 @@ struct rast_expr {
 			/** Conflict resolution action of the RAISE. */
 			enum on_conflict_action action;
 		} raise;
+		struct {
+			/** Operand of the CASE, or NULL if there is none. */
+			struct rast_expr *expr;
+			/**
+			 * WHEN and THEN expressions of the CASE, in pairs,
+			 * followed by its ELSE expression, if there is one.
+			 */
+			struct rast_expr *list;
+			/** Number of expressions in the list above. */
+			uint32_t len;
+		} cs;
 	};
 	/**
 	 * Height of the tree headed by this node. Checked against

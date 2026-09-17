@@ -3721,6 +3721,34 @@ expr_raise(struct rast_expr *expr)
 	return res;
 }
 
+/**
+ * Create an expression of a CASE from a resolved expression. Its operand, if
+ * there is one, is the left subtree, and the WHEN and THEN expressions, the
+ * last of which is the ELSE one if their number is odd, form the list.
+ */
+static struct Expr *
+expr_case(struct rast_expr *expr)
+{
+	struct ExprList *list = NULL;
+	for (uint32_t i = 0; i < expr->cs.len; ++i) {
+		struct Expr *item = expr_from_rast(&expr->cs.list[i]);
+		list = sql_expr_list_append(list, item);
+	}
+
+	struct Expr *res = sql_xmalloc(sizeof(*res));
+	memset(res, 0, sizeof(*res));
+	res->op = expr->op;
+	res->iAgg = -1;
+	if (expr->cs.expr != NULL) {
+		struct Expr *left = expr_from_rast(expr->cs.expr);
+		sqlExprAttachSubtrees(res, left, NULL);
+	}
+	res->x.pList = list;
+	res->flags |= EP_Propagate & sqlExprListFlags(list);
+	res->nHeight = expr->height;
+	return res;
+}
+
 static struct Expr *
 expr_from_rast(struct rast_expr *expr)
 {
@@ -3808,6 +3836,9 @@ expr_from_rast(struct rast_expr *expr)
 		break;
 	case TK_RAISE:
 		res = expr_raise(expr);
+		break;
+	case TK_CASE:
+		res = expr_case(expr);
 		break;
 	case TK_EXISTS:
 	case TK_SELECT:
