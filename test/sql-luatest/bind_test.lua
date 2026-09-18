@@ -314,3 +314,23 @@ g.test_4566_bind_variable_LIKE_argument_resulted_to_crash = function(cg)
         box.space.t:drop()
     end)
 end
+
+-- Make sure bind variables in a compound SELECT are numbered in the order
+-- they appear in the query, regardless of the compound part they belong to.
+g.test_bind_numbering_in_compound_select = function(cg)
+    cg.server:exec(function()
+        -- Anonymous and numbered parameters mixed across UNION ALL parts.
+        local res = _G.execute([[SELECT ?, 1 UNION ALL SELECT $2, 2 ]] ..
+                               [[UNION ALL SELECT ?, 3;]], {1, 2, 3})
+        t.assert_equals(res.rows, {{1, 1}, {2, 2}, {3, 3}})
+
+        -- Only anonymous parameters keep left-to-right order.
+        res = _G.execute([[SELECT ? UNION ALL SELECT ? UNION ALL ]] ..
+                         [[SELECT ?;]], {10, 20, 30})
+        t.assert_equals(res.rows, {{10}, {20}, {30}})
+
+        -- A VALUES compound is numbered the same way.
+        res = _G.execute([[VALUES (?, 1), ($2, 2), (?, 3);]], {1, 2, 3})
+        t.assert_equals(res.rows, {{1, 1}, {2, 2}, {3, 3}})
+    end)
+end
