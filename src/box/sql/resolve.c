@@ -1743,6 +1743,21 @@ resolve_expr_check_height(struct rast_expr *res)
 	return -1;
 }
 
+/**
+ * Number of columns produced by a row-value expression: the length of the
+ * list for a TK_VECTOR, the column count of a subquery for TK_SELECT, or 1
+ * for a scalar expression. Mirrors the legacy sqlExprVectorSize() (expr.c).
+ */
+static uint32_t
+rast_expr_vector_size(const struct rast_expr *expr)
+{
+	if (expr->op == TK_VECTOR)
+		return expr->list.len;
+	if (expr->op == TK_SELECT)
+		return expr->select->columns.len;
+	return 1;
+}
+
 static int
 resolve_expr_binary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		    struct rast_expr *res)
@@ -1763,14 +1778,30 @@ resolve_expr_binary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	switch (res->op) {
 	case TK_AND:
 	case TK_OR:
+		res->type = SQL_TYPE_BOOLEAN;
+		break;
 	case TK_LT:
 	case TK_LE:
 	case TK_GT:
 	case TK_GE:
 	case TK_EQ:
-	case TK_NE:
+	case TK_NE: {
+		/*
+		 * A row-value (vector) comparison requires both sides to
+		 * produce the same number of columns. Checked here since the
+		 * legacy resolver's check (resolve.c, resolveExprStep()) is
+		 * skipped once this expression is marked resolved.
+		 */
+		uint32_t n_left = rast_expr_vector_size(res->left);
+		uint32_t n_right = rast_expr_vector_size(res->right);
+		if (n_left != n_right) {
+			diag_set(ClientError, ER_SQL_COLUMN_COUNT, n_left,
+				 n_right);
+			return -1;
+		}
 		res->type = SQL_TYPE_BOOLEAN;
 		break;
+	}
 	case TK_CONCAT:
 		res->type = SQL_TYPE_STRING;
 		break;
@@ -2010,6 +2041,21 @@ resolve_expr_between(struct sql_resolve_context *ctx,
 		return 0;
 	if (height < res->between.last->height)
 		height = res->between.last->height;
+
+	/*
+	 * Row-value comparison requires all three operands to produce the
+	 * same number of columns. Mirrors the legacy check in
+	 * resolveExprStep() (resolve.c), skipped once this expression is
+	 * marked resolved.
+	 */
+	uint32_t n_left = rast_expr_vector_size(res->between.expr);
+	uint32_t n_right = rast_expr_vector_size(res->between.first);
+	if (n_right == n_left)
+		n_right = rast_expr_vector_size(res->between.last);
+	if (n_left != n_right) {
+		diag_set(ClientError, ER_SQL_COLUMN_COUNT, n_left, n_right);
+		return -1;
+	}
 
 	res->height = height + 1;
 	return resolve_expr_check_height(res);
@@ -2269,6 +2315,24 @@ resolve_expr_function(struct sql_resolve_context *ctx,
 	 */
 	const char *name = sql_name_temp(ctx->region, res->func.name,
 					 res->func.name_len);
+	bool is_legacy = ast->left->str[0] != '"';
+	/*
+	 * LIKELIHOOD()'s second argument is a query-planner probability hint,
+	 * not an ordinary value, and legacy requires it to be a float literal
+	 * in [0.0, 1.0] (resolveExprStep(), resolve.c). It is checked here
+	 * since that legacy check is skipped once this expression is marked
+	 * resolved.
+	 */
+	uint32_t func_flags = sql_func_flags_by_name(name, is_legacy);
+	if ((func_flags & SQL_FUNC_UNLIKELY) != 0 && res->func.n_args == 2) {
+		const struct rast_expr *p = &res->func.args[1];
+		if (p->op != TK_FLOAT || p->f > 1.0) {
+			diag_set(IllegalParams, "second argument to "
+				 "LIKELIHOOD() must be a constant between 0.0 "
+				 "and 1.0");
+			return -1;
+		}
+	}
 	/*
 	 * The limit is checked by the legacy code when it converts the AST into
 	 * an expression, and the resolved path does not do that conversion, so
@@ -2295,7 +2359,7 @@ resolve_expr_function(struct sql_resolve_context *ctx,
 		args[i].op = arg->op;
 		args[i].type = sql_type_to_field_type(arg->type);
 	}
-	struct func *func = sql_func_find_by_name(name, ast->left->str[0] != '"',
+	struct func *func = sql_func_find_by_name(name, is_legacy,
 						  args, res->func.n_args);
 	if (func == NULL)
 		return -1;
@@ -2579,6 +2643,18 @@ resolve_select(struct sql_resolve_context *ctx, struct ast_select *ast,
 		return -1;
 	if (!ctx->can_resolve)
 		return 0;
+#if SQL_MAX_COLUMN
+	/*
+	 * Mirrors the legacy check in sqlSelectExpand() (select.c), which is
+	 * skipped once this SELECT is marked resolved.
+	 */
+	if (res->columns.len > SQL_MAX_COLUMN) {
+		diag_set(ClientError, ER_SQL_PARSER_LIMIT, "The number of "
+			 "columns in result set", (int)res->columns.len,
+			 SQL_MAX_COLUMN);
+		return -1;
+	}
+#endif
 	res->flags = ast->flags;
 	res->height = expr_list_height(&res->columns);
 	return 0;

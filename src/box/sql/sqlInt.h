@@ -4598,6 +4598,13 @@ uint32_t
 sql_func_flags(const struct Expr *expr);
 
 /**
+ * Same as sql_func_flags() above, but takes the function name directly
+ * instead of an already-built legacy Expr node.
+ */
+uint32_t
+sql_func_flags_by_name(const char *name, bool is_legacy);
+
+/**
  * Generate VDBE code to halt execution with correct error if
  * the object with specified key is already present (or doesn't
  * present - configure with cond_opcodeq) in specified space.

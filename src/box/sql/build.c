@@ -3762,7 +3762,7 @@ expr_function(struct rast_expr *expr)
 		.isReserved = false,
 	};
 	struct Expr *res = sql_expr_new_dequoted(TK_FUNCTION, &name);
-	res->type = FIELD_TYPE_SCALAR;
+	res->type = sql_type_to_field_type(expr->type);
 	if (expr->func.is_distinct)
 		res->flags |= EP_Distinct;
 
@@ -3884,8 +3884,14 @@ expr_from_rast(struct rast_expr *expr)
 	 * resolved expression, where it is already computed and checked
 	 * against the limit.
 	 */
-	if (res != NULL)
+	if (res != NULL) {
 		res->nHeight = expr->height;
+		/*
+		 * The whole subtree is already fully resolved, so the legacy
+		 * resolver must not walk into it again.
+		 */
+		ExprSetProperty(res, EP_Resolved);
+	}
 	return res;
 }
 
@@ -3923,8 +3929,13 @@ static struct Select *
 select_from_rast(struct rast_select *select)
 {
 	struct ExprList *columns = expr_list_from_rast(&select->columns);
+	/*
+	 * The columns are already fully resolved, so the legacy resolver
+	 * (sqlSelectPrep()) must not walk this SELECT again.
+	 */
+	uint32_t flags = select->flags | SF_Resolved | SF_HasTypeInfo;
 	struct Select *res = sqlSelectNew(columns, NULL, NULL, NULL, NULL, NULL,
-					  select->flags, NULL, NULL);
+					  flags, NULL, NULL);
 	return res;
 }
 

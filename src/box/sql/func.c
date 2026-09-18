@@ -2345,12 +2345,11 @@ sql_func_finalize(const char *name)
 }
 
 uint32_t
-sql_func_flags(const struct Expr *expr)
+sql_func_flags_by_name(const char *name, bool is_legacy)
 {
-	const char *name = expr->u.zToken;
 	size_t len = strlen(name);
 	char *old_name = NULL;
-	if ((expr->flags & EP_Lookup2) != 0)
+	if (is_legacy)
 		old_name = sql_legacy_name_new(name, len);
 	struct sql_func_dictionary *dict = built_in_func_get(name, old_name);
 	if (dict != NULL) {
@@ -2364,6 +2363,13 @@ sql_func_flags(const struct Expr *expr)
 	if (func == NULL || func->def->aggregate != FUNC_AGGREGATE_GROUP)
 		return 0;
 	return SQL_FUNC_AGG;
+}
+
+uint32_t
+sql_func_flags(const struct Expr *expr)
+{
+	return sql_func_flags_by_name(expr->u.zToken,
+				      (expr->flags & EP_Lookup2) != 0);
 }
 
 static struct func_vtab func_sql_builtin_vtab;
