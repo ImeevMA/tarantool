@@ -1273,6 +1273,8 @@ sqlExprDeleteNN(struct Expr *p)
 	if (ExprHasProperty(p, EP_MemToken)) {
 		if (p->op == TK_STRING)
 			sql_xfree(p->v.s);
+		else if (p->op == TK_RAISE)
+			sql_xfree(p->v.raise);
 		else if (p->op == TK_BLOB)
 			sql_xfree(p->v.z);
 		else
@@ -1378,6 +1380,8 @@ dupedExprNodeSize(Expr * p, int flags)
 		nByte += sizeof(decimal_t);
 	else if (p->op == TK_STRING)
 		nByte += sqlStrlen30(p->v.s) + 1;
+	else if (p->op == TK_RAISE && p->v.raise != NULL)
+		nByte += sqlStrlen30(p->v.raise) + 1;
 	else if (p->op == TK_BLOB)
 		nByte += p->v.n;
 	return ROUND8(nByte);
@@ -1445,6 +1449,8 @@ sql_expr_dup(struct Expr *p, int flags, char **buffer)
 	else
 		nToken = 0;
 	int nStr = p->op == TK_STRING ? sqlStrlen30(p->v.s) + 1 : 0;
+	int raise_len = p->op == TK_RAISE && p->v.raise != NULL ?
+			sqlStrlen30(p->v.raise) + 1 : 0;
 	int nBlob = p->op == TK_BLOB ? p->v.n : 0;
 	if (flags != 0) {
 		assert(ExprHasProperty(p, EP_Reduced) == 0);
@@ -1482,6 +1488,12 @@ sql_expr_dup(struct Expr *p, int flags, char **buffer)
 	if (nStr != 0) {
 		pNew->v.s = &zAlloc[nNewSize + nToken];
 		memcpy(pNew->v.s, p->v.s, nStr);
+	}
+
+	/* Copy the p->v.raise string, if the node is TK_RAISE. */
+	if (raise_len != 0) {
+		pNew->v.raise = &zAlloc[nNewSize + nToken];
+		memcpy(pNew->v.raise, p->v.raise, raise_len);
 	}
 
 	/* Copy the p->v.z blob, if the node is TK_BLOB. */
@@ -4115,13 +4127,12 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			pParse->is_aborted = true;
 			return 0;
 		}
-		if (pExpr->on_conflict_action == ON_CONFLICT_ACTION_IGNORE) {
+		if (pExpr->v.action == ON_CONFLICT_ACTION_IGNORE) {
 			sqlVdbeAddOp2(v, OP_Halt, 0, ON_CONFLICT_ACTION_IGNORE);
 		} else {
 			sqlVdbeAddOp4(v, OP_SetDiag, ER_SQL_EXECUTE, 0, 0,
-				      sql_xstrdup(pExpr->u.zToken), P4_DYNAMIC);
-			sqlVdbeAddOp2(v, OP_Halt, -1,
-				      pExpr->on_conflict_action);
+				      sql_xstrdup(pExpr->v.raise), P4_DYNAMIC);
+			sqlVdbeAddOp2(v, OP_Halt, -1, pExpr->v.action);
 		}
 		break;
 	}

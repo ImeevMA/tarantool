@@ -554,28 +554,11 @@ sqlTreeViewExpr(TreeView * pView, const Expr * pExpr, u8 moreToFollow)
 			sqlTreeViewExprList(pView, pExpr->x.pList, 0, 0);
 			break;
 		}
-	case TK_RAISE:{
-			const char *zType;
-			switch (pExpr->on_conflict_action) {
-			case ON_CONFLICT_ACTION_ROLLBACK:
-				zType = "rollback";
-				break;
-			case ON_CONFLICT_ACTION_ABORT:
-				zType = "abort";
-				break;
-			case ON_CONFLICT_ACTION_FAIL:
-				zType = "fail";
-				break;
-			case ON_CONFLICT_ACTION_IGNORE:
-				zType = "ignore";
-				break;
-			default:
-				unreachable();
-			}
-			sqlTreeViewLine(pView, "RAISE %s(%Q)", zType,
-					    pExpr->u.zToken);
-			break;
-		}
+	case TK_RAISE:
+		sqlTreeViewLine(pView, "RAISE %s(%Q)",
+				on_conflict_action_strs[pExpr->v.action],
+				pExpr->v.raise);
+		break;
 	case TK_MATCH:{
 			sqlTreeViewLine(pView, "MATCH {%d:%d}%s",
 					    pExpr->iTable, pExpr->iColumn,
