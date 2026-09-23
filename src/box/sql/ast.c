@@ -892,12 +892,19 @@ expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 		break;
 	}
 	case TK_RAISE:
-		if (expr->on_conflict_action != ON_CONFLICT_ACTION_IGNORE)
-			res = expr_leaf(expr->left, FIELD_TYPE_STRING);
-		else
+		if (expr->on_conflict_action != ON_CONFLICT_ACTION_IGNORE) {
+			res = sql_expr_new_empty(expr->op, expr->left->len + 1);
+			res->v.raise = (char *)&res[1];
+			memcpy(res->v.raise, expr->left->str, expr->left->len);
+			uint32_t n = sql_dequote(res->v.raise, expr->left->len);
+			res->v.raise[n] = '\0';
+		} else {
 			res = sql_expr_new_anon(expr->op);
+		}
+		res->type = FIELD_TYPE_ANY;
+		res->flags |= EP_Leaf;
 		res->op = TK_RAISE;
-		res->on_conflict_action = expr->on_conflict_action;
+		res->v.action = expr->on_conflict_action;
 		break;
 	case TK_CASE:
 		if (expr->left != NULL)

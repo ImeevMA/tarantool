@@ -1247,12 +1247,8 @@ typedef int ynVar;
  */
 struct Expr {
 	u8 op;			/* Operation performed by this node */
-	union {
-		/** The type of the column. */
-		enum field_type type;
-		/** Conflict action for RAISE() function. */
-		enum on_conflict_action on_conflict_action;
-	};
+	/** The type of the expression. */
+	enum field_type type;
 	u32 flags;		/* Various flags.  EP_* See below */
 	union {
 		char *zToken;	/* Token value. Zero terminated and dequoted */
@@ -1276,6 +1272,13 @@ struct Expr {
 			char *z;
 			/** Length of the varbinary string. */
 			uint32_t n;
+		};
+		/** Value for TK_RAISE. */
+		struct {
+			/** Error message, or NULL for the IGNORE action. */
+			char *raise;
+			/** Conflict resolution action. */
+			enum on_conflict_action action;
 		};
 	} v;
 
