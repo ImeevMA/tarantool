@@ -135,7 +135,7 @@ select_from_ast_single(struct Parse *parser, struct ast_select *select)
 	struct Expr *limit = expr_from_ast(parser, select->limit);
 	if (!select->is_offset_first)
 		offset = expr_from_ast(parser, select->offset);
-	struct Select *res = sqlSelectNew(parser, columns, list, where,
+	struct Select *res = sqlSelectNew(columns, list, where,
 					  group_by, having, order_by,
 					  select->flags, limit, offset);
 	res->op = select->op;
