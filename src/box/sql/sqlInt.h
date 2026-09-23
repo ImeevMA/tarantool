@@ -2480,7 +2480,7 @@ sql_expr_new_string(const char *str, uint32_t n);
  * the specified expression to which the collation applies.
  */
 struct Expr *
-sql_expr_new_collate(struct Expr *expr, uint32_t coll_id);
+sql_expr_new_collate(struct Parse *parser, struct Expr *expr, uint32_t coll_id);
 
 /**
  * The same as @sa sql_expr_new, but normalizes name, stored in

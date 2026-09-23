@@ -782,7 +782,7 @@ expr_collate(struct Parse *parser, struct ast_expr *expr)
 	struct Expr *left = expr_from_ast(parser, expr->left);
 	if (parser->is_aborted)
 		return NULL;
-	return sql_expr_new_collate(left, id);
+	return sql_expr_new_collate(parser, left, id);
 }
 
 struct Expr *

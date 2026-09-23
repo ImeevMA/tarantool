@@ -975,13 +975,14 @@ sql_expr_new(int op, const struct Token *token)
 }
 
 struct Expr *
-sql_expr_new_collate(struct Expr *expr, uint32_t coll_id)
+sql_expr_new_collate(struct Parse *parser, struct Expr *expr, uint32_t coll_id)
 {
 	struct Expr *res = sql_expr_new_empty(TK_COLLATE, 0);
 	res->type = FIELD_TYPE_SCALAR;
 	res->flags |= EP_Collate | EP_Skip;
 	res->pLeft = expr;
 	res->v.id = coll_id;
+	sqlExprSetHeightAndFlags(parser, res);
 	return res;
 }
 

@@ -89,6 +89,7 @@ incrAggFunctionDepth(Expr * pExpr, int N)
  * of the original expression.  The Expr.op2 field of TK_AGG_FUNCTION
  * structures must be increased by the nSubquery amount.
  *
+ * @param parser Parser context.
  * @param pEList A result set.
  * @param iCol A column in the result set.  0..pEList->nExpr-1.
  * @param pExpr Transform this into an alias to the result set.
@@ -96,8 +97,8 @@ incrAggFunctionDepth(Expr * pExpr, int N)
  * @param nSubquery Number of subqueries that the label is moving.
  */
 static void
-resolveAlias(struct ExprList *pEList, int iCol, struct Expr *pExpr,
-	     const char *zType, int nSubquery)
+resolveAlias(struct Parse *parser, struct ExprList *pEList, int iCol,
+	     struct Expr *pExpr, const char *zType, int nSubquery)
 {
 	Expr *pOrig;		/* The iCol-th column of the result set */
 	Expr *pDup;		/* Copy of pOrig */
@@ -111,7 +112,7 @@ resolveAlias(struct ExprList *pEList, int iCol, struct Expr *pExpr,
 	if (zType[0] != 'G')
 		incrAggFunctionDepth(pDup, nSubquery);
 	if (pExpr->op == TK_COLLATE)
-		pDup = sql_expr_new_collate(pDup, pExpr->v.id);
+		pDup = sql_expr_new_collate(parser, pDup, pExpr->v.id);
 
 	/* Before calling sql_expr_delete(), set the EP_Static flag. This
 	 * prevents ExprDelete() from deleting the Expr structure itself,
@@ -459,8 +460,10 @@ lookupName(struct Parse *pParse, struct Expr *pExpr, struct NameContext *pNC)
 						pParse->is_aborted = true;
 						goto lookupname_end;
 					}
-					resolveAlias(pEList, j, pExpr, "",
-						     nSubquery);
+					resolveAlias(pParse, pEList, j, pExpr,
+						     "", nSubquery);
+					if (pParse->is_aborted)
+						goto lookupname_end;
 					cnt = 1;
 					pMatch = 0;
 					assert(zTab == 0);
@@ -1025,8 +1028,10 @@ sqlResolveOrderGroupBy(Parse * pParse,	/* Parsing context.  Leave error messages
 				pParse->is_aborted = true;
 				return 1;
 			}
-			resolveAlias(pEList, pItem->u.x.iOrderByCol - 1,
+			resolveAlias(pParse, pEList, pItem->u.x.iOrderByCol - 1,
 				     pItem->pExpr, zType, 0);
+			if (pParse->is_aborted)
+				return 1;
 		}
 		/*
 		 * Currently, we cannot disallow ANY here, as values of ANY type
