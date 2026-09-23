@@ -126,7 +126,7 @@ select_from_ast_single(struct Parse *parser, struct ast_select *select)
 						       select->group_by);
 	struct ExprList *order_by = expr_list_from_ast(parser,
 						       select->order_by);
-	struct Select *res = sqlSelectNew(parser, columns, list, where,
+	struct Select *res = sqlSelectNew(columns, list, where,
 					  group_by, having, order_by,
 					  select->flags, limit, offset);
 	res->op = select->op;

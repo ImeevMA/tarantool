@@ -2950,8 +2950,13 @@ sql_drop_index(struct Parse *parse_context, struct Token *name,
 	       struct Token *table, bool if_exists);
 
 int sqlSelect(Parse *, Select *, SelectDest *);
-Select *sqlSelectNew(Parse *, ExprList *, SrcList *, Expr *, ExprList *,
-			 Expr *, ExprList *, u32, Expr *, Expr *);
+
+/** Allocate a new Select structure and return a pointer to that structure. */
+struct Select *
+sqlSelectNew(struct ExprList *pEList, struct SrcList *pSrc, struct Expr *pWhere,
+	     struct ExprList *pGroupBy, struct Expr *pHaving,
+	     struct ExprList *pOrderBy, uint32_t selFlags, struct Expr *pLimit,
+	     struct Expr *pOffset);
 
 /**
  * While a SrcList can in general represent multiple spaces and
@@ -4369,6 +4374,10 @@ int sqlExprCheckHeight(Parse *, int);
 
 #ifdef SQL_DEBUG
 void sqlParserTrace(FILE *, char *);
+
+/** Enable tracing of the SELECT code generator. */
+void
+sql_enable_select_tracing(void);
 #endif
 
 int sqlExprVectorSize(Expr * pExpr);

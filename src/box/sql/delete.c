@@ -73,8 +73,8 @@ sql_materialize_view(struct Parse *parse, const char *name, struct Expr *where,
 	from->a[0].zName = sql_xstrdup(name);
 	assert(from->a[0].pOn == NULL);
 	assert(from->a[0].pUsing == NULL);
-	struct Select *select = sqlSelectNew(parse, NULL, from, where, NULL,
-						 NULL, NULL, 0, NULL, NULL);
+	struct Select *select = sqlSelectNew(NULL, from, where, NULL,
+					     NULL, NULL, 0, NULL, NULL);
 	struct SelectDest dest;
 	sqlSelectDestInit(&dest, SRT_EphemTab, cursor, ++parse->nMem);
 	sqlSelect(parse, select, &dest);
