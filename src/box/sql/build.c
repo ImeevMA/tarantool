@@ -46,6 +46,7 @@
 #include <ctype.h>
 #include "sqlInt.h"
 #include "mem.h"
+#include "resolve.h"
 #include "vdbeInt.h"
 #include "mp_decimal.h"
 #include "tarantoolInt.h"
@@ -144,16 +145,22 @@ sql_space_column_is_in_pk(const struct space *space, uint32_t column)
  * @retval -1 on error.
  */
 int
-sqlCheckIdentifierName(Parse *pParse, char *zName)
+sql_check_identifier_name(const char *name, ssize_t len)
 {
-	ssize_t len = strlen(zName);
 	if (len > BOX_NAME_MAX) {
 		diag_set(ClientError, ER_IDENTIFIER,
-			 tt_cstr(zName, BOX_INVALID_NAME_MAX));
-		pParse->is_aborted = true;
+			 tt_cstr(name, BOX_INVALID_NAME_MAX));
 		return -1;
 	}
-	if (identifier_check(zName, len) != 0) {
+	if (identifier_check(name, len) != 0)
+		return -1;
+	return 0;
+}
+
+int
+sqlCheckIdentifierName(Parse *pParse, char *zName)
+{
+	if (sql_check_identifier_name(zName, strlen(zName)) != 0) {
 		pParse->is_aborted = true;
 		return -1;
 	}
@@ -324,7 +331,7 @@ sql_create_column_start(struct Parse *parse, struct Token *table,
 		return;
 	}
 
-	char *column_name = sql_name_temp(parse, name->z, name->n);
+	char *column_name = sql_name_temp(&parse->region, name->z, name->n);
 
 	/*
 	 * Format can be set in Lua, then exact_field_count can be
@@ -3494,4 +3501,31 @@ sql_emit_show_create_table_all(struct Parse *parse)
 	sqlVdbeAddOp2(v, OP_ResultRow, result_reg, 2);
 	sqlVdbeAddOp2(v, OP_Next, cursor, addr2);
 	sqlVdbeJumpHere(v, addr1);
+}
+
+void
+sql_emit_select(struct Parse *parser, struct rast_select *select)
+{
+	struct Select *res = select_from_rast(parser, select);
+	if (parser->is_aborted)
+		return;
+	struct SelectDest dest = {SRT_Output, NULL, 0, 0, 0, 0, NULL};
+	sqlSelect(parser, res, &dest);
+	sql_select_delete(res);
+}
+
+void
+sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast)
+{
+	switch (rast->type) {
+	case SQL_AST_SELECT: {
+		sql_emit_select(parser, &rast->select);
+		break;
+	}
+	default:
+		unreachable();
+	}
+	if (parser->is_aborted)
+		return;
+	sql_finish_coding(parser);
 }
