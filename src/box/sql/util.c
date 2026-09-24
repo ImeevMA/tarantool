@@ -119,11 +119,10 @@ sql_name_new(const char *name, int len)
 }
 
 char *
-sql_name_temp(struct Parse *parser, const char *name, int len)
+sql_name_temp(struct region *region, const char *name, int len)
 {
-	struct region *r = &parser->region;
 	int size = len + 1;
-	char *res = xregion_alloc(r, size);
+	char *res = xregion_alloc(region, size);
 	memcpy(res, name, len);
 	res[len] = '\0';
 	sqlDequote(res);
@@ -1169,6 +1168,30 @@ sql_legacy_name_new(const char *name, int len)
 	assert(U_SUCCESS(status));
 	assert((size_t)new_len < size);
 	(void)new_len;
+	return res;
+}
+
+char *
+sql_legacy_name_temp(struct region *region, const char *name, int len)
+{
+	if (sqlIsquote(name[0])) {
+		char *res = xregion_alloc(region, len + 1);
+		memcpy(res, name, len);
+		res[len] = '\0';
+		sqlDequote(res);
+		return res;
+	}
+
+	UErrorCode status = U_ZERO_ERROR;
+	assert(icu_ucase_default_map != NULL);
+	int new_len = ucasemap_utf8ToUpper(icu_ucase_default_map, NULL, 0, name,
+					   len, &status);
+	assert(status == U_BUFFER_OVERFLOW_ERROR || U_SUCCESS(status));
+	status = U_ZERO_ERROR;
+	char *res = xregion_alloc(region, new_len + 1);
+	ucasemap_utf8ToUpper(icu_ucase_default_map, res, new_len + 1, name, len,
+			     &status);
+	assert(U_SUCCESS(status));
 	return res;
 }
 

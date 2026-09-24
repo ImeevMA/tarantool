@@ -35,6 +35,7 @@
  * from disk.
  */
 #include "sqlInt.h"
+#include "resolve.h"
 #include "tarantoolInt.h"
 #include "box/space.h"
 #include "box/session.h"
@@ -58,8 +59,17 @@ sql_stmt_compile(const char *zSql, struct Vdbe *pReprepare)
 		return NULL;
 	}
 
+	struct sql_rast *rast = sql_resolve_ast(&sParse, ast);
+	if (sParse.is_aborted) {
+		sql_parser_destroy(&sParse);
+		return NULL;
+	}
+
 	sParse.explain = (int)ast->explain;
-	sql_code_ast(&sParse, ast, zSql);
+	if (!rast->is_resolved)
+		sql_code_ast(&sParse, ast, zSql);
+	else
+		sql_emit_vdbe(&sParse, rast);
 	if (sParse.is_aborted) {
 		sql_parser_destroy(&sParse);
 		return NULL;

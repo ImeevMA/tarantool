@@ -36,10 +36,19 @@
  * table and column.
  */
 #include "sqlInt.h"
+#include "resolve.h"
 #include <stdlib.h>
 #include <string.h>
 #include "box/schema.h"
 #include "box/coll_id_cache.h"
+
+/** State threaded through the AST resolve phase. */
+struct sql_resolve_context {
+	/** Region the resolved AST is allocated on. */
+	struct region *region;
+	/** Whether the statement being resolved has a resolved form yet. */
+	bool can_resolve;
+};
 
 /*
  * Walk the expression tree pExpr and increase the aggregate function
@@ -1612,4 +1621,226 @@ sql_coll_id(uint32_t *id, const char *name, uint32_t len)
 	diag_set(ClientError, ER_NO_SUCH_COLLATION, name_str);
 	sql_xfree(name_str);
 	return -1;
+}
+
+/**
+ * Resolve the given AST column expression into the given rast_expr.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+	     struct rast_expr *res)
+{
+	memset(res, 0, sizeof(*res));
+	res->op = ast->op;
+	switch (ast->op) {
+	case TK_TRUE:
+		res->b = true;
+		res->type = SQL_TYPE_BOOLEAN;
+		res->height = 1;
+		break;
+	case TK_FALSE:
+	case TK_UNKNOWN:
+		res->b = false;
+		res->type = SQL_TYPE_BOOLEAN;
+		res->height = 1;
+		break;
+	default:
+		ctx->can_resolve = false;
+		break;
+	}
+	return 0;
+}
+
+/**
+ * Resolve every entry of the given AST expression list into the given
+ * rast_expr_list.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_column_list(struct sql_resolve_context *ctx,
+		    const struct ast_expr_list *ast, struct rast_expr_list *res)
+{
+	res->exprs = xregion_alloc_array(ctx->region, typeof(*res->exprs),
+					 ast->len);
+	res->len = ast->len;
+	memset(res->exprs, 0, sizeof(*res->exprs) * res->len);
+
+	int i = 0;
+	for (const struct stailq_entry *node = ast->head.first.value;
+	     node != NULL; node = node->next.value) {
+		const struct ast_expr_list_entry *entry =
+			stailq_entry(node, struct ast_expr_list_entry, link);
+		struct rast_expr_list_entry *expr = &res->exprs[i++];
+		if (resolve_expr(ctx, entry->expr, &expr->expr) != 0)
+			return -1;
+		if (entry->name.n > 0) {
+			expr->name = sql_name_temp(ctx->region, entry->name.z,
+						   entry->name.n);
+			if (sql_check_identifier_name(expr->name,
+						      strlen(expr->name)) != 0)
+				return -1;
+			expr->legacy_name = sql_legacy_name_temp(ctx->region,
+								 entry->name.z,
+								 entry->name.n);
+		}
+		expr->span = entry->expr->str;
+		expr->span_len = entry->expr->len;
+	}
+	return 0;
+}
+
+/** Check if the given SELECT can be resolved. */
+static bool
+can_resolve(const struct ast_select *ast)
+{
+	return ast->op == TK_SELECT && ast->sources == NULL &&
+	       ast->group_by == NULL && ast->order_by == NULL &&
+	       ast->where == NULL && ast->having == NULL &&
+	       ast->limit == NULL && ast->offset == NULL && ast->with == NULL;
+}
+
+/**
+ * Resolve the given AST SELECT statement into the given rast_select.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_select(struct sql_resolve_context *ctx, const struct ast_select *ast,
+	       struct rast_select *res)
+{
+	memset(res, 0, sizeof(*res));
+	res->flags = ast->flags;
+	res->op = ast->op;
+	ctx->can_resolve = can_resolve(ast);
+	if (!ctx->can_resolve)
+		return 0;
+	if (resolve_column_list(ctx, ast->columns, &res->columns) != 0)
+		return -1;
+	/*
+	 * A column may turn out to be not resolvable, in which case the whole
+	 * SELECT falls back to the legacy path, which does its own checks.
+	 */
+	if (!ctx->can_resolve)
+		return 0;
+	/*
+	 * Mirrors the legacy check in sqlSelectExpand() (select.c), which is
+	 * skipped once this SELECT is marked resolved.
+	 */
+	if (res->columns.len > SQL_MAX_COLUMN) {
+		diag_set(ClientError, ER_SQL_PARSER_LIMIT, "The number of "
+			 "columns in result set", (int)res->columns.len,
+			 SQL_MAX_COLUMN);
+		return -1;
+	}
+	return 0;
+}
+
+/** Build the resolved AST for the given parsed statement. */
+struct sql_rast *
+sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
+{
+	struct sql_resolve_context ctx;
+	memset(&ctx, 0, sizeof(ctx));
+	ctx.region = &parser->region;
+	ctx.can_resolve = true;
+
+	struct sql_rast *rast = xregion_alloc_object(ctx.region, typeof(*rast));
+	memset(rast, 0, sizeof(*rast));
+	rast->type = ast->type;
+	switch (rast->type) {
+	case SQL_AST_SELECT:
+		if (resolve_select(&ctx, ast->select, &rast->select) != 0) {
+			parser->is_aborted = true;
+			return NULL;
+		}
+		break;
+	default:
+		ctx.can_resolve = false;
+		break;
+	}
+	rast->is_resolved = ctx.can_resolve;
+	return rast;
+}
+
+/**
+ * Create an expression from the given resolved expression AST.
+ *
+ * This function cannot fail because the expressions have already been
+ * evaluated during the resolution process.
+ */
+static struct Expr *
+expr_from_rast(struct rast_expr *expr)
+{
+	struct Expr *res = NULL;
+	switch (expr->op) {
+	case TK_TRUE:
+	case TK_FALSE:
+	case TK_UNKNOWN:
+		res = sql_expr_new_empty(expr->op, 0);
+		res->flags |= EP_Leaf;
+		res->v.b = expr->b;
+		break;
+	default:
+		unreachable();
+	}
+	res->type = sql_type_to_field_type(expr->type);
+	res->nHeight = expr->height;
+	/*
+	 * The whole subtree is already fully resolved, so the legacy resolver
+	 * must not walk into it again.
+	 */
+	ExprSetProperty(res, EP_Resolved);
+	return res;
+}
+
+/**
+ * Create an expression list from the given resolved expression AST list.
+ *
+ * Returns NULL if the list is empty or on error.
+ */
+static struct ExprList *
+expr_list_from_rast(struct Parse *parser, struct rast_expr_list *list)
+{
+	if (list->len == 0)
+		return NULL;
+	struct ExprList *res = NULL;
+	for (uint32_t i = 0; i < list->len; ++i) {
+		struct rast_expr_list_entry *entry = &list->exprs[i];
+		struct Expr *expr = expr_from_rast(&entry->expr);
+		if (expr == NULL)
+			break;
+		res = sql_expr_list_append(res, expr);
+		if (entry->name != NULL) {
+			struct ExprList_item *item = &res->a[res->nExpr - 1];
+			item->zName = sql_xstrdup(entry->name);
+			item->legacy_name = sql_xstrdup(entry->legacy_name);
+		}
+		if (entry->span != NULL)
+			sqlExprListSetSpan(res, entry->span, entry->span_len);
+	}
+	if (parser->is_aborted) {
+		sql_expr_list_delete(res);
+		return NULL;
+	}
+	return res;
+}
+
+struct Select *
+select_from_rast(struct Parse *parser, struct rast_select *select)
+{
+	struct ExprList *cols = expr_list_from_rast(parser, &select->columns);
+	if (parser->is_aborted)
+		return NULL;
+	/*
+	 * The columns are already fully resolved, so the legacy resolver
+	 * (sqlSelectPrep()) must not walk this SELECT again.
+	 */
+	uint32_t flags = select->flags | SF_Resolved | SF_HasTypeInfo;
+	struct Select *res = sqlSelectNew(cols, NULL, NULL, NULL, NULL, NULL,
+					  flags, NULL, NULL);
+	res->op = select->op;
+	return res;
 }

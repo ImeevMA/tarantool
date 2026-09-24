@@ -256,6 +256,7 @@ struct sql_vfs {
 
 struct tt_uuid;
 struct sql_key_info;
+struct sql_rast;
 
 enum sql_ret_code {
 	/** sql_step() has another row ready. */
@@ -2341,15 +2342,19 @@ char *
 sql_name_new(const char *name, int len);
 
 /**
- * Duplicate the string onto parser region and remove the double quotes if
+ * Duplicate the string onto the given region and remove the double quotes if
  * necessary.
  */
 char *
-sql_name_temp(struct Parse *parser, const char *name, int len);
+sql_name_temp(struct region *region, const char *name, int len);
 
 /** Normalize the given name and write it to the newly allocated memory. */
 char *
 sql_legacy_name_new(const char *name, int len);
+
+/** Normalize the given name and write it to the given region. */
+char *
+sql_legacy_name_temp(struct region *region, const char *name, int len);
 
 /**
  * Normalize the given NULL-terminated name and write it to the newly allocated
@@ -2622,6 +2627,10 @@ sql_emit_show_create_table_all(struct Parse *parse);
 /** Generate a CREATE TABLE statement for the space with the given ID. */
 void
 sql_show_create_table(uint32_t space_id, struct Mem *ret, struct Mem *err);
+
+/** Emit VDBE bytecode for resolved statement AST. */
+void
+sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast);
 
 /**
  * Return true if given column is part of primary key.
@@ -3995,6 +4004,14 @@ sql_expr_coll(Parse *parse, Expr *p, bool *is_explicit_coll, uint32_t *coll_id,
 
 Expr *sqlExprSkipCollate(Expr *);
 int sqlCheckIdentifierName(Parse *, char *);
+
+/**
+ * Check that the given name is a legal identifier. Same as
+ * sqlCheckIdentifierName() above, but does not require a parser context: it
+ * sets a diag and returns -1 on error, and returns 0 otherwise.
+ */
+int
+sql_check_identifier_name(const char *name, ssize_t len);
 
 /**
  * This routine sets the value to be returned by subsequent calls to
