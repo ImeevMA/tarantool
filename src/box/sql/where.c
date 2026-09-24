@@ -1680,7 +1680,7 @@ whereRangeVectorLen(Parse * pParse,	/* Parsing context */
 			break;
 		enum field_type rhs_type = sql_expr_type(pRhs);
 		enum field_type type =
-			sql_type_result(rhs_type, sql_expr_type(pLhs));
+			sql_field_type_result(rhs_type, sql_expr_type(pLhs));
 		enum field_type idx_type = pLhs->iColumn >= 0 ?
 			space->def->fields[pLhs->iColumn].type : FIELD_TYPE_INTEGER;
 		if (type != idx_type)
