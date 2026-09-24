@@ -1553,35 +1553,59 @@ wqlist(A) ::= wqlist(A) COMMA nm(X) idlist_opt(Y) AS LP select(Z) RP. {
 }
 
 ////////////////////////////// TYPE DECLARATION ///////////////////////////////
-%type typedef {enum field_type}
-typedef(A) ::= TEXT . { A = FIELD_TYPE_STRING; }
-typedef(A) ::= STRING_KW . { A = FIELD_TYPE_STRING; }
-typedef(A) ::= SCALAR . { A = FIELD_TYPE_SCALAR; }
+%type typedef {enum sql_type}
+typedef(A) ::= TEXT . {
+  A = SQL_TYPE_STRING;
+}
+typedef(A) ::= STRING_KW . {
+  A = SQL_TYPE_STRING;
+}
+typedef(A) ::= SCALAR . {
+  A = SQL_TYPE_SCALAR;
+}
 /** BOOL | BOOLEAN is not used due to possible bug in Lemon. */
-typedef(A) ::= BOOL . { A = FIELD_TYPE_BOOLEAN; }
-typedef(A) ::= BOOLEAN . { A = FIELD_TYPE_BOOLEAN; }
-typedef(A) ::= VARBINARY . { A = FIELD_TYPE_VARBINARY; }
-typedef(A) ::= UUID . { A = FIELD_TYPE_UUID; }
-typedef(A) ::= ANY . { A = FIELD_TYPE_ANY; }
-typedef(A) ::= ARRAY . { A = FIELD_TYPE_ARRAY; }
-typedef(A) ::= MAP . { A = FIELD_TYPE_MAP; }
-typedef(A) ::= DATETIME . { A = FIELD_TYPE_DATETIME; }
-typedef(A) ::= INTERVAL . { A = FIELD_TYPE_INTERVAL; }
+typedef(A) ::= BOOL . {
+  A = SQL_TYPE_BOOLEAN;
+}
+typedef(A) ::= BOOLEAN . {
+  A = SQL_TYPE_BOOLEAN;
+}
+typedef(A) ::= VARBINARY . {
+  A = SQL_TYPE_VARBINARY;
+}
+typedef(A) ::= UUID . {
+  A = SQL_TYPE_UUID;
+}
+typedef(A) ::= ANY . {
+  A = SQL_TYPE_ANY;
+}
+typedef(A) ::= ARRAY . {
+  A = SQL_TYPE_ARRAY;
+}
+typedef(A) ::= MAP . {
+  A = SQL_TYPE_MAP;
+}
+typedef(A) ::= DATETIME . {
+  A = SQL_TYPE_DATETIME;
+}
+typedef(A) ::= INTERVAL . {
+  A = SQL_TYPE_INTERVAL;
+}
 typedef(A) ::= VARCHAR LP INTEGER RP . {
-  A = FIELD_TYPE_STRING;
+  A = SQL_TYPE_STRING;
 }
 typedef(A) ::= NUMBER . {
-  A = FIELD_TYPE_NUMBER;
+  A = SQL_TYPE_NUMBER;
 }
 typedef(A) ::= DOUBLE . {
-  A = FIELD_TYPE_DOUBLE;
+  A = SQL_TYPE_DOUBLE;
 }
 typedef(A) ::= INT|INTEGER_KW . {
-  A = FIELD_TYPE_INTEGER;
+  A = SQL_TYPE_INTEGER;
 }
 typedef(A) ::= UNSIGNED . {
-  A = FIELD_TYPE_UNSIGNED;
+  A = SQL_TYPE_UNSIGNED;
 }
 typedef(A) ::= DECIMAL . {
-  A = FIELD_TYPE_DECIMAL;
+  A = SQL_TYPE_DECIMAL;
 }

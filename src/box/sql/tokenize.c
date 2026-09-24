@@ -611,7 +611,8 @@ static void
 sql_code_ast_column(struct Parse *parser, struct Token *table,
 		    struct ast_column *col)
 {
-	sql_create_column_start(parser, table, &col->name, col->type);
+	sql_create_column_start(parser, table, &col->name,
+				sql_type_to_field_type(col->type));
 	if (parser->is_aborted)
 		return;
 	if (col->properties != NULL) {

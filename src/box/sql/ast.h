@@ -10,6 +10,7 @@
 #include "parse_def.h"
 #include "salad/stailq.h"
 #include "small/rlist.h"
+#include "type.h"
 
 /** Type of parsed statement. */
 enum sql_ast_type {
@@ -226,7 +227,7 @@ struct ast_expr {
 		/** Subquery of an EXISTS, SELECT, or IN expression. */
 		struct ast_select *select;
 		/** Target type of a CAST expression. */
-		enum field_type type;
+		enum sql_type type;
 		/** Conflict resolution action of a RAISE expression. */
 		enum on_conflict_action on_conflict_action;
 	};
@@ -401,7 +402,7 @@ struct ast_column {
 	/** Column properties. */
 	struct ast_property_list *properties;
 	/** Column field type. */
-	enum field_type type;
+	enum sql_type type;
 	/** Flag that shows if column is autoincremented. */
 	bool is_autoinc;
 };

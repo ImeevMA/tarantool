@@ -3909,8 +3909,9 @@ int sqlVarintLen(u64 v);
 void
 sql_emit_table_types(struct Vdbe *v, struct space_def *def, int reg);
 
+/** Determine the result type of an operation on the given field types. */
 enum field_type
-sql_type_result(enum field_type lhs, enum field_type rhs);
+sql_field_type_result(enum field_type lhs, enum field_type rhs);
 
 /**
  * pExpr is a comparison operator. Return the type affinity

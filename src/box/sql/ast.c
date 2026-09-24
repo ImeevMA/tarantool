@@ -863,7 +863,7 @@ expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 		res = expr_unary(parser, expr);
 		if (res == NULL)
 			break;
-		res->type = expr->type;
+		res->type = sql_type_to_field_type(expr->type);
 		break;
 	case TK_NOT:
 	case TK_BITNOT:

@@ -50,7 +50,7 @@ static int exprCodeVector(Parse * pParse, Expr * p, int *piToFree);
  * expression.
  */
 static enum field_type
-sql_highest_type(enum field_type a, struct Expr *expr)
+sql_highest_field_type(enum field_type a, struct Expr *expr)
 {
 	if (a == FIELD_TYPE_ANY || sql_token_is_variable(expr->op))
 		return FIELD_TYPE_ANY;
@@ -112,7 +112,7 @@ sql_expr_type(struct Expr *pExpr)
 		assert(pExpr->pRight != NULL && pExpr->pLeft != NULL);
 		enum field_type lhs_type = sql_expr_type(pExpr->pLeft);
 		enum field_type rhs_type = sql_expr_type(pExpr->pRight);
-		return sql_type_result(rhs_type, lhs_type);
+		return sql_field_type_result(rhs_type, lhs_type);
 	case TK_GETITEM:
 		return FIELD_TYPE_ANY;
 	case TK_CONCAT:
@@ -135,15 +135,17 @@ sql_expr_type(struct Expr *pExpr)
 		enum field_type res_type = sql_expr_type(cs->a[i].pExpr);
 		if (sql_token_is_variable(cs->a[i].pExpr->op))
 			res_type = FIELD_TYPE_ANY;
-		for (i += 2; i < count; i += 2)
-			res_type = sql_highest_type(res_type, cs->a[i].pExpr);
+		for (i += 2; i < count; i += 2) {
+			res_type = sql_highest_field_type(res_type,
+							  cs->a[i].pExpr);
+		}
 		/*
 		 * ELSE clause is optional but we should check
 		 * its type as well.
 		 */
 		if (count % 2 == 0)
 			return res_type;
-		return sql_highest_type(res_type, cs->a[count - 1].pExpr);
+		return sql_highest_field_type(res_type, cs->a[count - 1].pExpr);
 	}
 	case TK_LT:
 	case TK_GT:
@@ -392,7 +394,7 @@ sql_expr_coll(Parse *parse, Expr *p, bool *is_explicit_coll, uint32_t *coll_id,
 }
 
 enum field_type
-sql_type_result(enum field_type lhs, enum field_type rhs)
+sql_field_type_result(enum field_type lhs, enum field_type rhs)
 {
 	if (sql_type_is_numeric(lhs) || sql_type_is_numeric(rhs)) {
 		if (lhs == FIELD_TYPE_NUMBER || rhs == FIELD_TYPE_NUMBER)
@@ -416,6 +418,46 @@ sql_type_result(enum field_type lhs, enum field_type rhs)
 }
 
 enum field_type
+sql_type_to_field_type(enum sql_type type)
+{
+	switch (type) {
+	case SQL_TYPE_UNKNOWN:
+		return FIELD_TYPE_ANY;
+	case SQL_TYPE_ANY:
+		return FIELD_TYPE_ANY;
+	case SQL_TYPE_UNSIGNED:
+		return FIELD_TYPE_UNSIGNED;
+	case SQL_TYPE_STRING:
+		return FIELD_TYPE_STRING;
+	case SQL_TYPE_NUMBER:
+		return FIELD_TYPE_NUMBER;
+	case SQL_TYPE_DOUBLE:
+		return FIELD_TYPE_DOUBLE;
+	case SQL_TYPE_INTEGER:
+		return FIELD_TYPE_INTEGER;
+	case SQL_TYPE_BOOLEAN:
+		return FIELD_TYPE_BOOLEAN;
+	case SQL_TYPE_VARBINARY:
+		return FIELD_TYPE_VARBINARY;
+	case SQL_TYPE_SCALAR:
+		return FIELD_TYPE_SCALAR;
+	case SQL_TYPE_DECIMAL:
+		return FIELD_TYPE_DECIMAL;
+	case SQL_TYPE_UUID:
+		return FIELD_TYPE_UUID;
+	case SQL_TYPE_DATETIME:
+		return FIELD_TYPE_DATETIME;
+	case SQL_TYPE_INTERVAL:
+		return FIELD_TYPE_INTERVAL;
+	case SQL_TYPE_ARRAY:
+		return FIELD_TYPE_ARRAY;
+	case SQL_TYPE_MAP:
+		return FIELD_TYPE_MAP;
+	}
+	unreachable();
+}
+
+enum field_type
 expr_cmp_mutual_type(struct Expr *pExpr)
 {
 	assert(pExpr->op == TK_EQ || pExpr->op == TK_IN || pExpr->op == TK_LT ||
@@ -425,11 +467,11 @@ expr_cmp_mutual_type(struct Expr *pExpr)
 	enum field_type type = sql_expr_type(pExpr->pLeft);
 	if (pExpr->pRight) {
 		enum field_type rhs_type = sql_expr_type(pExpr->pRight);
-		type = sql_type_result(rhs_type, type);
+		type = sql_field_type_result(rhs_type, type);
 	} else if (ExprHasProperty(pExpr, EP_xIsSelect)) {
 		enum field_type rhs_type =
 			sql_expr_type(pExpr->x.pSelect->pEList->a[0].pExpr);
-		type = sql_type_result(rhs_type, type);
+		type = sql_field_type_result(rhs_type, type);
 	} else {
 		type = FIELD_TYPE_SCALAR;
 	}
@@ -446,7 +488,7 @@ binaryCompareP5(Expr * pExpr1, Expr * pExpr2, int jumpIfNull)
 {
 	enum field_type lhs = sql_expr_type(pExpr2);
 	enum field_type rhs = sql_expr_type(pExpr1);
-	u8 type_mask = sql_type_result(rhs, lhs) | (u8) jumpIfNull;
+	u8 type_mask = sql_field_type_result(rhs, lhs) | (u8) jumpIfNull;
 	return type_mask;
 }
 
@@ -2468,7 +2510,7 @@ expr_in_type(struct Expr *pExpr)
 		if (pSelect != NULL) {
 			struct Expr *e = pSelect->pEList->a[i].pExpr;
 			enum field_type rhs = sql_expr_type(e);
-			zRet[i] = sql_type_result(rhs, lhs);
+			zRet[i] = sql_field_type_result(rhs, lhs);
 		} else {
 			zRet[i] = lhs;
 		}
