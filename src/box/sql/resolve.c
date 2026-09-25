@@ -50,6 +50,15 @@ struct sql_resolve_context {
 	bool can_resolve;
 };
 
+/**
+ * Resolve the given AST column expression into the given rast_expr.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+	     struct rast_expr *res);
+
 /*
  * Walk the expression tree pExpr and increase the aggregate function
  * depth (the Expr.op2 field) by N on every TK_AGG_FUNCTION node.
@@ -1769,10 +1778,29 @@ expr_check_height(int height)
 }
 
 /**
- * Resolve the given AST column expression into the given rast_expr.
+ * Resolve the operands of an AST binary expression into the given rast_expr
+ * and set its height. The result type is left to the caller.
  *
  * Returns 0 on success and -1 on error.
  */
+static int
+resolve_binary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+	       struct rast_expr *res)
+{
+	res->left = xregion_alloc_object(ctx->region, struct rast_expr);
+	if (resolve_expr(ctx, ast->left, res->left) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	res->right = xregion_alloc_object(ctx->region, struct rast_expr);
+	if (resolve_expr(ctx, ast->right, res->right) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	res->height = MAX(res->left->height, res->right->height) + 1;
+	return expr_check_height(res->height);
+}
+
 static int
 resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	     struct rast_expr *res)
@@ -1831,6 +1859,35 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		res->height = res->expr->height + 1;
 		if (expr_check_height(res->height) != 0)
 			return -1;
+		break;
+	case TK_LT:
+	case TK_LE:
+	case TK_GT:
+	case TK_GE:
+	case TK_EQ:
+	case TK_NE:
+	case TK_OR:
+		if (resolve_binary(ctx, ast, res) != 0)
+			return -1;
+		res->type = SQL_TYPE_BOOLEAN;
+		break;
+	case TK_CONCAT:
+		if (resolve_binary(ctx, ast, res) != 0)
+			return -1;
+		res->type = SQL_TYPE_STRING;
+		break;
+	case TK_PLUS:
+	case TK_MINUS:
+	case TK_STAR:
+	case TK_SLASH:
+	case TK_REM:
+	case TK_BITAND:
+	case TK_BITOR:
+	case TK_LSHIFT:
+	case TK_RSHIFT:
+		if (resolve_binary(ctx, ast, res) != 0)
+			return -1;
+		/* The type stays UNKNOWN and is computed at codegen. */
 		break;
 	case TK_UPLUS:
 		if (resolve_expr(ctx, ast->left, res) != 0)
@@ -2051,6 +2108,29 @@ expr_from_rast(struct rast_expr *expr)
 		res = sql_expr_new_empty(expr->op, 0);
 		res->pLeft = expr_from_rast(expr->expr);
 		res->flags |= EP_Propagate & res->pLeft->flags;
+		break;
+	case TK_LT:
+	case TK_LE:
+	case TK_GT:
+	case TK_GE:
+	case TK_EQ:
+	case TK_NE:
+	case TK_OR:
+	case TK_CONCAT:
+	case TK_PLUS:
+	case TK_MINUS:
+	case TK_STAR:
+	case TK_SLASH:
+	case TK_REM:
+	case TK_BITAND:
+	case TK_BITOR:
+	case TK_LSHIFT:
+	case TK_RSHIFT:
+		res = sql_expr_new_empty(expr->op, 0);
+		res->pLeft = expr_from_rast(expr->left);
+		res->flags |= EP_Propagate & res->pLeft->flags;
+		res->pRight = expr_from_rast(expr->right);
+		res->flags |= EP_Propagate & res->pRight->flags;
 		break;
 	default:
 		unreachable();

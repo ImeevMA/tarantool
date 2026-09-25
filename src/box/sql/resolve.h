@@ -35,6 +35,13 @@ struct rast_expr {
 			/** Length of the data. */
 			uint32_t n;
 		};
+		/** Operands of a binary expression. */
+		struct {
+			/** Left operand of a binary expression. */
+			struct rast_expr *left;
+			/** Right operand of a binary expression. */
+			struct rast_expr *right;
+		};
 		/** Value of a TK_RAISE expression. */
 		struct {
 			/** Error message, or NULL for the IGNORE action. */
