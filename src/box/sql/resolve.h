@@ -26,11 +26,11 @@ struct rast_expr {
 		double f;
 		/** Value of a TK_DECIMAL expression. */
 		decimal_t *dec;
-		/** Value of a TK_STRING expression. */
+		/** Value of a TK_STRING or TK_BLOB expression. */
 		struct {
-			/** Dequoted string. */
+			/** Dequoted string or decoded binary data. */
 			char *z;
-			/** Length of the string. */
+			/** Length of the data. */
 			uint32_t n;
 		};
 	};
