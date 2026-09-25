@@ -1860,6 +1860,17 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		if (expr_check_height(res->height) != 0)
 			return -1;
 		break;
+	case TK_CAST:
+		res->expr = xregion_alloc_object(ctx->region, struct rast_expr);
+		if (resolve_expr(ctx, ast->left, res->expr) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			break;
+		res->type = ast->type;
+		res->height = res->expr->height + 1;
+		if (expr_check_height(res->height) != 0)
+			return -1;
+		break;
 	case TK_LT:
 	case TK_LE:
 	case TK_GT:
@@ -2105,6 +2116,7 @@ expr_from_rast(struct rast_expr *expr)
 	case TK_BITNOT:
 	case TK_ISNULL:
 	case TK_NOTNULL:
+	case TK_CAST:
 		res = sql_expr_new_empty(expr->op, 0);
 		res->pLeft = expr_from_rast(expr->expr);
 		res->flags |= EP_Propagate & res->pLeft->flags;
