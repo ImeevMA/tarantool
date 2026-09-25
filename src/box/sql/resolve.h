@@ -33,6 +33,15 @@ struct rast_expr {
 			/** Length of the data. */
 			uint32_t n;
 		};
+		/** Value of a TK_RAISE expression. */
+		struct {
+			/** Error message, or NULL for the IGNORE action. */
+			char *raise;
+			/** Length of the error message. */
+			uint32_t raise_len;
+			/** Conflict resolution action. */
+			enum on_conflict_action action;
+		};
 	};
 	/** Data type of the expression. */
 	enum sql_type type;
