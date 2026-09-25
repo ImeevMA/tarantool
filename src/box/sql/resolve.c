@@ -1764,6 +1764,10 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	memset(res, 0, sizeof(*res));
 	res->op = ast->op;
 	switch (ast->op) {
+	case TK_NULL:
+		res->type = SQL_TYPE_SCALAR;
+		res->height = 1;
+		break;
 	case TK_TRUE:
 		res->b = true;
 		res->type = SQL_TYPE_BOOLEAN;
@@ -1957,6 +1961,10 @@ expr_from_rast(struct rast_expr *expr)
 {
 	struct Expr *res = NULL;
 	switch (expr->op) {
+	case TK_NULL:
+		res = sql_expr_new_empty(expr->op, 0);
+		res->flags |= EP_Leaf;
+		break;
 	case TK_TRUE:
 	case TK_FALSE:
 	case TK_UNKNOWN:
