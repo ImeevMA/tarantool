@@ -26,6 +26,13 @@ struct rast_expr {
 		double f;
 		/** Value of a TK_DECIMAL expression. */
 		decimal_t *dec;
+		/** Value of a TK_STRING expression. */
+		struct {
+			/** Dequoted string. */
+			char *z;
+			/** Length of the string. */
+			uint32_t n;
+		};
 	};
 	/** Data type of the expression. */
 	enum sql_type type;
