@@ -1778,6 +1778,24 @@ expr_check_height(int height)
 }
 
 /**
+ * Return true if the given AST expression is a constant FALSE, matching the
+ * folding done by sql_and_expr_new()/exprAlwaysFalse() at expression creation:
+ * a FALSE literal, possibly parenthesized, or an AND with a constant-FALSE
+ * operand.
+ */
+static bool
+ast_is_false(const struct ast_expr *ast)
+{
+	while (ast->op == TK_PARENTHESES)
+		ast = ast->left;
+	if (ast->op == TK_FALSE)
+		return true;
+	if (ast->op == TK_AND)
+		return ast_is_false(ast->left) || ast_is_false(ast->right);
+	return false;
+}
+
+/**
  * Resolve the operands of an AST binary expression into the given rast_expr
  * and set its height. The result type is left to the caller.
  *
@@ -1878,6 +1896,18 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	case TK_EQ:
 	case TK_NE:
 	case TK_OR:
+		if (resolve_binary(ctx, ast, res) != 0)
+			return -1;
+		res->type = SQL_TYPE_BOOLEAN;
+		break;
+	case TK_AND:
+		if (ast_is_false(ast->left) || ast_is_false(ast->right)) {
+			res->op = TK_FALSE;
+			res->b = false;
+			res->type = SQL_TYPE_BOOLEAN;
+			res->height = 1;
+			break;
+		}
 		if (resolve_binary(ctx, ast, res) != 0)
 			return -1;
 		res->type = SQL_TYPE_BOOLEAN;
@@ -2128,6 +2158,7 @@ expr_from_rast(struct rast_expr *expr)
 	case TK_EQ:
 	case TK_NE:
 	case TK_OR:
+	case TK_AND:
 	case TK_CONCAT:
 	case TK_PLUS:
 	case TK_MINUS:
