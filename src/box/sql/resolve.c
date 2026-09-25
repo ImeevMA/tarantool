@@ -1696,12 +1696,17 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		if (resolve_integer(ctx, ast, res) != 0)
 			return -1;
 		break;
+	case TK_FLOAT:
+		sqlAtoF(ast->str, &res->f, ast->len);
+		res->type = SQL_TYPE_DOUBLE;
+		res->height = 1;
+		break;
 	case TK_UPLUS:
 		if (resolve_expr(ctx, ast->left, res) != 0)
 			return -1;
 		if (!ctx->can_resolve)
 			break;
-		if (res->op != TK_INTEGER)
+		if (res->op != TK_INTEGER && res->op != TK_FLOAT)
 			ctx->can_resolve = false;
 		break;
 	case TK_UMINUS:
@@ -1713,6 +1718,9 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		case TK_INTEGER:
 			if (resolve_integer_uminus(res) != 0)
 				return -1;
+			break;
+		case TK_FLOAT:
+			res->f = -res->f;
 			break;
 		default:
 			ctx->can_resolve = false;
@@ -1862,6 +1870,11 @@ expr_from_rast(struct rast_expr *expr)
 		res->v.u = expr->u;
 		if (expr->is_neg)
 			res->flags |= EP_Negative;
+		break;
+	case TK_FLOAT:
+		res = sql_expr_new_empty(expr->op, 0);
+		res->flags |= EP_Leaf;
+		res->v.f = expr->f;
 		break;
 	default:
 		unreachable();
