@@ -1708,6 +1708,32 @@ resolve_string(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 }
 
 /**
+ * Resolve an AST BLOB expression into the given rast_expr. The hex literal is
+ * decoded into region memory.
+ */
+static void
+resolve_varbinary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+		  struct rast_expr *res)
+{
+	assert(ast->str[0] == 'x' || ast->str[0] == 'X');
+	assert(ast->str[1] == '\'' && ast->str[ast->len - 1] == '\'');
+	assert(ast->len > 2 && ast->len % 2 == 1);
+	uint32_t n = (ast->len - 3) / 2;
+	char *z = NULL;
+	if (n > 0) {
+		z = xregion_alloc(ctx->region, n);
+		for (uint32_t i = 0; i < n; ++i) {
+			z[i] = sqlHexToInt(ast->str[2 + i * 2]) << 4 |
+			       sqlHexToInt(ast->str[3 + i * 2]);
+		}
+	}
+	res->z = z;
+	res->n = n;
+	res->type = SQL_TYPE_VARBINARY;
+	res->height = 1;
+}
+
+/**
  * Resolve the given AST column expression into the given rast_expr.
  *
  * Returns 0 on success and -1 on error.
@@ -1745,6 +1771,9 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		break;
 	case TK_STRING:
 		resolve_string(ctx, ast, res);
+		break;
+	case TK_BLOB:
+		resolve_varbinary(ctx, ast, res);
 		break;
 	case TK_UPLUS:
 		if (resolve_expr(ctx, ast->left, res) != 0)
@@ -1933,6 +1962,14 @@ expr_from_rast(struct rast_expr *expr)
 		break;
 	case TK_STRING:
 		res = sql_expr_new_string(expr->z, expr->n);
+		break;
+	case TK_BLOB:
+		res = sql_expr_new_empty(expr->op, expr->n);
+		res->flags |= EP_Leaf;
+		res->v.z = (char *)&res[1];
+		res->v.n = expr->n;
+		if (expr->n > 0)
+			memcpy(res->v.z, expr->z, expr->n);
 		break;
 	default:
 		unreachable();
