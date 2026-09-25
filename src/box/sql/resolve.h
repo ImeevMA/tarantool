@@ -6,6 +6,7 @@
 #pragma once
 
 #include "ast.h"
+#include "core/decimal.h"
 
 struct Parse;
 
@@ -23,6 +24,8 @@ struct rast_expr {
 		};
 		/** Value of a TK_FLOAT expression. */
 		double f;
+		/** Value of a TK_DECIMAL expression. */
+		decimal_t *dec;
 	};
 	/** Data type of the expression. */
 	enum sql_type type;
