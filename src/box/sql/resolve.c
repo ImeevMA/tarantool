@@ -1624,6 +1624,52 @@ sql_coll_id(uint32_t *id, const char *name, uint32_t len)
 }
 
 /**
+ * Resolve an AST INTEGER expression into the given rast_expr.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_integer(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+		struct rast_expr *res)
+{
+	uint32_t used = region_used(ctx->region);
+	char *str = xregion_alloc(ctx->region, ast->len + 1);
+	memcpy(str, ast->str, ast->len);
+	str[ast->len] = '\0';
+	if (sql_uint_from_str(&res->u, str) != 0)
+		return -1;
+	region_truncate(ctx->region, used);
+	res->type = SQL_TYPE_INTEGER;
+	res->is_neg = false;
+	res->height = 1;
+	return 0;
+}
+
+/**
+ * Fold a unary minus into a resolved INTEGER expression.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_integer_uminus(struct rast_expr *res)
+{
+	if (res->is_neg) {
+		/* Compute -u in unsigned to avoid signed overflow. */
+		res->u = ~res->u + 1;
+		res->is_neg = false;
+		return 0;
+	}
+	if (res->u == 0)
+		return 0;
+	int64_t value;
+	if (sql_neg_uint(&value, res->u) != 0)
+		return -1;
+	res->u = (uint64_t)value;
+	res->is_neg = true;
+	return 0;
+}
+
+/**
  * Resolve the given AST column expression into the given rast_expr.
  *
  * Returns 0 on success and -1 on error.
@@ -1645,6 +1691,33 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		res->b = false;
 		res->type = SQL_TYPE_BOOLEAN;
 		res->height = 1;
+		break;
+	case TK_INTEGER:
+		if (resolve_integer(ctx, ast, res) != 0)
+			return -1;
+		break;
+	case TK_UPLUS:
+		if (resolve_expr(ctx, ast->left, res) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			break;
+		if (res->op != TK_INTEGER)
+			ctx->can_resolve = false;
+		break;
+	case TK_UMINUS:
+		if (resolve_expr(ctx, ast->left, res) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			break;
+		switch (res->op) {
+		case TK_INTEGER:
+			if (resolve_integer_uminus(res) != 0)
+				return -1;
+			break;
+		default:
+			ctx->can_resolve = false;
+			break;
+		}
 		break;
 	default:
 		ctx->can_resolve = false;
@@ -1782,6 +1855,13 @@ expr_from_rast(struct rast_expr *expr)
 		res = sql_expr_new_empty(expr->op, 0);
 		res->flags |= EP_Leaf;
 		res->v.b = expr->b;
+		break;
+	case TK_INTEGER:
+		res = sql_expr_new_empty(expr->op, 0);
+		res->flags |= EP_Leaf;
+		res->v.u = expr->u;
+		if (expr->is_neg)
+			res->flags |= EP_Negative;
 		break;
 	default:
 		unreachable();
