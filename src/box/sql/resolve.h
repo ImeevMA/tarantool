@@ -26,6 +26,8 @@ struct rast_expr {
 		double f;
 		/** Value of a TK_DECIMAL expression. */
 		decimal_t *dec;
+		/** Operand of a unary expression. */
+		struct rast_expr *expr;
 		/** Value of a TK_STRING or TK_BLOB expression. */
 		struct {
 			/** Dequoted string or decoded binary data. */

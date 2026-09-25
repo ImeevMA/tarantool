@@ -1753,6 +1753,22 @@ resolve_raise(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 }
 
 /**
+ * Check that the given expression tree height is less than or equal to the
+ * maximum expression depth allowed. If it is not, set a diag.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+expr_check_height(int height)
+{
+	if (height <= SQL_MAX_EXPR_DEPTH)
+		return 0;
+	diag_set(ClientError, ER_SQL_PARSER_LIMIT, "Number of nodes "
+		 "in expression tree", height, SQL_MAX_EXPR_DEPTH);
+	return -1;
+}
+
+/**
  * Resolve the given AST column expression into the given rast_expr.
  *
  * Returns 0 on success and -1 on error.
@@ -1800,6 +1816,21 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		break;
 	case TK_RAISE:
 		resolve_raise(ctx, ast, res);
+		break;
+	case TK_NOT:
+	case TK_BITNOT:
+	case TK_ISNULL:
+	case TK_NOTNULL:
+		res->expr = xregion_alloc_object(ctx->region, struct rast_expr);
+		if (resolve_expr(ctx, ast->left, res->expr) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			break;
+		res->type = ast->op == TK_BITNOT ? res->expr->type :
+			    SQL_TYPE_BOOLEAN;
+		res->height = res->expr->height + 1;
+		if (expr_check_height(res->height) != 0)
+			return -1;
 		break;
 	case TK_UPLUS:
 		if (resolve_expr(ctx, ast->left, res) != 0)
@@ -2012,6 +2043,14 @@ expr_from_rast(struct rast_expr *expr)
 		}
 		res->op = TK_RAISE;
 		res->v.action = expr->action;
+		break;
+	case TK_NOT:
+	case TK_BITNOT:
+	case TK_ISNULL:
+	case TK_NOTNULL:
+		res = sql_expr_new_empty(expr->op, 0);
+		res->pLeft = expr_from_rast(expr->expr);
+		res->flags |= EP_Propagate & res->pLeft->flags;
 		break;
 	default:
 		unreachable();
