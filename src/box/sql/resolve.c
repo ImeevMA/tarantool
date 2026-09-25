@@ -1826,6 +1826,10 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	memset(res, 0, sizeof(*res));
 	res->op = ast->op;
 	switch (ast->op) {
+	case TK_PARENTHESES:
+		while (ast->op == TK_PARENTHESES)
+			ast = ast->left;
+		return resolve_expr(ctx, ast, res);
 	case TK_NULL:
 		res->type = SQL_TYPE_SCALAR;
 		res->height = 1;
