@@ -1692,6 +1692,22 @@ resolve_decimal(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 }
 
 /**
+ * Resolve an AST STRING expression into the given rast_expr. The string is
+ * dequoted into region memory.
+ */
+static void
+resolve_string(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+	       struct rast_expr *res)
+{
+	char *str = xregion_alloc(ctx->region, ast->len);
+	memcpy(str, ast->str, ast->len);
+	res->n = sql_dequote(str, ast->len);
+	res->z = str;
+	res->type = SQL_TYPE_STRING;
+	res->height = 1;
+}
+
+/**
  * Resolve the given AST column expression into the given rast_expr.
  *
  * Returns 0 on success and -1 on error.
@@ -1726,6 +1742,9 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	case TK_DECIMAL:
 		if (resolve_decimal(ctx, ast, res) != 0)
 			return -1;
+		break;
+	case TK_STRING:
+		resolve_string(ctx, ast, res);
 		break;
 	case TK_UPLUS:
 		if (resolve_expr(ctx, ast->left, res) != 0)
@@ -1911,6 +1930,9 @@ expr_from_rast(struct rast_expr *expr)
 		res->flags |= EP_Leaf;
 		res->v.d = (decimal_t *)&res[1];
 		*res->v.d = *expr->dec;
+		break;
+	case TK_STRING:
+		res = sql_expr_new_string(expr->z, expr->n);
 		break;
 	default:
 		unreachable();
