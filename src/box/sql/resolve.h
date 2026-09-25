@@ -14,6 +14,13 @@ struct rast_expr {
 	union {
 		/** Value for TK_TRUE, TK_FALSE and TK_UNKNOWN. */
 		bool b;
+		/** Value of a TK_INTEGER expression. */
+		struct {
+			/** Absolute value. */
+			uint64_t u;
+			/** Whether the value is negative. */
+			bool is_neg;
+		};
 	};
 	/** Data type of the expression. */
 	enum sql_type type;
