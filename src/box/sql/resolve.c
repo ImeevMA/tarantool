@@ -1734,6 +1734,25 @@ resolve_varbinary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 }
 
 /**
+ * Resolve an AST RAISE expression into the given rast_expr. The error message,
+ * if any, is dequoted into region memory.
+ */
+static void
+resolve_raise(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+	      struct rast_expr *res)
+{
+	res->action = ast->on_conflict_action;
+	if (res->action != ON_CONFLICT_ACTION_IGNORE) {
+		char *str = xregion_alloc(ctx->region, ast->left->len);
+		memcpy(str, ast->left->str, ast->left->len);
+		res->raise_len = sql_dequote(str, ast->left->len);
+		res->raise = str;
+	}
+	res->height = 1;
+	res->type = SQL_TYPE_UNKNOWN;
+}
+
+/**
  * Resolve the given AST column expression into the given rast_expr.
  *
  * Returns 0 on success and -1 on error.
@@ -1774,6 +1793,9 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		break;
 	case TK_BLOB:
 		resolve_varbinary(ctx, ast, res);
+		break;
+	case TK_RAISE:
+		resolve_raise(ctx, ast, res);
 		break;
 	case TK_UPLUS:
 		if (resolve_expr(ctx, ast->left, res) != 0)
@@ -1970,6 +1992,18 @@ expr_from_rast(struct rast_expr *expr)
 		res->v.n = expr->n;
 		if (expr->n > 0)
 			memcpy(res->v.z, expr->z, expr->n);
+		break;
+	case TK_RAISE:
+		if (expr->action != ON_CONFLICT_ACTION_IGNORE) {
+			res = sql_expr_new_empty(expr->op, expr->raise_len + 1);
+			res->v.raise = (char *)&res[1];
+			memcpy(res->v.raise, expr->raise, expr->raise_len);
+			res->v.raise[expr->raise_len] = '\0';
+		} else {
+			res = sql_expr_new_anon(expr->op);
+		}
+		res->op = TK_RAISE;
+		res->v.action = expr->action;
 		break;
 	default:
 		unreachable();
