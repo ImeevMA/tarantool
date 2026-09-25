@@ -1670,6 +1670,28 @@ resolve_integer_uminus(struct rast_expr *res)
 }
 
 /**
+ * Resolve an AST DECIMAL expression into the given rast_expr.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_decimal(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+		struct rast_expr *res)
+{
+	res->dec = xregion_alloc_object(ctx->region, typeof(*res->dec));
+	uint32_t used = region_used(ctx->region);
+	char *str = xregion_alloc(ctx->region, ast->len + 1);
+	memcpy(str, ast->str, ast->len);
+	str[ast->len] = '\0';
+	if (sql_dec_from_str(res->dec, str) != 0)
+		return -1;
+	region_truncate(ctx->region, used);
+	res->type = SQL_TYPE_DECIMAL;
+	res->height = 1;
+	return 0;
+}
+
+/**
  * Resolve the given AST column expression into the given rast_expr.
  *
  * Returns 0 on success and -1 on error.
@@ -1701,12 +1723,17 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		res->type = SQL_TYPE_DOUBLE;
 		res->height = 1;
 		break;
+	case TK_DECIMAL:
+		if (resolve_decimal(ctx, ast, res) != 0)
+			return -1;
+		break;
 	case TK_UPLUS:
 		if (resolve_expr(ctx, ast->left, res) != 0)
 			return -1;
 		if (!ctx->can_resolve)
 			break;
-		if (res->op != TK_INTEGER && res->op != TK_FLOAT)
+		if (res->op != TK_INTEGER && res->op != TK_FLOAT &&
+		    res->op != TK_DECIMAL)
 			ctx->can_resolve = false;
 		break;
 	case TK_UMINUS:
@@ -1721,6 +1748,9 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 			break;
 		case TK_FLOAT:
 			res->f = -res->f;
+			break;
+		case TK_DECIMAL:
+			decimal_minus(res->dec, res->dec);
 			break;
 		default:
 			ctx->can_resolve = false;
@@ -1875,6 +1905,12 @@ expr_from_rast(struct rast_expr *expr)
 		res = sql_expr_new_empty(expr->op, 0);
 		res->flags |= EP_Leaf;
 		res->v.f = expr->f;
+		break;
+	case TK_DECIMAL:
+		res = sql_expr_new_empty(expr->op, sizeof(decimal_t));
+		res->flags |= EP_Leaf;
+		res->v.d = (decimal_t *)&res[1];
+		*res->v.d = *expr->dec;
 		break;
 	default:
 		unreachable();
