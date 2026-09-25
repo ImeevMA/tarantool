@@ -21,6 +21,8 @@ struct rast_expr {
 			/** Whether the value is negative. */
 			bool is_neg;
 		};
+		/** Value of a TK_FLOAT expression. */
+		double f;
 	};
 	/** Data type of the expression. */
 	enum sql_type type;
