@@ -60,14 +60,16 @@ struct rast_expr {
 			/** Upper bound of the range. */
 			struct rast_expr *upper;
 		} between;
-		/** Operands of a TK_IN expression with a value list. */
+		/** Operands of a TK_IN expression. */
 		struct {
 			/** Expression tested for membership. */
 			struct rast_expr *value;
-			/** Array of value expressions. */
+			/** Value expressions, or NULL for a subquery. */
 			struct rast_expr *exprs;
 			/** Number of value expressions. */
 			uint32_t len;
+			/** Subquery, or NULL for a value list. */
+			struct rast_select *select;
 		} in;
 		/** Operands of a TK_CASE expression. */
 		struct {
