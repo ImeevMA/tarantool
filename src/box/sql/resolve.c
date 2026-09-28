@@ -1796,6 +1796,17 @@ ast_is_false(const struct ast_expr *ast)
 }
 
 /**
+ * Number of columns in a resolved expression: the length of a row-value VECTOR,
+ * or 1 for a scalar. Subqueries, which also have a column count, are never
+ * resolved and so cannot appear here.
+ */
+static uint32_t
+rast_vector_size(const struct rast_expr *res)
+{
+	return res->op == TK_VECTOR ? res->list.len : 1;
+}
+
+/**
  * Resolve the operands of an AST binary expression into the given rast_expr
  * and set its height. The result type is left to the caller.
  *
@@ -1853,6 +1864,14 @@ resolve_between(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		return -1;
 	if (!ctx->can_resolve)
 		return 0;
+	uint32_t n_left = rast_vector_size(res->between.value);
+	uint32_t n_right = rast_vector_size(res->between.lower);
+	if (n_right == n_left)
+		n_right = rast_vector_size(res->between.upper);
+	if (n_left != n_right) {
+		diag_set(ClientError, ER_SQL_COLUMN_COUNT, n_left, n_right);
+		return -1;
+	}
 	res->height = MAX(res->between.value->height,
 			  MAX(res->between.lower->height,
 			      res->between.upper->height)) + 1;
@@ -1988,10 +2007,10 @@ resolve_case(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 }
 
 /**
- * Resolve an AST ARRAY or MAP constructor into the given rast_expr and set its
- * height. The elements are held in the AST list, which is empty for an empty
- * constructor. A map holds its keys and values in pairs. The result type is
- * left to the caller.
+ * Resolve an AST ARRAY or MAP constructor, or a row-value VECTOR, into the
+ * given rast_expr and set its height. The elements are held in the AST list,
+ * which is empty for an empty constructor. A map holds its keys and values in
+ * pairs. The result type is left to the caller.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -2094,7 +2113,21 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	case TK_GT:
 	case TK_GE:
 	case TK_EQ:
-	case TK_NE:
+	case TK_NE: {
+		if (resolve_binary(ctx, ast, res) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			break;
+		uint32_t size_left = rast_vector_size(res->left);
+		uint32_t size_right = rast_vector_size(res->right);
+		if (size_left != size_right) {
+			diag_set(ClientError, ER_SQL_COLUMN_COUNT, size_left,
+				 size_right);
+			return -1;
+		}
+		res->type = SQL_TYPE_BOOLEAN;
+		break;
+	}
 	case TK_OR:
 		if (resolve_binary(ctx, ast, res) != 0)
 			return -1;
@@ -2182,6 +2215,11 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		if (resolve_constructor(ctx, ast, res) != 0)
 			return -1;
 		res->type = SQL_TYPE_MAP;
+		break;
+	case TK_VECTOR:
+		if (resolve_constructor(ctx, ast, res) != 0)
+			return -1;
+		res->type = SQL_TYPE_ANY;
 		break;
 	default:
 		ctx->can_resolve = false;
@@ -2442,6 +2480,7 @@ expr_from_rast(struct rast_expr *expr)
 		res->flags |= EP_Propagate & sqlExprListFlags(list);
 		break;
 	}
+	case TK_VECTOR:
 	case TK_ARRAY:
 	case TK_MAP: {
 		res = sql_expr_new_anon(expr->op);

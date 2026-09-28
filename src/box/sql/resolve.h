@@ -81,7 +81,7 @@ struct rast_expr {
 			/** Number of expressions in the array above. */
 			uint32_t len;
 		} cs;
-		/** Elements of a TK_ARRAY or TK_MAP constructor. */
+		/** Elements of a TK_ARRAY, TK_MAP or TK_VECTOR expression. */
 		struct {
 			/**
 			 * Array of element expressions. A map holds its keys
