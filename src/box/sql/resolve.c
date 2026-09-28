@@ -1987,6 +1987,34 @@ resolve_case(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	return expr_check_height(res->height);
 }
 
+/**
+ * Resolve an AST ARRAY or MAP constructor into the given rast_expr and set its
+ * height. The elements are held in the AST list, which is empty for an empty
+ * constructor. A map holds its keys and values in pairs. The result type is
+ * left to the caller.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_constructor(struct sql_resolve_context *ctx,
+		    const struct ast_expr *ast, struct rast_expr *res)
+{
+	res->list.len = ast->list == NULL ? 0 : ast->list->len;
+	if (res->list.len == 0) {
+		res->height = 1;
+		return 0;
+	}
+	res->list.exprs = xregion_alloc_array(ctx->region, struct rast_expr,
+					      res->list.len);
+	uint32_t height;
+	if (resolve_operand_list(ctx, ast->list, res->list.exprs, &height) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	res->height = height + 1;
+	return expr_check_height(res->height);
+}
+
 static int
 resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	     struct rast_expr *res)
@@ -2144,6 +2172,16 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	case TK_CASE:
 		if (resolve_case(ctx, ast, res) != 0)
 			return -1;
+		break;
+	case TK_ARRAY:
+		if (resolve_constructor(ctx, ast, res) != 0)
+			return -1;
+		res->type = SQL_TYPE_ARRAY;
+		break;
+	case TK_MAP:
+		if (resolve_constructor(ctx, ast, res) != 0)
+			return -1;
+		res->type = SQL_TYPE_MAP;
 		break;
 	default:
 		ctx->can_resolve = false;
@@ -2398,6 +2436,18 @@ expr_from_rast(struct rast_expr *expr)
 		struct ExprList *list = NULL;
 		for (uint32_t i = 0; i < expr->cs.len; ++i) {
 			struct Expr *e = expr_from_rast(&expr->cs.exprs[i]);
+			list = sql_expr_list_append(list, e);
+		}
+		res->x.pList = list;
+		res->flags |= EP_Propagate & sqlExprListFlags(list);
+		break;
+	}
+	case TK_ARRAY:
+	case TK_MAP: {
+		res = sql_expr_new_anon(expr->op);
+		struct ExprList *list = NULL;
+		for (uint32_t i = 0; i < expr->list.len; ++i) {
+			struct Expr *e = expr_from_rast(&expr->list.exprs[i]);
 			list = sql_expr_list_append(list, e);
 		}
 		res->x.pList = list;
