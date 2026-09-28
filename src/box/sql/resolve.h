@@ -91,6 +91,13 @@ struct rast_expr {
 			/** Number of element expressions. */
 			uint32_t len;
 		} list;
+		/** Operand and collation of a TK_COLLATE expression. */
+		struct {
+			/** Expression the collation is applied to. */
+			struct rast_expr *expr;
+			/** Identifier of the collation. */
+			uint32_t id;
+		} coll;
 	};
 	/** Data type of the expression. */
 	enum sql_type type;
