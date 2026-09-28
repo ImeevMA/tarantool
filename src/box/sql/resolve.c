@@ -1819,6 +1819,46 @@ resolve_binary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	return expr_check_height(res->height);
 }
 
+/**
+ * Resolve the operands of an AST BETWEEN expression into the given rast_expr.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_between(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+		struct rast_expr *res)
+{
+	res->between.value =
+		xregion_alloc_object(ctx->region, struct rast_expr);
+	if (resolve_expr(ctx, ast->left, res->between.value) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	assert(ast->list->len == 2);
+	const struct stailq_entry *node = ast->list->head.first.value;
+	const struct stailq_entry *next = node->next.value;
+	const struct ast_expr_list_entry *lower =
+		stailq_entry(node, struct ast_expr_list_entry, link);
+	const struct ast_expr_list_entry *upper =
+		stailq_entry(next, struct ast_expr_list_entry, link);
+	res->between.lower =
+		xregion_alloc_object(ctx->region, struct rast_expr);
+	if (resolve_expr(ctx, lower->expr, res->between.lower) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	res->between.upper =
+		xregion_alloc_object(ctx->region, struct rast_expr);
+	if (resolve_expr(ctx, upper->expr, res->between.upper) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	res->height = MAX(res->between.value->height,
+			  MAX(res->between.lower->height,
+			      res->between.upper->height)) + 1;
+	return expr_check_height(res->height);
+}
+
 static int
 resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	     struct rast_expr *res)
@@ -1963,6 +2003,11 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 			ctx->can_resolve = false;
 			break;
 		}
+		break;
+	case TK_BETWEEN:
+		if (resolve_between(ctx, ast, res) != 0)
+			return -1;
+		res->type = SQL_TYPE_BOOLEAN;
 		break;
 	default:
 		ctx->can_resolve = false;
@@ -2181,6 +2226,18 @@ expr_from_rast(struct rast_expr *expr)
 		res->pRight = expr_from_rast(expr->right);
 		res->flags |= EP_Propagate & res->pRight->flags;
 		break;
+	case TK_BETWEEN: {
+		res = sql_expr_new_empty(expr->op, 0);
+		res->pLeft = expr_from_rast(expr->between.value);
+		res->flags |= EP_Propagate & res->pLeft->flags;
+		struct Expr *lower = expr_from_rast(expr->between.lower);
+		struct Expr *upper = expr_from_rast(expr->between.upper);
+		struct ExprList *list = sql_expr_list_append(NULL, lower);
+		list = sql_expr_list_append(list, upper);
+		res->x.pList = list;
+		res->flags |= EP_Propagate & sqlExprListFlags(list);
+		break;
+	}
 	default:
 		unreachable();
 	}

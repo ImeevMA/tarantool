@@ -51,6 +51,15 @@ struct rast_expr {
 			/** Conflict resolution action. */
 			enum on_conflict_action action;
 		};
+		/** Operands of a TK_BETWEEN expression. */
+		struct {
+			/** Expression being tested against the range. */
+			struct rast_expr *value;
+			/** Lower bound of the range. */
+			struct rast_expr *lower;
+			/** Upper bound of the range. */
+			struct rast_expr *upper;
+		} between;
 	};
 	/** Data type of the expression. */
 	enum sql_type type;
