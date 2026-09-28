@@ -59,6 +59,11 @@ static int
 resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	     struct rast_expr *res);
 
+/** Resolve the given AST SELECT statement into the given rast_select. */
+static int
+resolve_select(struct sql_resolve_context *ctx, const struct ast_select *ast,
+	       struct rast_select *res);
+
 /*
  * Walk the expression tree pExpr and increase the aggregate function
  * depth (the Expr.op2 field) by N on every TK_AGG_FUNCTION node.
@@ -1814,13 +1819,17 @@ ast_is_false(const struct ast_expr *ast)
 
 /**
  * Number of columns in a resolved expression: the length of a row-value VECTOR,
- * or 1 for a scalar. Subqueries, which also have a column count, are never
- * resolved and so cannot appear here.
+ * the number of columns of a scalar subquery, or 1 otherwise. EXISTS is a
+ * scalar and so has a single column.
  */
 static uint32_t
 rast_vector_size(const struct rast_expr *res)
 {
-	return res->op == TK_VECTOR ? res->list.len : 1;
+	if (res->op == TK_VECTOR)
+		return res->list.len;
+	if (res->op == TK_SELECT)
+		return res->select->columns.len;
+	return 1;
 }
 
 /**
@@ -2062,6 +2071,35 @@ resolve_constructor(struct sql_resolve_context *ctx,
 	return expr_check_height(res->height);
 }
 
+/**
+ * Resolve an AST scalar subquery or EXISTS expression into the given rast_expr
+ * and set its height. The subquery is resolvable only when it is itself a
+ * resolvable FROM-less SELECT; otherwise the whole expression falls back. The
+ * result type is left unknown and is computed from the subquery when needed, as
+ * the legacy code does. The result type is left to the caller.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_subquery(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+		 struct rast_expr *res)
+{
+	bool outer = ctx->can_resolve;
+	res->select = xregion_alloc_object(ctx->region, struct rast_select);
+	if (resolve_select(ctx, ast->select, res->select) != 0)
+		return -1;
+	ctx->can_resolve = ctx->can_resolve && outer;
+	if (!ctx->can_resolve)
+		return 0;
+	uint32_t height = 0;
+	for (uint32_t i = 0; i < res->select->columns.len; ++i) {
+		uint32_t h = res->select->columns.exprs[i].expr.height;
+		height = MAX(height, h);
+	}
+	res->height = height + 1;
+	return expr_check_height(res->height);
+}
+
 static int
 resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	     struct rast_expr *res)
@@ -2264,6 +2302,11 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		if (expr_check_height(res->height) != 0)
 			return -1;
 		break;
+	case TK_SELECT:
+	case TK_EXISTS:
+		if (resolve_subquery(ctx, ast, res) != 0)
+			return -1;
+		break;
 	default:
 		ctx->can_resolve = false;
 		break;
@@ -2392,7 +2435,7 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
  * evaluated during the resolution process.
  */
 static struct Expr *
-expr_from_rast(struct rast_expr *expr)
+expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 {
 	struct Expr *res = NULL;
 	switch (expr->op) {
@@ -2454,7 +2497,7 @@ expr_from_rast(struct rast_expr *expr)
 	case TK_NOTNULL:
 	case TK_CAST:
 		res = sql_expr_new_empty(expr->op, 0);
-		res->pLeft = expr_from_rast(expr->expr);
+		res->pLeft = expr_from_rast(parser, expr->expr);
 		res->flags |= EP_Propagate & res->pLeft->flags;
 		break;
 	case TK_LT:
@@ -2476,17 +2519,19 @@ expr_from_rast(struct rast_expr *expr)
 	case TK_LSHIFT:
 	case TK_RSHIFT:
 		res = sql_expr_new_empty(expr->op, 0);
-		res->pLeft = expr_from_rast(expr->left);
+		res->pLeft = expr_from_rast(parser, expr->left);
 		res->flags |= EP_Propagate & res->pLeft->flags;
-		res->pRight = expr_from_rast(expr->right);
+		res->pRight = expr_from_rast(parser, expr->right);
 		res->flags |= EP_Propagate & res->pRight->flags;
 		break;
 	case TK_BETWEEN: {
 		res = sql_expr_new_empty(expr->op, 0);
-		res->pLeft = expr_from_rast(expr->between.value);
+		res->pLeft = expr_from_rast(parser, expr->between.value);
 		res->flags |= EP_Propagate & res->pLeft->flags;
-		struct Expr *lower = expr_from_rast(expr->between.lower);
-		struct Expr *upper = expr_from_rast(expr->between.upper);
+		struct Expr *lower =
+			expr_from_rast(parser, expr->between.lower);
+		struct Expr *upper =
+			expr_from_rast(parser, expr->between.upper);
 		struct ExprList *list = sql_expr_list_append(NULL, lower);
 		list = sql_expr_list_append(list, upper);
 		res->x.pList = list;
@@ -2495,11 +2540,12 @@ expr_from_rast(struct rast_expr *expr)
 	}
 	case TK_IN: {
 		res = sql_expr_new_empty(expr->op, 0);
-		res->pLeft = expr_from_rast(expr->in.value);
+		res->pLeft = expr_from_rast(parser, expr->in.value);
 		res->flags |= EP_Propagate & res->pLeft->flags;
 		struct ExprList *list = NULL;
 		for (uint32_t i = 0; i < expr->in.len; ++i) {
-			struct Expr *e = expr_from_rast(&expr->in.exprs[i]);
+			struct Expr *e =
+				expr_from_rast(parser, &expr->in.exprs[i]);
 			list = sql_expr_list_append(list, e);
 		}
 		res->x.pList = list;
@@ -2509,14 +2555,15 @@ expr_from_rast(struct rast_expr *expr)
 	case TK_CASE: {
 		if (expr->cs.value != NULL) {
 			res = sql_expr_new_empty(expr->op, 0);
-			res->pLeft = expr_from_rast(expr->cs.value);
+			res->pLeft = expr_from_rast(parser, expr->cs.value);
 			res->flags |= EP_Propagate & res->pLeft->flags;
 		} else {
 			res = sql_expr_new_anon(expr->op);
 		}
 		struct ExprList *list = NULL;
 		for (uint32_t i = 0; i < expr->cs.len; ++i) {
-			struct Expr *e = expr_from_rast(&expr->cs.exprs[i]);
+			struct Expr *e =
+				expr_from_rast(parser, &expr->cs.exprs[i]);
 			list = sql_expr_list_append(list, e);
 		}
 		res->x.pList = list;
@@ -2529,7 +2576,8 @@ expr_from_rast(struct rast_expr *expr)
 		res = sql_expr_new_anon(expr->op);
 		struct ExprList *list = NULL;
 		for (uint32_t i = 0; i < expr->list.len; ++i) {
-			struct Expr *e = expr_from_rast(&expr->list.exprs[i]);
+			struct Expr *e =
+				expr_from_rast(parser, &expr->list.exprs[i]);
 			list = sql_expr_list_append(list, e);
 		}
 		res->x.pList = list;
@@ -2538,9 +2586,15 @@ expr_from_rast(struct rast_expr *expr)
 	}
 	case TK_COLLATE:
 		res = sql_expr_new_empty(expr->op, 0);
-		res->pLeft = expr_from_rast(expr->coll.expr);
+		res->pLeft = expr_from_rast(parser, expr->coll.expr);
 		res->flags |= EP_Collate | EP_Skip;
 		res->v.id = expr->coll.id;
+		break;
+	case TK_SELECT:
+	case TK_EXISTS:
+		res = sql_expr_new_anon(expr->op);
+		res->x.pSelect = select_from_rast(parser, expr->select);
+		ExprSetProperty(res, EP_xIsSelect | EP_Subquery);
 		break;
 	default:
 		unreachable();
@@ -2568,7 +2622,7 @@ expr_list_from_rast(struct Parse *parser, struct rast_expr_list *list)
 	struct ExprList *res = NULL;
 	for (uint32_t i = 0; i < list->len; ++i) {
 		struct rast_expr_list_entry *entry = &list->exprs[i];
-		struct Expr *expr = expr_from_rast(&entry->expr);
+		struct Expr *expr = expr_from_rast(parser, &entry->expr);
 		if (expr == NULL)
 			break;
 		res = sql_expr_list_append(res, expr);

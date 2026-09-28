@@ -98,6 +98,8 @@ struct rast_expr {
 			/** Identifier of the collation. */
 			uint32_t id;
 		} coll;
+		/** Subquery of a TK_SELECT or TK_EXISTS expression. */
+		struct rast_select *select;
 	};
 	/** Data type of the expression. */
 	enum sql_type type;
