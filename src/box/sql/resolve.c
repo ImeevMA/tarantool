@@ -1859,6 +1859,100 @@ resolve_between(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	return expr_check_height(res->height);
 }
 
+/**
+ * Resolve every expression of the given AST list into the pre-allocated array
+ * of rast_expr, which must have room for the whole list. The maximum height
+ * among the entries is returned via height.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_operand_list(struct sql_resolve_context *ctx,
+		     const struct ast_expr_list *ast, struct rast_expr *exprs,
+		     uint32_t *height)
+{
+	uint32_t max = 0;
+	uint32_t i = 0;
+	for (const struct stailq_entry *node = ast->head.first.value;
+	     node != NULL; node = node->next.value) {
+		const struct ast_expr_list_entry *entry =
+			stailq_entry(node, struct ast_expr_list_entry, link);
+		if (resolve_expr(ctx, entry->expr, &exprs[i]) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+		max = MAX(max, exprs[i].height);
+		i++;
+	}
+	*height = max;
+	return 0;
+}
+
+/**
+ * Resolve an AST IN expression into the given rast_expr. Its right-hand side is
+ * either a subquery, which is not resolvable yet, or a list of values, which
+ * the legacy expression creation folds: an empty list becomes a constant FALSE
+ * with the left operand not evaluated, a single-value list becomes an equality,
+ * and a longer list stays an IN over the value list. The result type is
+ * BOOLEAN.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+	   struct rast_expr *res)
+{
+	const struct ast_expr *rhs = ast->right;
+	if (rhs->op != TK_VECTOR) {
+		ctx->can_resolve = false;
+		return 0;
+	}
+	uint32_t len = rhs->list == NULL ? 0 : rhs->list->len;
+	if (len == 0) {
+		res->op = TK_FALSE;
+		res->b = false;
+		res->type = SQL_TYPE_BOOLEAN;
+		res->height = 1;
+		return 0;
+	}
+	if (len == 1) {
+		res->op = TK_EQ;
+		res->left = xregion_alloc_object(ctx->region, struct rast_expr);
+		if (resolve_expr(ctx, ast->left, res->left) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+		const struct stailq_entry *node = rhs->list->head.first.value;
+		const struct ast_expr_list_entry *entry =
+			stailq_entry(node, struct ast_expr_list_entry, link);
+		res->right =
+			xregion_alloc_object(ctx->region, struct rast_expr);
+		if (resolve_expr(ctx, entry->expr, res->right) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+		res->type = SQL_TYPE_BOOLEAN;
+		res->height = MAX(res->left->height, res->right->height) + 1;
+		return expr_check_height(res->height);
+	}
+	res->in.value = xregion_alloc_object(ctx->region, struct rast_expr);
+	if (resolve_expr(ctx, ast->left, res->in.value) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	res->in.len = rhs->list->len;
+	res->in.exprs = xregion_alloc_array(ctx->region, struct rast_expr,
+					    res->in.len);
+	uint32_t height;
+	if (resolve_operand_list(ctx, rhs->list, res->in.exprs, &height) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	res->type = SQL_TYPE_BOOLEAN;
+	res->height = MAX(res->in.value->height, height) + 1;
+	return expr_check_height(res->height);
+}
+
 static int
 resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	     struct rast_expr *res)
@@ -2008,6 +2102,10 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		if (resolve_between(ctx, ast, res) != 0)
 			return -1;
 		res->type = SQL_TYPE_BOOLEAN;
+		break;
+	case TK_IN:
+		if (resolve_in(ctx, ast, res) != 0)
+			return -1;
 		break;
 	default:
 		ctx->can_resolve = false;
@@ -2234,6 +2332,19 @@ expr_from_rast(struct rast_expr *expr)
 		struct Expr *upper = expr_from_rast(expr->between.upper);
 		struct ExprList *list = sql_expr_list_append(NULL, lower);
 		list = sql_expr_list_append(list, upper);
+		res->x.pList = list;
+		res->flags |= EP_Propagate & sqlExprListFlags(list);
+		break;
+	}
+	case TK_IN: {
+		res = sql_expr_new_empty(expr->op, 0);
+		res->pLeft = expr_from_rast(expr->in.value);
+		res->flags |= EP_Propagate & res->pLeft->flags;
+		struct ExprList *list = NULL;
+		for (uint32_t i = 0; i < expr->in.len; ++i) {
+			struct Expr *e = expr_from_rast(&expr->in.exprs[i]);
+			list = sql_expr_list_append(list, e);
+		}
 		res->x.pList = list;
 		res->flags |= EP_Propagate & sqlExprListFlags(list);
 		break;

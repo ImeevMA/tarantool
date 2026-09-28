@@ -60,6 +60,15 @@ struct rast_expr {
 			/** Upper bound of the range. */
 			struct rast_expr *upper;
 		} between;
+		/** Operands of a TK_IN expression with a value list. */
+		struct {
+			/** Expression tested for membership. */
+			struct rast_expr *value;
+			/** Array of value expressions. */
+			struct rast_expr *exprs;
+			/** Number of value expressions. */
+			uint32_t len;
+		} in;
 	};
 	/** Data type of the expression. */
 	enum sql_type type;
