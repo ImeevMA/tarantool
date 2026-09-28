@@ -81,6 +81,16 @@ struct rast_expr {
 			/** Number of expressions in the array above. */
 			uint32_t len;
 		} cs;
+		/** Elements of a TK_ARRAY or TK_MAP constructor. */
+		struct {
+			/**
+			 * Array of element expressions. A map holds its keys
+			 * and values in pairs.
+			 */
+			struct rast_expr *exprs;
+			/** Number of element expressions. */
+			uint32_t len;
+		} list;
 	};
 	/** Data type of the expression. */
 	enum sql_type type;
