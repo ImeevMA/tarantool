@@ -1832,6 +1832,16 @@ rast_vector_size(const struct rast_expr *res)
 	return 1;
 }
 
+/** Maximum height among the columns of a resolved SELECT. */
+static uint32_t
+rast_select_height(const struct rast_select *select)
+{
+	uint32_t height = 0;
+	for (uint32_t i = 0; i < select->columns.len; ++i)
+		height = MAX(height, select->columns.exprs[i].expr.height);
+	return height;
+}
+
 /**
  * Resolve the operands of an AST binary expression into the given rast_expr
  * and set its height. The result type is left to the caller.
@@ -1948,6 +1958,24 @@ resolve_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	   struct rast_expr *res)
 {
 	const struct ast_expr *rhs = ast->right;
+	if (rhs->op == TK_SELECT) {
+		res->in.value =
+			xregion_alloc_object(ctx->region, struct rast_expr);
+		if (resolve_expr(ctx, ast->left, res->in.value) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+		res->in.select =
+			xregion_alloc_object(ctx->region, struct rast_select);
+		if (resolve_select(ctx, rhs->select, res->in.select) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+		res->type = SQL_TYPE_BOOLEAN;
+		res->height = MAX(res->in.value->height,
+				  rast_select_height(res->in.select)) + 1;
+		return expr_check_height(res->height);
+	}
 	if (rhs->op != TK_VECTOR) {
 		ctx->can_resolve = false;
 		return 0;
@@ -2091,12 +2119,7 @@ resolve_subquery(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	ctx->can_resolve = ctx->can_resolve && outer;
 	if (!ctx->can_resolve)
 		return 0;
-	uint32_t height = 0;
-	for (uint32_t i = 0; i < res->select->columns.len; ++i) {
-		uint32_t h = res->select->columns.exprs[i].expr.height;
-		height = MAX(height, h);
-	}
-	res->height = height + 1;
+	res->height = rast_select_height(res->select) + 1;
 	return expr_check_height(res->height);
 }
 
@@ -2542,6 +2565,12 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 		res = sql_expr_new_empty(expr->op, 0);
 		res->pLeft = expr_from_rast(parser, expr->in.value);
 		res->flags |= EP_Propagate & res->pLeft->flags;
+		if (expr->in.select != NULL) {
+			res->x.pSelect =
+				select_from_rast(parser, expr->in.select);
+			ExprSetProperty(res, EP_xIsSelect | EP_Subquery);
+			break;
+		}
 		struct ExprList *list = NULL;
 		for (uint32_t i = 0; i < expr->in.len; ++i) {
 			struct Expr *e =
