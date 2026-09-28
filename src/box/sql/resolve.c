@@ -2249,6 +2249,21 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 			return -1;
 		res->type = SQL_TYPE_ANY;
 		break;
+	case TK_COLLATE:
+		if (sql_coll_id(&res->coll.id, ast->right->str,
+				ast->right->len) != 0)
+			return -1;
+		res->coll.expr =
+			xregion_alloc_object(ctx->region, struct rast_expr);
+		if (resolve_expr(ctx, ast->left, res->coll.expr) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			break;
+		res->type = SQL_TYPE_SCALAR;
+		res->height = res->coll.expr->height + 1;
+		if (expr_check_height(res->height) != 0)
+			return -1;
+		break;
 	default:
 		ctx->can_resolve = false;
 		break;
@@ -2521,6 +2536,12 @@ expr_from_rast(struct rast_expr *expr)
 		res->flags |= EP_Propagate & sqlExprListFlags(list);
 		break;
 	}
+	case TK_COLLATE:
+		res = sql_expr_new_empty(expr->op, 0);
+		res->pLeft = expr_from_rast(expr->coll.expr);
+		res->flags |= EP_Collate | EP_Skip;
+		res->v.id = expr->coll.id;
+		break;
 	default:
 		unreachable();
 	}
