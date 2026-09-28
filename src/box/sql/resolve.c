@@ -786,6 +786,23 @@ resolveExprStep(Walker * pWalker, Expr * pExpr)
 			}
 			break;
 		}
+	case TK_CASE:{
+			if (pExpr->pLeft == NULL)
+				break;
+			int nLeft = sqlExprVectorSize(pExpr->pLeft);
+			struct ExprList *list = pExpr->x.pList;
+			for (int i = 0; i + 1 < list->nExpr; i += 2) {
+				struct Expr *e = list->a[i].pExpr;
+				int nWhen = sqlExprVectorSize(e);
+				if (nWhen == nLeft)
+					continue;
+				diag_set(ClientError, ER_SQL_COLUMN_COUNT,
+					 nLeft, nWhen);
+				pParse->is_aborted = true;
+				break;
+			}
+			break;
+		}
 	}
 	return pParse->is_aborted ? WRC_Abort : WRC_Continue;
 }
@@ -2002,6 +2019,17 @@ resolve_case(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		return -1;
 	if (!ctx->can_resolve)
 		return 0;
+	if (res->cs.value != NULL) {
+		uint32_t n_value = rast_vector_size(res->cs.value);
+		for (uint32_t i = 0; i + 1 < res->cs.len; i += 2) {
+			uint32_t n_when = rast_vector_size(&res->cs.exprs[i]);
+			if (n_when != n_value) {
+				diag_set(ClientError, ER_SQL_COLUMN_COUNT,
+					 n_value, n_when);
+				return -1;
+			}
+		}
+	}
 	res->height = MAX(value_height, height) + 1;
 	return expr_check_height(res->height);
 }
