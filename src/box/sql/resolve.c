@@ -1953,6 +1953,40 @@ resolve_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	return expr_check_height(res->height);
 }
 
+/**
+ * Resolve an AST CASE expression into the given rast_expr. The optional operand
+ * is followed by the WHEN and THEN expressions in pairs and the optional ELSE
+ * expression, all held in the AST list. The result type is left UNKNOWN and is
+ * computed from the branches when it is needed, as the legacy code does.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_case(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+	     struct rast_expr *res)
+{
+	uint32_t value_height = 0;
+	if (ast->left != NULL) {
+		res->cs.value =
+			xregion_alloc_object(ctx->region, struct rast_expr);
+		if (resolve_expr(ctx, ast->left, res->cs.value) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+		value_height = res->cs.value->height;
+	}
+	res->cs.len = ast->list->len;
+	res->cs.exprs = xregion_alloc_array(ctx->region, struct rast_expr,
+					    res->cs.len);
+	uint32_t height;
+	if (resolve_operand_list(ctx, ast->list, res->cs.exprs, &height) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	res->height = MAX(value_height, height) + 1;
+	return expr_check_height(res->height);
+}
+
 static int
 resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	     struct rast_expr *res)
@@ -2105,6 +2139,10 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		break;
 	case TK_IN:
 		if (resolve_in(ctx, ast, res) != 0)
+			return -1;
+		break;
+	case TK_CASE:
+		if (resolve_case(ctx, ast, res) != 0)
 			return -1;
 		break;
 	default:
@@ -2343,6 +2381,23 @@ expr_from_rast(struct rast_expr *expr)
 		struct ExprList *list = NULL;
 		for (uint32_t i = 0; i < expr->in.len; ++i) {
 			struct Expr *e = expr_from_rast(&expr->in.exprs[i]);
+			list = sql_expr_list_append(list, e);
+		}
+		res->x.pList = list;
+		res->flags |= EP_Propagate & sqlExprListFlags(list);
+		break;
+	}
+	case TK_CASE: {
+		if (expr->cs.value != NULL) {
+			res = sql_expr_new_empty(expr->op, 0);
+			res->pLeft = expr_from_rast(expr->cs.value);
+			res->flags |= EP_Propagate & res->pLeft->flags;
+		} else {
+			res = sql_expr_new_anon(expr->op);
+		}
+		struct ExprList *list = NULL;
+		for (uint32_t i = 0; i < expr->cs.len; ++i) {
+			struct Expr *e = expr_from_rast(&expr->cs.exprs[i]);
 			list = sql_expr_list_append(list, e);
 		}
 		res->x.pList = list;

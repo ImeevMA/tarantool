@@ -69,6 +69,18 @@ struct rast_expr {
 			/** Number of value expressions. */
 			uint32_t len;
 		} in;
+		/** Operands of a TK_CASE expression. */
+		struct {
+			/** Operand of the CASE, or NULL if there is none. */
+			struct rast_expr *value;
+			/**
+			 * WHEN and THEN expressions in pairs, followed by the
+			 * ELSE expression, if there is one.
+			 */
+			struct rast_expr *exprs;
+			/** Number of expressions in the array above. */
+			uint32_t len;
+		} cs;
 	};
 	/** Data type of the expression. */
 	enum sql_type type;
