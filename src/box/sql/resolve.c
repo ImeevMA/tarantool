@@ -2134,6 +2134,34 @@ resolve_getitem(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 }
 
 /**
+ * Resolve an AST column reference: a column name, optionally qualified with a
+ * source name. A resolved SELECT and all the SELECTs enclosing it have no
+ * sources, so the reference never matches, and the error is reported with the
+ * same message as the legacy code does. A qualified asterisk is not a column
+ * reference, so it is not resolvable.
+ *
+ * Returns 0 if the reference is not resolvable and -1 on error.
+ */
+static int
+resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast)
+{
+	if (ast->op == TK_ID) {
+		diag_set(ClientError, ER_SQL_CANT_RESOLVE_FIELD,
+			 sql_name_temp(ctx->region, ast->str, ast->len));
+		return -1;
+	}
+	assert(ast->op == TK_DOT && ast->left->op == TK_ID);
+	if (ast->right->op != TK_ID) {
+		ctx->can_resolve = false;
+		return 0;
+	}
+	diag_set(ClientError, ER_NO_SUCH_FIELD_NAME_IN_SPACE,
+		 sql_name_temp(ctx->region, ast->right->str, ast->right->len),
+		 sql_name_temp(ctx->region, ast->left->str, ast->left->len));
+	return -1;
+}
+
+/**
  * Resolve an AST scalar subquery or EXISTS expression into the given rast_expr
  * and set its height. The subquery is resolvable only when it is itself a
  * resolvable FROM-less SELECT; otherwise the whole expression falls back. The
@@ -2368,6 +2396,9 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		if (resolve_subquery(ctx, ast, res) != 0)
 			return -1;
 		break;
+	case TK_ID:
+	case TK_DOT:
+		return resolve_column_ref(ctx, ast);
 	default:
 		ctx->can_resolve = false;
 		break;
