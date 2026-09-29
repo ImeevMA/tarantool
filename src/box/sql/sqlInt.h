@@ -3923,6 +3923,13 @@ enum field_type
 sql_field_type_result(enum field_type lhs, enum field_type rhs);
 
 /**
+ * Determine the highest of the given field types, i.e. the type values of both
+ * types can be converted to. Used to compute the type of a CASE expression.
+ */
+enum field_type
+sql_field_type_highest(enum field_type a, enum field_type b);
+
+/**
  * pExpr is a comparison operator. Return the type affinity
  * that should be applied to both operands prior to doing
  * the comparison.
@@ -4456,6 +4463,23 @@ sql_func_flag_is_set(struct func *func, uint16_t flag)
 	return (((struct func_sql_builtin *)func)->flags & flag) != 0;
 }
 
+/** Description of a function argument used to select a function. */
+struct sql_func_arg {
+	/** Operation of the argument expression, COLLATE skipped. */
+	uint8_t op;
+	/** Type of the argument expression. */
+	enum field_type type;
+};
+
+/**
+ * Return a function with the given name that matches the given arguments. If
+ * is_legacy is set, the name converted to upper case is looked up as well.
+ * Returns NULL and sets diag on error.
+ */
+struct func *
+sql_func_find_by_name(const char *name, bool is_legacy,
+		      const struct sql_func_arg *args, uint32_t n_args);
+
 /** Return a function that matches the parameters described in given expr. */
 struct func *
 sql_func_find(struct Expr *expr);
@@ -4473,6 +4497,10 @@ sql_func_finalize(const char *name);
  * with the given name does not exist, or the function is not a built-in SQL
  * function, 0 is returned, which means no parameters have been set.
  */
+uint32_t
+sql_func_flags_by_name(const char *name, bool is_legacy);
+
+/** Same as sql_func_flags_by_name() but takes the name from the expression. */
 uint32_t
 sql_func_flags(const struct Expr *expr);
 

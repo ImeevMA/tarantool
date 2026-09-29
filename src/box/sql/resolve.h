@@ -111,6 +111,30 @@ struct rast_expr {
 		} coll;
 		/** Subquery of a TK_SELECT or TK_EXISTS expression. */
 		struct rast_select *select;
+		/** Name and arguments of a TK_FUNCTION expression. */
+		struct {
+			/** Name of the resolved function. */
+			char *name;
+			/** Argument expressions. */
+			struct rast_expr *args;
+			/** Number of arguments. */
+			uint32_t n_args;
+			/** Exact type of the function result. */
+			enum field_type returns;
+			/**
+			 * Probability of the first argument to be true, scaled
+			 * by 2^27. Set for LIKELY, UNLIKELY and LIKELIHOOD.
+			 */
+			int probability;
+			/** Whether DISTINCT is applied to the arguments. */
+			bool is_distinct;
+			/** Whether the function is an aggregate. */
+			bool is_agg;
+			/** Whether it is LIKELY, UNLIKELY or LIKELIHOOD. */
+			bool is_unlikely;
+			/** Whether the function is deterministic. */
+			bool is_deterministic;
+		} func;
 	};
 	/** Data type of the expression. */
 	enum sql_type type;

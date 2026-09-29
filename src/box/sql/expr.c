@@ -45,18 +45,9 @@ static void exprCodeBetween(Parse *, Expr *, int,
 			    void (*)(Parse *, Expr *, int, int), int);
 static int exprCodeVector(Parse * pParse, Expr * p, int *piToFree);
 
-/**
- * Determine the highest type between the given type and the type of the given
- * expression.
- */
-static enum field_type
-sql_highest_field_type(enum field_type a, struct Expr *expr)
+enum field_type
+sql_field_type_highest(enum field_type a, enum field_type b)
 {
-	if (a == FIELD_TYPE_ANY || sql_token_is_variable(expr->op))
-		return FIELD_TYPE_ANY;
-	if (expr->op == TK_NULL)
-		return a;
-	enum field_type b = sql_expr_type(expr);
 	if (a == b)
 		return a;
 	if (b == FIELD_TYPE_ANY || a == FIELD_TYPE_MAP || b == FIELD_TYPE_MAP ||
@@ -74,6 +65,20 @@ sql_highest_field_type(enum field_type a, struct Expr *expr)
 	assert((a == FIELD_TYPE_INTEGER || a == FIELD_TYPE_UNSIGNED));
 	assert((b == FIELD_TYPE_INTEGER || b == FIELD_TYPE_UNSIGNED));
 	return FIELD_TYPE_INTEGER;
+}
+
+/**
+ * Determine the highest type between the given type and the type of the given
+ * expression.
+ */
+static enum field_type
+sql_highest_field_type(enum field_type a, struct Expr *expr)
+{
+	if (a == FIELD_TYPE_ANY || sql_token_is_variable(expr->op))
+		return FIELD_TYPE_ANY;
+	if (expr->op == TK_NULL)
+		return a;
+	return sql_field_type_highest(a, sql_expr_type(expr));
 }
 
 enum field_type
@@ -456,6 +461,59 @@ sql_type_to_field_type(enum sql_type type)
 		return FIELD_TYPE_MAP;
 	}
 	unreachable();
+}
+
+enum sql_type
+sql_type_from_field_type(enum field_type type)
+{
+	switch (type) {
+	case FIELD_TYPE_ANY:
+		return SQL_TYPE_ANY;
+	case FIELD_TYPE_UNSIGNED:
+	case FIELD_TYPE_UINT8:
+	case FIELD_TYPE_UINT16:
+	case FIELD_TYPE_UINT32:
+	case FIELD_TYPE_UINT64:
+		return SQL_TYPE_UNSIGNED;
+	case FIELD_TYPE_STRING:
+		return SQL_TYPE_STRING;
+	case FIELD_TYPE_NUMBER:
+		return SQL_TYPE_NUMBER;
+	case FIELD_TYPE_DOUBLE:
+	case FIELD_TYPE_FLOAT32:
+	case FIELD_TYPE_FLOAT64:
+		return SQL_TYPE_DOUBLE;
+	case FIELD_TYPE_INTEGER:
+	case FIELD_TYPE_INT8:
+	case FIELD_TYPE_INT16:
+	case FIELD_TYPE_INT32:
+	case FIELD_TYPE_INT64:
+		return SQL_TYPE_INTEGER;
+	case FIELD_TYPE_BOOLEAN:
+		return SQL_TYPE_BOOLEAN;
+	case FIELD_TYPE_VARBINARY:
+		return SQL_TYPE_VARBINARY;
+	case FIELD_TYPE_SCALAR:
+		return SQL_TYPE_SCALAR;
+	case FIELD_TYPE_DECIMAL:
+	case FIELD_TYPE_DECIMAL32:
+	case FIELD_TYPE_DECIMAL64:
+	case FIELD_TYPE_DECIMAL128:
+	case FIELD_TYPE_DECIMAL256:
+		return SQL_TYPE_DECIMAL;
+	case FIELD_TYPE_UUID:
+		return SQL_TYPE_UUID;
+	case FIELD_TYPE_DATETIME:
+		return SQL_TYPE_DATETIME;
+	case FIELD_TYPE_INTERVAL:
+		return SQL_TYPE_INTERVAL;
+	case FIELD_TYPE_ARRAY:
+		return SQL_TYPE_ARRAY;
+	case FIELD_TYPE_MAP:
+		return SQL_TYPE_MAP;
+	default:
+		unreachable();
+	}
 }
 
 enum field_type

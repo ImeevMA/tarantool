@@ -48,6 +48,13 @@ struct sql_resolve_context {
 	struct region *region;
 	/** Whether the statement being resolved has a resolved form yet. */
 	bool can_resolve;
+	/** Whether an aggregate function is allowed at the current point. */
+	bool is_agg_allowed;
+	/**
+	 * SELECT flags describing the aggregate functions found in the column
+	 * list of the SELECT being resolved.
+	 */
+	uint32_t agg_flags;
 };
 
 /**
@@ -2185,6 +2192,252 @@ resolve_subquery(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	return expr_check_height(res->height);
 }
 
+/**
+ * Return the exact type of the given resolved expression. It mirrors
+ * sql_expr_type() applied to the expression built from the resolved one, since
+ * the type of some expressions is computed from their operands only when it is
+ * needed.
+ */
+static enum field_type
+rast_expr_field_type(const struct rast_expr *expr);
+
+/**
+ * Determine the highest type between the given type and the type of the given
+ * resolved CASE branch. Mirrors sql_highest_field_type().
+ */
+static enum field_type
+rast_highest_field_type(enum field_type type, const struct rast_expr *expr)
+{
+	if (type == FIELD_TYPE_ANY)
+		return FIELD_TYPE_ANY;
+	if (expr->op == TK_NULL)
+		return type;
+	return sql_field_type_highest(type, rast_expr_field_type(expr));
+}
+
+/** Return the exact type of the given resolved CASE expression. */
+static enum field_type
+rast_case_field_type(const struct rast_expr *expr)
+{
+	const struct rast_expr *exprs = expr->cs.exprs;
+	uint32_t len = expr->cs.len;
+	/*
+	 * The WHEN and THEN expressions go in pairs, so the THEN expressions
+	 * have odd indexes.
+	 */
+	uint32_t i = 1;
+	while (i < len && exprs[i].op == TK_NULL)
+		i += 2;
+	if (i >= len)
+		return FIELD_TYPE_ANY;
+	enum field_type type = rast_expr_field_type(&exprs[i]);
+	for (i += 2; i < len; i += 2)
+		type = rast_highest_field_type(type, &exprs[i]);
+	/* The ELSE expression is optional. */
+	if (len % 2 == 0)
+		return type;
+	return rast_highest_field_type(type, &exprs[len - 1]);
+}
+
+static enum field_type
+rast_expr_field_type(const struct rast_expr *expr)
+{
+	while (expr->op == TK_COLLATE ||
+	       (expr->op == TK_FUNCTION && expr->func.is_unlikely)) {
+		if (expr->op == TK_COLLATE)
+			expr = expr->coll.expr;
+		else
+			expr = &expr->func.args[0];
+	}
+	switch (expr->op) {
+	case TK_SELECT: {
+		const struct rast_expr_list *columns = &expr->select->columns;
+		return rast_expr_field_type(&columns->exprs[0].expr);
+	}
+	case TK_PLUS:
+	case TK_MINUS:
+	case TK_STAR:
+	case TK_SLASH:
+	case TK_REM:
+	case TK_BITAND:
+	case TK_BITOR:
+	case TK_LSHIFT:
+	case TK_RSHIFT:
+		return sql_field_type_result(rast_expr_field_type(expr->right),
+					     rast_expr_field_type(expr->left));
+	case TK_GETITEM:
+		return FIELD_TYPE_ANY;
+	case TK_CONCAT:
+		return FIELD_TYPE_STRING;
+	case TK_CASE:
+		return rast_case_field_type(expr);
+	case TK_LT:
+	case TK_GT:
+	case TK_EQ:
+	case TK_LE:
+	case TK_GE:
+	case TK_NE:
+	case TK_NOT:
+	case TK_AND:
+	case TK_OR:
+	case TK_ISNULL:
+	case TK_NOTNULL:
+	case TK_BETWEEN:
+	case TK_EXISTS:
+	case TK_IN:
+		return FIELD_TYPE_BOOLEAN;
+	case TK_BITNOT:
+		return rast_expr_field_type(expr->expr);
+	case TK_FUNCTION:
+		return expr->func.returns;
+	}
+	return sql_type_to_field_type(expr->type);
+}
+
+/**
+ * Return the probability of the first argument of LIKELIHOOD() to be true,
+ * scaled by 2^27, or -1 if the second argument is not a constant between 0.0
+ * and 1.0. The second argument is given both in the AST and in the resolved
+ * form. Mirrors exprProbability(): a literal with a unary operator is not a
+ * constant there, so the AST is checked, since the resolved form folds it.
+ */
+static int
+rast_probability(const struct ast_expr *ast, const struct rast_expr *expr)
+{
+	while (ast->op == TK_PARENTHESES)
+		ast = ast->left;
+	if (ast->op != TK_FLOAT)
+		return -1;
+	assert(expr->op == TK_FLOAT);
+	if (expr->f < 0.0 || expr->f > 1.0)
+		return -1;
+	return (int)(expr->f * 134217728.0);
+}
+
+/**
+ * Resolve an AST function call into the given rast_expr. The name is held in
+ * the AST left operand and the arguments in the list of the AST right operand,
+ * which is NULL for a call with an asterisk. The function is looked up by the
+ * name and the types of the resolved arguments, and its result type becomes the
+ * type of the expression.
+ *
+ * The arguments are resolved before any check of the function itself, so an
+ * error in an argument is reported instead of an error of the function. An
+ * aggregate function is not allowed inside the arguments of another aggregate
+ * function.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_function(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+		 struct rast_expr *res)
+{
+	const struct ast_expr *name = ast->left;
+	res->func.name = sql_name_temp(ctx->region, name->str, name->len);
+	bool is_legacy = name->str[0] != '"';
+	const struct ast_expr_list *list = NULL;
+	if (ast->right != NULL) {
+		res->func.is_distinct = ast->right->op == TK_DISTINCT;
+		list = ast->right->list;
+	}
+	res->func.n_args = list == NULL ? 0 : list->len;
+	if (res->func.n_args > SQL_MAX_FUNCTION_ARG) {
+		const char *err = tt_sprintf("Number of arguments to "
+					     "function %s", res->func.name);
+		diag_set(ClientError, ER_SQL_PARSER_LIMIT, err,
+			 res->func.n_args, SQL_MAX_FUNCTION_ARG);
+		return -1;
+	}
+	uint32_t flags = sql_func_flags_by_name(res->func.name, is_legacy);
+	res->func.is_agg = (flags & SQL_FUNC_AGG) != 0;
+	uint32_t height = 0;
+	if (res->func.n_args > 0) {
+		res->func.args = xregion_alloc_array(ctx->region,
+						     struct rast_expr,
+						     res->func.n_args);
+		bool is_agg_allowed = ctx->is_agg_allowed;
+		if (res->func.is_agg)
+			ctx->is_agg_allowed = false;
+		int rc = resolve_operand_list(ctx, list, res->func.args,
+					      &height);
+		ctx->is_agg_allowed = is_agg_allowed;
+		if (rc != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+	}
+	if ((flags & SQL_FUNC_UNLIKELY) != 0) {
+		res->func.is_unlikely = true;
+		if (res->func.n_args == 2) {
+			const struct stailq_entry *node =
+				list->head.first.value->next.value;
+			const struct ast_expr_list_entry *entry =
+				stailq_entry(node, struct ast_expr_list_entry,
+					     link);
+			res->func.probability =
+				rast_probability(entry->expr,
+						 &res->func.args[1]);
+			if (res->func.probability < 0) {
+				diag_set(IllegalParams, "second argument to "
+					 "LIKELIHOOD() must be a constant "
+					 "between 0.0 and 1.0");
+				return -1;
+			}
+		} else {
+			/* unlikely() is 0.0625, likely() is 0.9375. */
+			char c = res->func.name[0];
+			res->func.probability = c == 'u' || c == 'U' ?
+						8388608 : 125829120;
+		}
+	}
+	if (res->func.is_agg && !ctx->is_agg_allowed) {
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+			 tt_sprintf("misuse of aggregate function %s()",
+				    res->func.name));
+		return -1;
+	}
+	struct sql_func_arg *args = NULL;
+	if (res->func.n_args > 0) {
+		args = xregion_alloc_array(ctx->region, struct sql_func_arg,
+					   res->func.n_args);
+	}
+	for (uint32_t i = 0; i < res->func.n_args; ++i) {
+		const struct rast_expr *arg = &res->func.args[i];
+		while (arg->op == TK_COLLATE)
+			arg = arg->coll.expr;
+		args[i].op = arg->op;
+		args[i].type = rast_expr_field_type(arg);
+	}
+	struct func *func = sql_func_find_by_name(res->func.name, is_legacy,
+						  args, res->func.n_args);
+	if (func == NULL)
+		return -1;
+	/* The name of the found function is looked up exactly from now on. */
+	size_t len = strlen(func->def->name);
+	res->func.name = xregion_alloc(ctx->region, len + 1);
+	memcpy(res->func.name, func->def->name, len + 1);
+	res->func.returns = func->def->returns;
+	/*
+	 * The result type of a user-defined aggregate function is the result
+	 * type of its FINALIZE part.
+	 */
+	if (func->def->language != FUNC_LANGUAGE_SQL_BUILTIN &&
+	    func->def->aggregate == FUNC_AGGREGATE_GROUP) {
+		struct func *finalize = sql_func_finalize(res->func.name);
+		if (finalize != NULL)
+			res->func.returns = finalize->def->returns;
+	}
+	res->func.is_deterministic = func->def->is_deterministic;
+	if (res->func.is_agg) {
+		ctx->agg_flags |= SF_Aggregate;
+		if ((flags & (SQL_FUNC_MIN | SQL_FUNC_MAX)) != 0)
+			ctx->agg_flags |= SF_MinMaxAgg;
+	}
+	res->type = sql_type_from_field_type(res->func.returns);
+	res->height = height + 1;
+	return expr_check_height(res->height);
+}
+
 static int
 resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	     struct rast_expr *res)
@@ -2399,6 +2652,20 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	case TK_ID:
 	case TK_DOT:
 		return resolve_column_ref(ctx, ast);
+	case TK_FUNCTION:
+		if (resolve_function(ctx, ast, res) != 0)
+			return -1;
+		break;
+	case TK_LEADING:
+	case TK_TRAILING:
+	case TK_BOTH:
+		/* The TRIM keywords are integer arguments of TRIM(). */
+		res->op = TK_INTEGER;
+		res->u = ast->op == TK_LEADING ? TRIM_LEADING :
+			 ast->op == TK_TRAILING ? TRIM_TRAILING : TRIM_BOTH;
+		res->type = SQL_TYPE_INTEGER;
+		res->height = 1;
+		break;
 	default:
 		ctx->can_resolve = false;
 		break;
@@ -2472,7 +2739,16 @@ resolve_select(struct sql_resolve_context *ctx, const struct ast_select *ast,
 	ctx->can_resolve = can_resolve(ast);
 	if (!ctx->can_resolve)
 		return 0;
-	if (resolve_column_list(ctx, ast->columns, &res->columns) != 0)
+	bool is_agg_allowed = ctx->is_agg_allowed;
+	uint32_t agg_flags = ctx->agg_flags;
+	ctx->is_agg_allowed = true;
+	ctx->agg_flags = 0;
+	int rc = resolve_column_list(ctx, ast->columns, &res->columns);
+	/* Mirrors the legacy aggregate detection in resolveSelectStep(). */
+	res->flags |= ctx->agg_flags;
+	ctx->is_agg_allowed = is_agg_allowed;
+	ctx->agg_flags = agg_flags;
+	if (rc != 0)
 		return -1;
 	/*
 	 * A column may turn out to be not resolvable, in which case the whole
@@ -2709,10 +2985,40 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 		res->x.pSelect = select_from_rast(parser, expr->select);
 		ExprSetProperty(res, EP_xIsSelect | EP_Subquery);
 		break;
+	case TK_FUNCTION: {
+		size_t len = strlen(expr->func.name);
+		res = sql_expr_new_empty(expr->op, len + 1);
+		res->u.zToken = (char *)&res[1];
+		memcpy(res->u.zToken, expr->func.name, len + 1);
+		if (expr->func.is_distinct)
+			res->flags |= EP_Distinct;
+		struct ExprList *list = NULL;
+		for (uint32_t i = 0; i < expr->func.n_args; ++i) {
+			struct Expr *e =
+				expr_from_rast(parser, &expr->func.args[i]);
+			list = sql_expr_list_append(list, e);
+		}
+		res->x.pList = list;
+		res->flags |= EP_Propagate & sqlExprListFlags(list);
+		if (expr->func.is_agg) {
+			res->op = TK_AGG_FUNCTION;
+			res->op2 = 0;
+		}
+		if (expr->func.is_unlikely) {
+			res->flags |= EP_Unlikely | EP_Skip;
+			res->iTable = expr->func.probability;
+		}
+		if (expr->func.is_deterministic)
+			res->flags |= EP_ConstFunc;
+		break;
+	}
 	default:
 		unreachable();
 	}
-	res->type = sql_type_to_field_type(expr->type);
+	if (expr->op == TK_FUNCTION)
+		res->type = expr->func.returns;
+	else
+		res->type = sql_type_to_field_type(expr->type);
 	res->nHeight = expr->height;
 	/*
 	 * The whole subtree is already fully resolved, so the legacy resolver
