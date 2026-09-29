@@ -2100,6 +2100,40 @@ resolve_constructor(struct sql_resolve_context *ctx,
 }
 
 /**
+ * Resolve an AST subscript expression into the given rast_expr and set its
+ * height. The base value being subscripted is held in the AST left operand and
+ * the keys in the AST list, which always holds at least one key. The result
+ * type is always ANY, as the legacy code and sql_expr_type() report. Whether
+ * the base is a map or an array and whether the keys are valid is checked later
+ * at bytecode generation, exactly as the legacy path does.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_getitem(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+		struct rast_expr *res)
+{
+	res->getitem.value =
+		xregion_alloc_object(ctx->region, struct rast_expr);
+	if (resolve_expr(ctx, ast->left, res->getitem.value) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	res->getitem.len = ast->list->len;
+	res->getitem.exprs = xregion_alloc_array(ctx->region, struct rast_expr,
+						 res->getitem.len);
+	uint32_t height;
+	if (resolve_operand_list(ctx, ast->list, res->getitem.exprs,
+				 &height) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	res->type = SQL_TYPE_ANY;
+	res->height = MAX(res->getitem.value->height, height) + 1;
+	return expr_check_height(res->height);
+}
+
+/**
  * Resolve an AST scalar subquery or EXISTS expression into the given rast_expr
  * and set its height. The subquery is resolvable only when it is itself a
  * resolvable FROM-less SELECT; otherwise the whole expression falls back. The
@@ -2309,6 +2343,10 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		if (resolve_constructor(ctx, ast, res) != 0)
 			return -1;
 		res->type = SQL_TYPE_ANY;
+		break;
+	case TK_GETITEM:
+		if (resolve_getitem(ctx, ast, res) != 0)
+			return -1;
 		break;
 	case TK_COLLATE:
 		if (sql_coll_id(&res->coll.id, ast->right->str,
@@ -2619,6 +2657,21 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 		res->flags |= EP_Collate | EP_Skip;
 		res->v.id = expr->coll.id;
 		break;
+	case TK_GETITEM: {
+		res = sql_expr_new_anon(expr->op);
+		struct ExprList *list = NULL;
+		for (uint32_t i = 0; i < expr->getitem.len; ++i) {
+			struct Expr *e =
+				expr_from_rast(parser, &expr->getitem.exprs[i]);
+			list = sql_expr_list_append(list, e);
+		}
+		struct Expr *value =
+			expr_from_rast(parser, expr->getitem.value);
+		list = sql_expr_list_append(list, value);
+		res->x.pList = list;
+		res->flags |= EP_Propagate & sqlExprListFlags(list);
+		break;
+	}
 	case TK_SELECT:
 	case TK_EXISTS:
 		res = sql_expr_new_anon(expr->op);

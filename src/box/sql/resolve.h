@@ -93,6 +93,15 @@ struct rast_expr {
 			/** Number of element expressions. */
 			uint32_t len;
 		} list;
+		/** Operand and keys of a TK_GETITEM expression. */
+		struct {
+			/** Expression the subscript is applied to. */
+			struct rast_expr *value;
+			/** Key expressions. */
+			struct rast_expr *exprs;
+			/** Number of key expressions. */
+			uint32_t len;
+		} getitem;
 		/** Operand and collation of a TK_COLLATE expression. */
 		struct {
 			/** Expression the collation is applied to. */
