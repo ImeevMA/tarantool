@@ -2286,6 +2286,8 @@ rast_expr_field_type(const struct rast_expr *expr)
 	case TK_EXISTS:
 	case TK_IN:
 		return FIELD_TYPE_BOOLEAN;
+	case TK_UMINUS:
+	case TK_UPLUS:
 	case TK_BITNOT:
 		return rast_expr_field_type(expr->expr);
 	case TK_FUNCTION:
@@ -2438,6 +2440,25 @@ resolve_function(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	return expr_check_height(res->height);
 }
 
+/**
+ * Turn the given resolved operand of a unary plus or minus into an operand of
+ * a new expression of the given operation built in its place. Used when the
+ * operand is not a numeric literal the operator can be folded into.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_unary_arith(struct rast_expr *res, uint8_t op, struct region *region)
+{
+	struct rast_expr *expr = xregion_alloc_object(region, struct rast_expr);
+	*expr = *res;
+	res->expr = expr;
+	res->op = op;
+	res->type = expr->type;
+	res->height = expr->height + 1;
+	return expr_check_height(res->height);
+}
+
 static int
 resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	     struct rast_expr *res)
@@ -2574,7 +2595,7 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 			break;
 		if (res->op != TK_INTEGER && res->op != TK_FLOAT &&
 		    res->op != TK_DECIMAL)
-			ctx->can_resolve = false;
+			return resolve_unary_arith(res, ast->op, ctx->region);
 		break;
 	case TK_UMINUS:
 		if (resolve_expr(ctx, ast->left, res) != 0)
@@ -2593,8 +2614,7 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 			decimal_minus(res->dec, res->dec);
 			break;
 		default:
-			ctx->can_resolve = false;
-			break;
+			return resolve_unary_arith(res, ast->op, ctx->region);
 		}
 		break;
 	case TK_BETWEEN:
@@ -2863,6 +2883,8 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 	case TK_BITNOT:
 	case TK_ISNULL:
 	case TK_NOTNULL:
+	case TK_UMINUS:
+	case TK_UPLUS:
 	case TK_CAST:
 		res = sql_expr_new_empty(expr->op, 0);
 		res->pLeft = expr_from_rast(parser, expr->expr);
