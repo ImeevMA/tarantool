@@ -54,3 +54,10 @@ enum sql_type {
  */
 enum field_type
 sql_type_to_field_type(enum sql_type type);
+
+/**
+ * Return the SQL type of a value stored in a field of the given type. Sized
+ * integer, floating point and decimal types map to their generic SQL type.
+ */
+enum sql_type
+sql_type_from_field_type(enum field_type type);

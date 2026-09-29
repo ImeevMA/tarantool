@@ -2197,11 +2197,15 @@ enum check_type {
 	CHECK_TYPE_CASTABLE,
 };
 
+/**
+ * Return the first function in the given dictionary whose parameters match the
+ * given arguments with the given check, or NULL if there is none.
+ */
 static struct func *
-find_compatible(struct Expr *expr, struct sql_func_dictionary *dict,
-		enum check_type check)
+find_compatible(const struct sql_func_arg *args, uint32_t n_args,
+		struct sql_func_dictionary *dict, enum check_type check)
 {
-	int n = expr->x.pList != NULL ? expr->x.pList->nExpr : 0;
+	int n = n_args;
 	for (uint32_t i = 0; i < dict->count; ++i) {
 		struct func_sql_builtin *func = dict->functions[i];
 		int argc = func->base.def->param_count;
@@ -2213,20 +2217,18 @@ find_compatible(struct Expr *expr, struct sql_func_dictionary *dict,
 		enum field_type *types = func->param_list;
 		bool is_match = true;
 		for (int j = 0; j < n && is_match; ++j) {
-			struct Expr *e = expr->x.pList->a[j].pExpr;
-			while (e->op == TK_COLLATE)
-				e = e->pLeft;
 			enum field_type a = types[argc != -1 ? j : 0];
-			enum field_type b = sql_expr_type(e);
+			enum field_type b = args[j].type;
+			uint8_t op = args[j].op;
 			switch (check) {
 			case CHECK_TYPE_EXACT:
-				is_match = is_exact(e->op, a, b);
+				is_match = is_exact(op, a, b);
 				break;
 			case CHECK_TYPE_UPCAST:
-				is_match = is_upcast(e->op, a, b);
+				is_match = is_upcast(op, a, b);
 				break;
 			case CHECK_TYPE_CASTABLE:
-				is_match = is_castable(e->op, a, b);
+				is_match = is_castable(op, a, b);
 				break;
 			default:
 				unreachable();
@@ -2238,11 +2240,15 @@ find_compatible(struct Expr *expr, struct sql_func_dictionary *dict,
 	return NULL;
 }
 
+/**
+ * Return the built-in function from the given dictionary that matches the given
+ * arguments best. Returns NULL and sets diag if there is none.
+ */
 static struct func *
-find_built_in_func(struct Expr *expr, struct sql_func_dictionary *dict)
+find_built_in_func(const char *name, const struct sql_func_arg *args,
+		   uint32_t n_args, struct sql_func_dictionary *dict)
 {
-	const char *name = expr->u.zToken;
-	int n = expr->x.pList != NULL ? expr->x.pList->nExpr : 0;
+	int n = n_args;
 	int argc_min = dict->argc_min;
 	int argc_max = dict->argc_max;
 	if (n < argc_min || n > argc_max) {
@@ -2257,13 +2263,14 @@ find_built_in_func(struct Expr *expr, struct sql_func_dictionary *dict)
 			 argc_min, argc_max);
 		return NULL;
 	}
-	struct func *func = find_compatible(expr, dict, CHECK_TYPE_EXACT);
+	struct func *func = find_compatible(args, n_args, dict,
+					    CHECK_TYPE_EXACT);
 	if (func != NULL)
 		return func;
-	func = find_compatible(expr, dict, CHECK_TYPE_UPCAST);
+	func = find_compatible(args, n_args, dict, CHECK_TYPE_UPCAST);
 	if (func != NULL)
 		return func;
-	func = find_compatible(expr, dict, CHECK_TYPE_CASTABLE);
+	func = find_compatible(args, n_args, dict, CHECK_TYPE_CASTABLE);
 	if (func != NULL)
 		return func;
 	diag_set(ClientError, ER_SQL_EXECUTE,
@@ -2272,17 +2279,17 @@ find_built_in_func(struct Expr *expr, struct sql_func_dictionary *dict)
 }
 
 struct func *
-sql_func_find(struct Expr *expr)
+sql_func_find_by_name(const char *name, bool is_legacy,
+		      const struct sql_func_arg *args, uint32_t n_args)
 {
-	const char *name = expr->u.zToken;
 	size_t len = strlen(name);
 	char *old_name = NULL;
-	if ((expr->flags & EP_Lookup2) != 0)
+	if (is_legacy)
 		old_name = sql_legacy_name_new(name, len);
 	struct sql_func_dictionary *dict = built_in_func_get(name, old_name);
 	if (dict != NULL) {
 		sql_xfree(old_name);
-		return find_built_in_func(expr, dict);
+		return find_built_in_func(name, args, n_args, dict);
 	}
 	struct func *func = func_by_name(name, len);
 	if (func == NULL && old_name != NULL)
@@ -2298,7 +2305,7 @@ sql_func_find(struct Expr *expr)
 				     name));
 		return NULL;
 	}
-	int n = expr->x.pList != NULL ? expr->x.pList->nExpr : 0;
+	int n = n_args;
 	int argc = func->def->aggregate == FUNC_AGGREGATE_GROUP ?
 		   func->def->param_count - 1 : func->def->param_count;
 	assert(argc >= 0);
@@ -2308,6 +2315,24 @@ sql_func_find(struct Expr *expr)
 		return NULL;
 	}
 	return func;
+}
+
+struct func *
+sql_func_find(struct Expr *expr)
+{
+	struct sql_func_arg args[SQL_MAX_FUNCTION_ARG];
+	uint32_t n_args = expr->x.pList != NULL ? expr->x.pList->nExpr : 0;
+	assert(n_args <= SQL_MAX_FUNCTION_ARG);
+	for (uint32_t i = 0; i < n_args; ++i) {
+		struct Expr *e = expr->x.pList->a[i].pExpr;
+		while (e->op == TK_COLLATE)
+			e = e->pLeft;
+		args[i].op = e->op;
+		args[i].type = sql_expr_type(e);
+	}
+	return sql_func_find_by_name(expr->u.zToken,
+				     (expr->flags & EP_Lookup2) != 0, args,
+				     n_args);
 }
 
 struct func *
@@ -2324,12 +2349,11 @@ sql_func_finalize(const char *name)
 }
 
 uint32_t
-sql_func_flags(const struct Expr *expr)
+sql_func_flags_by_name(const char *name, bool is_legacy)
 {
-	const char *name = expr->u.zToken;
 	size_t len = strlen(name);
 	char *old_name = NULL;
-	if ((expr->flags & EP_Lookup2) != 0)
+	if (is_legacy)
 		old_name = sql_legacy_name_new(name, len);
 	struct sql_func_dictionary *dict = built_in_func_get(name, old_name);
 	if (dict != NULL) {
@@ -2343,6 +2367,13 @@ sql_func_flags(const struct Expr *expr)
 	if (func == NULL || func->def->aggregate != FUNC_AGGREGATE_GROUP)
 		return 0;
 	return SQL_FUNC_AGG;
+}
+
+uint32_t
+sql_func_flags(const struct Expr *expr)
+{
+	return sql_func_flags_by_name(expr->u.zToken,
+				      (expr->flags & EP_Lookup2) != 0);
 }
 
 static struct func_vtab func_sql_builtin_vtab;
