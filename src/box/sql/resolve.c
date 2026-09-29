@@ -737,7 +737,7 @@ resolveExprStep(Walker * pWalker, Expr * pExpr)
 			 */
 			if (func->def->language != FUNC_LANGUAGE_SQL_BUILTIN &&
 			    func->def->aggregate == FUNC_AGGREGATE_GROUP) {
-				const char *name = pExpr->u.zToken;
+				const char *name = func->def->name;
 				struct func *finalize = sql_func_finalize(name);
 				if (finalize != NULL)
 					pExpr->type = finalize->def->returns;
