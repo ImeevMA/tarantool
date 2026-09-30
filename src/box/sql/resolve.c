@@ -52,6 +52,8 @@ struct sql_resolve_scope {
 	const struct rast_expr_list *aliases;
 	/** Enclosing scope, or NULL if its names are not visible. */
 	struct sql_resolve_scope *parent;
+	/** Whether an aggregate function is allowed at the current point. */
+	bool is_agg_allowed;
 	/**
 	 * Number of names found in this scope or in the scopes enclosing it,
 	 * while resolving the expressions of this scope. Used to find out if a
@@ -70,8 +72,6 @@ struct sql_resolve_context {
 	uint32_t autoname_count;
 	/** Whether the statement being resolved has a resolved form yet. */
 	bool can_resolve;
-	/** Whether an aggregate function is allowed at the current point. */
-	bool is_agg_allowed;
 	/**
 	 * SELECT flags describing the aggregate functions found in the column
 	 * list of the SELECT being resolved.
@@ -1870,6 +1870,8 @@ rast_select_height(const struct rast_select *select)
 		height = MAX(height, select->limit->height);
 	if (select->offset != NULL)
 		height = MAX(height, select->offset->height);
+	if (select->where != NULL)
+		height = MAX(height, select->where->height);
 	for (uint32_t i = 0; i < select->order_by.len; ++i)
 		height = MAX(height, select->order_by.exprs[i].expr.height);
 	return height;
@@ -2231,9 +2233,16 @@ resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 			int col = find_alias(scope->aliases, name, legacy_name);
 			if (col < 0)
 				continue;
-			const struct rast_expr *expr =
-				&scope->aliases->exprs[col].expr;
-			if (rast_vector_size(expr) != 1) {
+			const struct rast_expr_list_entry *entry =
+				&scope->aliases->exprs[col];
+			if (entry->has_agg && !scope->is_agg_allowed) {
+				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+					 tt_sprintf("misuse of aliased "
+						    "aggregate %s",
+						    entry->name));
+				return -1;
+			}
+			if (rast_vector_size(&entry->expr) != 1) {
 				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
 					 "row value misused");
 				return -1;
@@ -2446,12 +2455,12 @@ resolve_function(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		res->func.args = xregion_alloc_array(ctx->region,
 						     struct rast_expr,
 						     res->func.n_args);
-		bool is_agg_allowed = ctx->is_agg_allowed;
+		bool is_agg_allowed = ctx->scope->is_agg_allowed;
 		if (res->func.is_agg)
-			ctx->is_agg_allowed = false;
+			ctx->scope->is_agg_allowed = false;
 		int rc = resolve_operand_list(ctx, list, res->func.args,
 					      &height);
-		ctx->is_agg_allowed = is_agg_allowed;
+		ctx->scope->is_agg_allowed = is_agg_allowed;
 		if (rc != 0)
 			return -1;
 		if (!ctx->can_resolve)
@@ -2481,7 +2490,7 @@ resolve_function(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 						8388608 : 125829120;
 		}
 	}
-	if (res->func.is_agg && !ctx->is_agg_allowed) {
+	if (res->func.is_agg && !ctx->scope->is_agg_allowed) {
 		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
 			 tt_sprintf("misuse of aggregate function %s()",
 				    res->func.name));
@@ -2844,10 +2853,14 @@ resolve_column_list(struct sql_resolve_context *ctx,
 		const struct ast_expr_list_entry *entry =
 			stailq_entry(node, struct ast_expr_list_entry, link);
 		struct rast_expr_list_entry *expr = &res->exprs[i++];
+		uint32_t agg_flags = ctx->agg_flags;
+		ctx->agg_flags = 0;
 		if (resolve_expr(ctx, entry->expr, &expr->expr) != 0)
 			return -1;
 		if (!ctx->can_resolve)
 			return 0;
+		expr->has_agg = ctx->agg_flags != 0;
+		ctx->agg_flags |= agg_flags;
 		expr->span = entry->expr->str;
 		expr->span_len = entry->expr->len;
 	}
@@ -3052,11 +3065,7 @@ resolve_limit(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	if (ast == NULL)
 		return 0;
 	*res = xregion_alloc_object(ctx->region, struct rast_expr);
-	bool is_agg_allowed = ctx->is_agg_allowed;
-	ctx->is_agg_allowed = false;
-	int rc = resolve_expr(ctx, ast, *res);
-	ctx->is_agg_allowed = is_agg_allowed;
-	return rc;
+	return resolve_expr(ctx, ast, *res);
 }
 
 /** Check if the given SELECT can be resolved. */
@@ -3064,8 +3073,8 @@ static bool
 can_resolve(const struct ast_select *ast)
 {
 	return ast->op == TK_SELECT && ast->sources == NULL &&
-	       ast->group_by == NULL && ast->where == NULL &&
-	       ast->having == NULL && ast->with == NULL;
+	       ast->group_by == NULL && ast->having == NULL &&
+	       ast->with == NULL;
 }
 
 /**
@@ -3104,15 +3113,30 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 		return -1;
 	if (!ctx->can_resolve)
 		return 0;
-	struct sql_resolve_scope scope = {.parent = outer};
+	struct sql_resolve_scope scope = {
+		.parent = outer,
+		.is_agg_allowed = true,
+	};
 	ctx->scope = &scope;
-	bool is_agg_allowed = ctx->is_agg_allowed;
 	uint32_t agg_flags = ctx->agg_flags;
-	ctx->is_agg_allowed = true;
 	ctx->agg_flags = 0;
 	int rc = resolve_column_list(ctx, ast->columns, &res->columns);
 	/* Mirrors the legacy aggregate detection in resolveSelectStep(). */
 	res->flags |= ctx->agg_flags;
+	if (rc == 0 && ctx->can_resolve && ast->where != NULL) {
+		/*
+		 * WHERE can refer to the result columns and to the names of
+		 * the enclosing SELECTs, but cannot use aggregate functions.
+		 */
+		struct sql_resolve_scope where_scope = {
+			.aliases = &res->columns,
+			.parent = outer,
+		};
+		ctx->scope = &where_scope;
+		res->where = xregion_alloc_object(ctx->region,
+						  struct rast_expr);
+		rc = resolve_expr(ctx, ast->where, res->where);
+	}
 	if (rc == 0 && ctx->can_resolve) {
 		/*
 		 * The ORDER BY terms can refer to the result columns, but not
@@ -3121,12 +3145,12 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 		 */
 		struct sql_resolve_scope order_by_scope = {
 			.aliases = &res->columns,
+			.is_agg_allowed = true,
 		};
 		ctx->scope = &order_by_scope;
 		rc = resolve_order_by(ctx, ast->order_by, &res->columns,
 				      &res->order_by);
 	}
-	ctx->is_agg_allowed = is_agg_allowed;
 	ctx->agg_flags = agg_flags;
 	if (rc != 0)
 		return -1;
@@ -3502,6 +3526,9 @@ select_from_rast(struct Parse *parser, struct rast_select *select)
 	struct Expr *offset = NULL;
 	if (select->offset != NULL)
 		offset = expr_from_rast(parser, select->offset);
+	struct Expr *where = NULL;
+	if (select->where != NULL)
+		where = expr_from_rast(parser, select->where);
 	struct ExprList *order_by = expr_list_from_rast(parser,
 							&select->order_by);
 	/*
@@ -3518,7 +3545,7 @@ select_from_rast(struct Parse *parser, struct rast_select *select)
 				item->u.x.iOrderByCol = j + 1;
 		}
 	}
-	struct Select *res = sqlSelectNew(cols, NULL, NULL, NULL, NULL,
+	struct Select *res = sqlSelectNew(cols, NULL, where, NULL, NULL,
 					  order_by, flags, limit, offset);
 	res->op = select->op;
 	return res;

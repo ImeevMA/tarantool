@@ -184,3 +184,103 @@ g.test_order_by_aliases = function()
               '"binary";', exp_err)
     end)
 end
+
+--
+-- WHERE is resolved after the columns and before ORDER BY. The aliases of
+-- the result columns and the names of the enclosing SELECTs are visible in it
+-- and in its subqueries.
+--
+g.test_where = function()
+    g.server:exec(function()
+        local function check(sql, exp)
+            local res, err = box.execute(sql)
+            if type(exp) == 'string' then
+                t.assert_equals(res, nil, sql)
+                t.assert_equals(err.message, exp, sql)
+            else
+                t.assert_equals(err, nil, sql)
+                t.assert_equals(res.rows, exp, sql)
+            end
+        end
+        local function chain(n)
+            return '1' .. string.rep(' + 0', n - 1)
+        end
+
+        check([[SELECT 1 WHERE true;]], {{1}})
+        check([[SELECT 1 WHERE false;]], {})
+        check([[SELECT 1 WHERE NULL;]], {})
+        check([[SELECT 1 WHERE false LIMIT 1;]], {})
+        check([[SELECT 1 AS a WHERE a = 1;]], {{1}})
+        check([[SELECT 2 AS a WHERE a = 1;]], {})
+        check([[SELECT 1 AS "A" WHERE a = 1;]], {{1}})
+        check([[SELECT 1 AS a, 2 AS a WHERE a = 2;]], {})
+        check([[SELECT 1 AS a WHERE (SELECT a) = 1 AND
+                EXISTS (SELECT 1 WHERE a = 1);]], {{1}})
+        check([[SELECT 1 AS a WHERE (SELECT 2 AS a WHERE a = 2) = 2;]],
+              {{1}})
+        check([[SELECT (SELECT 5 AS b WHERE b < 1);]], {{box.NULL}})
+        check([[SELECT 1 AS a ORDER BY (SELECT 2 WHERE a = 1);]], {{1}})
+        check([[SELECT 1 LIMIT (SELECT 1 WHERE true);]], {{1}})
+        check([[SELECT COUNT(*), 1 AS d WHERE d = 2;]], {{0, 1}})
+        check([[SELECT 1 WHERE (SELECT COUNT(*)) > 0;]], {{1}})
+
+        check([[SELECT 1 AS a WHERE "A" = 1;]], "Can't resolve field 'A'")
+        check([[SELECT 1 WHERE t.a;]],
+              "Field 'a' was not found in space 't' format")
+        check([[SELECT (1, 2) AS a WHERE a = 1;]], 'row value misused')
+        check([[SELECT 1 AS a WHERE (SELECT 1 WHERE a = 1 LIMIT a);]],
+              "Can't resolve field 'a'")
+        check([[SELECT nosuch1 WHERE nosuch2;]],
+              "Can't resolve field 'nosuch1'")
+        check([[SELECT 1 WHERE nosuch1 ORDER BY nosuch2;]],
+              "Can't resolve field 'nosuch1'")
+        check([[SELECT 1 WHERE nosuch1 LIMIT nosuch2;]],
+              "Can't resolve field 'nosuch2'")
+        check([[SELECT 1 WHERE 5;]],
+              'Type mismatch: can not convert integer(5) to boolean')
+
+        local exp_err = 'Number of nodes in expression tree 201 exceeds ' ..
+                        'the limit (200)'
+        check('SELECT ' .. chain(199) .. ' AS a WHERE a = 1;', {{1}})
+        check('SELECT ' .. chain(200) .. ' AS a WHERE a = 1;', exp_err)
+    end)
+end
+
+--
+-- Aggregate functions cannot be used in WHERE, either directly or through
+-- an alias, even in an aggregate SELECT. An alias of an aggregate cannot be
+-- used in an argument of an aggregate function.
+--
+g.test_where_aggregates = function()
+    g.server:exec(function()
+        local function check(sql, exp)
+            local _, err = box.execute(sql)
+            t.assert_equals(err.message, exp, sql)
+        end
+        local function misuse(name)
+            return 'misuse of aggregate function ' .. name .. '()'
+        end
+        local function alias_misuse(name)
+            return 'misuse of aliased aggregate ' .. name
+        end
+
+        check([[SELECT 1 WHERE COUNT(*) > 0;]], misuse('COUNT'))
+        check([[SELECT COUNT(*) WHERE COUNT(*) > 0;]], misuse('COUNT'))
+        check([[SELECT MAX(1) WHERE MIN(1) > 0;]], misuse('MIN'))
+        check([[SELECT 1 WHERE (SELECT 1 WHERE COUNT(*));]], misuse('COUNT'))
+        check([[SELECT COUNT(*) WHERE COUNT(*) > 0 ORDER BY nosuch;]],
+              misuse('COUNT'))
+
+        check([[SELECT COUNT(*) AS c WHERE c > 0;]], alias_misuse('c'))
+        check([[SELECT 1 + COUNT(*) AS c WHERE c > 0;]], alias_misuse('c'))
+        check([[SELECT COUNT(*) AS "C c" WHERE "C c" > 0;]],
+              alias_misuse('C c'))
+        check([[SELECT COUNT(*) AS c WHERE (SELECT c) > 0;]],
+              alias_misuse('c'))
+        check([[SELECT 1 AS c WHERE (SELECT COUNT(*) AS c WHERE c > 0) > 0;]],
+              alias_misuse('c'))
+        check([[SELECT COUNT(*) AS c ORDER BY SUM(c);]], alias_misuse('c'))
+        check([[SELECT COUNT(*) AS c ORDER BY SUM((SELECT c));]],
+              alias_misuse('c'))
+    end)
+end

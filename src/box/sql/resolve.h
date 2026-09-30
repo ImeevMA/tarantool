@@ -183,6 +183,11 @@ struct rast_expr_list_entry {
 	 * term refers to by its alias or position, or 0 if there is none.
 	 */
 	uint32_t order_by_col;
+	/**
+	 * Whether the expression contains aggregate functions of the SELECT
+	 * it belongs to. Set for a select list only.
+	 */
+	bool has_agg;
 };
 
 /** Resolved expression list. */
@@ -201,6 +206,8 @@ struct rast_select {
 	struct rast_expr *limit;
 	/** Resolved OFFSET expression, NULL if there is none. */
 	struct rast_expr *offset;
+	/** Resolved WHERE expression, NULL if there is none. */
+	struct rast_expr *where;
 	/** Resolved ORDER BY list. */
 	struct rast_expr_list order_by;
 	/** Whether the SELECT refers to names of the enclosing SELECTs. */
