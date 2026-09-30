@@ -1241,34 +1241,11 @@ resolveSelectStep(Walker * pWalker, Select * p)
 		/* Set up the local name-context to pass to sqlResolveExprNames() to
 		 * resolve the result-set expression list.
 		 */
-		bool is_all_select_agg = true;
 		sNC.ncFlags = NC_AllowAgg;
 		sNC.pSrcList = p->pSrc;
 		sNC.pNext = pOuterNC;
-		struct ExprList_item *item = p->pEList->a;
-		/* Resolve names in the result set. */
-		for (i = 0; i < p->pEList->nExpr; ++i, ++item) {
-			u16 has_agg_flag = sNC.ncFlags & NC_HasAgg;
-			sNC.ncFlags &= ~NC_HasAgg;
-			if (sqlResolveExprNames(&sNC, item->pExpr) != 0)
-				return WRC_Abort;
-			if ((sNC.ncFlags & NC_HasAgg) == 0 &&
-			    !sqlExprIsConstantOrFunction(item->pExpr)) {
-				is_all_select_agg = false;
-				sNC.ncFlags |= has_agg_flag;
-				break;
-			}
-			sNC.ncFlags |= has_agg_flag;
-		}
-		/*
-		 * Finish iteration for is_all_select_agg == false
-		 * and do not care about flags anymore.
-		 */
-		for (; i < p->pEList->nExpr; ++i, ++item) {
-			assert(! is_all_select_agg);
-			if (sqlResolveExprNames(&sNC, item->pExpr) != 0)
-				return WRC_Abort;
-		}
+		if (sqlResolveExprListNames(&sNC, p->pEList) != 0)
+			return WRC_Abort;
 
 		/*
 		 * If there are no aggregate functions in the
@@ -1306,8 +1283,7 @@ resolveSelectStep(Walker * pWalker, Select * p)
 		 */
 		if (p->pHaving != NULL && pGroupBy == NULL) {
 			sNC.ncFlags |= NC_AllowAgg;
-			if (is_all_select_agg &&
-			    sqlResolveExprNames(&sNC, p->pHaving) != 0)
+			if (sqlResolveExprNames(&sNC, p->pHaving) != 0)
 				return WRC_Abort;
 			if ((sNC.ncFlags & NC_HasAgg) == 0 ||
 			    (sNC.ncFlags & NC_HasUnaggregatedId) != 0) {
