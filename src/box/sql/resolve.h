@@ -177,6 +177,10 @@ struct rast_expr_list {
 struct rast_select {
 	/** Resolved list of columns. */
 	struct rast_expr_list columns;
+	/** Resolved LIMIT expression, NULL if there is none. */
+	struct rast_expr *limit;
+	/** Resolved OFFSET expression, NULL if there is none. */
+	struct rast_expr *offset;
 	/** Flags of the SELECT. */
 	uint32_t flags;
 	/** Link type between linked SELECTs. */

@@ -1841,6 +1841,10 @@ rast_select_height(const struct rast_select *select)
 	uint32_t height = 0;
 	for (uint32_t i = 0; i < select->columns.len; ++i)
 		height = MAX(height, select->columns.exprs[i].expr.height);
+	if (select->limit != NULL)
+		height = MAX(height, select->limit->height);
+	if (select->offset != NULL)
+		height = MAX(height, select->offset->height);
 	return height;
 }
 
@@ -2755,14 +2759,35 @@ resolve_asterisks(struct sql_resolve_context *ctx,
 	return -1;
 }
 
+/**
+ * Resolve the given AST LIMIT or OFFSET expression into a new rast_expr, or set
+ * the result to NULL if there is no expression. As in the legacy code, the
+ * expression cannot refer to any name or use an aggregate function.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_limit(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+	      struct rast_expr **res)
+{
+	*res = NULL;
+	if (ast == NULL)
+		return 0;
+	*res = xregion_alloc_object(ctx->region, struct rast_expr);
+	bool is_agg_allowed = ctx->is_agg_allowed;
+	ctx->is_agg_allowed = false;
+	int rc = resolve_expr(ctx, ast, *res);
+	ctx->is_agg_allowed = is_agg_allowed;
+	return rc;
+}
+
 /** Check if the given SELECT can be resolved. */
 static bool
 can_resolve(const struct ast_select *ast)
 {
 	return ast->op == TK_SELECT && ast->sources == NULL &&
 	       ast->group_by == NULL && ast->order_by == NULL &&
-	       ast->where == NULL && ast->having == NULL &&
-	       ast->limit == NULL && ast->offset == NULL && ast->with == NULL;
+	       ast->where == NULL && ast->having == NULL && ast->with == NULL;
 }
 
 /**
@@ -2782,6 +2807,15 @@ resolve_select(struct sql_resolve_context *ctx, const struct ast_select *ast,
 		return 0;
 	if (resolve_asterisks(ctx, ast->columns) != 0)
 		return -1;
+	/* The legacy code resolves LIMIT and OFFSET before the columns. */
+	if (resolve_limit(ctx, ast->limit, &res->limit) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	if (resolve_limit(ctx, ast->offset, &res->offset) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
 	bool is_agg_allowed = ctx->is_agg_allowed;
 	uint32_t agg_flags = ctx->agg_flags;
 	ctx->is_agg_allowed = true;
@@ -3112,12 +3146,18 @@ select_from_rast(struct Parse *parser, struct rast_select *select)
 	if (parser->is_aborted)
 		return NULL;
 	/*
-	 * The columns are already fully resolved, so the legacy resolver
+	 * The SELECT is already fully resolved, so the legacy resolver
 	 * (sqlSelectPrep()) must not walk this SELECT again.
 	 */
 	uint32_t flags = select->flags | SF_Resolved | SF_HasTypeInfo;
+	struct Expr *limit = NULL;
+	if (select->limit != NULL)
+		limit = expr_from_rast(parser, select->limit);
+	struct Expr *offset = NULL;
+	if (select->offset != NULL)
+		offset = expr_from_rast(parser, select->offset);
 	struct Select *res = sqlSelectNew(cols, NULL, NULL, NULL, NULL, NULL,
-					  flags, NULL, NULL);
+					  flags, limit, offset);
 	res->op = select->op;
 	return res;
 }
