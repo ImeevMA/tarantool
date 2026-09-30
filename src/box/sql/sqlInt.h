@@ -1886,6 +1886,12 @@ struct Parse {
 	uint32_t default_func_count;
 	/** AST of parsed SQL statement. */
 	struct sql_ast *ast;
+	/**
+	 * Number of result column aliases replaced with copies of the result
+	 * column expressions. The heights of the expressions containing them
+	 * have to be recomputed after such a replacement.
+	 */
+	uint32_t alias_count;
 	/*
 	 * FK and CK constraints appeared in a <CREATE TABLE> or
 	 * an <ALTER TABLE ADD COLUMN> statement.
@@ -4279,6 +4285,14 @@ void sqlWithPush(Parse *, With *, u8);
 int sqlFindInIndex(Parse *, Expr *, u32, int *, int *, int *);
 
 void sqlExprSetHeightAndFlags(Parse * pParse, Expr * p);
+
+/**
+ * Recompute the heights of the given expression and all its subexpressions,
+ * except the ones of subqueries, which are taken as they are.
+ */
+void
+sql_expr_update_height(struct Expr *expr);
+
 int sqlExprCheckHeight(Parse *, int);
 
 #ifdef SQL_DEBUG

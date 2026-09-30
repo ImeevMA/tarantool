@@ -470,6 +470,7 @@ lookupName(struct Parse *pParse, struct Expr *pExpr, struct NameContext *pNC)
 					}
 					resolveAlias(pEList, j, pExpr, "",
 						     nSubquery);
+					pParse->alias_count++;
 					cnt = 1;
 					pMatch = 0;
 					assert(zTab == 0);
@@ -1039,6 +1040,10 @@ sqlResolveOrderGroupBy(Parse * pParse,	/* Parsing context.  Leave error messages
 			}
 			resolveAlias(pEList, pItem->u.x.iOrderByCol - 1,
 				     pItem->pExpr, zType, 0);
+			pParse->alias_count++;
+			sqlExprSetHeightAndFlags(pParse, pItem->pExpr);
+			if (pParse->is_aborted)
+				return 1;
 		}
 		/*
 		 * Currently, we cannot disallow ANY here, as values of ANY type
@@ -1473,7 +1478,12 @@ sqlResolveExprNames(NameContext * pNC,	/* Namespace to resolve expressions in. *
 	w.walkerDepth = 0;
 	w.eCode = 0;
 	w.u.pNC = pNC;
+	uint32_t alias_count = w.pParse->alias_count;
 	sqlWalkExpr(&w, pExpr);
+	if (w.pParse->alias_count != alias_count && !w.pParse->is_aborted) {
+		sql_expr_update_height(pExpr);
+		sqlExprCheckHeight(w.pParse, pExpr->nHeight);
+	}
 	if (pNC->nErr > 0 || w.pParse->is_aborted) {
 		ExprSetProperty(pExpr, EP_Error);
 	}

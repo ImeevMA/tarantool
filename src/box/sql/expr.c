@@ -926,6 +926,21 @@ exprSetHeight(Expr * p)
 	p->nHeight = nHeight + 1;
 }
 
+void
+sql_expr_update_height(struct Expr *expr)
+{
+	if (expr == NULL || ExprHasProperty(expr, EP_TokenOnly | EP_Reduced))
+		return;
+	sql_expr_update_height(expr->pLeft);
+	sql_expr_update_height(expr->pRight);
+	if (!ExprHasProperty(expr, EP_xIsSelect) && expr->x.pList != NULL) {
+		struct ExprList *list = expr->x.pList;
+		for (int i = 0; i < list->nExpr; i++)
+			sql_expr_update_height(list->a[i].pExpr);
+	}
+	exprSetHeight(expr);
+}
+
 /*
  * Set the Expr.nHeight variable using the exprSetHeight() function. If
  * the height is greater than the maximum allowed expression depth,
