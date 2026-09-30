@@ -1978,10 +1978,7 @@ resolve_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 				  rast_select_height(res->in.select)) + 1;
 		return expr_check_height(res->height);
 	}
-	if (rhs->op != TK_VECTOR) {
-		ctx->can_resolve = false;
-		return 0;
-	}
+	assert(rhs->op == TK_VECTOR);
 	uint32_t len = rhs->list == NULL ? 0 : rhs->list->len;
 	if (len == 0) {
 		res->op = TK_FALSE;
@@ -2139,10 +2136,9 @@ resolve_getitem(struct sql_resolve_context *ctx, const struct ast_expr *ast,
  * Resolve an AST column reference: a column name, optionally qualified with a
  * source name. A resolved SELECT and all the SELECTs enclosing it have no
  * sources, so the reference never matches, and the error is reported with the
- * same message as the legacy code does. A qualified asterisk is not a column
- * reference, so it is not resolvable.
+ * same message as the legacy code does.
  *
- * Returns 0 if the reference is not resolvable and -1 on error.
+ * Always returns -1.
  */
 static int
 resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast)
@@ -2152,11 +2148,8 @@ resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast)
 			 sql_name_temp(ctx->region, ast->str, ast->len));
 		return -1;
 	}
-	assert(ast->op == TK_DOT && ast->left->op == TK_ID);
-	if (ast->right->op != TK_ID) {
-		ctx->can_resolve = false;
-		return 0;
-	}
+	assert(ast->op == TK_DOT && ast->left->op == TK_ID &&
+	       ast->right->op == TK_ID);
 	diag_set(ClientError, ER_NO_SUCH_FIELD_NAME_IN_SPACE,
 		 sql_name_temp(ctx->region, ast->right->str, ast->right->len),
 		 sql_name_temp(ctx->region, ast->left->str, ast->left->len));
@@ -2729,6 +2722,39 @@ resolve_column_list(struct sql_resolve_context *ctx,
 	return 0;
 }
 
+/**
+ * Check that the given column list of a FROM-less SELECT has no asterisk, which
+ * can only be expanded over sources. The legacy code expands asterisks before
+ * resolving the columns and reports the last asterisk that matched no source,
+ * so the same is done here.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_asterisks(struct sql_resolve_context *ctx,
+		  const struct ast_expr_list *ast)
+{
+	const struct ast_expr *last = NULL;
+	for (const struct stailq_entry *node = ast->head.first.value;
+	     node != NULL; node = node->next.value) {
+		const struct ast_expr *expr =
+			stailq_entry(node, struct ast_expr_list_entry,
+				     link)->expr;
+		if (expr->op == TK_ASTERISK ||
+		    (expr->op == TK_DOT && expr->right->op == TK_ASTERISK))
+			last = expr;
+	}
+	if (last == NULL)
+		return 0;
+	if (last->op == TK_ASTERISK) {
+		diag_set(ClientError, ER_SQL_SELECT_WILDCARD);
+		return -1;
+	}
+	diag_set(ClientError, ER_NO_SUCH_SPACE,
+		 sql_name_temp(ctx->region, last->left->str, last->left->len));
+	return -1;
+}
+
 /** Check if the given SELECT can be resolved. */
 static bool
 can_resolve(const struct ast_select *ast)
@@ -2754,6 +2780,8 @@ resolve_select(struct sql_resolve_context *ctx, const struct ast_select *ast,
 	ctx->can_resolve = can_resolve(ast);
 	if (!ctx->can_resolve)
 		return 0;
+	if (resolve_asterisks(ctx, ast->columns) != 0)
+		return -1;
 	bool is_agg_allowed = ctx->is_agg_allowed;
 	uint32_t agg_flags = ctx->agg_flags;
 	ctx->is_agg_allowed = true;
