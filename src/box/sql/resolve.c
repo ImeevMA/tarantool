@@ -42,10 +42,32 @@
 #include "box/schema.h"
 #include "box/coll_id_cache.h"
 
+/**
+ * Names visible at some point of the resolve phase. It mirrors the legacy
+ * NameContext: every SELECT resolves its clauses in scopes of its own, and a
+ * name that is not found in a scope is looked up in the enclosing one.
+ */
+struct sql_resolve_scope {
+	/** Result columns whose aliases are visible, or NULL. */
+	const struct rast_expr_list *aliases;
+	/** Enclosing scope, or NULL if its names are not visible. */
+	struct sql_resolve_scope *parent;
+	/**
+	 * Number of names found in this scope or in the scopes enclosing it,
+	 * while resolving the expressions of this scope. Used to find out if a
+	 * subquery refers to names of the enclosing SELECTs.
+	 */
+	uint32_t ref_count;
+};
+
 /** State threaded through the AST resolve phase. */
 struct sql_resolve_context {
 	/** Region the resolved AST is allocated on. */
 	struct region *region;
+	/** Current scope of names. */
+	struct sql_resolve_scope *scope;
+	/** Number of the result columns named automatically so far. */
+	uint32_t autoname_count;
 	/** Whether the statement being resolved has a resolved form yet. */
 	bool can_resolve;
 	/** Whether an aggregate function is allowed at the current point. */
@@ -66,10 +88,13 @@ static int
 resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	     struct rast_expr *res);
 
-/** Resolve the given AST SELECT statement into the given rast_select. */
+/**
+ * Resolve the given AST SELECT statement nested in an expression into the given
+ * rast_select.
+ */
 static int
-resolve_select(struct sql_resolve_context *ctx, const struct ast_select *ast,
-	       struct rast_select *res);
+resolve_nested_select(struct sql_resolve_context *ctx,
+		      const struct ast_select *ast, struct rast_select *res);
 
 /*
  * Walk the expression tree pExpr and increase the aggregate function
@@ -1845,6 +1870,8 @@ rast_select_height(const struct rast_select *select)
 		height = MAX(height, select->limit->height);
 	if (select->offset != NULL)
 		height = MAX(height, select->offset->height);
+	for (uint32_t i = 0; i < select->order_by.len; ++i)
+		height = MAX(height, select->order_by.exprs[i].expr.height);
 	return height;
 }
 
@@ -1973,7 +2000,8 @@ resolve_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 			return 0;
 		res->in.select =
 			xregion_alloc_object(ctx->region, struct rast_select);
-		if (resolve_select(ctx, rhs->select, res->in.select) != 0)
+		if (resolve_nested_select(ctx, rhs->select,
+					  res->in.select) != 0)
 			return -1;
 		if (!ctx->can_resolve)
 			return 0;
@@ -2137,19 +2165,86 @@ resolve_getitem(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 }
 
 /**
- * Resolve an AST column reference: a column name, optionally qualified with a
- * source name. A resolved SELECT and all the SELECTs enclosing it have no
- * sources, so the reference never matches, and the error is reported with the
- * same message as the legacy code does.
+ * Set the given rast_expr to a reference to the given result column of a
+ * SELECT the given number of subqueries up.
+ */
+static void
+resolve_alias(const struct rast_expr_list *columns, uint32_t col,
+	      uint32_t depth, struct rast_expr *res)
+{
+	assert(col < columns->len);
+	const struct rast_expr *expr = &columns->exprs[col].expr;
+	res->op = TK_AS;
+	res->alias.expr = expr;
+	res->alias.depth = depth;
+	res->type = expr->type;
+	res->height = expr->height;
+}
+
+/**
+ * Find the result column with the given alias among the given ones. The name
+ * matches the alias as is or, as in the legacy code, in its legacy form.
  *
- * Always returns -1.
+ * Returns the position of the column, starting from 0, or -1 if not found.
  */
 static int
-resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast)
+find_alias(const struct rast_expr_list *columns, const char *name,
+	   const char *legacy_name)
+{
+	for (uint32_t i = 0; i < columns->len; ++i) {
+		const char *alias = columns->exprs[i].name;
+		if (alias != NULL && (strcmp(alias, name) == 0 ||
+				      (legacy_name != NULL &&
+				       strcmp(alias, legacy_name) == 0)))
+			return i;
+	}
+	return -1;
+}
+
+/**
+ * Resolve an AST column reference: a column name, optionally qualified with a
+ * source name, into the given rast_expr. A resolved SELECT and all the SELECTs
+ * enclosing it have no sources, so an unqualified name can refer only to a
+ * result column alias visible in the current scope or in the enclosing ones,
+ * and a qualified name never matches. If the reference is not resolved, the
+ * error is reported with the same message as the legacy code does.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast,
+		   struct rast_expr *res)
 {
 	if (ast->op == TK_ID) {
-		diag_set(ClientError, ER_SQL_CANT_RESOLVE_FIELD,
-			 sql_name_temp(ctx->region, ast->str, ast->len));
+		const char *name = sql_name_temp(ctx->region, ast->str,
+						 ast->len);
+		const char *legacy_name = NULL;
+		if (ast->str[0] != '"') {
+			legacy_name = sql_legacy_name_temp(ctx->region,
+							   ast->str, ast->len);
+		}
+		uint32_t depth = 0;
+		for (struct sql_resolve_scope *scope = ctx->scope;
+		     scope != NULL; scope = scope->parent, ++depth) {
+			if (scope->aliases == NULL)
+				continue;
+			int col = find_alias(scope->aliases, name, legacy_name);
+			if (col < 0)
+				continue;
+			const struct rast_expr *expr =
+				&scope->aliases->exprs[col].expr;
+			if (rast_vector_size(expr) != 1) {
+				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+					 "row value misused");
+				return -1;
+			}
+			for (struct sql_resolve_scope *s = ctx->scope;
+			     s != scope->parent; s = s->parent)
+				++s->ref_count;
+			resolve_alias(scope->aliases, col, depth, res);
+			return 0;
+		}
+		diag_set(ClientError, ER_SQL_CANT_RESOLVE_FIELD, name);
 		return -1;
 	}
 	assert(ast->op == TK_DOT && ast->left->op == TK_ID &&
@@ -2175,7 +2270,7 @@ resolve_subquery(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 {
 	bool outer = ctx->can_resolve;
 	res->select = xregion_alloc_object(ctx->region, struct rast_select);
-	if (resolve_select(ctx, ast->select, res->select) != 0)
+	if (resolve_nested_select(ctx, ast->select, res->select) != 0)
 		return -1;
 	ctx->can_resolve = ctx->can_resolve && outer;
 	if (!ctx->can_resolve)
@@ -2284,6 +2379,8 @@ rast_expr_field_type(const struct rast_expr *expr)
 		return rast_expr_field_type(expr->expr);
 	case TK_FUNCTION:
 		return expr->func.returns;
+	case TK_AS:
+		return rast_expr_field_type(expr->alias.expr);
 	}
 	return sql_type_to_field_type(expr->type);
 }
@@ -2663,7 +2760,7 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		break;
 	case TK_ID:
 	case TK_DOT:
-		return resolve_column_ref(ctx, ast);
+		return resolve_column_ref(ctx, ast, res);
 	case TK_FUNCTION:
 		if (resolve_function(ctx, ast, res) != 0)
 			return -1;
@@ -2686,14 +2783,16 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 }
 
 /**
- * Resolve every entry of the given AST expression list into the given
- * rast_expr_list.
+ * Set the names of the columns of the given AST column list into the given
+ * rast_expr_list, allocating its entries. As in the legacy code, a column
+ * without an alias is named automatically unless it is a column reference.
  *
  * Returns 0 on success and -1 on error.
  */
 static int
-resolve_column_list(struct sql_resolve_context *ctx,
-		    const struct ast_expr_list *ast, struct rast_expr_list *res)
+resolve_column_names(struct sql_resolve_context *ctx,
+		     const struct ast_expr_list *ast,
+		     struct rast_expr_list *res)
 {
 	res->exprs = xregion_alloc_array(ctx->region, typeof(*res->exprs),
 					 ast->len);
@@ -2706,10 +2805,6 @@ resolve_column_list(struct sql_resolve_context *ctx,
 		const struct ast_expr_list_entry *entry =
 			stailq_entry(node, struct ast_expr_list_entry, link);
 		struct rast_expr_list_entry *expr = &res->exprs[i++];
-		if (resolve_expr(ctx, entry->expr, &expr->expr) != 0)
-			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 		if (entry->name.n > 0) {
 			expr->name = sql_name_temp(ctx->region, entry->name.z,
 						   entry->name.n);
@@ -2719,9 +2814,192 @@ resolve_column_list(struct sql_resolve_context *ctx,
 			expr->legacy_name = sql_legacy_name_temp(ctx->region,
 								 entry->name.z,
 								 entry->name.n);
+			continue;
 		}
+		const struct ast_expr *e = entry->expr;
+		while (e->op == TK_PARENTHESES)
+			e = e->left;
+		if (e->op == TK_ID || e->op == TK_DOT || e->op == TK_ASTERISK)
+			continue;
+		const char *name =
+			sql_generate_column_name(++ctx->autoname_count);
+		expr->name = sql_name_temp(ctx->region, name, strlen(name));
+	}
+	return 0;
+}
+
+/**
+ * Resolve every expression of the given AST column list into the entries of
+ * the given rast_expr_list.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_column_list(struct sql_resolve_context *ctx,
+		    const struct ast_expr_list *ast, struct rast_expr_list *res)
+{
+	int i = 0;
+	for (const struct stailq_entry *node = ast->head.first.value;
+	     node != NULL; node = node->next.value) {
+		const struct ast_expr_list_entry *entry =
+			stailq_entry(node, struct ast_expr_list_entry, link);
+		struct rast_expr_list_entry *expr = &res->exprs[i++];
+		if (resolve_expr(ctx, entry->expr, &expr->expr) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
 		expr->span = entry->expr->str;
 		expr->span_len = entry->expr->len;
+	}
+	return 0;
+}
+
+/**
+ * Check if the given AST expression is an integer literal, possibly with unary
+ * plus and minus and parentheses, which the legacy code folds into a literal.
+ */
+static bool
+ast_is_integer(const struct ast_expr *ast)
+{
+	while (ast->op == TK_PARENTHESES || ast->op == TK_UPLUS ||
+	       ast->op == TK_UMINUS)
+		ast = ast->left;
+	return ast->op == TK_INTEGER;
+}
+
+/**
+ * Replace the given ORDER BY term with a reference to the given result column.
+ * As in the legacy code, only the outermost collation of the term is kept.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_order_by_col(struct sql_resolve_context *ctx,
+		     const struct rast_expr_list *columns, uint32_t col,
+		     struct rast_expr *res)
+{
+	if (res->op != TK_COLLATE) {
+		resolve_alias(columns, col, 0, res);
+		return 0;
+	}
+	uint32_t id = res->coll.id;
+	memset(res, 0, sizeof(*res));
+	res->op = TK_COLLATE;
+	res->coll.id = id;
+	res->coll.expr = xregion_alloc_object(ctx->region, struct rast_expr);
+	memset(res->coll.expr, 0, sizeof(*res->coll.expr));
+	resolve_alias(columns, col, 0, res->coll.expr);
+	res->type = SQL_TYPE_SCALAR;
+	res->height = res->coll.expr->height + 1;
+	return expr_check_height(res->height);
+}
+
+/** Report an error for an ORDER BY term out of the range of the columns. */
+static void
+order_by_range_error(uint32_t pos, uint32_t len)
+{
+	diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+		 tt_sprintf("Error at ORDER BY in place %u: term out of "
+			    "range - should be between 1 and %u", pos + 1,
+			    len));
+}
+
+/**
+ * Resolve the given AST ORDER BY list of a SELECT with the given resolved
+ * columns into the given rast_expr_list. As in the legacy code, a term which is
+ * an alias of a result column or an integer is a reference to the result
+ * column, and any other term is an expression, in which the aliases of the
+ * result columns are visible. The terms are checked in two passes, in the same
+ * order as the legacy code does.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_order_by(struct sql_resolve_context *ctx,
+		 const struct ast_expr_list *ast,
+		 const struct rast_expr_list *columns,
+		 struct rast_expr_list *res)
+{
+	if (ast == NULL)
+		return 0;
+	res->exprs = xregion_alloc_array(ctx->region, typeof(*res->exprs),
+					 ast->len);
+	res->len = ast->len;
+	memset(res->exprs, 0, sizeof(*res->exprs) * res->len);
+
+	uint32_t i = 0;
+	for (const struct stailq_entry *node = ast->head.first.value;
+	     node != NULL; node = node->next.value, ++i) {
+		const struct ast_expr_list_entry *entry =
+			stailq_entry(node, struct ast_expr_list_entry, link);
+		struct rast_expr_list_entry *item = &res->exprs[i];
+		item->order = entry->order;
+		const struct ast_expr *term = entry->expr;
+		while (term->op == TK_PARENTHESES || term->op == TK_COLLATE)
+			term = term->left;
+		if (term->op == TK_ID) {
+			const char *name = sql_name_temp(ctx->region, term->str,
+							 term->len);
+			int col = find_alias(columns, name, NULL);
+			if (col >= 0) {
+				item->order_by_col = col + 1;
+				const struct ast_expr *coll = entry->expr;
+				while (coll->op == TK_PARENTHESES)
+					coll = coll->left;
+				if (coll->op == TK_COLLATE) {
+					item->expr.op = TK_COLLATE;
+					if (sql_coll_id(&item->expr.coll.id,
+							coll->right->str,
+							coll->right->len) != 0)
+						return -1;
+				}
+				continue;
+			}
+		}
+		if (resolve_expr(ctx, entry->expr, &item->expr) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+		if (!ast_is_integer(term))
+			continue;
+		const struct rast_expr *value = &item->expr;
+		while (value->op == TK_COLLATE)
+			value = value->coll.expr;
+		assert(value->op == TK_INTEGER);
+		/* As sqlExprIsInteger(), accept only 32-bit integers. */
+		if (value->is_neg ? (int64_t)value->u < INT32_MIN :
+		    value->u > INT32_MAX)
+			continue;
+		if (value->is_neg || value->u == 0 || value->u > 0xffff) {
+			order_by_range_error(i, columns->len);
+			return -1;
+		}
+		item->order_by_col = value->u;
+	}
+	if (res->len > SQL_MAX_COLUMN) {
+		diag_set(ClientError, ER_SQL_PARSER_LIMIT,
+			 "The number of terms in ORDER BY clause",
+			 (int)res->len, SQL_MAX_COLUMN);
+		return -1;
+	}
+	for (i = 0; i < res->len; ++i) {
+		struct rast_expr_list_entry *item = &res->exprs[i];
+		if (item->order_by_col > columns->len) {
+			order_by_range_error(i, columns->len);
+			return -1;
+		}
+		if (item->order_by_col > 0 &&
+		    resolve_order_by_col(ctx, columns, item->order_by_col - 1,
+					 &item->expr) != 0)
+			return -1;
+		enum field_type type = rast_expr_field_type(&item->expr);
+		if (!field_type1_contains_type2(FIELD_TYPE_SCALAR, NULL, type,
+						NULL) &&
+		    type != FIELD_TYPE_ANY) {
+			diag_set(ClientError, ER_SQL_TYPE_MISMATCH,
+				 field_type_strs[type], "comparable type");
+			return -1;
+		}
 	}
 	return 0;
 }
@@ -2786,18 +3064,19 @@ static bool
 can_resolve(const struct ast_select *ast)
 {
 	return ast->op == TK_SELECT && ast->sources == NULL &&
-	       ast->group_by == NULL && ast->order_by == NULL &&
-	       ast->where == NULL && ast->having == NULL && ast->with == NULL;
+	       ast->group_by == NULL && ast->where == NULL &&
+	       ast->having == NULL && ast->with == NULL;
 }
 
 /**
- * Resolve the given AST SELECT statement into the given rast_select.
+ * Resolve the clauses of the given AST SELECT statement into the given
+ * rast_select, each in the scope of names the legacy code resolves it in.
  *
  * Returns 0 on success and -1 on error.
  */
 static int
-resolve_select(struct sql_resolve_context *ctx, const struct ast_select *ast,
-	       struct rast_select *res)
+resolve_select_clauses(struct sql_resolve_context *ctx,
+		       const struct ast_select *ast, struct rast_select *res)
 {
 	memset(res, 0, sizeof(*res));
 	res->flags = ast->flags;
@@ -2805,9 +3084,18 @@ resolve_select(struct sql_resolve_context *ctx, const struct ast_select *ast,
 	ctx->can_resolve = can_resolve(ast);
 	if (!ctx->can_resolve)
 		return 0;
+	/*
+	 * The legacy code names the columns and expands the asterisks before
+	 * resolving anything, and then resolves LIMIT and OFFSET before the
+	 * columns.
+	 */
+	if (resolve_column_names(ctx, ast->columns, &res->columns) != 0)
+		return -1;
 	if (resolve_asterisks(ctx, ast->columns) != 0)
 		return -1;
-	/* The legacy code resolves LIMIT and OFFSET before the columns. */
+	struct sql_resolve_scope *outer = ctx->scope;
+	struct sql_resolve_scope limit_scope = {0};
+	ctx->scope = &limit_scope;
 	if (resolve_limit(ctx, ast->limit, &res->limit) != 0)
 		return -1;
 	if (!ctx->can_resolve)
@@ -2816,6 +3104,8 @@ resolve_select(struct sql_resolve_context *ctx, const struct ast_select *ast,
 		return -1;
 	if (!ctx->can_resolve)
 		return 0;
+	struct sql_resolve_scope scope = {.parent = outer};
+	ctx->scope = &scope;
 	bool is_agg_allowed = ctx->is_agg_allowed;
 	uint32_t agg_flags = ctx->agg_flags;
 	ctx->is_agg_allowed = true;
@@ -2823,6 +3113,19 @@ resolve_select(struct sql_resolve_context *ctx, const struct ast_select *ast,
 	int rc = resolve_column_list(ctx, ast->columns, &res->columns);
 	/* Mirrors the legacy aggregate detection in resolveSelectStep(). */
 	res->flags |= ctx->agg_flags;
+	if (rc == 0 && ctx->can_resolve) {
+		/*
+		 * The ORDER BY terms can refer to the result columns, but not
+		 * to the names of the enclosing SELECTs, and their aggregate
+		 * functions do not make the SELECT an aggregate one.
+		 */
+		struct sql_resolve_scope order_by_scope = {
+			.aliases = &res->columns,
+		};
+		ctx->scope = &order_by_scope;
+		rc = resolve_order_by(ctx, ast->order_by, &res->columns,
+				      &res->order_by);
+	}
 	ctx->is_agg_allowed = is_agg_allowed;
 	ctx->agg_flags = agg_flags;
 	if (rc != 0)
@@ -2843,6 +3146,33 @@ resolve_select(struct sql_resolve_context *ctx, const struct ast_select *ast,
 			 SQL_MAX_COLUMN);
 		return -1;
 	}
+	return 0;
+}
+
+/**
+ * Resolve the given AST SELECT statement into the given rast_select.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_select(struct sql_resolve_context *ctx, const struct ast_select *ast,
+	       struct rast_select *res)
+{
+	struct sql_resolve_scope *outer = ctx->scope;
+	int rc = resolve_select_clauses(ctx, ast, res);
+	ctx->scope = outer;
+	return rc;
+}
+
+static int
+resolve_nested_select(struct sql_resolve_context *ctx,
+		      const struct ast_select *ast, struct rast_select *res)
+{
+	assert(ctx->scope != NULL);
+	uint32_t ref_count = ctx->scope->ref_count;
+	if (resolve_select(ctx, ast, res) != 0)
+		return -1;
+	res->is_correlated = ctx->scope->ref_count != ref_count;
 	return 0;
 }
 
@@ -2880,8 +3210,17 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
  * evaluated during the resolution process.
  */
 static struct Expr *
-expr_from_rast(struct Parse *parser, struct rast_expr *expr)
+expr_from_rast(struct Parse *parser, const struct rast_expr *expr)
 {
+	if (expr->op == TK_AS) {
+		/*
+		 * As in the legacy code, a reference to a result column is a
+		 * copy of its expression.
+		 */
+		struct Expr *res = expr_from_rast(parser, expr->alias.expr);
+		incrAggFunctionDepth(res, expr->alias.depth);
+		return res;
+	}
 	struct Expr *res = NULL;
 	switch (expr->op) {
 	case TK_NULL:
@@ -2993,6 +3332,8 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 			res->x.pSelect =
 				select_from_rast(parser, expr->in.select);
 			ExprSetProperty(res, EP_xIsSelect | EP_Subquery);
+			if (expr->in.select->is_correlated)
+				ExprSetProperty(res, EP_VarSelect);
 			break;
 		}
 		struct ExprList *list = NULL;
@@ -3063,6 +3404,8 @@ expr_from_rast(struct Parse *parser, struct rast_expr *expr)
 		res = sql_expr_new_anon(expr->op);
 		res->x.pSelect = select_from_rast(parser, expr->select);
 		ExprSetProperty(res, EP_xIsSelect | EP_Subquery);
+		if (expr->select->is_correlated)
+			ExprSetProperty(res, EP_VarSelect);
 		break;
 	case TK_FUNCTION: {
 		size_t len = strlen(expr->func.name);
@@ -3124,13 +3467,16 @@ expr_list_from_rast(struct Parse *parser, struct rast_expr_list *list)
 		if (expr == NULL)
 			break;
 		res = sql_expr_list_append(res, expr);
+		struct ExprList_item *item = &res->a[res->nExpr - 1];
 		if (entry->name != NULL) {
-			struct ExprList_item *item = &res->a[res->nExpr - 1];
 			item->zName = sql_xstrdup(entry->name);
 			item->legacy_name = sql_xstrdup(entry->legacy_name);
 		}
 		if (entry->span != NULL)
 			sqlExprListSetSpan(res, entry->span, entry->span_len);
+		if (entry->order != SORT_ORDER_ASC)
+			sqlExprListSetSortOrder(res, entry->order);
+		item->u.x.iOrderByCol = entry->order_by_col;
 	}
 	if (parser->is_aborted) {
 		sql_expr_list_delete(res);
@@ -3156,8 +3502,24 @@ select_from_rast(struct Parse *parser, struct rast_select *select)
 	struct Expr *offset = NULL;
 	if (select->offset != NULL)
 		offset = expr_from_rast(parser, select->offset);
-	struct Select *res = sqlSelectNew(cols, NULL, NULL, NULL, NULL, NULL,
-					  flags, limit, offset);
+	struct ExprList *order_by = expr_list_from_rast(parser,
+							&select->order_by);
+	/*
+	 * As in the legacy code, an ORDER BY expression equal to a result
+	 * column expression refers to the last such result column.
+	 */
+	for (int i = 0; order_by != NULL && i < order_by->nExpr; ++i) {
+		struct ExprList_item *item = &order_by->a[i];
+		if (item->u.x.iOrderByCol != 0)
+			continue;
+		for (int j = 0; j < cols->nExpr; ++j) {
+			if (sqlExprCompare(item->pExpr, cols->a[j].pExpr,
+					   -1) == 0)
+				item->u.x.iOrderByCol = j + 1;
+		}
+	}
+	struct Select *res = sqlSelectNew(cols, NULL, NULL, NULL, NULL,
+					  order_by, flags, limit, offset);
 	res->op = select->op;
 	return res;
 }

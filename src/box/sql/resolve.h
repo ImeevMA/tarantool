@@ -111,6 +111,19 @@ struct rast_expr {
 		} coll;
 		/** Subquery of a TK_SELECT or TK_EXISTS expression. */
 		struct rast_select *select;
+		/**
+		 * Result column referred to by a TK_AS expression, by its
+		 * alias or by its position in an ORDER BY term.
+		 */
+		struct {
+			/** Expression of the result column. */
+			const struct rast_expr *expr;
+			/**
+			 * Number of subqueries between the reference and the
+			 * SELECT the result column belongs to.
+			 */
+			uint32_t depth;
+		} alias;
 		/** Name and arguments of a TK_FUNCTION expression. */
 		struct {
 			/** Name of the resolved function. */
@@ -163,6 +176,13 @@ struct rast_expr_list_entry {
 	const char *span;
 	/** Length of the text above. */
 	uint32_t span_len;
+	/** Sort order of the entry, used for ORDER BY lists. */
+	enum sort_order order;
+	/**
+	 * Position of the result column, starting from 1, which an ORDER BY
+	 * term refers to by its alias or position, or 0 if there is none.
+	 */
+	uint32_t order_by_col;
 };
 
 /** Resolved expression list. */
@@ -181,6 +201,10 @@ struct rast_select {
 	struct rast_expr *limit;
 	/** Resolved OFFSET expression, NULL if there is none. */
 	struct rast_expr *offset;
+	/** Resolved ORDER BY list. */
+	struct rast_expr_list order_by;
+	/** Whether the SELECT refers to names of the enclosing SELECTs. */
+	bool is_correlated;
 	/** Flags of the SELECT. */
 	uint32_t flags;
 	/** Link type between linked SELECTs. */
