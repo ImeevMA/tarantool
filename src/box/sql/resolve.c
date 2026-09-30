@@ -75,6 +75,8 @@ struct sql_resolve_scope {
 
 /** State threaded through the AST resolve phase. */
 struct sql_resolve_context {
+	/** Parser the statement is resolved for. */
+	struct Parse *parser;
 	/** Region the resolved AST is allocated on. */
 	struct region *region;
 	/** Current scope of names. */
@@ -101,6 +103,10 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 static int
 resolve_nested_select(struct sql_resolve_context *ctx,
 		      const struct ast_select *ast, struct rast_select *res);
+
+/** Create an expression from the given resolved expression AST. */
+static struct Expr *
+expr_from_rast(struct Parse *parser, const struct rast_expr *expr);
 
 /*
  * Walk the expression tree pExpr and increase the aggregate function
@@ -1865,7 +1871,10 @@ rast_vector_size(const struct rast_expr *res)
 	return 1;
 }
 
-/** Maximum height among the columns of a resolved SELECT. */
+/**
+ * Maximum height among the expressions of a resolved SELECT and of the SELECTs
+ * to the left of it in a compound SELECT.
+ */
 static uint32_t
 rast_select_height(const struct rast_select *select)
 {
@@ -1884,6 +1893,8 @@ rast_select_height(const struct rast_select *select)
 		height = MAX(height, select->group_by.exprs[i].expr.height);
 	for (uint32_t i = 0; i < select->order_by.len; ++i)
 		height = MAX(height, select->order_by.exprs[i].expr.height);
+	if (select->prior != NULL)
+		height = MAX(height, rast_select_height(select->prior));
 	return height;
 }
 
@@ -3094,39 +3105,121 @@ resolve_limit(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	return resolve_expr(ctx, ast, *res);
 }
 
-/** Check if the given SELECT can be resolved. */
+/**
+ * Check if the given AST expression has a COLLATE clause outside of its
+ * subqueries.
+ */
 static bool
-can_resolve(const struct ast_select *ast)
+ast_expr_has_collate(const struct ast_expr *ast)
 {
-	return ast->op == TK_SELECT && ast->sources == NULL &&
-	       ast->with == NULL;
+	if (ast == NULL)
+		return false;
+	switch (ast->op) {
+	case TK_COLLATE:
+		return true;
+	case TK_SELECT:
+	case TK_EXISTS:
+		return false;
+	case TK_CAST:
+	case TK_RAISE:
+		return ast_expr_has_collate(ast->left);
+	case TK_BETWEEN:
+	case TK_CASE:
+	case TK_ARRAY:
+	case TK_MAP:
+	case TK_VECTOR:
+	case TK_DISTINCT:
+	case TK_GETITEM: {
+		if (ast_expr_has_collate(ast->left))
+			return true;
+		if (ast->list == NULL)
+			return false;
+		for (const struct stailq_entry *node =
+			ast->list->head.first.value;
+		     node != NULL; node = node->next.value) {
+			const struct ast_expr_list_entry *entry =
+				stailq_entry(node, struct ast_expr_list_entry,
+					     link);
+			if (ast_expr_has_collate(entry->expr))
+				return true;
+		}
+		return false;
+	}
+	default:
+		return ast_expr_has_collate(ast->left) ||
+		       ast_expr_has_collate(ast->right);
+	}
 }
 
 /**
- * Resolve the clauses of the given AST SELECT statement into the given
- * rast_select, each in the scope of names the legacy code resolves it in.
+ * Check if the given SELECT, which may be a compound one, can be resolved. The
+ * legacy code turns a compound SELECT, which is not UNION ALL, with a COLLATE
+ * clause in its ORDER BY into a SELECT from a subquery.
+ */
+static bool
+can_resolve(const struct ast_select *ast)
+{
+	if (ast->sources != NULL || ast->with != NULL)
+		return false;
+	if (ast->link.next == &ast->link)
+		return true;
+	bool is_union_all = true;
+	const struct rlist *link = &ast->link;
+	do {
+		const struct ast_select *part =
+			rlist_entry(link, struct ast_select, link);
+		if (part->sources != NULL || (part->flags & SF_Values) != 0)
+			return false;
+		if (part->op != TK_SELECT && part->op != TK_ALL)
+			is_union_all = false;
+		link = link->next;
+	} while (link != &ast->link);
+	if (is_union_all || ast->order_by == NULL)
+		return true;
+	for (const struct stailq_entry *node = ast->order_by->head.first.value;
+	     node != NULL; node = node->next.value) {
+		const struct ast_expr_list_entry *entry =
+			stailq_entry(node, struct ast_expr_list_entry, link);
+		if (ast_expr_has_collate(entry->expr))
+			return false;
+	}
+	return true;
+}
+
+/**
+ * Set up the given rast_select for the given AST SELECT statement, which is not
+ * compound or is a part of a compound one, and set the names of its columns. As
+ * in the legacy code, the asterisks are checked at the same point.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_select_names(struct sql_resolve_context *ctx,
+		     const struct ast_select *ast, struct rast_select *res)
+{
+	memset(res, 0, sizeof(*res));
+	res->flags = ast->flags;
+	res->op = ast->op;
+	if (resolve_column_names(ctx, ast->columns, &res->columns) != 0)
+		return -1;
+	return resolve_asterisks(ctx, ast->columns);
+}
+
+/**
+ * Resolve the clauses of the given AST SELECT statement, which is not compound
+ * or is a part of a compound one, into the given rast_select, each in the scope
+ * of names the legacy code resolves it in. The ORDER BY of the rightmost part
+ * of a compound SELECT belongs to the whole compound SELECT and is not resolved
+ * here.
  *
  * Returns 0 on success and -1 on error.
  */
 static int
 resolve_select_clauses(struct sql_resolve_context *ctx,
-		       const struct ast_select *ast, struct rast_select *res)
+		       const struct ast_select *ast, struct rast_select *res,
+		       bool is_compound_head)
 {
-	memset(res, 0, sizeof(*res));
-	res->flags = ast->flags;
-	res->op = ast->op;
-	ctx->can_resolve = can_resolve(ast);
-	if (!ctx->can_resolve)
-		return 0;
-	/*
-	 * The legacy code names the columns and expands the asterisks before
-	 * resolving anything, and then resolves LIMIT and OFFSET before the
-	 * columns.
-	 */
-	if (resolve_column_names(ctx, ast->columns, &res->columns) != 0)
-		return -1;
-	if (resolve_asterisks(ctx, ast->columns) != 0)
-		return -1;
+	/* The legacy code resolves LIMIT and OFFSET before the columns. */
 	struct sql_resolve_scope *outer = ctx->scope;
 	struct sql_resolve_scope limit_scope = {0};
 	ctx->scope = &limit_scope;
@@ -3205,10 +3298,12 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 		.is_agg_allowed = true,
 	};
 	ctx->scope = &order_by_scope;
-	rc = resolve_order_by(ctx, "ORDER", ast->order_by, &res->columns,
-			      &res->order_by);
-	if (rc != 0 || !ctx->can_resolve)
-		return rc;
+	if (!is_compound_head) {
+		rc = resolve_order_by(ctx, "ORDER", ast->order_by,
+				      &res->columns, &res->order_by);
+		if (rc != 0 || !ctx->can_resolve)
+			return rc;
+	}
 	struct sql_resolve_scope group_by_scope = {
 		.aliases = &res->columns,
 		.is_agg_allowed = true,
@@ -3240,6 +3335,314 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 }
 
 /**
+ * Find the result column of the given SELECT equal to the given resolved
+ * expression, ignoring the collations, as the legacy code does. Until the
+ * expressions can be compared in the resolved form, they are compared in the
+ * legacy form.
+ *
+ * Returns the position of the column, starting from 1, or 0 if not found.
+ */
+static uint32_t
+find_equal_column(struct sql_resolve_context *ctx,
+		  const struct rast_expr_list *columns,
+		  const struct rast_expr *expr)
+{
+	struct Expr *e = expr_from_rast(ctx->parser, expr);
+	uint32_t res = 0;
+	for (uint32_t i = 0; i < columns->len && res == 0; ++i) {
+		struct Expr *col = expr_from_rast(ctx->parser,
+						  &columns->exprs[i].expr);
+		if (sqlExprCompare(col, e, -1) < 2)
+			res = i + 1;
+		sql_expr_delete(col);
+	}
+	sql_expr_delete(e);
+	return res;
+}
+
+/**
+ * Find the result column the given AST ORDER BY term of a compound SELECT
+ * refers to among the result columns of the given part of the compound SELECT.
+ * As in the legacy code, the term is an integer, an alias of a result column or
+ * an expression equal to a result column, which is resolved in the scope of
+ * the aliases of the part.
+ *
+ * Returns the position of the column, starting from 1, or 0 if not found or if
+ * the term cannot be resolved, which is marked in the given flag. Returns -1
+ * on error.
+ */
+static int
+find_compound_order_by_col(struct sql_resolve_context *ctx,
+			   const struct ast_expr *ast, uint32_t pos,
+			   const struct rast_select *part, bool *is_failed)
+{
+	const struct rast_expr_list *columns = &part->columns;
+	while (ast->op == TK_PARENTHESES || ast->op == TK_COLLATE)
+		ast = ast->left;
+	struct rast_expr expr;
+	memset(&expr, 0, sizeof(expr));
+	if (ast_is_integer(ast)) {
+		if (resolve_expr(ctx, ast, &expr) != 0)
+			return -1;
+		assert(expr.op == TK_INTEGER);
+		/* As sqlExprIsInteger(), accept only 32-bit integers. */
+		bool is_int32 = expr.is_neg ? (int64_t)expr.u >= INT32_MIN :
+				expr.u <= INT32_MAX;
+		if (is_int32) {
+			if (expr.is_neg || expr.u == 0 ||
+			    expr.u > columns->len) {
+				order_by_range_error("ORDER", pos,
+						     columns->len);
+				return -1;
+			}
+			return expr.u;
+		}
+	} else if (ast->op == TK_ID) {
+		const char *name = sql_name_temp(ctx->region, ast->str,
+						 ast->len);
+		int col = find_alias(columns, name, NULL);
+		if (col >= 0)
+			return col + 1;
+	}
+	struct sql_resolve_scope scope = {
+		.aliases = columns,
+		.is_agg_allowed = true,
+	};
+	struct sql_resolve_scope *outer = ctx->scope;
+	ctx->scope = &scope;
+	int rc = resolve_expr(ctx, ast, &expr);
+	ctx->scope = outer;
+	if (rc != 0) {
+		/*
+		 * As in the legacy code, the error is reported only if the
+		 * term matches a column of another part of the SELECT.
+		 */
+		*is_failed = true;
+		return 0;
+	}
+	if (!ctx->can_resolve)
+		return 0;
+	return find_equal_column(ctx, columns, &expr);
+}
+
+/**
+ * Resolve the given AST ORDER BY list of the given compound SELECT. As in the
+ * legacy code, every term is matched against the result columns of the parts
+ * of the compound SELECT, from left to right, until it matches one, and is
+ * replaced with the position of the matched column.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_compound_order_by(struct sql_resolve_context *ctx,
+			  const struct ast_expr_list *ast,
+			  struct rast_select *select)
+{
+	if (ast == NULL)
+		return 0;
+	if (ast->len > SQL_MAX_COLUMN) {
+		diag_set(ClientError, ER_SQL_PARSER_LIMIT,
+			 "The number of terms in ORDER BY clause",
+			 (int)ast->len, SQL_MAX_COLUMN);
+		return -1;
+	}
+	struct rast_expr_list *res = &select->order_by;
+	res->exprs = xregion_alloc_array(ctx->region, typeof(*res->exprs),
+					 ast->len);
+	res->len = ast->len;
+	memset(res->exprs, 0, sizeof(*res->exprs) * res->len);
+	const struct ast_expr **terms =
+		xregion_alloc_array(ctx->region, typeof(*terms), ast->len);
+	uint32_t i = 0;
+	for (const struct stailq_entry *node = ast->head.first.value;
+	     node != NULL; node = node->next.value) {
+		const struct ast_expr_list_entry *entry =
+			stailq_entry(node, struct ast_expr_list_entry, link);
+		res->exprs[i].order = entry->order;
+		terms[i++] = entry->expr;
+	}
+	uint32_t count = 0;
+	for (const struct rast_select *part = select; part != NULL;
+	     part = part->prior)
+		++count;
+	const struct rast_select **parts =
+		xregion_alloc_array(ctx->region, typeof(*parts), count);
+	i = count;
+	for (const struct rast_select *part = select; part != NULL;
+	     part = part->prior)
+		parts[--i] = part;
+
+	bool is_failed = false;
+	uint32_t left = res->len;
+	for (uint32_t p = 0; p < count && left > 0; ++p) {
+		for (i = 0; i < res->len; ++i) {
+			struct rast_expr_list_entry *item = &res->exprs[i];
+			if (item->order_by_col > 0)
+				continue;
+			int col = find_compound_order_by_col(ctx, terms[i], i,
+							     parts[p],
+							     &is_failed);
+			if (col < 0)
+				return -1;
+			if (!ctx->can_resolve)
+				return 0;
+			if (col == 0)
+				continue;
+			item->order_by_col = col;
+			--left;
+		}
+	}
+	for (i = 0; i < res->len; ++i) {
+		if (res->exprs[i].order_by_col > 0)
+			continue;
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+			 tt_sprintf("Error at ORDER BY in place %u: term does "
+				    "not match any column in the result set",
+				    i + 1));
+		return -1;
+	}
+	/* The last error of the terms is reported, as in the legacy code. */
+	if (is_failed)
+		return -1;
+	for (i = 0; i < res->len; ++i) {
+		struct rast_expr_list_entry *item = &res->exprs[i];
+		const struct ast_expr *coll = terms[i];
+		while (coll->op == TK_PARENTHESES)
+			coll = coll->left;
+		struct rast_expr *expr = &item->expr;
+		if (coll->op == TK_COLLATE) {
+			expr->op = TK_COLLATE;
+			if (sql_coll_id(&expr->coll.id, coll->right->str,
+					coll->right->len) != 0)
+				return -1;
+			struct rast_expr *value =
+				xregion_alloc_object(ctx->region,
+						     struct rast_expr);
+			memset(value, 0, sizeof(*value));
+			expr->coll.expr = value;
+			expr->type = SQL_TYPE_SCALAR;
+			expr->height = 2;
+			expr = value;
+		}
+		/*
+		 * As in the legacy code, the term is replaced with the
+		 * position of the column.
+		 */
+		expr->op = TK_INTEGER;
+		expr->u = item->order_by_col;
+		expr->type = SQL_TYPE_INTEGER;
+		expr->height = 1;
+	}
+	return 0;
+}
+
+/**
+ * Check that no part of the given compound SELECT but the rightmost one has
+ * ORDER BY or LIMIT. The legacy code does it when generating the code, from
+ * right to left. As in the legacy code, HAVING without GROUP BY counts as
+ * LIMIT.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+check_compound_parts(const struct rast_select *select)
+{
+	for (const struct rast_select *next = select; next->prior != NULL;
+	     next = next->prior) {
+		const struct rast_select *part = next->prior;
+		const char *clause = NULL;
+		if (part->order_by.len > 0)
+			clause = "ORDER BY";
+		else if (part->limit != NULL ||
+			 (part->having != NULL && part->group_by.len == 0))
+			clause = "LIMIT";
+		if (clause == NULL)
+			continue;
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+			 tt_sprintf("%s clause should come after %s not before",
+				    clause, sql_select_op_name(next->op)));
+		return -1;
+	}
+	return 0;
+}
+
+/**
+ * Resolve the given AST SELECT statement, which may be a compound one, into the
+ * given rast_select. As in the legacy code, the columns of all the parts of a
+ * compound SELECT are named first, and then the parts are resolved, from right
+ * to left.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_compound_select(struct sql_resolve_context *ctx,
+			const struct ast_select *ast, struct rast_select *res)
+{
+	ctx->can_resolve = can_resolve(ast);
+	if (!ctx->can_resolve)
+		return 0;
+	const struct rlist *head = &ast->link;
+	bool is_compound = head->next != head;
+	if (is_compound) {
+		uint32_t count = 1;
+		for (const struct rlist *l = head->next; l != head; l = l->next)
+			++count;
+		if (count > SQL_MAX_COMPOUND_SELECT) {
+			diag_set(ClientError, ER_SQL_PARSER_LIMIT, "The number "
+				 "of UNION or EXCEPT or INTERSECT operations",
+				 count, SQL_MAX_COMPOUND_SELECT);
+			return -1;
+		}
+	}
+	if (resolve_select_names(ctx, ast, res) != 0)
+		return -1;
+	struct rast_select *next = res;
+	for (const struct rlist *l = head->prev; l != head; l = l->prev) {
+		const struct ast_select *part =
+			rlist_entry(l, struct ast_select, link);
+		next->prior = xregion_alloc_object(ctx->region,
+						   struct rast_select);
+		if (resolve_select_names(ctx, part, next->prior) != 0)
+			return -1;
+		next = next->prior;
+	}
+
+	struct sql_resolve_scope *outer = ctx->scope;
+	if (resolve_select_clauses(ctx, ast, res, is_compound) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	next = res;
+	for (const struct rlist *l = head->prev; l != head; l = l->prev) {
+		const struct ast_select *part =
+			rlist_entry(l, struct ast_select, link);
+		struct rast_select *cur = next->prior;
+		ctx->scope = outer;
+		if (resolve_select_clauses(ctx, part, cur, false) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+		if (cur->columns.len != next->columns.len) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 tt_sprintf("SELECTs to the left and right of "
+					    "%s do not have the same number "
+					    "of result columns",
+					    sql_select_op_name(next->op)));
+			return -1;
+		}
+		next = cur;
+	}
+	if (!is_compound)
+		return 0;
+	ctx->scope = outer;
+	if (resolve_compound_order_by(ctx, ast->order_by, res) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	return check_compound_parts(res);
+}
+
+/**
  * Resolve the given AST SELECT statement into the given rast_select.
  *
  * Returns 0 on success and -1 on error.
@@ -3249,7 +3652,7 @@ resolve_select(struct sql_resolve_context *ctx, const struct ast_select *ast,
 	       struct rast_select *res)
 {
 	struct sql_resolve_scope *outer = ctx->scope;
-	int rc = resolve_select_clauses(ctx, ast, res);
+	int rc = resolve_compound_select(ctx, ast, res);
 	ctx->scope = outer;
 	return rc;
 }
@@ -3272,6 +3675,7 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 {
 	struct sql_resolve_context ctx;
 	memset(&ctx, 0, sizeof(ctx));
+	ctx.parser = parser;
 	ctx.region = &parser->region;
 	ctx.can_resolve = true;
 
@@ -3598,9 +4002,17 @@ expr_list_find_columns(struct ExprList *list, const struct ExprList *cols)
 struct Select *
 select_from_rast(struct Parse *parser, struct rast_select *select)
 {
+	struct Select *prior = NULL;
+	if (select->prior != NULL) {
+		prior = select_from_rast(parser, select->prior);
+		if (parser->is_aborted)
+			return NULL;
+	}
 	struct ExprList *cols = expr_list_from_rast(parser, &select->columns);
-	if (parser->is_aborted)
+	if (parser->is_aborted) {
+		sql_select_delete(prior);
 		return NULL;
+	}
 	/*
 	 * The SELECT is already fully resolved, so the legacy resolver
 	 * (sqlSelectPrep()) must not walk this SELECT again.
@@ -3636,5 +4048,9 @@ select_from_rast(struct Parse *parser, struct rast_select *select)
 	struct Select *res = sqlSelectNew(cols, NULL, where, group_by, having,
 					  order_by, flags, limit, offset);
 	res->op = select->op;
+	if (prior != NULL) {
+		res->pPrior = prior;
+		prior->pNext = res;
+	}
 	return res;
 }

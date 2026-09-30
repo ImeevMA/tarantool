@@ -459,3 +459,175 @@ g.test_having = function()
               ' > 0);', exp_err)
     end)
 end
+
+--
+-- The parts of a compound SELECT are resolved from right to left, and so are
+-- their columns named automatically. All the parts must have the same number
+-- of columns, and only the rightmost one can have ORDER BY and LIMIT.
+--
+g.test_compound = function()
+    g.server:exec(function()
+        local function check(sql, exp)
+            local res, err = box.execute(sql)
+            if type(exp) == 'string' then
+                t.assert_equals(res, nil, sql)
+                t.assert_equals(err.message, exp, sql)
+            else
+                t.assert_equals(err, nil, sql)
+                t.assert_equals(res.rows, exp, sql)
+            end
+        end
+        local function chain(n)
+            return '1' .. string.rep(' + 0', n - 1)
+        end
+
+        check([[SELECT 1 UNION SELECT 2;]], {{1}, {2}})
+        check([[SELECT 1 UNION SELECT 1;]], {{1}})
+        check([[SELECT 1 UNION ALL SELECT 1;]], {{1}, {1}})
+        check([[SELECT 1 EXCEPT SELECT 1;]], {})
+        check([[SELECT 1 INTERSECT SELECT 2;]], {})
+        check([[SELECT 2 AS a INTERSECT SELECT 2 UNION ALL SELECT 3;]],
+              {{2}, {3}})
+        check([[SELECT 1 AS a WHERE a = 1 UNION ALL
+                SELECT 2 AS b WHERE b = 2;]], {{1}, {2}})
+        check([[SELECT 1 UNION ALL SELECT 2 LIMIT 1 OFFSET 1;]], {{2}})
+        check([[SELECT 1 UNION ALL SELECT COUNT(*) HAVING true;]], {{1}})
+        check([[SELECT (SELECT 1 UNION SELECT 2 EXCEPT SELECT 1);]], {{2}})
+        check([[SELECT 1 AS x WHERE x IN (SELECT 1 UNION SELECT x);]], {{1}})
+        check([[SELECT EXISTS (SELECT 1 EXCEPT SELECT 1);]], {{false}})
+        check([[SELECT 1, 2 UNION ALL SELECT 3, 4 ORDER BY COLUMN_3;]],
+              {{1, 2}, {3, 4}})
+        check([[SELECT 1 UNION ALL SELECT 2 ORDER BY COLUMN_1;]],
+              "Can't resolve field 'COLUMN_1'")
+
+        check([[SELECT 1 AS a UNION ALL SELECT 2 WHERE a = 2;]],
+              "Can't resolve field 'a'")
+        check([[SELECT 1 AS a UNION ALL SELECT (SELECT a);]],
+              "Can't resolve field 'a'")
+        check([[SELECT nosuch1 UNION ALL SELECT nosuch2;]],
+              "Can't resolve field 'nosuch2'")
+        check([[SELECT nosuch1 UNION ALL SELECT 1 LIMIT nosuch2;]],
+              "Can't resolve field 'nosuch2'")
+        check([[SELECT nosuch UNION ALL SELECT *;]], "Failed to expand " ..
+              "'*' in SELECT statement without FROM clause")
+
+        local function count_err(op)
+            return 'SELECTs to the left and right of ' .. op .. ' do not ' ..
+                   'have the same number of result columns'
+        end
+        check([[SELECT 1, 2 UNION SELECT 3;]], count_err('UNION'))
+        check([[SELECT 1 UNION ALL SELECT 2 UNION SELECT 3, 4;]],
+              count_err('UNION'))
+        check([[SELECT 1, 2 UNION ALL SELECT 3 EXCEPT SELECT 4;]],
+              count_err('UNION ALL'))
+        check([[SELECT (1, 2) IN (SELECT 1, 2 UNION SELECT 3);]],
+              count_err('UNION'))
+
+        local function place_err(clause, op)
+            return clause .. ' clause should come after ' .. op ..
+                   ' not before'
+        end
+        check([[SELECT 2 ORDER BY 1 UNION ALL SELECT 1;]],
+              place_err('ORDER BY', 'UNION ALL'))
+        check([[SELECT 2 LIMIT 1 UNION SELECT 1;]],
+              place_err('LIMIT', 'UNION'))
+        check([[SELECT COUNT(*) HAVING true UNION ALL SELECT 1;]],
+              place_err('LIMIT', 'UNION ALL'))
+        check([[SELECT 3 LIMIT 1 UNION ALL SELECT 2 ORDER BY 1
+                UNION SELECT 1;]], place_err('ORDER BY', 'UNION'))
+        check([[SELECT 3 ORDER BY nosuch UNION ALL SELECT 1;]],
+              "Can't resolve field 'nosuch'")
+
+        local sql = 'SELECT 1' .. string.rep(' UNION ALL SELECT 1', 30) .. ';'
+        check(sql, 'The number of UNION or EXCEPT or INTERSECT operations ' ..
+              '31 exceeds the limit (30)')
+
+        local exp_err = 'Number of nodes in expression tree 201 exceeds ' ..
+                        'the limit (200)'
+        check('SELECT (SELECT ' .. chain(199) .. ' UNION ALL SELECT 1 ' ..
+              'ORDER BY 1 LIMIT 1);', {{1}})
+        check('SELECT (SELECT ' .. chain(200) .. ' UNION ALL SELECT 1 ' ..
+              'ORDER BY 1 LIMIT 1);', exp_err)
+    end)
+end
+
+--
+-- An ORDER BY term of a compound SELECT is an integer, an alias of a result
+-- column of the leftmost part or an expression equal to a result column, and
+-- refers to that column.
+--
+g.test_compound_order_by = function()
+    g.server:exec(function()
+        local function check(sql, exp)
+            local res, err = box.execute(sql)
+            if type(exp) == 'string' then
+                t.assert_equals(res, nil, sql)
+                t.assert_equals(err.message, exp, sql)
+            else
+                t.assert_equals(err, nil, sql)
+                t.assert_equals(res.rows, exp, sql)
+            end
+        end
+        local function range_err(n)
+            return 'Error at ORDER BY in place ' .. n .. ': term out ' ..
+                   'of range - should be between 1 and 1'
+        end
+        local function match_err(n)
+            return 'Error at ORDER BY in place ' .. n .. ': term does not ' ..
+                   'match any column in the result set'
+        end
+
+        check([[SELECT 2 UNION ALL SELECT 1 ORDER BY 1;]], {{1}, {2}})
+        check([[SELECT 2 UNION ALL SELECT 1 ORDER BY +1, (1);]], {{1}, {2}})
+        check([[SELECT 1 UNION ALL SELECT 2 ORDER BY 1 DESC LIMIT 1;]], {{2}})
+        check([[SELECT 2 AS a UNION ALL SELECT 1 ORDER BY a;]], {{1}, {2}})
+        check([[SELECT 1 AS "A" UNION ALL SELECT 2 ORDER BY a DESC;]],
+              {{2}, {1}})
+        check([[SELECT 2 AS a UNION ALL SELECT 1 ORDER BY (a);]], {{1}, {2}})
+        check([[SELECT 1 + 1 AS a UNION ALL SELECT 1 ORDER BY 1 + 1;]],
+              {{1}, {2}})
+        check([[SELECT 2 AS a, 3 UNION ALL SELECT 1, 1 + 1 ORDER BY 1 + 1;]],
+              {{1, 2}, {2, 3}})
+        check([[SELECT COUNT(*) UNION ALL SELECT 5 ORDER BY COUNT(*);]],
+              {{1}, {5}})
+        check([[SELECT 'b' AS s UNION ALL SELECT 'a' ORDER BY s
+                COLLATE "unicode_ci" DESC;]], {{'b'}, {'a'}})
+        check([[SELECT 1 UNION ALL SELECT 2 ORDER BY 1 COLLATE "unicode";]],
+              {{1}, {2}})
+        check([[SELECT 'b' AS s UNION SELECT 'A' ORDER BY s;]],
+              {{'A'}, {'b'}})
+        check([[SELECT 'b' UNION SELECT 'a' ORDER BY 1 COLLATE "unicode_ci";]],
+              {{'a'}, {'b'}})
+        check([[SELECT (SELECT 1 AS a UNION ALL SELECT 2 ORDER BY a DESC
+                LIMIT 1);]], {{2}})
+        check([[SELECT 1 AS a ORDER BY (SELECT 5 UNION ALL SELECT a
+                ORDER BY 1 LIMIT 1);]], {{1}})
+
+        check([[SELECT 2 UNION ALL SELECT 1 ORDER BY 0;]], range_err(1))
+        check([[SELECT 2 UNION ALL SELECT 1 ORDER BY -1;]], range_err(1))
+        check([[SELECT 2 UNION ALL SELECT 1 ORDER BY 5, nosuch;]],
+              range_err(1))
+        check([[SELECT 2 UNION ALL SELECT 1 ORDER BY nosuch, 5;]],
+              range_err(2))
+        check([[SELECT 2 UNION ALL SELECT 1 ORDER BY nosuch;]], match_err(1))
+        check([[SELECT 2 AS a UNION ALL SELECT 1 ORDER BY a + 1;]],
+              match_err(1))
+        check([[SELECT 2 UNION ALL SELECT 1 ORDER BY 1.0;]], match_err(1))
+        check([[SELECT 2 UNION ALL SELECT 1 ORDER BY 2147483648;]],
+              match_err(1))
+        check([[SELECT 2 UNION ALL SELECT 1 ORDER BY COUNT(*);]],
+              match_err(1))
+        check([[SELECT 1 AS x UNION ALL SELECT 2 ORDER BY x, 1 + nosuch;]],
+              match_err(2))
+        check([[SELECT 1 AS a UNION ALL SELECT 2 ORDER BY (SELECT a);]],
+              match_err(1))
+        check([[SELECT 1 AS a UNION ALL SELECT 2 ORDER BY "A";]],
+              match_err(1))
+        check([[SELECT 2 AS a UNION ALL SELECT 1 AS b ORDER BY b;]],
+              "Can't resolve field 'b'")
+        check([[SELECT 1 UNION ALL SELECT 2 ORDER BY 1 COLLATE "nosuch";]],
+              "Collation 'nosuch' does not exist")
+        check([[SELECT [1] UNION ALL SELECT [2] ORDER BY 1;]],
+              'Type mismatch: can not convert array to comparable type')
+    end)
+end

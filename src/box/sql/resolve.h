@@ -214,6 +214,12 @@ struct rast_select {
 	struct rast_expr *having;
 	/** Resolved ORDER BY list. */
 	struct rast_expr_list order_by;
+	/**
+	 * SELECT to the left of this one in a compound SELECT, or NULL. The
+	 * rightmost SELECT holds the ORDER BY, LIMIT and OFFSET of the compound
+	 * SELECT.
+	 */
+	struct rast_select *prior;
 	/** Whether the SELECT refers to names of the enclosing SELECTs. */
 	bool is_correlated;
 	/** Flags of the SELECT. */
