@@ -1842,7 +1842,6 @@ struct Parse {
 	int aTempReg[8];	/* Holding area for temporary registers */
 	ynVar nVar;		/* Number of '?' variables seen in the SQL so far */
 	u8 explain;		/* True if the EXPLAIN flag is found on the query */
-	int nHeight;		/* Expression tree height of current sub-select */
 	int iSelectId;		/* ID of current select for EXPLAIN output */
 	int iNextSelectId;	/* Next available select ID for EXPLAIN output */
 	VList *pVList;		/* Mapping between variable names and numbers */
@@ -4280,7 +4279,6 @@ void sqlWithPush(Parse *, With *, u8);
 int sqlFindInIndex(Parse *, Expr *, u32, int *, int *, int *);
 
 void sqlExprSetHeightAndFlags(Parse * pParse, Expr * p);
-int sqlSelectExprHeight(Select *);
 int sqlExprCheckHeight(Parse *, int);
 
 #ifdef SQL_DEBUG

@@ -943,18 +943,6 @@ sqlExprSetHeightAndFlags(Parse * pParse, Expr * p)
 	sqlExprCheckHeight(pParse, p->nHeight);
 }
 
-/*
- * Return the maximum height of any expression tree referenced
- * by the select statement passed as an argument.
- */
-int
-sqlSelectExprHeight(Select * p)
-{
-	int nHeight = 0;
-	heightOfSelect(p, &nHeight);
-	return nHeight;
-}
-
 /**
  * Allocate a new empty expression object with reserved extra
  * memory.
