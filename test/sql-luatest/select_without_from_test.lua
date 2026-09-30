@@ -284,3 +284,178 @@ g.test_where_aggregates = function()
               alias_misuse('c'))
     end)
 end
+
+--
+-- A GROUP BY term which is an integer refers to the result column, and any
+-- other term is an expression, in which the aliases of the result columns are
+-- visible, but not the names of the enclosing SELECTs. GROUP BY is resolved
+-- after ORDER BY.
+--
+g.test_group_by = function()
+    g.server:exec(function()
+        local function check(sql, exp)
+            local res, err = box.execute(sql)
+            if type(exp) == 'string' then
+                t.assert_equals(res, nil, sql)
+                t.assert_equals(err.message, exp, sql)
+            else
+                t.assert_equals(err, nil, sql)
+                t.assert_equals(res.rows, exp, sql)
+            end
+        end
+        local function range_err(n)
+            return 'Error at GROUP BY in place ' .. n .. ': term out ' ..
+                   'of range - should be between 1 and 1'
+        end
+        local function chain(n)
+            return '1' .. string.rep(' + 0', n - 1)
+        end
+
+        check([[SELECT 1 GROUP BY 1;]], {{1}})
+        check([[SELECT 1 AS a GROUP BY a, a + 1, (1), +1, 1.5, NULL;]], {{1}})
+        check([[SELECT 1 AS a GROUP BY 2147483648;]], {{1}})
+        check([[SELECT 'a' AS a GROUP BY a COLLATE "unicode_ci";]], {{'a'}})
+        check([[SELECT 1 AS a GROUP BY (SELECT a);]], {{1}})
+        check([[SELECT COUNT(*), 5 AS a GROUP BY a;]], {{1, 5}})
+        check([[SELECT 2 AS a, 1 GROUP BY a, 2 ORDER BY 1;]], {{2, 1}})
+        check([[SELECT 1 GROUP BY (SELECT COUNT(*));]], {{1}})
+
+        check([[SELECT 1 GROUP BY 0;]], range_err(1))
+        check([[SELECT 1 GROUP BY -1;]], range_err(1))
+        check([[SELECT 1 GROUP BY 70000;]], range_err(1))
+        check([[SELECT 1 GROUP BY 1, 2;]], range_err(2))
+        check([[SELECT 1 GROUP BY 2, nosuch;]], "Can't resolve field 'nosuch'")
+        check([[SELECT 1 GROUP BY 1 COLLATE "binary";]],
+              "COLLATE clause can't be used with non-string arguments")
+        check([[SELECT 1 GROUP BY t.a;]],
+              "Field 'a' was not found in space 't' format")
+        check([[SELECT (1, 2) AS a GROUP BY a;]], 'row value misused')
+        check([[SELECT [1] AS a GROUP BY a;]],
+              'Type mismatch: can not convert array to comparable type')
+        check([[SELECT 1 AS a, (SELECT 1 GROUP BY a);]],
+              "Can't resolve field 'a'")
+        check([[SELECT 1 AS a ORDER BY (SELECT 1 GROUP BY a);]],
+              "Can't resolve field 'a'")
+        check([[SELECT 1 WHERE (SELECT 1 GROUP BY nosuch1) ORDER BY nosuch2;]],
+              "Can't resolve field 'nosuch1'")
+        check([[SELECT 1 GROUP BY nosuch1 ORDER BY nosuch2;]],
+              "Can't resolve field 'nosuch2'")
+        check([[SELECT 1 WHERE nosuch1 GROUP BY nosuch2;]],
+              "Can't resolve field 'nosuch1'")
+
+        local exp_err = 'Number of nodes in expression tree 201 exceeds ' ..
+                        'the limit (200)'
+        check('SELECT ' .. chain(200) .. ' AS a GROUP BY a;', {{1}})
+        check('SELECT ' .. chain(199) .. ' AS a GROUP BY a + 0;', {{1}})
+        check('SELECT ' .. chain(200) .. ' AS a GROUP BY a + 0;', exp_err)
+        check('SELECT (SELECT 1 GROUP BY ' .. chain(199) .. ');', {{1}})
+        check('SELECT (SELECT 1 GROUP BY ' .. chain(200) .. ');', exp_err)
+    end)
+end
+
+--
+-- Aggregate functions cannot be used in GROUP BY, either directly or through
+-- the result columns.
+--
+g.test_group_by_aggregates = function()
+    g.server:exec(function()
+        local exp_err = 'aggregate functions are not allowed in the ' ..
+                        'GROUP BY clause'
+        local sqls = {
+            [[SELECT 1 GROUP BY COUNT(*);]],
+            [[SELECT 1 GROUP BY ABS(COUNT(*));]],
+            [[SELECT COUNT(*) GROUP BY 1;]],
+            [[SELECT COUNT(*) + 1 GROUP BY COUNT(*) + 1;]],
+            [[SELECT COUNT(*) AS c GROUP BY c;]],
+            [[SELECT COUNT(*) AS c GROUP BY c + 1;]],
+            [[SELECT COUNT(*) AS c GROUP BY (SELECT c);]],
+            [[SELECT COUNT(*) AS c GROUP BY 1 HAVING c = 1;]],
+        }
+        for _, sql in ipairs(sqls) do
+            local _, err = box.execute(sql)
+            t.assert_equals(err.message, exp_err, sql)
+        end
+        local _, err = box.execute([[SELECT 1 GROUP BY SUM(COUNT(*));]])
+        t.assert_equals(err.message, 'misuse of aggregate function COUNT()')
+    end)
+end
+
+--
+-- HAVING is resolved after the columns and before WHERE. The aliases of the
+-- result columns and the names of the enclosing SELECTs are visible in it.
+-- Without GROUP BY, the SELECT must be an aggregate one, HAVING can refer to
+-- the result columns only in arguments of aggregate functions, and LIMIT is
+-- replaced with 1.
+--
+g.test_having = function()
+    g.server:exec(function()
+        local function check(sql, exp)
+            local res, err = box.execute(sql)
+            if type(exp) == 'string' then
+                t.assert_equals(res, nil, sql)
+                t.assert_equals(err.message, exp, sql)
+            else
+                t.assert_equals(err, nil, sql)
+                t.assert_equals(res.rows, exp, sql)
+            end
+        end
+        local function chain(n)
+            return '1' .. string.rep(' + 0', n - 1)
+        end
+
+        check([[SELECT 1 AS a GROUP BY 1 HAVING a = 1;]], {{1}})
+        check([[SELECT 1 AS a GROUP BY 1 HAVING a = 2;]], {})
+        check([[SELECT 1 GROUP BY 1 HAVING COUNT(*) = 1;]], {{1}})
+        check([[SELECT 1 GROUP BY 1 HAVING SUM(1) > 0 LIMIT 5;]], {{1}})
+        check([[SELECT 1 AS a GROUP BY 1 HAVING (SELECT a) = 1;]], {{1}})
+        check([[SELECT 1 AS a GROUP BY a HAVING a = 1 AND COUNT(*) = 1;]],
+              {{1}})
+        check([[SELECT COUNT(*) AS c GROUP BY 'x' HAVING (SELECT c) > 0;]],
+              {{1}})
+
+        check([[SELECT COUNT(*) HAVING true;]], {{1}})
+        check([[SELECT COUNT(*) HAVING false;]], {})
+        check([[SELECT 1 HAVING COUNT(*) > 0;]], {{1}})
+        check([[SELECT MIN(5) HAVING MAX(1) > 0;]], {{5}})
+        check([[SELECT 1 AS a HAVING SUM(a) > 0;]], {{1}})
+        check([[SELECT 1 AS a HAVING COUNT(*) > 0 AND (SELECT a) = 1;]], {{1}})
+        check([[SELECT COUNT(*) AS c HAVING (SELECT c) > 0;]], {{1}})
+        check([[SELECT COUNT(*) HAVING true LIMIT 0;]], {{1}})
+        check([[SELECT COUNT(*) HAVING true LIMIT 'a';]], {{1}})
+        check([[SELECT COUNT(*) HAVING true LIMIT 5 OFFSET 1;]], {})
+        check([[SELECT (SELECT COUNT(*) HAVING true LIMIT 0);]], {{1}})
+
+        local exp_err = 'Failed to execute SQL statement: HAVING argument ' ..
+                        'must appear in the GROUP BY clause or be used in ' ..
+                        'an aggregate function'
+        check([[SELECT 1 HAVING true;]], exp_err)
+        check([[SELECT 1 HAVING (SELECT COUNT(*));]], exp_err)
+        check([[SELECT COUNT(*) AS c HAVING c > 0;]], exp_err)
+        check([[SELECT 1 AS a HAVING a > 0 AND COUNT(*) > 0;]], exp_err)
+        check([[SELECT 1 AS a HAVING (SELECT COUNT(*) HAVING a = 1);]],
+              exp_err)
+        check([[SELECT 1 AS a GROUP BY 1 HAVING
+                (SELECT COUNT(*) HAVING a = 1);]], exp_err)
+
+        check([[SELECT COUNT(*) AS c HAVING SUM(c) > 0;]],
+              'misuse of aliased aggregate c')
+        check([[SELECT 1 GROUP BY 1 HAVING SUM(COUNT(*));]],
+              'misuse of aggregate function COUNT()')
+        check([[SELECT COUNT(*) HAVING 5;]],
+              'Type mismatch: can not convert integer(5) to boolean')
+        check([[SELECT COUNT(*) HAVING true LIMIT nosuch;]],
+              "Can't resolve field 'nosuch'")
+        check([[SELECT 1 WHERE nosuch1 HAVING nosuch2;]],
+              "Can't resolve field 'nosuch2'")
+        check([[SELECT 1 GROUP BY nosuch1 HAVING nosuch2;]],
+              "Can't resolve field 'nosuch2'")
+
+        exp_err = 'Number of nodes in expression tree 201 exceeds ' ..
+                  'the limit (200)'
+        check('SELECT COUNT(*) HAVING ' .. chain(200) .. ' > 0;', exp_err)
+        check('SELECT (SELECT 1 GROUP BY 1 HAVING ' .. chain(198) ..
+              ' > 0);', {{1}})
+        check('SELECT (SELECT 1 GROUP BY 1 HAVING ' .. chain(199) ..
+              ' > 0);', exp_err)
+    end)
+end

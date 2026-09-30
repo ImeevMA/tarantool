@@ -55,6 +55,17 @@ struct sql_resolve_scope {
 	/** Whether an aggregate function is allowed at the current point. */
 	bool is_agg_allowed;
 	/**
+	 * SELECT flags describing the aggregate functions of the SELECT found
+	 * while resolving the expressions of this scope, directly or through
+	 * the aliases of the result columns.
+	 */
+	uint32_t agg_flags;
+	/**
+	 * Whether a name was found outside of the arguments of an aggregate
+	 * function while resolving the expressions of this scope.
+	 */
+	bool has_unaggregated_name;
+	/**
 	 * Number of names found in this scope or in the scopes enclosing it,
 	 * while resolving the expressions of this scope. Used to find out if a
 	 * subquery refers to names of the enclosing SELECTs.
@@ -72,11 +83,6 @@ struct sql_resolve_context {
 	uint32_t autoname_count;
 	/** Whether the statement being resolved has a resolved form yet. */
 	bool can_resolve;
-	/**
-	 * SELECT flags describing the aggregate functions found in the column
-	 * list of the SELECT being resolved.
-	 */
-	uint32_t agg_flags;
 };
 
 /**
@@ -1872,6 +1878,10 @@ rast_select_height(const struct rast_select *select)
 		height = MAX(height, select->offset->height);
 	if (select->where != NULL)
 		height = MAX(height, select->where->height);
+	if (select->having != NULL)
+		height = MAX(height, select->having->height);
+	for (uint32_t i = 0; i < select->group_by.len; ++i)
+		height = MAX(height, select->group_by.exprs[i].expr.height);
 	for (uint32_t i = 0; i < select->order_by.len; ++i)
 		height = MAX(height, select->order_by.exprs[i].expr.height);
 	return height;
@@ -2250,6 +2260,10 @@ resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 			for (struct sql_resolve_scope *s = ctx->scope;
 			     s != scope->parent; s = s->parent)
 				++s->ref_count;
+			if (entry->has_agg)
+				scope->agg_flags |= SF_Aggregate;
+			if (ctx->scope->is_agg_allowed)
+				ctx->scope->has_unaggregated_name = true;
 			resolve_alias(scope->aliases, col, depth, res);
 			return 0;
 		}
@@ -2529,9 +2543,9 @@ resolve_function(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	}
 	res->func.is_deterministic = func->def->is_deterministic;
 	if (res->func.is_agg) {
-		ctx->agg_flags |= SF_Aggregate;
+		ctx->scope->agg_flags |= SF_Aggregate;
 		if ((flags & (SQL_FUNC_MIN | SQL_FUNC_MAX)) != 0)
-			ctx->agg_flags |= SF_MinMaxAgg;
+			ctx->scope->agg_flags |= SF_MinMaxAgg;
 	}
 	res->type = sql_type_from_field_type(res->func.returns);
 	res->height = height + 1;
@@ -2853,14 +2867,14 @@ resolve_column_list(struct sql_resolve_context *ctx,
 		const struct ast_expr_list_entry *entry =
 			stailq_entry(node, struct ast_expr_list_entry, link);
 		struct rast_expr_list_entry *expr = &res->exprs[i++];
-		uint32_t agg_flags = ctx->agg_flags;
-		ctx->agg_flags = 0;
+		uint32_t agg_flags = ctx->scope->agg_flags;
+		ctx->scope->agg_flags = 0;
 		if (resolve_expr(ctx, entry->expr, &expr->expr) != 0)
 			return -1;
 		if (!ctx->can_resolve)
 			return 0;
-		expr->has_agg = ctx->agg_flags != 0;
-		ctx->agg_flags |= agg_flags;
+		expr->has_agg = ctx->scope->agg_flags != 0;
+		ctx->scope->agg_flags |= agg_flags;
 		expr->span = entry->expr->str;
 		expr->span_len = entry->expr->len;
 	}
@@ -2907,34 +2921,39 @@ resolve_order_by_col(struct sql_resolve_context *ctx,
 	return expr_check_height(res->height);
 }
 
-/** Report an error for an ORDER BY term out of the range of the columns. */
+/**
+ * Report an error for an ORDER BY or GROUP BY term out of the range of the
+ * columns.
+ */
 static void
-order_by_range_error(uint32_t pos, uint32_t len)
+order_by_range_error(const char *clause, uint32_t pos, uint32_t len)
 {
 	diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-		 tt_sprintf("Error at ORDER BY in place %u: term out of "
-			    "range - should be between 1 and %u", pos + 1,
+		 tt_sprintf("Error at %s BY in place %u: term out of range - "
+			    "should be between 1 and %u", clause, pos + 1,
 			    len));
 }
 
 /**
- * Resolve the given AST ORDER BY list of a SELECT with the given resolved
- * columns into the given rast_expr_list. As in the legacy code, a term which is
- * an alias of a result column or an integer is a reference to the result
- * column, and any other term is an expression, in which the aliases of the
- * result columns are visible. The terms are checked in two passes, in the same
- * order as the legacy code does.
+ * Resolve the given AST ORDER BY or GROUP BY list of a SELECT with the given
+ * resolved columns into the given rast_expr_list. The clause is "ORDER" or
+ * "GROUP". As in the legacy code, an integer term and an ORDER BY term which is
+ * an alias of a result column are references to the result column, and any
+ * other term is an expression, in which the aliases of the result columns are
+ * visible. The terms are checked in two passes, in the same order as the legacy
+ * code does.
  *
  * Returns 0 on success and -1 on error.
  */
 static int
-resolve_order_by(struct sql_resolve_context *ctx,
+resolve_order_by(struct sql_resolve_context *ctx, const char *clause,
 		 const struct ast_expr_list *ast,
 		 const struct rast_expr_list *columns,
 		 struct rast_expr_list *res)
 {
 	if (ast == NULL)
 		return 0;
+	bool is_order_by = clause[0] == 'O';
 	res->exprs = xregion_alloc_array(ctx->region, typeof(*res->exprs),
 					 ast->len);
 	res->len = ast->len;
@@ -2950,7 +2969,7 @@ resolve_order_by(struct sql_resolve_context *ctx,
 		const struct ast_expr *term = entry->expr;
 		while (term->op == TK_PARENTHESES || term->op == TK_COLLATE)
 			term = term->left;
-		if (term->op == TK_ID) {
+		if (is_order_by && term->op == TK_ID) {
 			const char *name = sql_name_temp(ctx->region, term->str,
 							 term->len);
 			int col = find_alias(columns, name, NULL);
@@ -2969,10 +2988,14 @@ resolve_order_by(struct sql_resolve_context *ctx,
 				continue;
 			}
 		}
+		uint32_t agg_flags = ctx->scope->agg_flags;
+		ctx->scope->agg_flags = 0;
 		if (resolve_expr(ctx, entry->expr, &item->expr) != 0)
 			return -1;
 		if (!ctx->can_resolve)
 			return 0;
+		item->has_agg = ctx->scope->agg_flags != 0;
+		ctx->scope->agg_flags |= agg_flags;
 		if (!ast_is_integer(term))
 			continue;
 		const struct rast_expr *value = &item->expr;
@@ -2984,27 +3007,30 @@ resolve_order_by(struct sql_resolve_context *ctx,
 		    value->u > INT32_MAX)
 			continue;
 		if (value->is_neg || value->u == 0 || value->u > 0xffff) {
-			order_by_range_error(i, columns->len);
+			order_by_range_error(clause, i, columns->len);
 			return -1;
 		}
 		item->order_by_col = value->u;
 	}
 	if (res->len > SQL_MAX_COLUMN) {
 		diag_set(ClientError, ER_SQL_PARSER_LIMIT,
-			 "The number of terms in ORDER BY clause",
-			 (int)res->len, SQL_MAX_COLUMN);
+			 tt_sprintf("The number of terms in %s BY clause",
+				    clause), (int)res->len, SQL_MAX_COLUMN);
 		return -1;
 	}
 	for (i = 0; i < res->len; ++i) {
 		struct rast_expr_list_entry *item = &res->exprs[i];
 		if (item->order_by_col > columns->len) {
-			order_by_range_error(i, columns->len);
+			order_by_range_error(clause, i, columns->len);
 			return -1;
 		}
-		if (item->order_by_col > 0 &&
-		    resolve_order_by_col(ctx, columns, item->order_by_col - 1,
-					 &item->expr) != 0)
-			return -1;
+		if (item->order_by_col > 0) {
+			uint32_t col = item->order_by_col - 1;
+			if (resolve_order_by_col(ctx, columns, col,
+						 &item->expr) != 0)
+				return -1;
+			item->has_agg = columns->exprs[col].has_agg;
+		}
 		enum field_type type = rast_expr_field_type(&item->expr);
 		if (!field_type1_contains_type2(FIELD_TYPE_SCALAR, NULL, type,
 						NULL) &&
@@ -3073,7 +3099,6 @@ static bool
 can_resolve(const struct ast_select *ast)
 {
 	return ast->op == TK_SELECT && ast->sources == NULL &&
-	       ast->group_by == NULL && ast->having == NULL &&
 	       ast->with == NULL;
 }
 
@@ -3118,12 +3143,44 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 		.is_agg_allowed = true,
 	};
 	ctx->scope = &scope;
-	uint32_t agg_flags = ctx->agg_flags;
-	ctx->agg_flags = 0;
+	/*
+	 * A clause may turn out to be not resolvable, in which case the whole
+	 * SELECT falls back to the legacy path, which does its own checks.
+	 */
 	int rc = resolve_column_list(ctx, ast->columns, &res->columns);
+	if (rc != 0 || !ctx->can_resolve)
+		return rc;
 	/* Mirrors the legacy aggregate detection in resolveSelectStep(). */
-	res->flags |= ctx->agg_flags;
-	if (rc == 0 && ctx->can_resolve && ast->where != NULL) {
+	res->flags |= scope.agg_flags;
+	if (ast->group_by != NULL || ast->having != NULL)
+		res->flags |= SF_Aggregate;
+	if (ast->having != NULL) {
+		struct sql_resolve_scope having_scope = {
+			.aliases = &res->columns,
+			.parent = outer,
+			.is_agg_allowed = true,
+		};
+		ctx->scope = &having_scope;
+		res->having = xregion_alloc_object(ctx->region,
+						   struct rast_expr);
+		rc = resolve_expr(ctx, ast->having, res->having);
+		if (rc != 0 || !ctx->can_resolve)
+			return rc;
+		/*
+		 * Without GROUP BY, the SELECT must be an aggregate one, and
+		 * HAVING can refer to the result columns only in arguments of
+		 * aggregate functions.
+		 */
+		if (ast->group_by == NULL &&
+		    ((having_scope.agg_flags | scope.agg_flags) == 0 ||
+		     having_scope.has_unaggregated_name)) {
+			diag_set(ClientError, ER_SQL_EXECUTE, "HAVING argument "
+				 "must appear in the GROUP BY clause or be "
+				 "used in an aggregate function");
+			return -1;
+		}
+	}
+	if (ast->where != NULL) {
 		/*
 		 * WHERE can refer to the result columns and to the names of
 		 * the enclosing SELECTs, but cannot use aggregate functions.
@@ -3136,30 +3193,39 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 		res->where = xregion_alloc_object(ctx->region,
 						  struct rast_expr);
 		rc = resolve_expr(ctx, ast->where, res->where);
+		if (rc != 0 || !ctx->can_resolve)
+			return rc;
 	}
-	if (rc == 0 && ctx->can_resolve) {
-		/*
-		 * The ORDER BY terms can refer to the result columns, but not
-		 * to the names of the enclosing SELECTs, and their aggregate
-		 * functions do not make the SELECT an aggregate one.
-		 */
-		struct sql_resolve_scope order_by_scope = {
-			.aliases = &res->columns,
-			.is_agg_allowed = true,
-		};
-		ctx->scope = &order_by_scope;
-		rc = resolve_order_by(ctx, ast->order_by, &res->columns,
-				      &res->order_by);
-	}
-	ctx->agg_flags = agg_flags;
-	if (rc != 0)
-		return -1;
 	/*
-	 * A column may turn out to be not resolvable, in which case the whole
-	 * SELECT falls back to the legacy path, which does its own checks.
+	 * The ORDER BY and GROUP BY terms can refer to the result columns, but
+	 * not to the names of the enclosing SELECTs.
 	 */
-	if (!ctx->can_resolve)
-		return 0;
+	struct sql_resolve_scope order_by_scope = {
+		.aliases = &res->columns,
+		.is_agg_allowed = true,
+	};
+	ctx->scope = &order_by_scope;
+	rc = resolve_order_by(ctx, "ORDER", ast->order_by, &res->columns,
+			      &res->order_by);
+	if (rc != 0 || !ctx->can_resolve)
+		return rc;
+	struct sql_resolve_scope group_by_scope = {
+		.aliases = &res->columns,
+		.is_agg_allowed = true,
+	};
+	ctx->scope = &group_by_scope;
+	rc = resolve_order_by(ctx, "GROUP", ast->group_by, &res->columns,
+			      &res->group_by);
+	if (rc != 0 || !ctx->can_resolve)
+		return rc;
+	for (uint32_t i = 0; i < res->group_by.len; ++i) {
+		if (res->group_by.exprs[i].has_agg) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 "aggregate functions are not allowed in the "
+				 "GROUP BY clause");
+			return -1;
+		}
+	}
 	/*
 	 * Mirrors the legacy check in sqlSelectExpand() (select.c), which is
 	 * skipped once this SELECT is marked resolved.
@@ -3509,6 +3575,26 @@ expr_list_from_rast(struct Parse *parser, struct rast_expr_list *list)
 	return res;
 }
 
+/**
+ * As in the legacy code, make every expression of the given ORDER BY or
+ * GROUP BY list, which is equal to an expression of the given result columns,
+ * refer to the last such result column.
+ */
+static void
+expr_list_find_columns(struct ExprList *list, const struct ExprList *cols)
+{
+	for (int i = 0; list != NULL && i < list->nExpr; ++i) {
+		struct ExprList_item *item = &list->a[i];
+		if (item->u.x.iOrderByCol != 0)
+			continue;
+		for (int j = 0; j < cols->nExpr; ++j) {
+			if (sqlExprCompare(item->pExpr, cols->a[j].pExpr,
+					   -1) == 0)
+				item->u.x.iOrderByCol = j + 1;
+		}
+	}
+}
+
 struct Select *
 select_from_rast(struct Parse *parser, struct rast_select *select)
 {
@@ -3521,31 +3607,33 @@ select_from_rast(struct Parse *parser, struct rast_select *select)
 	 */
 	uint32_t flags = select->flags | SF_Resolved | SF_HasTypeInfo;
 	struct Expr *limit = NULL;
-	if (select->limit != NULL)
+	if (select->having != NULL && select->group_by.len == 0) {
+		/*
+		 * As in the legacy code, an aggregate SELECT without GROUP BY
+		 * returns one row at most, so LIMIT is replaced.
+		 */
+		limit = sql_expr_new(TK_INTEGER, NULL);
+		limit->v.u = 1;
+		limit->type = FIELD_TYPE_INTEGER;
+	} else if (select->limit != NULL) {
 		limit = expr_from_rast(parser, select->limit);
+	}
 	struct Expr *offset = NULL;
 	if (select->offset != NULL)
 		offset = expr_from_rast(parser, select->offset);
 	struct Expr *where = NULL;
 	if (select->where != NULL)
 		where = expr_from_rast(parser, select->where);
+	struct ExprList *group_by = expr_list_from_rast(parser,
+							&select->group_by);
+	expr_list_find_columns(group_by, cols);
+	struct Expr *having = NULL;
+	if (select->having != NULL)
+		having = expr_from_rast(parser, select->having);
 	struct ExprList *order_by = expr_list_from_rast(parser,
 							&select->order_by);
-	/*
-	 * As in the legacy code, an ORDER BY expression equal to a result
-	 * column expression refers to the last such result column.
-	 */
-	for (int i = 0; order_by != NULL && i < order_by->nExpr; ++i) {
-		struct ExprList_item *item = &order_by->a[i];
-		if (item->u.x.iOrderByCol != 0)
-			continue;
-		for (int j = 0; j < cols->nExpr; ++j) {
-			if (sqlExprCompare(item->pExpr, cols->a[j].pExpr,
-					   -1) == 0)
-				item->u.x.iOrderByCol = j + 1;
-		}
-	}
-	struct Select *res = sqlSelectNew(cols, NULL, where, NULL, NULL,
+	expr_list_find_columns(order_by, cols);
+	struct Select *res = sqlSelectNew(cols, NULL, where, group_by, having,
 					  order_by, flags, limit, offset);
 	res->op = select->op;
 	return res;

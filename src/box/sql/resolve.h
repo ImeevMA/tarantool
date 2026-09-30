@@ -180,12 +180,12 @@ struct rast_expr_list_entry {
 	enum sort_order order;
 	/**
 	 * Position of the result column, starting from 1, which an ORDER BY
-	 * term refers to by its alias or position, or 0 if there is none.
+	 * or GROUP BY term refers to, or 0 if there is none.
 	 */
 	uint32_t order_by_col;
 	/**
 	 * Whether the expression contains aggregate functions of the SELECT
-	 * it belongs to. Set for a select list only.
+	 * it belongs to, directly or through the aliases of the result columns.
 	 */
 	bool has_agg;
 };
@@ -208,6 +208,10 @@ struct rast_select {
 	struct rast_expr *offset;
 	/** Resolved WHERE expression, NULL if there is none. */
 	struct rast_expr *where;
+	/** Resolved GROUP BY list. */
+	struct rast_expr_list group_by;
+	/** Resolved HAVING expression, NULL if there is none. */
+	struct rast_expr *having;
 	/** Resolved ORDER BY list. */
 	struct rast_expr_list order_by;
 	/** Whether the SELECT refers to names of the enclosing SELECTs. */
