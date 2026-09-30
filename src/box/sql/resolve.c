@@ -1879,22 +1879,22 @@ static uint32_t
 rast_select_height(const struct rast_select *select)
 {
 	uint32_t height = 0;
-	for (uint32_t i = 0; i < select->columns.len; ++i)
-		height = MAX(height, select->columns.exprs[i].expr.height);
-	if (select->limit != NULL)
-		height = MAX(height, select->limit->height);
-	if (select->offset != NULL)
-		height = MAX(height, select->offset->height);
-	if (select->where != NULL)
-		height = MAX(height, select->where->height);
-	if (select->having != NULL)
-		height = MAX(height, select->having->height);
-	for (uint32_t i = 0; i < select->group_by.len; ++i)
-		height = MAX(height, select->group_by.exprs[i].expr.height);
-	for (uint32_t i = 0; i < select->order_by.len; ++i)
-		height = MAX(height, select->order_by.exprs[i].expr.height);
-	if (select->prior != NULL)
-		height = MAX(height, rast_select_height(select->prior));
+	for (const struct rast_select *p = select; p != NULL; p = p->prior) {
+		for (uint32_t i = 0; i < p->columns.len; ++i)
+			height = MAX(height, p->columns.exprs[i].expr.height);
+		if (p->limit != NULL)
+			height = MAX(height, p->limit->height);
+		if (p->offset != NULL)
+			height = MAX(height, p->offset->height);
+		if (p->where != NULL)
+			height = MAX(height, p->where->height);
+		if (p->having != NULL)
+			height = MAX(height, p->having->height);
+		for (uint32_t i = 0; i < p->group_by.len; ++i)
+			height = MAX(height, p->group_by.exprs[i].expr.height);
+		for (uint32_t i = 0; i < p->order_by.len; ++i)
+			height = MAX(height, p->order_by.exprs[i].expr.height);
+	}
 	return height;
 }
 
@@ -3168,7 +3168,7 @@ can_resolve(const struct ast_select *ast)
 	do {
 		const struct ast_select *part =
 			rlist_entry(link, struct ast_select, link);
-		if (part->sources != NULL || (part->flags & SF_Values) != 0)
+		if (part->sources != NULL)
 			return false;
 		if (part->op != TK_SELECT && part->op != TK_ALL)
 			is_union_all = false;
@@ -3583,7 +3583,8 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 		return 0;
 	const struct rlist *head = &ast->link;
 	bool is_compound = head->next != head;
-	if (is_compound) {
+	/* The legacy code does not limit the number of rows of VALUES. */
+	if (is_compound && (ast->flags & SF_MultiValue) == 0) {
 		uint32_t count = 1;
 		for (const struct rlist *l = head->next; l != head; l = l->next)
 			++count;
@@ -3622,15 +3623,22 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 			return -1;
 		if (!ctx->can_resolve)
 			return 0;
-		if (cur->columns.len != next->columns.len) {
+		if (cur->columns.len == next->columns.len) {
+			next = cur;
+			continue;
+		}
+		if ((next->flags & SF_Values) != 0) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 "all VALUES must have the same number of "
+				 "terms");
+		} else {
 			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
 				 tt_sprintf("SELECTs to the left and right of "
 					    "%s do not have the same number "
 					    "of result columns",
 					    sql_select_op_name(next->op)));
-			return -1;
 		}
-		next = cur;
+		return -1;
 	}
 	if (!is_compound)
 		return 0;
@@ -3999,20 +4007,18 @@ expr_list_find_columns(struct ExprList *list, const struct ExprList *cols)
 	}
 }
 
-struct Select *
-select_from_rast(struct Parse *parser, struct rast_select *select)
+/**
+ * Create a SELECT statement from the given part of a resolved compound SELECT,
+ * without the parts to the left of it.
+ *
+ * Returns NULL on error.
+ */
+static struct Select *
+select_part_from_rast(struct Parse *parser, struct rast_select *select)
 {
-	struct Select *prior = NULL;
-	if (select->prior != NULL) {
-		prior = select_from_rast(parser, select->prior);
-		if (parser->is_aborted)
-			return NULL;
-	}
 	struct ExprList *cols = expr_list_from_rast(parser, &select->columns);
-	if (parser->is_aborted) {
-		sql_select_delete(prior);
+	if (parser->is_aborted)
 		return NULL;
-	}
 	/*
 	 * The SELECT is already fully resolved, so the legacy resolver
 	 * (sqlSelectPrep()) must not walk this SELECT again.
@@ -4048,9 +4054,37 @@ select_from_rast(struct Parse *parser, struct rast_select *select)
 	struct Select *res = sqlSelectNew(cols, NULL, where, group_by, having,
 					  order_by, flags, limit, offset);
 	res->op = select->op;
-	if (prior != NULL) {
-		res->pPrior = prior;
-		prior->pNext = res;
-	}
 	return res;
+}
+
+struct Select *
+select_from_rast(struct Parse *parser, struct rast_select *select)
+{
+	/*
+	 * The parts are built from left to right, but not recursively, since
+	 * VALUES may have any number of rows.
+	 */
+	uint32_t count = 0;
+	for (struct rast_select *p = select; p != NULL; p = p->prior)
+		++count;
+	struct rast_select **parts =
+		xregion_alloc_array(&parser->region, typeof(*parts), count);
+	uint32_t i = count;
+	for (struct rast_select *p = select; p != NULL; p = p->prior)
+		parts[--i] = p;
+	struct Select *prior = NULL;
+	for (i = 0; i < count; ++i) {
+		struct Select *res = select_part_from_rast(parser, parts[i]);
+		if (parser->is_aborted) {
+			sql_select_delete(res);
+			sql_select_delete(prior);
+			return NULL;
+		}
+		if (prior != NULL) {
+			res->pPrior = prior;
+			prior->pNext = res;
+		}
+		prior = res;
+	}
+	return prior;
 }

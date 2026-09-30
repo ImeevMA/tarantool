@@ -631,3 +631,70 @@ g.test_compound_order_by = function()
               'Type mismatch: can not convert array to comparable type')
     end)
 end
+
+--
+-- VALUES with several rows is a compound SELECT of its rows. The number of its
+-- rows is not limited.
+--
+g.test_values = function()
+    g.server:exec(function()
+        local function check(sql, exp)
+            local res, err = box.execute(sql)
+            if type(exp) == 'string' then
+                t.assert_equals(res, nil, sql)
+                t.assert_equals(err.message, exp, sql)
+            else
+                t.assert_equals(err, nil, sql)
+                t.assert_equals(res.rows, exp, sql)
+            end
+        end
+        local function rows(n)
+            local list = {}
+            for i = 1, n do
+                list[i] = '(' .. i .. ')'
+            end
+            return 'VALUES ' .. table.concat(list, ', ')
+        end
+
+        check([[VALUES (1, 'a'), (2, 'b');]], {{1, 'a'}, {2, 'b'}})
+        check([[VALUES (1), (COUNT(*));]], {{1}, {1}})
+        check([[VALUES ((SELECT 1)), (2);]], {{1}, {2}})
+        check([[VALUES (1), (2) UNION SELECT 3;]], {{1}, {2}, {3}})
+        check([[SELECT 3 UNION VALUES (1);]], {{1}, {3}})
+        check([[VALUES (1) INTERSECT VALUES (1);]], {{1}})
+        check([[VALUES (1), (2) UNION ALL SELECT 3 ORDER BY 1 DESC
+                LIMIT 2;]], {{3}, {2}})
+        check([[VALUES (1), (2) UNION ALL SELECT 3 ORDER BY COLUMN_3;]],
+              {{1}, {2}, {3}})
+        check([[VALUES (1), (2) UNION ALL SELECT 3 ORDER BY COLUMN_2;]],
+              "Can't resolve field 'COLUMN_2'")
+        check([[SELECT 1 IN (VALUES (1), (2));]], {{true}})
+        check([[SELECT (1, 2) IN (VALUES (1, 2), (3, 4));]], {{true}})
+        check([[SELECT EXISTS (VALUES (1), (2));]], {{true}})
+        check([[SELECT 1 AS a WHERE a IN (VALUES (a), (2));]], {{1}})
+
+        local res, err = box.execute(rows(40) .. ';')
+        t.assert_equals(err, nil)
+        t.assert_equals(#res.rows, 40)
+        check(rows(30) .. ' UNION ALL SELECT 31;', 'The number of UNION ' ..
+              'or EXCEPT or INTERSECT operations 31 exceeds the limit (30)')
+
+        -- The number of rows of VALUES is not limited.
+        res, err = box.execute(rows(100000) .. ';')
+        t.assert_equals(err, nil)
+        t.assert_equals(#res.rows, 100000)
+        t.assert_equals(res.rows[100000], {100000})
+
+        local exp_err = 'all VALUES must have the same number of terms'
+        check([[VALUES (1), (2, 3);]], exp_err)
+        check([[VALUES (1), (2), (3, 4);]], exp_err)
+        check([[SELECT 3, 4 UNION VALUES (1);]], exp_err)
+        check([[VALUES (1, 2) UNION SELECT 3;]], 'SELECTs to the left and ' ..
+              'right of UNION do not have the same number of result columns')
+        check([[VALUES (nosuch1), (nosuch2);]],
+              "Can't resolve field 'nosuch2'")
+        check([[SELECT 1 AS a UNION ALL VALUES (a);]],
+              "Can't resolve field 'a'")
+        check([[VALUES (1), ((1, 2));]], 'row value misused')
+    end)
+end
