@@ -109,6 +109,15 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	     struct rast_expr *res);
 
 /**
+ * Resolve the given AST SELECT statement into the given rast_select.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_select(struct sql_resolve_context *ctx, const struct ast_select *ast,
+	       struct rast_select *res);
+
+/**
  * Resolve the given AST SELECT statement nested in an expression into the given
  * rast_select.
  */
@@ -151,13 +160,16 @@ select_from_rast_in(struct Parse *parser,
 		    struct rast_select *select);
 
 /**
- * Create a source list from the given resolved source list and assign cursors
- * to its sources.
+ * Create a source list of a SELECT, which is a subquery of a SELECT with the
+ * given scope of sources, from the given resolved source list, and assign
+ * cursors to its sources. As in the legacy code, the SELECTs of the views are
+ * created after the cursors are assigned to all the sources.
  *
- * Returns NULL if the list is empty.
+ * Returns NULL if the list is empty or on error.
  */
 static struct SrcList *
-src_list_from_rast(struct Parse *parser, const struct rast_source_list *list);
+src_list_from_rast(struct Parse *parser, const struct rast_build_scope *parent,
+		   const struct rast_source_list *list);
 
 /*
  * Walk the expression tree pExpr and increase the aggregate function
@@ -3724,9 +3736,47 @@ check_join_types(const struct ast_source_list *ast)
 }
 
 /**
- * Resolve the given AST source, which is a table, into the given rast_source.
- * The space is looked up and checked as in sql_lookup_space(), and the index
- * given by INDEXED BY as in sqlIndexedByLookup(). A view falls back.
+ * Resolve the given AST SELECT statement, which is a source of a SELECT in the
+ * current scope, into the given rast_select. As in the legacy code, its names
+ * are looked up in the scopes enclosing the SELECT it is a source of.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_source_select(struct sql_resolve_context *ctx,
+		      const struct ast_select *ast, struct rast_select *res)
+{
+	uint32_t ref_count = ctx->scope != NULL ? ctx->scope->ref_count : 0;
+	if (resolve_select(ctx, ast, res) != 0)
+		return -1;
+	res->is_correlated = ctx->scope != NULL &&
+			     ctx->scope->ref_count != ref_count;
+	return 0;
+}
+
+/**
+ * Resolve the SELECT of the given view into the given rast_source. As in the
+ * legacy code, the view is compiled from its definition for every use.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_view(struct sql_resolve_context *ctx, const struct space *space,
+	     struct rast_source *res)
+{
+	const struct ast_select *ast =
+		sql_parse_view_ast(ctx->region, space->def->opts.sql);
+	if (ast == NULL)
+		return -1;
+	res->select = xregion_alloc_object(ctx->region, struct rast_select);
+	return resolve_source_select(ctx, ast, res->select);
+}
+
+/**
+ * Resolve the given AST source, which is a table or a view, into the given
+ * rast_source. The space is looked up and checked as in sql_lookup_space(),
+ * the SELECT of a view is resolved, and the index given by INDEXED BY is
+ * looked up as in sqlIndexedByLookup().
  *
  * Returns 0 on success and -1 on error.
  */
@@ -3746,16 +3796,19 @@ resolve_source(struct sql_resolve_context *ctx, const struct ast_source *ast,
 		diag_set(ClientError, ER_NO_SUCH_SPACE, name);
 		return -1;
 	}
-	if (space->def->opts.is_view) {
-		ctx->can_resolve = false;
-		return 0;
-	}
 	if (sql_space_def_check_format(space->def) != 0)
 		return -1;
-	if (space->index_count == 0) {
+	if (space->index_count == 0 && !space->def->opts.is_view) {
 		diag_set(ClientError, ER_UNSUPPORTED, "SQL",
 			 "spaces without primary key");
 		return -1;
+	}
+	res->select = NULL;
+	if (space->def->opts.is_view) {
+		if (resolve_view(ctx, space, res) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
 	}
 	res->space_id = space->def->id;
 	res->alias = NULL;
@@ -4510,11 +4563,6 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 	return check_compound_parts(res);
 }
 
-/**
- * Resolve the given AST SELECT statement into the given rast_select.
- *
- * Returns 0 on success and -1 on error.
- */
 static int
 resolve_select(struct sql_resolve_context *ctx, const struct ast_select *ast,
 	       struct rast_select *res)
@@ -4889,7 +4937,8 @@ expr_list_from_rast(struct Parse *parser, const struct rast_build_scope *scope,
 }
 
 static struct SrcList *
-src_list_from_rast(struct Parse *parser, const struct rast_source_list *list)
+src_list_from_rast(struct Parse *parser, const struct rast_build_scope *parent,
+		   const struct rast_source_list *list)
 {
 	struct SrcList *res = NULL;
 	for (uint32_t i = 0; i < list->len; ++i) {
@@ -4911,8 +4960,21 @@ src_list_from_rast(struct Parse *parser, const struct rast_source_list *list)
 			item->fg.isIndexedBy = true;
 		}
 	}
-	if (res != NULL)
-		sqlSrcListAssignCursors(parser, res);
+	if (res == NULL)
+		return NULL;
+	sqlSrcListAssignCursors(parser, res);
+	for (uint32_t i = 0; i < list->len; ++i) {
+		struct rast_select *select = list->sources[i].select;
+		if (select == NULL)
+			continue;
+		struct SrcList_item *item = &res->a[i];
+		item->pSelect = select_from_rast_in(parser, parent, select);
+		if (parser->is_aborted) {
+			sqlSrcListDelete(res);
+			return NULL;
+		}
+		item->fg.isCorrelated = select->is_correlated;
+	}
 	return res;
 }
 
@@ -5004,7 +5066,7 @@ select_part_from_rast(struct Parse *parser,
 		      struct rast_select *select)
 {
 	struct rast_build_scope scope = {
-		.src = src_list_from_rast(parser, &select->sources),
+		.src = src_list_from_rast(parser, parent, &select->sources),
 		.parent = parent,
 	};
 	struct ExprList *cols = expr_list_from_rast(parser, &scope,

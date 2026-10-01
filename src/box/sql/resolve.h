@@ -258,6 +258,8 @@ struct rast_source {
 	struct rast_join_column *join_columns;
 	/** Number of the joined columns. */
 	uint32_t join_column_count;
+	/** Resolved SELECT of a view, NULL for a table. */
+	struct rast_select *select;
 };
 
 /** Resolved list of sources. */

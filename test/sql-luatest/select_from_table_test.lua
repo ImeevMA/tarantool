@@ -608,6 +608,50 @@ g.test_natural_using = function()
 end
 
 --
+-- As in the legacy code, a view is compiled from its definition for every use.
+-- Its columns are the fields of the view, and the result columns of the view
+-- are named automatically before the result columns of the SELECT using it.
+--
+g.test_views = function()
+    g.server:exec(function()
+        box.execute([[CREATE VIEW vt AS SELECT a, b FROM t WHERE a > 1;]])
+        box.execute([[CREATE VIEW v2 AS SELECT 1 + 1, a * 2 AS d FROM t;]])
+        box.execute([[CREATE VIEW vagg AS SELECT b, COUNT(*) AS c FROM t
+                      GROUP BY b;]])
+        box.execute([[CREATE VIEW vc AS SELECT a FROM t UNION
+                      SELECT x FROM s;]])
+        local check = rawget(_G, 'check')
+        local res = box.execute([[SELECT *, 1 + 1 FROM v2 WHERE d > 4;]])
+        t.assert_equals(res.metadata, {
+            {name = 'COLUMN_1', type = 'integer'},
+            {name = 'd', type = 'integer'},
+            {name = 'COLUMN_2', type = 'integer'},
+        })
+        t.assert_equals(res.rows, {{2, 6, 2}})
+        check([[SELECT x.a FROM vt AS x;]], {{2}, {3}})
+        check([[SELECT c FROM vagg WHERE b = 20;]], {{1}})
+        check([[SELECT a FROM vc ORDER BY a DESC LIMIT 2;]], {{200}, {100}})
+        check([[SELECT * FROM vt JOIN t USING (a);]],
+              {{2, 20, 20}, {3, 30, 30}})
+        check([[SELECT * FROM t NATURAL LEFT JOIN vt;]],
+              {{1, 10}, {2, 20}, {3, 30}})
+        check([[SELECT (SELECT b FROM vt WHERE vt.a = t.a) FROM t;]],
+              {{box.NULL}, {20}, {30}})
+        check([[SELECT COUNT(*) FROM vt AS p, vt AS q WHERE p.a = q.a;]],
+              {{2}})
+        check([[SELECT 3 IN vc, 4 IN vc;]], {{true, false}})
+        check([[SELECT nosuch FROM vt;]], "Can't resolve field 'nosuch'")
+        check([[SELECT * FROM vt, vt;]], 'ambiguous column name: vt.a')
+        check([[SELECT a FROM vt INDEXED BY i;]],
+              "No index 'i' is defined in space 'vt'")
+        box.execute([[DROP VIEW vc;]])
+        box.execute([[DROP VIEW vagg;]])
+        box.execute([[DROP VIEW v2;]])
+        box.execute([[DROP VIEW vt;]])
+    end)
+end
+
+--
 -- Sources are now resolved together with the expressions, so an unknown table
 -- is reported before an error found later in the conversion of the statement.
 --

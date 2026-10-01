@@ -2396,6 +2396,13 @@ struct Select *
 sql_parse_view(struct Parse *parser, const char *sql);
 
 /**
+ * Run the parser on the given view definition, allocating the AST on the given
+ * region. Return the AST of the SELECT on success, or NULL on error.
+ */
+struct ast_select *
+sql_parse_view_ast(struct region *region, const char *sql);
+
+/**
  * Run the parser on the given trigger definition.
  * Return the parsed SQL TRIGGER on success, or NULL on error.
  */

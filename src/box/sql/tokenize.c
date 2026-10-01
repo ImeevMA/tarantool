@@ -1047,15 +1047,23 @@ sql_parse_function(struct Parse *parser, const char *sql)
 	return res;
 }
 
-struct Select *
-sql_parse_view(struct Parse *parser, const char *sql)
+struct ast_select *
+sql_parse_view_ast(struct region *region, const char *sql)
 {
-	struct sql_ast *ast = sql_run_parser(&parser->region, sql,
-					     TK_VIEW_ENTRY);
+	struct sql_ast *ast = sql_run_parser(region, sql, TK_VIEW_ENTRY);
 	if (ast == NULL)
 		return NULL;
 	assert(ast->type == SQL_AST_VIEW);
-	struct Select *res = select_from_ast(parser, ast->select);
+	return ast->select;
+}
+
+struct Select *
+sql_parse_view(struct Parse *parser, const char *sql)
+{
+	struct ast_select *ast = sql_parse_view_ast(&parser->region, sql);
+	if (ast == NULL)
+		return NULL;
+	struct Select *res = select_from_ast(parser, ast);
 	if (res != NULL && parser->nVar > 0) {
 		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
 			 "Parameters are not allowed in views");
