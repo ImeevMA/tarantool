@@ -502,6 +502,62 @@ g.test_asterisks_several_sources = function()
 end
 
 --
+-- As in the legacy code, the ON clauses are a part of WHERE: they can refer to
+-- all sources and to the aliases of the result columns, cannot use aggregate
+-- functions, and the ON clause of a LEFT JOIN restricts the join.
+--
+g.test_on = function()
+    g.server:exec(function()
+        local check = rawget(_G, 'check')
+        check([[SELECT t.a, s.x FROM t JOIN s ON s.a = t.a;]],
+              {{1, 100}, {2, 200}})
+        check([[SELECT t.a, s.x FROM t LEFT JOIN s ON s.a = t.a;]],
+              {{1, 100}, {2, 200}, {3, box.NULL}})
+        check([[SELECT t.a, s.x FROM t LEFT JOIN s ON s.a = t.a
+                WHERE s.x IS NULL;]], {{3, box.NULL}})
+        check([[SELECT t.a, t.a < 2 AS c, s.x FROM t
+                LEFT JOIN s ON s.a = t.a AND c;]],
+              {{1, true, 100}, {2, false, box.NULL}, {3, false, box.NULL}})
+        check([[SELECT t.a AS y FROM t JOIN s ON y = s.a;]], {{1}, {2}})
+        check([[SELECT t.a FROM t JOIN s ON lt.a = 7 JOIN lt ON TRUE
+                WHERE t.a = s.a;]], {{1}, {2}})
+        check([[SELECT (SELECT x FROM s JOIN lt ON s.a = t.a) FROM t;]],
+              {{100}, {200}, {box.NULL}})
+        check([[SELECT t.a FROM t JOIN s ON a = 1;]],
+              'ambiguous column name: a')
+        check([[SELECT t.a FROM t JOIN s ON COUNT(*) > 0;]],
+              'misuse of aggregate function COUNT()')
+    end)
+end
+
+--
+-- As in the legacy code, if WHERE or the ON clause of an inner join is FALSE,
+-- the other clauses are dropped without being resolved, and the depth of the
+-- expression tree is checked for WHERE joined with the ON clauses.
+--
+g.test_on_false_and_depth = function()
+    g.server:exec(function()
+        local check = rawget(_G, 'check')
+        check([[SELECT t.a FROM t JOIN s ON FALSE WHERE nosuch = 1;]], {})
+        check([[SELECT t.a FROM t LEFT JOIN s ON nosuch = 1 WHERE FALSE;]],
+              {})
+        check([[SELECT t.a FROM t LEFT JOIN s ON FALSE WHERE t.a = 1;]],
+              {{1}})
+        check([[SELECT t.a FROM t LEFT JOIN s ON FALSE WHERE nosuch = 1;]],
+              "Can't resolve field 'nosuch'")
+
+        local on = '1' .. string.rep(' + 1', 198) .. ' > 0'
+        check('SELECT t.a FROM t JOIN s ON ' .. on .. ' WHERE t.a = s.a;',
+              'Number of nodes in expression tree 201 exceeds the limit ' ..
+              '(200)')
+        check('SELECT t.a FROM t JOIN s ON ' .. on .. ' JOIN lt ON TRUE;',
+              'Number of nodes in expression tree 201 exceeds the limit ' ..
+              '(200)')
+        check('SELECT COUNT(*) FROM t JOIN s ON ' .. on .. ';', {{6}})
+    end)
+end
+
+--
 -- Sources are now resolved together with the expressions, so an unknown table
 -- is reported before an error found later in the conversion of the statement.
 --

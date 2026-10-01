@@ -3571,7 +3571,7 @@ ast_expr_has_collate(const struct ast_expr *ast)
 
 /**
  * Check if the given AST FROM clause can be resolved: it is empty or consists
- * of tables joined without NATURAL, ON and USING.
+ * of tables joined without NATURAL and USING.
  */
 static bool
 can_resolve_sources(const struct ast_source_list *ast)
@@ -3583,7 +3583,7 @@ can_resolve_sources(const struct ast_source_list *ast)
 		const struct ast_source *src =
 			stailq_entry(node, struct ast_source, link);
 		if (src->select != NULL || src->name.n == 0 ||
-		    src->join_on != NULL || src->join_using != NULL ||
+		    src->join_using != NULL ||
 		    (src->join_type & JT_NATURAL) != 0)
 			return false;
 	}
@@ -3673,6 +3673,7 @@ resolve_source(struct sql_resolve_context *ctx, const struct ast_source *ast,
 		}
 	}
 	res->disallow_scan = ast->disallow_scan;
+	res->on = NULL;
 	return 0;
 }
 
@@ -3765,6 +3766,70 @@ resolve_select_names(struct sql_resolve_context *ctx,
 }
 
 /**
+ * Resolve the WHERE clause of the given AST SELECT statement and the ON clauses
+ * of its sources into the given rast_select. As in the legacy code, the ON
+ * clauses are a part of WHERE: they are joined to it with AND in the order of
+ * the sources, and if WHERE or the ON clause of an inner join is FALSE, the
+ * whole WHERE is FALSE, and the other clauses are not resolved.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_where(struct sql_resolve_context *ctx, const struct ast_select *ast,
+	      struct rast_select *res)
+{
+	bool is_false = ast->where != NULL && ast_is_false(ast->where);
+	const struct stailq_entry *first =
+		ast->sources != NULL ? ast->sources->head.first.value : NULL;
+	for (const struct stailq_entry *node = first; node != NULL;
+	     node = node->next.value) {
+		const struct ast_source *src =
+			stailq_entry(node, struct ast_source, link);
+		if (src->join_on != NULL && (src->join_type & JT_OUTER) == 0 &&
+		    ast_is_false(src->join_on))
+			is_false = true;
+	}
+	if (is_false) {
+		res->where = xregion_alloc_object(ctx->region,
+						  struct rast_expr);
+		memset(res->where, 0, sizeof(*res->where));
+		res->where->op = TK_FALSE;
+		res->where->b = false;
+		res->where->type = SQL_TYPE_BOOLEAN;
+		res->where->height = 1;
+		return 0;
+	}
+	uint32_t height = 0;
+	if (ast->where != NULL) {
+		res->where = xregion_alloc_object(ctx->region,
+						  struct rast_expr);
+		if (resolve_expr(ctx, ast->where, res->where) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+		height = res->where->height;
+	}
+	uint32_t i = 0;
+	for (const struct stailq_entry *node = first; node != NULL;
+	     node = node->next.value, ++i) {
+		const struct ast_source *src =
+			stailq_entry(node, struct ast_source, link);
+		if (src->join_on == NULL)
+			continue;
+		struct rast_expr *on = xregion_alloc_object(ctx->region,
+							    struct rast_expr);
+		res->sources.sources[i].on = on;
+		if (resolve_expr(ctx, src->join_on, on) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+		height = height == 0 ? on->height :
+			 MAX(height, on->height) + 1;
+	}
+	return expr_check_height(height);
+}
+
+/**
  * Resolve the clauses of the given AST SELECT statement, which is not compound
  * or is a part of a compound one, into the given rast_select, each in the scope
  * of names the legacy code resolves it in. The ORDER BY of the rightmost part
@@ -3836,24 +3901,20 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 			return -1;
 		}
 	}
-	if (ast->where != NULL) {
-		/*
-		 * WHERE can refer to the columns of the sources, to the result
-		 * columns and to the names of the enclosing SELECTs, but cannot
-		 * use aggregate functions.
-		 */
-		struct sql_resolve_scope where_scope = {
-			.sources = &res->sources,
-			.aliases = &res->columns,
-			.parent = outer,
-		};
-		ctx->scope = &where_scope;
-		res->where = xregion_alloc_object(ctx->region,
-						  struct rast_expr);
-		rc = resolve_expr(ctx, ast->where, res->where);
-		if (rc != 0 || !ctx->can_resolve)
-			return rc;
-	}
+	/*
+	 * WHERE can refer to the columns of the sources, to the result columns
+	 * and to the names of the enclosing SELECTs, but cannot use aggregate
+	 * functions.
+	 */
+	struct sql_resolve_scope where_scope = {
+		.sources = &res->sources,
+		.aliases = &res->columns,
+		.parent = outer,
+	};
+	ctx->scope = &where_scope;
+	rc = resolve_where(ctx, ast, res);
+	if (rc != 0 || !ctx->can_resolve)
+		return rc;
 	/*
 	 * The ORDER BY and GROUP BY terms can refer to the columns of the
 	 * sources and to the result columns, but not to the names of the
@@ -4610,6 +4671,41 @@ src_list_from_rast(struct Parse *parser, const struct rast_source_list *list)
 }
 
 /**
+ * Create the WHERE expression of the given resolved SELECT, with the given
+ * scope of sources, from its WHERE clause and the ON clauses of its sources.
+ * As in sqlProcessJoin(), the ON clauses are joined to WHERE with AND in the
+ * order of the sources, and the ON clause of an outer join is marked as a
+ * part of the join restriction.
+ *
+ * Returns NULL if there is no WHERE expression.
+ */
+static struct Expr *
+where_from_rast(struct Parse *parser, const struct rast_build_scope *scope,
+		const struct rast_select *select)
+{
+	struct Expr *res = NULL;
+	if (select->where != NULL)
+		res = expr_from_rast(parser, scope, select->where);
+	for (uint32_t i = 0; i < select->sources.len; ++i) {
+		const struct rast_source *src = &select->sources.sources[i];
+		if (src->on == NULL)
+			continue;
+		struct Expr *on = expr_from_rast(parser, scope, src->on);
+		if ((src->join_type & JT_OUTER) != 0)
+			sql_expr_set_join(on, scope->src->a[i].iCursor);
+		if (res == NULL) {
+			res = on;
+			continue;
+		}
+		struct Expr *and = sql_expr_new_anon(TK_AND);
+		sqlExprAttachSubtrees(and, res, on);
+		ExprSetProperty(and, EP_Resolved);
+		res = and;
+	}
+	return res;
+}
+
+/**
  * Create a SELECT statement from the given part of a resolved compound SELECT,
  * without the parts to the left of it, see select_from_rast_in().
  *
@@ -4635,9 +4731,7 @@ select_part_from_rast(struct Parse *parser,
 	 * (sqlSelectPrep()) must not walk this SELECT again.
 	 */
 	uint32_t flags = select->flags | SF_Resolved | SF_HasTypeInfo;
-	struct Expr *where = NULL;
-	if (select->where != NULL)
-		where = expr_from_rast(parser, &scope, select->where);
+	struct Expr *where = where_from_rast(parser, &scope, select);
 	struct ExprList *group_by = expr_list_from_rast(parser, &scope,
 							&select->group_by);
 	struct Expr *having = NULL;

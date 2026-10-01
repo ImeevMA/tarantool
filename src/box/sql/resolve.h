@@ -238,6 +238,8 @@ struct rast_source {
 	bool disallow_scan;
 	/** Type of the join with the previous source, JT_* flags. */
 	uint8_t join_type;
+	/** Resolved ON clause of the join, NULL if there is none. */
+	struct rast_expr *on;
 };
 
 /** Resolved list of sources. */
