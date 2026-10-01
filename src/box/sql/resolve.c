@@ -3460,15 +3460,12 @@ resolve_sources(struct sql_resolve_context *ctx,
 /**
  * Check if the given SELECT, which may be a compound one, can be resolved. The
  * legacy code turns a compound SELECT, which is not UNION ALL, with a COLLATE
- * clause in its ORDER BY into a SELECT from a subquery. A SELECT without
- * columns, as in `x IN table`, selects all columns of its source, which is
- * expanded by the legacy code.
+ * clause in its ORDER BY into a SELECT from a subquery.
  */
 static bool
 can_resolve(const struct ast_select *ast)
 {
-	if (ast->columns == NULL || !can_resolve_sources(ast->sources) ||
-	    ast->with != NULL)
+	if (!can_resolve_sources(ast->sources) || ast->with != NULL)
 		return false;
 	if (ast->link.next == &ast->link)
 		return true;
