@@ -3519,7 +3519,7 @@ ast_expr_has_collate(const struct ast_expr *ast)
 
 /**
  * Check if the given AST FROM clause can be resolved: it is empty or consists
- * of a single table without INDEXED BY.
+ * of a single table.
  */
 static bool
 can_resolve_sources(const struct ast_source_list *ast)
@@ -3531,14 +3531,13 @@ can_resolve_sources(const struct ast_source_list *ast)
 	const struct ast_source *src =
 		stailq_entry(ast->head.first.value, struct ast_source, link);
 	return src->select == NULL && src->name.n > 0 &&
-	       src->join_on == NULL && src->join_using == NULL &&
-	       src->indexed_by.n == 0;
+	       src->join_on == NULL && src->join_using == NULL;
 }
 
 /**
  * Resolve the given AST source, which is a table, into the given rast_source.
- * The space is looked up and checked as in sql_lookup_space(). A view falls
- * back.
+ * The space is looked up and checked as in sql_lookup_space(), and the index
+ * given by INDEXED BY as in sqlIndexedByLookup(). A view falls back.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -3574,6 +3573,20 @@ resolve_source(struct sql_resolve_context *ctx, const struct ast_source *ast,
 	if (ast->alias.n > 0) {
 		res->alias = sql_name_temp(ctx->region, ast->alias.z,
 					   ast->alias.n);
+	}
+	res->index_id = UINT32_MAX;
+	/* NOT INDEXED is a token of length 1 without text, see parse.y. */
+	res->is_not_indexed = ast->indexed_by.n == 1 &&
+			      ast->indexed_by.z == NULL;
+	if (ast->indexed_by.n > 0 && !res->is_not_indexed) {
+		res->index_id = sql_index_id_by_token(space, &ast->indexed_by);
+		if (res->index_id == UINT32_MAX) {
+			diag_set(ClientError, ER_NO_SUCH_INDEX_NAME,
+				 sql_name_temp(ctx->region, ast->indexed_by.z,
+					       ast->indexed_by.n),
+				 space->def->name);
+			return -1;
+		}
 	}
 	res->disallow_scan = ast->disallow_scan;
 	return 0;
@@ -4491,6 +4504,12 @@ src_list_from_rast(struct Parse *parser, const struct rast_source_list *list)
 			item->zAlias = sql_xstrdup(src->alias);
 		item->space = space;
 		item->fg.disallow_scan = src->disallow_scan;
+		item->fg.notIndexed = src->is_not_indexed;
+		if (src->index_id != UINT32_MAX) {
+			item->pIBIndex = space_index(space, src->index_id)->def;
+			item->indexed_by = sql_xstrdup(item->pIBIndex->name);
+			item->fg.isIndexedBy = true;
+		}
 	}
 	if (res != NULL)
 		sqlSrcListAssignCursors(parser, res);

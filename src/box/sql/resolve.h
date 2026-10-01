@@ -228,6 +228,10 @@ struct rast_source {
 	uint32_t space_id;
 	/** Dequoted alias of the source, or NULL. */
 	const char *alias;
+	/** Identifier of the index given by INDEXED BY, or UINT32_MAX. */
+	uint32_t index_id;
+	/** Whether NOT INDEXED is given for this source. */
+	bool is_not_indexed;
 	/** Whether scanning is not allowed for this source. */
 	bool disallow_scan;
 };

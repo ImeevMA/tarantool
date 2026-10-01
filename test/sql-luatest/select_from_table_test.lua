@@ -344,6 +344,41 @@ g.test_asterisks_limit = function()
 end
 
 --
+-- The index given by INDEXED BY is looked up by its name as is and, if the name
+-- is not quoted, by its name in upper case.
+--
+g.test_indexed_by = function()
+    g.server:exec(function()
+        box.execute([[CREATE TABLE ib (a INT PRIMARY KEY, b INT, c INT);]])
+        box.execute([[CREATE INDEX i1 ON ib (b);]])
+        box.execute([[CREATE INDEX "I2" ON ib (c);]])
+        box.execute([[INSERT INTO ib VALUES (1, 30, 5), (2, 20, 6);]])
+        local check = rawget(_G, 'check')
+        check([[SELECT a FROM ib INDEXED BY i1;]], {{2}, {1}})
+        check([[SELECT a FROM ib INDEXED BY i2 WHERE c = 6;]], {{2}})
+        check([[SELECT a FROM ib AS x INDEXED BY "i1" WHERE x.b < 25;]],
+              {{2}})
+        check([[SELECT a FROM ib NOT INDEXED WHERE b = 20;]], {{2}})
+        check([[SELECT a FROM ib INDEXED BY I1;]],
+              "No index 'I1' is defined in space 'ib'")
+        check([[SELECT a FROM ib INDEXED BY "i2";]],
+              "No index 'i2' is defined in space 'ib'")
+
+        local res = box.execute([[EXPLAIN QUERY PLAN
+                                  SELECT a FROM ib INDEXED BY i2 WHERE c > 5;]])
+        t.assert_equals(res.rows, {{0, 0, 0, 'SEARCH TABLE ib USING ' ..
+                                    'COVERING INDEX I2 (c>?) (~262144 rows)'}})
+        -- As in the legacy code, NOT INDEXED disables only automatic
+        -- indexes.
+        res = box.execute([[EXPLAIN QUERY PLAN
+                            SELECT a FROM ib NOT INDEXED WHERE b = 20;]])
+        t.assert_equals(res.rows, {{0, 0, 0, 'SEARCH TABLE ib USING ' ..
+                                    'COVERING INDEX i1 (b=?) (~10 rows)'}})
+        box.execute([[DROP TABLE ib;]])
+    end)
+end
+
+--
 -- Sources are now resolved together with the expressions, so an unknown table
 -- is reported before an error found later in the conversion of the statement.
 --
