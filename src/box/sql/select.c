@@ -4438,6 +4438,21 @@ convertCompoundSelectToSubquery(Walker * pWalker, Select * p)
 	return WRC_Continue;
 }
 
+/**
+ * Turn the compound SELECTs of the given SELECT and of its subqueries into
+ * SELECTs from subqueries where needed, see convertCompoundSelectToSubquery().
+ */
+static void
+selectConvertCompounds(Parse *pParse, Select *p)
+{
+	Walker w;
+	memset(&w, 0, sizeof(w));
+	w.xExprCallback = sqlExprWalkNoop;
+	w.xSelectCallback = convertCompoundSelectToSubquery;
+	w.pParse = pParse;
+	sqlWalkSelect(&w, p);
+}
+
 /*
  * Argument pWith (which may be NULL) points to a linked list of nested
  * WITH contexts, from inner to outermost. If the table identified by
@@ -4560,6 +4575,17 @@ withExpand(Walker * pWalker, struct SrcList_item *pFrom)
 					pSel->selFlags |= SF_Recursive;
 				}
 			}
+		}
+		/*
+		 * The SELECT of the table is attached after the compound
+		 * SELECTs of the statement are converted, so it is converted
+		 * here, unless it is recursive.
+		 */
+		if (ref_counter == 0) {
+			selectConvertCompounds(pParse, pFrom->pSelect);
+			pSel = pFrom->pSelect;
+			bMayRecursive = pSel->op == TK_ALL ||
+					pSel->op == TK_UNION;
 		}
 		if (ref_counter > 1) {
 			const char *err_msg =
@@ -4756,6 +4782,12 @@ selectExpander(Walker * pWalker, Select * p)
 					sql_view_compile(space->def->opts.sql);
 				if (select == NULL)
 					return WRC_Abort;
+				/*
+				 * The SELECT of the view is attached after the
+				 * compound SELECTs of the statement are
+				 * converted, so it is converted here.
+				 */
+				selectConvertCompounds(pParse, select);
 				sqlSrcListAssignCursors(pParse,
 							    select->pSrc);
 				assert(pFrom->pSelect == 0);
@@ -4989,14 +5021,12 @@ sqlExprWalkNoop(Walker * NotUsed, Expr * NotUsed2)
 static void
 sqlSelectExpand(Parse * pParse, Select * pSelect)
 {
+	if (pParse->hasCompound)
+		selectConvertCompounds(pParse, pSelect);
 	Walker w;
 	memset(&w, 0, sizeof(w));
 	w.xExprCallback = sqlExprWalkNoop;
 	w.pParse = pParse;
-	if (pParse->hasCompound) {
-		w.xSelectCallback = convertCompoundSelectToSubquery;
-		sqlWalkSelect(&w, pSelect);
-	}
 	w.xSelectCallback = selectExpander;
 	if ((pSelect->selFlags & SF_MultiValue) == 0) {
 		w.xSelectCallback2 = selectPopWith;
