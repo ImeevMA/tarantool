@@ -1036,7 +1036,7 @@ test:do_catchsql_test(13.3, [[
   SELECT i FROM c;
 ]], {
   -- <13.3>
-  1, "table c has 1 values for 2 columns"
+  1, "Failed to expand '*' in SELECT statement without FROM clause"
   -- </13.3>
 })
 

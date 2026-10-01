@@ -135,6 +135,15 @@ struct sql_resolve_context {
 	struct sql_resolve_with *cte_with;
 	/** Position of the table whose SELECT is resolved next. */
 	uint32_t cte_pos;
+	/** Source of the table whose SELECT is resolved next. */
+	struct rast_source *cte_res;
+	/** Whether the table whose SELECT is resolved next is recursive. */
+	bool cte_is_recursive;
+	/**
+	 * Source of a recursive table of a WITH clause, if the sources resolved
+	 * next are of the rightmost part of its SELECT, see resolve_sources().
+	 */
+	const struct rast_source *recursive_cte;
 	/** Unused tables of WITH clauses converted by the legacy code. */
 	struct sql_resolve_converted *converted;
 };
@@ -207,7 +216,7 @@ select_from_rast_in(struct Parse *parser,
  */
 static struct SrcList *
 src_list_from_rast(struct Parse *parser, const struct rast_build_scope *parent,
-		   const struct rast_source_list *list);
+		   struct rast_source_list *list);
 
 /*
  * Walk the expression tree pExpr and increase the aggregate function
@@ -4198,29 +4207,42 @@ find_cte(struct sql_resolve_context *ctx, const char *name, uint32_t *pos)
 }
 
 /**
- * Check if the given AST SELECT of a table of a WITH clause with the given name
- * may refer to the table itself, as withExpand() checks: the SELECT is joined
- * by UNION or UNION ALL, and a table in the FROM clause of its rightmost part
- * has the name of the table, compared case-insensitively.
+ * Check if the given AST source is a reference to the recursive table of a WITH
+ * clause with the given name from its SELECT, as withExpand() checks: the name
+ * of the source is the name of the table, compared case-insensitively.
  */
 static bool
-ast_cte_is_recursive(struct sql_resolve_context *ctx,
-		     const struct ast_select *ast, const char *name)
+ast_is_recursive_ref(struct sql_resolve_context *ctx,
+		     const struct ast_source *src, const char *name)
+{
+	if (src->select != NULL || src->name.n == 0)
+		return false;
+	const char *src_name = sql_name_temp(ctx->region, src->name.z,
+					     src->name.n);
+	return sqlStrICmp(src_name, name) == 0;
+}
+
+/**
+ * Return the number of the references to the table of a WITH clause with the
+ * given name from the given AST SELECT of the table, as withExpand() counts
+ * them: the sources of the rightmost part of a SELECT joined by UNION or UNION
+ * ALL, see ast_is_recursive_ref().
+ */
+static uint32_t
+ast_cte_recursive_refs(struct sql_resolve_context *ctx,
+		       const struct ast_select *ast, const char *name)
 {
 	if ((ast->op != TK_ALL && ast->op != TK_UNION) || ast->sources == NULL)
-		return false;
+		return 0;
+	uint32_t res = 0;
 	for (const struct stailq_entry *node = ast->sources->head.first.value;
 	     node != NULL; node = node->next.value) {
 		const struct ast_source *src =
 			stailq_entry(node, struct ast_source, link);
-		if (src->select != NULL || src->name.n == 0)
-			continue;
-		const char *src_name = sql_name_temp(ctx->region, src->name.z,
-						     src->name.n);
-		if (sqlStrICmp(src_name, name) == 0)
-			return true;
+		if (ast_is_recursive_ref(ctx, src, name))
+			++res;
 	}
-	return false;
+	return res;
 }
 
 /**
@@ -4247,9 +4269,12 @@ resolve_cte_source(struct sql_resolve_context *ctx,
 	}
 	const struct ast_with_entry *entry = cte_entry(with, pos);
 	const struct ast_select *body = entry->select;
-	if (ast_cte_is_recursive(ctx, body, name)) {
-		ctx->can_resolve = false;
-		return 0;
+	uint32_t refs = ast_cte_recursive_refs(ctx, body, name);
+	if (refs > 1) {
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+			 tt_sprintf("multiple references to recursive table: "
+				    "%s", name));
+		return -1;
 	}
 	with->is_used[pos] = true;
 	with->errors[pos] = "circular reference: %s";
@@ -4257,6 +4282,8 @@ resolve_cte_source(struct sql_resolve_context *ctx,
 	ctx->with = with;
 	ctx->cte_with = with;
 	ctx->cte_pos = pos;
+	ctx->cte_res = res;
+	ctx->cte_is_recursive = refs > 0;
 	res->select = xregion_alloc_object(ctx->region, struct rast_select);
 	int rc = resolve_source_select(ctx, body, res->select);
 	ctx->with = saved;
@@ -4273,8 +4300,11 @@ resolve_cte_source(struct sql_resolve_context *ctx,
 	const struct ast_select *leftmost =
 		(select->flags & SF_Converted) != 0 ? NULL :
 		rlist_entry(body->link.next, struct ast_select, link);
-	res->def = subquery_def_new(ctx, name, leftmost, select,
-				    entry->columns);
+	/* The definition of a recursive table is created with its SELECT. */
+	if (res->def == NULL) {
+		res->def = subquery_def_new(ctx, name, leftmost, select,
+					    entry->columns);
+	}
 	res->is_cte = true;
 	/* NOT INDEXED is a token of length 1 without text, see parse.y. */
 	res->is_not_indexed = ast->indexed_by.n == 1 &&
@@ -4453,7 +4483,35 @@ resolve_joins(struct sql_resolve_context *ctx,
 }
 
 /**
- * Resolve the given AST FROM clause into the given rast_source_list.
+ * Resolve the given AST source, which refers to the recursive table of a WITH
+ * clause with the given source from the rightmost part of the SELECT of the
+ * table, into the given rast_source. As in the legacy code, the source shares
+ * the definition of the table, and INDEXED BY of the source is ignored.
+ */
+static void
+resolve_recursive_ref(struct sql_resolve_context *ctx,
+		      const struct ast_source *ast,
+		      const struct rast_source *cte, struct rast_source *res)
+{
+	memset(res, 0, sizeof(*res));
+	res->index_id = UINT32_MAX;
+	res->cursor = -1;
+	res->def = cte->def;
+	res->recursive = cte;
+	if (ast->alias.n > 0) {
+		res->alias = sql_name_temp(ctx->region, ast->alias.z,
+					   ast->alias.n);
+	}
+	/* NOT INDEXED is a token of length 1 without text, see parse.y. */
+	res->is_not_indexed = ast->indexed_by.n == 1 &&
+			      ast->indexed_by.z == NULL;
+	res->disallow_scan = ast->disallow_scan;
+}
+
+/**
+ * Resolve the given AST FROM clause into the given rast_source_list. If the
+ * sources are of the rightmost part of the SELECT of a recursive table of a
+ * WITH clause, the references to the table are resolved as such.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -4461,6 +4519,8 @@ static int
 resolve_sources(struct sql_resolve_context *ctx,
 		const struct ast_source_list *ast, struct rast_source_list *res)
 {
+	const struct rast_source *recursive = ctx->recursive_cte;
+	ctx->recursive_cte = NULL;
 	if (ast == NULL)
 		return 0;
 	if (check_join_types(ast) != 0)
@@ -4473,8 +4533,13 @@ resolve_sources(struct sql_resolve_context *ctx,
 	     node != NULL; node = node->next.value) {
 		const struct ast_source *src =
 			stailq_entry(node, struct ast_source, link);
-		if (resolve_source(ctx, src, &res->sources[i]) != 0)
+		if (recursive != NULL &&
+		    ast_is_recursive_ref(ctx, src, recursive->def->name)) {
+			resolve_recursive_ref(ctx, src, recursive,
+					      &res->sources[i]);
+		} else if (resolve_source(ctx, src, &res->sources[i]) != 0) {
 			return -1;
+		}
 		if (!ctx->can_resolve)
 			return 0;
 		res->sources[i++].join_type = src->join_type;
@@ -5039,7 +5104,11 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 {
 	struct sql_resolve_with *cte_with = ctx->cte_with;
 	uint32_t cte_pos = ctx->cte_pos;
+	struct rast_source *cte_res = ctx->cte_res;
+	bool is_recursive = ctx->cte_is_recursive;
 	ctx->cte_with = NULL;
+	ctx->cte_res = NULL;
+	ctx->cte_is_recursive = false;
 	uint32_t ref_count = ctx->scope != NULL ? ctx->scope->ref_count : 0;
 	const struct rlist *head = &ast->link;
 	bool is_compound = head->next != head;
@@ -5048,12 +5117,17 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 	 * clause joined by UNION or UNION ALL to the left of the rightmost one
 	 * are set up first, while a reference to the table is a circular one,
 	 * and then the rightmost part, while a reference to the table is a
-	 * recursive one. A converted SELECT is not compound.
+	 * recursive one. The definition of a recursive table is created before
+	 * its rightmost part, which refers to it. A converted SELECT is not
+	 * compound, and the SELECT of a recursive table is not converted.
 	 */
 	bool is_rightmost_last = cte_with != NULL &&
 				 (ast->op == TK_ALL || ast->op == TK_UNION) &&
-				 !ast_is_converted_compound(ast);
-	const char *subquery_error = "recursive reference in a subquery: %s";
+				 (is_recursive ||
+				  !ast_is_converted_compound(ast));
+	const char *subquery_error = is_recursive ?
+				     "multiple recursive references: %s" :
+				     "recursive reference in a subquery: %s";
 	/* The legacy code does not limit the number of rows of VALUES. */
 	if (is_compound && (ast->flags & SF_MultiValue) == 0) {
 		uint32_t count = 1;
@@ -5088,11 +5162,24 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 			left = left->prior;
 		if (check_cte_columns(cte_with, cte_pos, &left->columns) != 0)
 			return -1;
+		if (is_recursive) {
+			const struct ast_select *leftmost =
+				rlist_entry(head->next, struct ast_select,
+					    link);
+			cte_res->def = subquery_def_new(
+				ctx, cte_with->names[cte_pos], leftmost, left,
+				cte_entry(cte_with, cte_pos)->columns);
+			ctx->recursive_cte = cte_res;
+		}
 		cte_with->errors[cte_pos] = subquery_error;
-		if (resolve_select_names(ctx, ast, res) != 0)
+		int rc = resolve_select_names(ctx, ast, res);
+		ctx->recursive_cte = NULL;
+		if (rc != 0)
 			return -1;
 		if (!ctx->can_resolve)
 			return 0;
+		if (is_recursive)
+			res->flags |= SF_Recursive;
 	}
 	res->prior = prior;
 	res->is_rightmost_last = is_rightmost_last;
@@ -5150,7 +5237,7 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 		return 0;
 	if (check_compound_parts(res) != 0)
 		return -1;
-	if (!ast_is_converted_compound(ast))
+	if (is_recursive || !ast_is_converted_compound(ast))
 		return 0;
 	return convert_compound_select(ctx, ast, res, outer, ref_count);
 }
@@ -5620,15 +5707,21 @@ expr_list_from_rast(struct Parse *parser, const struct rast_build_scope *scope,
 
 static struct SrcList *
 src_list_from_rast(struct Parse *parser, const struct rast_build_scope *parent,
-		   const struct rast_source_list *list)
+		   struct rast_source_list *list)
 {
 	struct SrcList *res = NULL;
 	for (uint32_t i = 0; i < list->len; ++i) {
-		const struct rast_source *src = &list->sources[i];
+		struct rast_source *src = &list->sources[i];
 		res = sql_src_list_append(res, NULL);
 		struct SrcList_item *item = &res->a[res->nSrc - 1];
 		struct space *space;
-		if (src->def != NULL) {
+		if (src->recursive != NULL) {
+			/* The table is built before its SELECT. */
+			space = src->recursive->space;
+			assert(space != NULL);
+			item->zName = sql_xstrdup(space->def->name);
+			item->fg.isRecursive = true;
+		} else if (src->def != NULL) {
 			space = sql_template_space_new(sqlParseToplevel(parser),
 						       src->def->name);
 			uint32_t count = src->def->field_count;
@@ -5638,8 +5731,10 @@ src_list_from_rast(struct Parse *parser, const struct rast_build_scope *parent,
 			memcpy(space->def->fields, src->def->fields,
 			       count * sizeof(struct field_def));
 			space->def->field_count = count;
-			if (src->is_cte)
+			if (src->is_cte) {
 				item->zName = sql_xstrdup(src->def->name);
+				src->space = space;
+			}
 		} else {
 			space = space_by_id(src->space_id);
 			assert(space != NULL);
@@ -5861,7 +5956,7 @@ rast_sources_assign_cursors(struct Parse *parser,
 		if (src->cursor >= 0)
 			break;
 		src->cursor = parser->nTab++;
-		if (src->def != NULL && !src->is_cte)
+		if (src->select != NULL && src->def != NULL && !src->is_cte)
 			rast_sources_assign_cursors(parser,
 						    &src->select->sources);
 	}

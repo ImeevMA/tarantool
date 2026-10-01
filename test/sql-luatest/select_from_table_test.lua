@@ -828,6 +828,42 @@ g.test_with = function()
 end
 
 --
+-- As in the legacy code, a source of the rightmost part of the SELECT of a
+-- table of a WITH clause joined by UNION or UNION ALL with the name of the
+-- table, compared case-insensitively, refers to the table recursively and
+-- shares its columns, named after the parts to the left. Any other reference
+-- to the table from its SELECT is an error.
+--
+g.test_with_recursive = function()
+    g.server:exec(function()
+        local check = rawget(_G, 'check')
+        check([[WITH r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r
+                WHERE n < 3) SELECT * FROM r;]], {{1}, {2}, {3}})
+        check([[WITH r AS (SELECT 1 AS n UNION ALL SELECT q.n + 1 FROM R AS q
+                WHERE q.n < 3) SELECT n FROM r;]], {{1}, {2}, {3}})
+        check([[WITH r(n) AS (SELECT a FROM t UNION ALL SELECT n + 10 FROM r, s
+                WHERE n < 15 AND s.a = 1) SELECT * FROM r;]],
+              {{1}, {2}, {3}, {11}, {12}, {13}, {21}, {22}, {23}})
+        check([[WITH r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r
+                WHERE n < 5 ORDER BY 1 DESC LIMIT 2) SELECT * FROM r;]],
+              {{1}, {2}})
+        check([[SELECT (WITH r(n) AS (SELECT t.a UNION ALL SELECT n + 1 FROM r
+                WHERE n < 3) SELECT SUM(n) FROM r) FROM t;]],
+              {{6}, {5}, {3}})
+        check([[WITH r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r, r AS q)
+                SELECT * FROM r;]],
+              'multiple references to recursive table: r')
+        check([[WITH r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r
+                WHERE n < (SELECT COUNT(*) FROM r)) SELECT * FROM r;]],
+              'multiple recursive references: r')
+        check([[WITH r(n) AS (SELECT n FROM r UNION ALL SELECT 1)
+                SELECT * FROM r;]], 'circular reference: r')
+        check([[WITH r(n, m) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r)
+                SELECT * FROM r;]], 'table r has 1 values for 2 columns')
+    end)
+end
+
+--
 -- Sources are now resolved together with the expressions, so an unknown table
 -- is reported before an error found later in the conversion of the statement.
 --

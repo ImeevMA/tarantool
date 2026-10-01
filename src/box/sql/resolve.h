@@ -271,6 +271,17 @@ struct rast_source {
 	/** Whether the source is a table of a WITH clause. */
 	bool is_cte;
 	/**
+	 * Source of the table of a WITH clause the source refers to from the
+	 * SELECT of the table, NULL if the source is not such a reference.
+	 */
+	const struct rast_source *recursive;
+	/**
+	 * Space of a table of a WITH clause, created when the SELECT using the
+	 * table is built, and shared with the references to the table from its
+	 * SELECT.
+	 */
+	struct space *space;
+	/**
 	 * Cursor of the source, assigned when the SELECT is built, or -1.
 	 */
 	int cursor;
