@@ -4601,7 +4601,20 @@ withExpand(Walker * pWalker, struct SrcList_item *pFrom)
 		pCte->zCteErr = "circular reference: %s";
 		pSavedWith = pParse->pWith;
 		pParse->pWith = pWith;
-		sqlWalkSelect(pWalker, bMayRecursive ? pSel->pPrior : pSel);
+		if (bMayRecursive) {
+			/*
+			 * The parts to the left of the rightmost one are
+			 * expanded first, so the WITH clause of the SELECT is
+			 * pushed when the part to the left is expanded.
+			 */
+			Select *pPrior = pSel->pPrior;
+			assert(pPrior->pWith == NULL);
+			pPrior->pWith = pSel->pWith;
+			sqlWalkSelect(pWalker, pPrior);
+			pPrior->pWith = NULL;
+		} else {
+			sqlWalkSelect(pWalker, pSel);
+		}
 		pParse->pWith = pWith;
 
 		for (pLeft = pSel; pLeft->pPrior; pLeft = pLeft->pPrior) ;
@@ -4641,8 +4654,9 @@ withExpand(Walker * pWalker, struct SrcList_item *pFrom)
 }
 
 /*
- * If the SELECT passed as the second argument has an associated WITH
- * clause, pop it from the stack stored as part of the Parse object.
+ * If the SELECT passed as the second argument is the leftmost part of a
+ * SELECT, which may be compound, with a WITH clause, pop the clause from the
+ * stack stored as part of the Parse object.
  *
  * This function is used as the xSelectCallback2() callback by
  * sqlSelectExpand() when walking a SELECT tree to resolve table
@@ -4652,6 +4666,8 @@ static void
 selectPopWith(Walker * pWalker, Select * p)
 {
 	Parse *pParse = pWalker->pParse;
+	if (p->pPrior != NULL)
+		return;
 	With *pWith = findRightmost(p)->pWith;
 	if (pWith != 0) {
 		assert(pParse->pWith == pWith);
@@ -4718,9 +4734,13 @@ selectExpander(Walker * pWalker, Select * p)
 	}
 	pTabList = p->pSrc;
 	pEList = p->pEList;
-	if (pWalker->xSelectCallback2 == selectPopWith) {
-		sqlWithPush(pParse, findRightmost(p)->pWith, 0);
-	}
+	/*
+	 * Only the rightmost part of a compound SELECT has the WITH clause,
+	 * and it is expanded first, so the WITH clause is visible in all parts
+	 * of the compound SELECT until it is popped after the leftmost one.
+	 */
+	if (pWalker->xSelectCallback2 == selectPopWith)
+		sqlWithPush(pParse, p->pWith, 0);
 
 	/* Make sure cursor numbers have been assigned to all entries in
 	 * the FROM clause of the SELECT statement.
@@ -5028,9 +5048,7 @@ sqlSelectExpand(Parse * pParse, Select * pSelect)
 	w.xExprCallback = sqlExprWalkNoop;
 	w.pParse = pParse;
 	w.xSelectCallback = selectExpander;
-	if ((pSelect->selFlags & SF_MultiValue) == 0) {
-		w.xSelectCallback2 = selectPopWith;
-	}
+	w.xSelectCallback2 = selectPopWith;
 	sqlWalkSelect(&w, pSelect);
 }
 
