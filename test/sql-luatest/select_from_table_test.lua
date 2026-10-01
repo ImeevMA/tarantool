@@ -770,6 +770,64 @@ g.test_compound_order_by_collate = function()
 end
 
 --
+-- As in the legacy code, the SELECT of a table of a WITH clause is resolved
+-- for every use, in the scope of the SELECT using it, so an unused table is
+-- not resolved, and every use names its columns automatically. The tables are
+-- looked up by their names as is, before the spaces, the innermost WITH clause
+-- first. The SELECT of an unused table is still checked as the legacy code
+-- converts it.
+--
+g.test_with = function()
+    g.server:exec(function()
+        local check = rawget(_G, 'check')
+        check([[WITH t AS (SELECT 5 AS z) SELECT * FROM t;]], {{5}})
+        check([[WITH c AS (SELECT 5 AS z) SELECT * FROM C;]],
+              "Space 'C' does not exist")
+        check([[WITH c(x, y) AS (SELECT a, b FROM t) SELECT y FROM c
+                WHERE x = 2;]], {{20}})
+        check([[WITH c(x) AS (SELECT a, b FROM t) SELECT * FROM c;]],
+              'table c has 2 values for 1 columns')
+        local res = box.execute([[WITH c AS (SELECT 1 + 1, 2 + 2)
+                                  SELECT 3 + 3, * FROM c, c AS d;]])
+        t.assert_equals(res.metadata, {
+            {name = 'COLUMN_5', type = 'integer'},
+            {name = 'COLUMN_1', type = 'integer'},
+            {name = 'COLUMN_2', type = 'integer'},
+            {name = 'COLUMN_3', type = 'integer'},
+            {name = 'COLUMN_4', type = 'integer'},
+        })
+        -- The parts of a UNION are named from left to right, unlike in a
+        -- subquery.
+        res = box.execute([[WITH c AS (SELECT 1 + 1 UNION SELECT 2 + 2)
+                            SELECT * FROM c;]])
+        t.assert_equals(res.metadata, {{name = 'COLUMN_1', type = 'integer'}})
+        res = box.execute([[SELECT * FROM (SELECT 1 + 1 UNION
+                            SELECT 2 + 2);]])
+        t.assert_equals(res.metadata, {{name = 'COLUMN_2', type = 'integer'}})
+        check([[WITH d AS (SELECT * FROM c), c AS (SELECT a FROM t
+                WHERE a < 3) SELECT * FROM d;]], {{1}, {2}})
+        check([[WITH c AS (SELECT * FROM d), d AS (SELECT * FROM c)
+                SELECT * FROM c;]], 'circular reference: c')
+        check([[WITH c AS (SELECT 5 AS z) SELECT * FROM (WITH c AS
+                (SELECT 6 AS z) SELECT * FROM c), c;]], {{6, 5}})
+        check([[WITH c AS (SELECT t.a + 1 AS z) SELECT (SELECT z FROM c)
+                FROM t;]], {{2}, {3}, {4}})
+        check([[WITH c AS (SELECT 1 AS z) SELECT a FROM t WHERE a IN c;]],
+              {{1}})
+        check([[WITH c AS (SELECT nosuch FROM t) SELECT 1;]], {{1}})
+        check([[WITH c AS (SELECT 1 FROM t RIGHT JOIN t AS u ON TRUE)
+                SELECT 1;]], 'Tarantool does not support RIGHT and FULL ' ..
+              'OUTER JOINs')
+        check([[WITH c AS (SELECT 1), c AS (SELECT 2) SELECT 1;]],
+              'Ambiguous table name in WITH query: c')
+        res = box.execute([[WITH c AS (SELECT ?) SELECT 1;]], {5})
+        t.assert_equals(res.rows, {{1}})
+        check([[WITH c AS (SELECT 1 AS z) SELECT * FROM c INDEXED BY i;]],
+              "No index 'i' is defined in space 'c'")
+    end)
+end
+
+--
 -- Sources are now resolved together with the expressions, so an unknown table
 -- is reported before an error found later in the conversion of the statement.
 --

@@ -83,6 +83,35 @@ struct sql_resolve_scope {
 	uint32_t ref_count;
 };
 
+/**
+ * WITH clause visible at some point of the resolve phase. As in the legacy
+ * code, the tables of a WITH clause are visible in its SELECT, and in the
+ * SELECTs of the tables themselves, which are resolved for every use.
+ */
+struct sql_resolve_with {
+	/** The WITH clause. */
+	const struct ast_with_list *ast;
+	/** Dequoted names of the tables, by their positions. */
+	const char **names;
+	/**
+	 * Formats of the errors reported for a reference to a table, by its
+	 * position, or NULL if the table can be referred to.
+	 */
+	const char **errors;
+	/** Whether a table is referred to, by its position. */
+	bool *is_used;
+	/** Enclosing WITH clause, or NULL. */
+	struct sql_resolve_with *parent;
+};
+
+/** List of the tables of WITH clauses converted by the legacy code. */
+struct sql_resolve_converted {
+	/** The table of a WITH clause. */
+	const struct ast_with_entry *entry;
+	/** Next table in the list, or NULL. */
+	struct sql_resolve_converted *next;
+};
+
 /** State threaded through the AST resolve phase. */
 struct sql_resolve_context {
 	/** Parser the statement is resolved for. */
@@ -97,6 +126,17 @@ struct sql_resolve_context {
 	uint32_t select_depth;
 	/** Whether the statement being resolved has a resolved form yet. */
 	bool can_resolve;
+	/** Innermost visible WITH clause, or NULL. */
+	struct sql_resolve_with *with;
+	/**
+	 * WITH clause of the table whose SELECT is resolved next, or NULL, see
+	 * resolve_cte_source().
+	 */
+	struct sql_resolve_with *cte_with;
+	/** Position of the table whose SELECT is resolved next. */
+	uint32_t cte_pos;
+	/** Unused tables of WITH clauses converted by the legacy code. */
+	struct sql_resolve_converted *converted;
 };
 
 /**
@@ -3999,13 +4039,16 @@ resolve_space_source(struct sql_resolve_context *ctx,
 /**
  * Create the definition of a subquery source with the given name from the
  * given AST and resolved leftmost parts of its SELECT, as selectExpander()
- * does. As in sqlColumnsFromExprList(), a field is named after the name of
- * its column, which is a column reference as written if it has no alias. The
- * types of the fields are unknown until the SELECT is built.
+ * does. As in sqlColumnsFromExprList(), a field is named after the given
+ * column name, if the names are given, or else after the name of its column,
+ * which is a column reference as written if it has no alias. The AST part is
+ * not needed if all columns have names. The types of the fields are unknown
+ * until the SELECT is built.
  */
 static const struct space_def *
 subquery_def_new(struct sql_resolve_context *ctx, const char *name,
-		 const struct ast_select *ast, const struct rast_select *select)
+		 const struct ast_select *ast, const struct rast_select *select,
+		 const struct ast_id_list *names)
 {
 	const struct rast_expr_list *columns = &select->columns;
 	size_t name_len = strlen(name);
@@ -4024,6 +4067,21 @@ subquery_def_new(struct sql_resolve_context *ctx, const char *name,
 		field->is_nullable = true;
 		field->name = (char *)columns->exprs[i].name;
 	}
+	if (names != NULL) {
+		assert(names->len == columns->len);
+		struct field_def *field = def->fields;
+		for (const struct stailq_entry *node = names->head.first.value;
+		     node != NULL; node = node->next.value) {
+			const struct Token *id =
+				&stailq_entry(node, struct ast_id_entry,
+					      link)->id;
+			(field++)->name = sql_name_temp(ctx->region, id->z,
+							id->n);
+		}
+		return def;
+	}
+	if (ast == NULL)
+		return def;
 	uint32_t j = 0;
 	for (const struct stailq_entry *node = ast->columns->head.first.value;
 	     node != NULL; node = node->next.value) {
@@ -4075,13 +4133,165 @@ resolve_subquery_source(struct sql_resolve_context *ctx,
 	const struct ast_select *leftmost =
 		rlist_entry(ast->link.next, struct ast_select, link);
 	const char *name = tt_sprintf("sql_sq_%llX", (long long)res);
-	res->def = subquery_def_new(ctx, name, leftmost, select);
+	res->def = subquery_def_new(ctx, name, leftmost, select, NULL);
+	return 0;
+}
+
+/** Return the table with the given position of the given WITH clause. */
+static const struct ast_with_entry *
+cte_entry(const struct sql_resolve_with *with, uint32_t pos)
+{
+	const struct stailq_entry *node = with->ast->head.first.value;
+	for (uint32_t i = 0; i < pos; ++i)
+		node = node->next.value;
+	return stailq_entry(node, struct ast_with_entry, link);
+}
+
+/**
+ * Check that the number of the given columns of the leftmost part of the
+ * SELECT of the table with the given position of the given WITH clause is
+ * the number of the column names of the table, if they are given, as
+ * withExpand() does.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+check_cte_columns(const struct sql_resolve_with *with, uint32_t pos,
+		  const struct rast_expr_list *columns)
+{
+	const struct ast_id_list *names = cte_entry(with, pos)->columns;
+	if (names == NULL || names->len == columns->len)
+		return 0;
+	diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+		 tt_sprintf("table %s has %u values for %u columns",
+			    with->names[pos], columns->len, names->len));
+	return -1;
+}
+
+/**
+ * Check if the given compound SELECT is turned into a SELECT from a subquery,
+ * see convert_compound_select().
+ */
+static bool
+ast_is_converted_compound(const struct ast_select *ast);
+
+/**
+ * Find the table with the given name of the visible WITH clauses, as
+ * searchWith() does: the innermost WITH clause first.
+ *
+ * Returns the WITH clause and sets the position of the table, or returns NULL
+ * if there is none.
+ */
+static struct sql_resolve_with *
+find_cte(struct sql_resolve_context *ctx, const char *name, uint32_t *pos)
+{
+	for (struct sql_resolve_with *with = ctx->with; with != NULL;
+	     with = with->parent) {
+		for (uint32_t i = 0; i < with->ast->len; ++i) {
+			if (strcmp(with->names[i], name) == 0) {
+				*pos = i;
+				return with;
+			}
+		}
+	}
+	return NULL;
+}
+
+/**
+ * Check if the given AST SELECT of a table of a WITH clause with the given name
+ * may refer to the table itself, as withExpand() checks: the SELECT is joined
+ * by UNION or UNION ALL, and a table in the FROM clause of its rightmost part
+ * has the name of the table, compared case-insensitively.
+ */
+static bool
+ast_cte_is_recursive(struct sql_resolve_context *ctx,
+		     const struct ast_select *ast, const char *name)
+{
+	if ((ast->op != TK_ALL && ast->op != TK_UNION) || ast->sources == NULL)
+		return false;
+	for (const struct stailq_entry *node = ast->sources->head.first.value;
+	     node != NULL; node = node->next.value) {
+		const struct ast_source *src =
+			stailq_entry(node, struct ast_source, link);
+		if (src->select != NULL || src->name.n == 0)
+			continue;
+		const char *src_name = sql_name_temp(ctx->region, src->name.z,
+						     src->name.n);
+		if (sqlStrICmp(src_name, name) == 0)
+			return true;
+	}
+	return false;
+}
+
+/**
+ * Resolve the given AST source, which refers to the table with the given
+ * position of the given WITH clause, into the given rast_source, as
+ * withExpand() does. As for a view, the SELECT of the table is resolved for
+ * every use, in the scope enclosing the SELECT using it and with the given
+ * WITH clause innermost. A reference to the table while its SELECT is being
+ * resolved is an error. The fields of the table are named after the given
+ * column names, if any, or else after the columns of the SELECT.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_cte_source(struct sql_resolve_context *ctx,
+		   const struct ast_source *ast, struct sql_resolve_with *with,
+		   uint32_t pos, struct rast_source *res)
+{
+	const char *name = with->names[pos];
+	if (with->errors[pos] != NULL) {
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+			 tt_sprintf(with->errors[pos], name));
+		return -1;
+	}
+	const struct ast_with_entry *entry = cte_entry(with, pos);
+	const struct ast_select *body = entry->select;
+	if (ast_cte_is_recursive(ctx, body, name)) {
+		ctx->can_resolve = false;
+		return 0;
+	}
+	with->is_used[pos] = true;
+	with->errors[pos] = "circular reference: %s";
+	struct sql_resolve_with *saved = ctx->with;
+	ctx->with = with;
+	ctx->cte_with = with;
+	ctx->cte_pos = pos;
+	res->select = xregion_alloc_object(ctx->region, struct rast_select);
+	int rc = resolve_source_select(ctx, body, res->select);
+	ctx->with = saved;
+	with->errors[pos] = NULL;
+	if (rc != 0 || !ctx->can_resolve)
+		return rc;
+	const struct rast_select *select = res->select;
+	while (select->prior != NULL)
+		select = select->prior;
+	/*
+	 * The columns of a converted SELECT are the columns an asterisk is
+	 * expanded into, which have names.
+	 */
+	const struct ast_select *leftmost =
+		(select->flags & SF_Converted) != 0 ? NULL :
+		rlist_entry(body->link.next, struct ast_select, link);
+	res->def = subquery_def_new(ctx, name, leftmost, select,
+				    entry->columns);
+	res->is_cte = true;
+	/* NOT INDEXED is a token of length 1 without text, see parse.y. */
+	res->is_not_indexed = ast->indexed_by.n == 1 &&
+			      ast->indexed_by.z == NULL;
+	if (ast->indexed_by.n > 0 && !res->is_not_indexed) {
+		diag_set(ClientError, ER_NO_SUCH_INDEX_NAME,
+			 sql_name_temp(ctx->region, ast->indexed_by.z,
+				       ast->indexed_by.n), name);
+		return -1;
+	}
 	return 0;
 }
 
 /**
- * Resolve the given AST source, which is a table, a view or a subquery, into
- * the given rast_source.
+ * Resolve the given AST source, which is a table, a view, a subquery or a
+ * table of a WITH clause, into the given rast_source. As in the legacy code, a
+ * table of a WITH clause is looked up before the spaces.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -4092,7 +4302,16 @@ resolve_source(struct sql_resolve_context *ctx, const struct ast_source *ast,
 	memset(res, 0, sizeof(*res));
 	res->index_id = UINT32_MAX;
 	res->cursor = -1;
-	int rc = ast->select != NULL ?
+	struct sql_resolve_with *with = NULL;
+	uint32_t pos = 0;
+	if (ast->select == NULL) {
+		const char *name = sql_name_temp(ctx->region, ast->name.z,
+						 ast->name.n);
+		with = find_cte(ctx, name, &pos);
+	}
+	int rc = with != NULL ?
+		 resolve_cte_source(ctx, ast, with, pos, res) :
+		 ast->select != NULL ?
 		 resolve_subquery_source(ctx, ast->select, res) :
 		 resolve_space_source(ctx, ast, res);
 	if (rc != 0 || !ctx->can_resolve)
@@ -4780,7 +4999,7 @@ convert_compound_select(struct sql_resolve_context *ctx,
 	const struct ast_select *leftmost =
 		rlist_entry(ast->link.next, struct ast_select, link);
 	const char *name = tt_sprintf("sql_sq_%llX", (long long)src);
-	src->def = subquery_def_new(ctx, name, leftmost, select);
+	src->def = subquery_def_new(ctx, name, leftmost, select, NULL);
 
 	struct sql_resolve_scope scope;
 	memset(&scope, 0, sizeof(scope));
@@ -4818,12 +5037,23 @@ static int
 resolve_compound_select(struct sql_resolve_context *ctx,
 			const struct ast_select *ast, struct rast_select *res)
 {
-	ctx->can_resolve = ast->with == NULL;
-	if (!ctx->can_resolve)
-		return 0;
+	struct sql_resolve_with *cte_with = ctx->cte_with;
+	uint32_t cte_pos = ctx->cte_pos;
+	ctx->cte_with = NULL;
 	uint32_t ref_count = ctx->scope != NULL ? ctx->scope->ref_count : 0;
 	const struct rlist *head = &ast->link;
 	bool is_compound = head->next != head;
+	/*
+	 * As withExpand() does, the parts of the SELECT of a table of a WITH
+	 * clause joined by UNION or UNION ALL to the left of the rightmost one
+	 * are set up first, while a reference to the table is a circular one,
+	 * and then the rightmost part, while a reference to the table is a
+	 * recursive one. A converted SELECT is not compound.
+	 */
+	bool is_rightmost_last = cte_with != NULL &&
+				 (ast->op == TK_ALL || ast->op == TK_UNION) &&
+				 !ast_is_converted_compound(ast);
+	const char *subquery_error = "recursive reference in a subquery: %s";
 	/* The legacy code does not limit the number of rows of VALUES. */
 	if (is_compound && (ast->flags & SF_MultiValue) == 0) {
 		uint32_t count = 1;
@@ -4836,28 +5066,52 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 			return -1;
 		}
 	}
-	if (resolve_select_names(ctx, ast, res) != 0)
+	if (!is_rightmost_last && resolve_select_names(ctx, ast, res) != 0)
 		return -1;
 	if (!ctx->can_resolve)
 		return 0;
-	struct rast_select *next = res;
+	struct rast_select *prior = NULL;
+	struct rast_select **tail = &prior;
 	for (const struct rlist *l = head->prev; l != head; l = l->prev) {
 		const struct ast_select *part =
 			rlist_entry(l, struct ast_select, link);
-		next->prior = xregion_alloc_object(ctx->region,
-						   struct rast_select);
-		if (resolve_select_names(ctx, part, next->prior) != 0)
+		*tail = xregion_alloc_object(ctx->region, struct rast_select);
+		if (resolve_select_names(ctx, part, *tail) != 0)
 			return -1;
 		if (!ctx->can_resolve)
 			return 0;
-		next = next->prior;
+		tail = &(*tail)->prior;
+	}
+	if (is_rightmost_last) {
+		const struct rast_select *left = prior;
+		while (left->prior != NULL)
+			left = left->prior;
+		if (check_cte_columns(cte_with, cte_pos, &left->columns) != 0)
+			return -1;
+		cte_with->errors[cte_pos] = subquery_error;
+		if (resolve_select_names(ctx, ast, res) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+	}
+	res->prior = prior;
+	res->is_rightmost_last = is_rightmost_last;
+	if (cte_with != NULL && !is_rightmost_last) {
+		const struct rast_select *left = res;
+		while (left->prior != NULL)
+			left = left->prior;
+		if (check_cte_columns(cte_with, cte_pos, &left->columns) != 0)
+			return -1;
 	}
 
+	struct rast_select *next;
 	struct sql_resolve_scope *outer = ctx->scope;
 	if (resolve_select_clauses(ctx, ast, res, is_compound) != 0)
 		return -1;
 	if (!ctx->can_resolve)
 		return 0;
+	if (is_rightmost_last)
+		cte_with->errors[cte_pos] = "circular reference: %s";
 	next = res;
 	for (const struct rlist *l = head->prev; l != head; l = l->prev) {
 		const struct ast_select *part =
@@ -4887,6 +5141,8 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 	}
 	if (!is_compound)
 		return 0;
+	if (is_rightmost_last)
+		cte_with->errors[cte_pos] = subquery_error;
 	ctx->scope = outer;
 	if (resolve_compound_order_by(ctx, ast->order_by, res) != 0)
 		return -1;
@@ -4899,13 +5155,103 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 	return convert_compound_select(ctx, ast, res, outer, ref_count);
 }
 
+/**
+ * Make the given AST WITH clause the innermost visible one, using the given
+ * memory for it. As sqlWithAdd() does, the names of the tables of the clause
+ * are checked to be unique.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+push_with(struct sql_resolve_context *ctx, const struct ast_with_list *ast,
+	  struct sql_resolve_with *res)
+{
+	res->ast = ast;
+	res->names = xregion_alloc_array(ctx->region, const char *, ast->len);
+	res->errors = xregion_alloc_array(ctx->region, const char *,
+					  ast->len);
+	res->is_used = xregion_alloc_array(ctx->region, bool, ast->len);
+	const char *duplicate = NULL;
+	uint32_t i = 0;
+	for (const struct stailq_entry *node = ast->head.first.value;
+	     node != NULL; node = node->next.value, ++i) {
+		const struct Token *name =
+			&stailq_entry(node, struct ast_with_entry, link)->name;
+		res->names[i] = sql_name_temp(ctx->region, name->z, name->n);
+		res->errors[i] = NULL;
+		res->is_used[i] = false;
+		for (uint32_t j = 0; j < i; ++j) {
+			if (strcmp(res->names[j], res->names[i]) == 0)
+				duplicate = res->names[i];
+		}
+	}
+	if (duplicate != NULL) {
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+			 tt_sprintf("Ambiguous table name in WITH query: %s",
+				    duplicate));
+		return -1;
+	}
+	res->parent = ctx->with;
+	ctx->with = res;
+	return 0;
+}
+
+/**
+ * Check the SELECTs of the tables of the given WITH clause which have not been
+ * used. The legacy code converts them, though it never resolves them, so they
+ * are converted the same way to report the same errors and to number the bound
+ * variables. A table of a SELECT resolved several times is converted once.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+check_unused_ctes(struct sql_resolve_context *ctx,
+		  const struct sql_resolve_with *with)
+{
+	uint32_t i = 0;
+	for (const struct stailq_entry *node = with->ast->head.first.value;
+	     node != NULL; node = node->next.value, ++i) {
+		if (with->is_used[i])
+			continue;
+		const struct ast_with_entry *entry =
+			stailq_entry(node, struct ast_with_entry, link);
+		const struct sql_resolve_converted *c = ctx->converted;
+		while (c != NULL && c->entry != entry)
+			c = c->next;
+		if (c != NULL)
+			continue;
+		struct sql_resolve_converted *converted =
+			xregion_alloc_object(ctx->region,
+					     struct sql_resolve_converted);
+		converted->entry = entry;
+		converted->next = ctx->converted;
+		ctx->converted = converted;
+		struct Select *select =
+			select_from_ast(ctx->parser,
+					(struct ast_select *)entry->select);
+		if (select == NULL)
+			return -1;
+		sql_select_delete(select);
+	}
+	return 0;
+}
+
 static int
 resolve_select(struct sql_resolve_context *ctx, const struct ast_select *ast,
 	       struct rast_select *res)
 {
 	struct sql_resolve_scope *outer = ctx->scope;
-	int rc = resolve_compound_select(ctx, ast, res);
+	struct sql_resolve_with *outer_with = ctx->with;
+	struct sql_resolve_with with;
+	int rc = 0;
+	if (ast->with != NULL)
+		rc = push_with(ctx, ast->with, &with);
+	if (rc == 0)
+		rc = resolve_compound_select(ctx, ast, res);
+	if (rc == 0 && ctx->can_resolve && ast->with != NULL)
+		rc = check_unused_ctes(ctx, &with);
 	ctx->scope = outer;
+	ctx->with = outer_with;
 	return rc;
 }
 
@@ -5292,6 +5638,8 @@ src_list_from_rast(struct Parse *parser, const struct rast_build_scope *parent,
 			memcpy(space->def->fields, src->def->fields,
 			       count * sizeof(struct field_def));
 			space->def->field_count = count;
+			if (src->is_cte)
+				item->zName = sql_xstrdup(src->def->name);
 		} else {
 			space = space_by_id(src->space_id);
 			assert(space != NULL);
@@ -5501,7 +5849,8 @@ select_from_rast_in(struct Parse *parser,
 /**
  * Assign cursors to the given resolved sources, as sqlSrcListAssignCursors()
  * does: every subquery source is followed by the sources of the rightmost part
- * of its SELECT.
+ * of its SELECT. The SELECT of a table of a WITH clause is attached to the
+ * source later, as the SELECT of a view.
  */
 static void
 rast_sources_assign_cursors(struct Parse *parser,
@@ -5512,7 +5861,7 @@ rast_sources_assign_cursors(struct Parse *parser,
 		if (src->cursor >= 0)
 			break;
 		src->cursor = parser->nTab++;
-		if (src->def != NULL)
+		if (src->def != NULL && !src->is_cte)
 			rast_sources_assign_cursors(parser,
 						    &src->select->sources);
 	}
@@ -5522,10 +5871,11 @@ rast_sources_assign_cursors(struct Parse *parser,
  * Assign cursors to the sources of the given resolved SELECT, which may be a
  * compound one, and of its subqueries, in the same order as the legacy code
  * does when expanding the SELECT: the parts of a compound SELECT from right to
- * left, and in every part its sources, the SELECTs of its views and
- * subqueries, and then the subqueries of its clauses. The ON clauses are a
- * part of WHERE. Even if the LIMIT of the SELECT is replaced, its subqueries
- * take their cursors.
+ * left, and in every part its sources, the SELECTs of its views, subqueries
+ * and tables of WITH clauses, and then the subqueries of its clauses. The ON
+ * clauses are a part of WHERE. Even if the LIMIT of the SELECT is replaced,
+ * its subqueries take their cursors. The rightmost part of a SELECT with
+ * rast_select.is_rightmost_last set takes its cursors after the other parts.
  */
 static void
 rast_select_assign_cursors(struct Parse *parser, struct rast_select *select);
@@ -5629,33 +5979,47 @@ rast_expr_list_assign_cursors(struct Parse *parser,
 		rast_expr_assign_cursors(parser, &list->exprs[i].expr);
 }
 
+/**
+ * Assign cursors to the sources of the given part of a resolved SELECT and of
+ * its subqueries, see rast_select_assign_cursors().
+ */
+static void
+rast_part_assign_cursors(struct Parse *parser, struct rast_select *p)
+{
+	rast_sources_assign_cursors(parser, &p->sources);
+	for (uint32_t i = 0; i < p->sources.len; ++i) {
+		struct rast_select *sub = p->sources.sources[i].select;
+		if (sub != NULL)
+			rast_select_assign_cursors(parser, sub);
+	}
+	rast_expr_list_assign_cursors(parser, &p->columns);
+	if (p->where != NULL)
+		rast_expr_assign_cursors(parser, p->where);
+	for (uint32_t i = 0; i < p->sources.len; ++i) {
+		const struct rast_expr *on = p->sources.sources[i].on;
+		if (on != NULL)
+			rast_expr_assign_cursors(parser, on);
+	}
+	rast_expr_list_assign_cursors(parser, &p->group_by);
+	if (p->having != NULL)
+		rast_expr_assign_cursors(parser, p->having);
+	rast_expr_list_assign_cursors(parser, &p->order_by);
+	if (p->limit != NULL)
+		rast_expr_assign_cursors(parser, p->limit);
+	if (p->offset != NULL)
+		rast_expr_assign_cursors(parser, p->offset);
+}
+
 static void
 rast_select_assign_cursors(struct Parse *parser, struct rast_select *select)
 {
-	for (struct rast_select *p = select; p != NULL; p = p->prior) {
-		rast_sources_assign_cursors(parser, &p->sources);
-		for (uint32_t i = 0; i < p->sources.len; ++i) {
-			struct rast_select *sub = p->sources.sources[i].select;
-			if (sub != NULL)
-				rast_select_assign_cursors(parser, sub);
-		}
-		rast_expr_list_assign_cursors(parser, &p->columns);
-		if (p->where != NULL)
-			rast_expr_assign_cursors(parser, p->where);
-		for (uint32_t i = 0; i < p->sources.len; ++i) {
-			const struct rast_expr *on = p->sources.sources[i].on;
-			if (on != NULL)
-				rast_expr_assign_cursors(parser, on);
-		}
-		rast_expr_list_assign_cursors(parser, &p->group_by);
-		if (p->having != NULL)
-			rast_expr_assign_cursors(parser, p->having);
-		rast_expr_list_assign_cursors(parser, &p->order_by);
-		if (p->limit != NULL)
-			rast_expr_assign_cursors(parser, p->limit);
-		if (p->offset != NULL)
-			rast_expr_assign_cursors(parser, p->offset);
-	}
+	struct rast_select *p = select;
+	if (select->is_rightmost_last)
+		p = p->prior;
+	for (; p != NULL; p = p->prior)
+		rast_part_assign_cursors(parser, p);
+	if (select->is_rightmost_last)
+		rast_part_assign_cursors(parser, select);
 }
 
 struct Select *

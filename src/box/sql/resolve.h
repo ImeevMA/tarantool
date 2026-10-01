@@ -258,10 +258,18 @@ struct rast_source {
 	struct rast_join_column *join_columns;
 	/** Number of the joined columns. */
 	uint32_t join_column_count;
-	/** Resolved SELECT of a view or a subquery, NULL for a table. */
+	/**
+	 * Resolved SELECT of a view, a subquery or a table of a WITH clause,
+	 * NULL for a table.
+	 */
 	struct rast_select *select;
-	/** Definition of a subquery, NULL for a table or a view. */
+	/**
+	 * Definition of a subquery or a table of a WITH clause, NULL for a
+	 * table or a view.
+	 */
 	const struct space_def *def;
+	/** Whether the source is a table of a WITH clause. */
+	bool is_cte;
 	/**
 	 * Cursor of the source, assigned when the SELECT is built, or -1.
 	 */
@@ -302,6 +310,12 @@ struct rast_select {
 	struct rast_select *prior;
 	/** Whether the SELECT refers to names of the enclosing SELECTs. */
 	bool is_correlated;
+	/**
+	 * Whether the parts of the compound SELECT to the left of the rightmost
+	 * one are set up before it, as the legacy code does for the SELECT of
+	 * a table of a WITH clause joined by UNION or UNION ALL.
+	 */
+	bool is_rightmost_last;
 	/** Flags of the SELECT. */
 	uint32_t flags;
 	/** Link type between linked SELECTs. */
