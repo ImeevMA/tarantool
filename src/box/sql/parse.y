@@ -85,8 +85,6 @@ struct LimitVal {
   struct ast_expr *limit;
   /** The OFFSET expression. NULL if there is no offset. */
   struct ast_expr *offset;
-  /** True if OFFSET precedes LIMIT in the query: LIMIT <offset>, <limit>. */
-  bool is_offset_first;
 };
 
 } // end %include
@@ -497,7 +495,6 @@ oneselect(A) ::= SELECT distinct(D) select_list(W) from(X) where_opt(Y)
   A->flags = D;
   A->limit = L.limit;
   A->offset = L.offset;
-  A->is_offset_first = L.is_offset_first;
 }
 oneselect(A) ::= values(A).
 
@@ -757,22 +754,18 @@ having_opt(A) ::= HAVING expr(X). {
 limit_opt(A) ::= . {
   A.limit = NULL;
   A.offset = NULL;
-  A.is_offset_first = false;
 }
 limit_opt(A) ::= LIMIT expr(X). {
   A.limit = X;
   A.offset = NULL;
-  A.is_offset_first = false;
 }
 limit_opt(A) ::= LIMIT expr(X) OFFSET expr(Y). {
   A.limit = X;
   A.offset = Y;
-  A.is_offset_first = false;
 }
 limit_opt(A) ::= LIMIT expr(X) COMMA expr(Y). {
   A.offset = X;
   A.limit = Y;
-  A.is_offset_first = true;
 }
 
 /////////////////////////// The DELETE statement /////////////////////////////
@@ -913,10 +906,10 @@ expr(A) ::= nm(X) DOT nm(Y). {
   A->right = ast_expr_new(ctx->region, Y.z, Y.n, TK_ID);
 }
 expr(A) ::= VAR_ANON|VAR_NUM|VAR_NAME(X). {
-  A = ast_expr_new(ctx->region, X.z, X.n, @X);
+  A = ast_var_new(ctx, X.z, X.n, @X);
 }
 expr(A) ::= COLON(X) id(Y). {
-  A = ast_expr_new(ctx->region, X.z, (Y.z - X.z) + Y.n, TK_VAR_NAME);
+  A = ast_var_new(ctx, X.z, (Y.z - X.z) + Y.n, TK_VAR_NAME);
 }
 expr(A) ::= expr(X) COLLATE id(C). {
   A = ast_expr_new(ctx->region, X->str, (C.z - X->str) + C.n, TK_COLLATE);

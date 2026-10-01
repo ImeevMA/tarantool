@@ -46,4 +46,5 @@ sql_parser_context_create(struct sql_parser_context *ctx, struct region *region)
 	ctx->region = region;
 	ctx->line = 1;
 	ctx->pos = 1;
+	ctx->var_offset = 1;
 }

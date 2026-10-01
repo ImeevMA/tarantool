@@ -177,8 +177,6 @@ struct ast_select {
 	struct ast_expr *limit;
 	/** OFFSET clause of the SELECT. */
 	struct ast_expr *offset;
-	/** True if the OFFSET precedes the LIMIT: LIMIT <offset>, <limit>. */
-	bool is_offset_first;
 	/** WITH clause of the SELECT. */
 	struct ast_with_list *with;
 	/** Flags of the SELECT. */
@@ -232,6 +230,19 @@ struct ast_expr {
 		enum sql_type type;
 		/** Conflict resolution action of a RAISE expression. */
 		enum on_conflict_action on_conflict_action;
+		/** Number of a bound variable. */
+		struct {
+			/**
+			 * Number of the variable, relative to the base for
+			 * an anonymous variable, 0 for a named one.
+			 */
+			int num;
+			/**
+			 * Number of the named variable an anonymous variable
+			 * is counted from, 0 if there is none.
+			 */
+			int base;
+		} var;
 	};
 	/** Pointer to the token text this expression is built from. */
 	const char *str;
@@ -573,6 +584,10 @@ struct ast_pragma {
 struct sql_ast {
 	/** Parsed statement type. */
 	enum sql_ast_type type;
+	/** Largest number of the bound variables of the statement. */
+	int var_count;
+	/** Mapping between the names and numbers of the bound variables. */
+	int *var_list;
 	/** Explain type of parsed statement. */
 	enum ast_explain_type explain;
 	/** Definition of the statement. */
@@ -687,6 +702,14 @@ with_from_ast(struct Parse *parser, struct ast_with_list *list);
 struct ast_expr *
 ast_expr_new(struct region *region, const char *start, uint32_t len,
 	     uint8_t op);
+
+/**
+ * Allocate a new bound variable expression node from a token's text and number
+ * the variable. On error the diag is set and the parsing is aborted.
+ */
+struct ast_expr *
+ast_var_new(struct sql_parser_context *ctx, const char *str, uint32_t len,
+	    uint8_t op);
 
 /** Append an expression to the expressions list, creating it if needed. */
 struct ast_expr_list *

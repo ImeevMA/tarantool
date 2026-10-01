@@ -176,6 +176,17 @@ struct sql_parser_context {
 	uint32_t pos;
 	/** Flag to show if a syntax error happened. */
 	bool is_aborted;
+	/** Largest number of the bound variables met so far. */
+	int var_count;
+	/** Mapping between the names and numbers of the bound variables. */
+	int *var_list;
+	/**
+	 * Number of the last named bound variable, 0 if there is none or a
+	 * numbered one follows it. Anonymous variables are counted from it.
+	 */
+	int var_base;
+	/** Number of the next anonymous bound variable relative to var_base. */
+	int var_offset;
 };
 
 static inline void

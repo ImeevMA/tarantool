@@ -5286,8 +5286,8 @@ push_with(struct sql_resolve_context *ctx, const struct ast_with_list *ast,
 /**
  * Check the SELECTs of the tables of the given WITH clause which have not been
  * used. The legacy code converts them, though it never resolves them, so they
- * are converted the same way to report the same errors and to number the bound
- * variables. A table of a SELECT resolved several times is converted once.
+ * are converted the same way to report the same errors. A table of a SELECT
+ * resolved several times is converted once.
  *
  * Returns 0 on success and -1 on error.
  */

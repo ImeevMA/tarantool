@@ -128,10 +128,6 @@ select_from_ast_single(struct Parse *parser, struct ast_select *select)
 {
 	if (select->op != TK_SELECT && select->op != TK_ALL)
 		parser->hasCompound = 1;
-	/*
-	 * Convert the clauses in the order they appear in the query, so that
-	 * anonymous bind variables ("?") are numbered in this order.
-	 */
 	struct ExprList *columns = expr_list_from_ast(parser, select->columns);
 	struct SrcList *list = src_list_from_ast(parser, select->sources);
 	struct Expr *where = expr_from_ast(parser, select->where);
@@ -140,12 +136,8 @@ select_from_ast_single(struct Parse *parser, struct ast_select *select)
 	struct Expr *having = expr_from_ast(parser, select->having);
 	struct ExprList *order_by = expr_list_from_ast(parser,
 						       select->order_by);
-	struct Expr *offset = NULL;
-	if (select->is_offset_first)
-		offset = expr_from_ast(parser, select->offset);
 	struct Expr *limit = expr_from_ast(parser, select->limit);
-	if (!select->is_offset_first)
-		offset = expr_from_ast(parser, select->offset);
+	struct Expr *offset = expr_from_ast(parser, select->offset);
 	struct Select *res = sqlSelectNew(columns, list, where,
 					  group_by, having, order_by,
 					  select->flags, limit, offset);
@@ -162,12 +154,6 @@ select_from_ast(struct Parse *parser, struct ast_select *select)
 {
 	if (select == NULL)
 		return NULL;
-	/*
-	 * The WITH clause is attached to the last compound part, but precedes
-	 * all of them in the query. Convert it first and then the compound
-	 * parts from left to right, so that anonymous bind variables ("?") are
-	 * numbered in the order they appear in the query.
-	 */
 	struct With *with = with_from_ast(parser, select->with);
 	if (parser->is_aborted)
 		return NULL;
@@ -278,6 +264,71 @@ ast_expr_new(struct region *region, const char *str, uint32_t len, uint8_t op)
 	expr->str = str;
 	expr->len = len;
 	expr->op = op;
+	return expr;
+}
+
+struct ast_expr *
+ast_var_new(struct sql_parser_context *ctx, const char *str, uint32_t len,
+	    uint8_t op)
+{
+	struct ast_expr *expr = ast_expr_new(ctx->region, str, len, op);
+	expr->var.num = 0;
+	expr->var.base = 0;
+	if (op == TK_VAR_ANON) {
+		assert(len == 1 && str[0] == '?');
+		expr->var.num = ctx->var_offset++;
+		expr->var.base = ctx->var_base;
+		if (ctx->var_base + expr->var.num > ctx->var_count)
+			ctx->var_count = ctx->var_base + expr->var.num;
+	} else if (op == TK_VAR_NUM) {
+		assert(str[0] == '$');
+		int64_t num;
+		bool is_neg;
+		bool is_ok = sql_atoi64(&str[1], &num, &is_neg, len - 1) == 0;
+		if (is_neg || num < 1) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 "Index of binding slots must start from 1");
+			ctx->is_aborted = true;
+			return expr;
+		}
+		if (!is_ok || num > SQL_BIND_PARAMETER_MAX) {
+			diag_set(ClientError, ER_SQL_BIND_PARAMETER_MAX,
+				 SQL_BIND_PARAMETER_MAX);
+			ctx->is_aborted = true;
+			return expr;
+		}
+		expr->var.num = num;
+		ctx->var_base = 0;
+		ctx->var_offset = num + 1;
+		if (num > ctx->var_count)
+			ctx->var_count = num;
+	} else {
+		assert(op == TK_VAR_NAME);
+		/*
+		 * The other prefixes are followed by a name by the tokenizer,
+		 * while a colon is a separate token.
+		 */
+		if (str[0] == ':' && IdChar(str[1]) == 0) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 tt_sprintf("Wrong bind variable name '%.*s'",
+					    len, str));
+			ctx->is_aborted = true;
+			return expr;
+		}
+		int num = sqlVListNameToNum(ctx->var_list, str, len);
+		if (num == 0) {
+			num = ++ctx->var_count;
+			ctx->var_list = sqlVListAdd(ctx->var_list, str, len,
+						    num);
+		}
+		ctx->var_base = num;
+		ctx->var_offset = 1;
+	}
+	if (expr->var.num > SQL_BIND_PARAMETER_MAX) {
+		diag_set(ClientError, ER_SQL_BIND_PARAMETER_MAX,
+			 SQL_BIND_PARAMETER_MAX);
+		ctx->is_aborted = true;
+	}
 	return expr;
 }
 
@@ -399,38 +450,19 @@ expr_leaf(struct ast_expr *expr, enum field_type type)
 	return res;
 }
 
-/**
- * Build a `struct Expr` for a bound variable.
- *
- * Return NULL on error.
- */
+/** Build a `struct Expr` for a bound variable. */
 static struct Expr *
-expr_var(struct Parse *parser, struct ast_expr *expr)
+expr_var(struct ast_expr *expr)
 {
 	struct Token t;
 	t.z = expr->str;
 	t.n = expr->len;
 	t.isReserved = false;
-	/*
-	 * The check exists only for the `:` case,
-	 * because the other variants (`@`, `#`, `?`, `$`)
-	 * are checked during tokenization.
-	 */
-	if (expr->str[0] == ':' && (IdChar(expr->str[1]) == 0)) {
-		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-			 tt_sprintf("Wrong bind variable name '%.*s'",
-				    expr->len, expr->str));
-		parser->is_aborted = true;
-		return NULL;
-	}
 	struct Expr *res = sql_expr_new_dequoted(expr->op, &t);
 	res->type = FIELD_TYPE_BOOLEAN;
 	res->flags |= EP_Leaf;
-	sqlExprAssignVarNumber(parser, res, expr->len);
-	if (parser->is_aborted) {
-		sql_expr_delete(res);
-		return NULL;
-	}
+	res->iColumn = expr->var.num;
+	res->var_base = expr->var.base;
 	return res;
 }
 
@@ -695,7 +727,6 @@ expr_in(struct Parse *parser, struct ast_expr *expr)
 static struct Expr *
 expr_getitem(struct Parse *parser, struct ast_expr *expr)
 {
-	/* The operand precedes the keys in the query, so convert it first. */
 	struct Expr *left = expr_from_ast(parser, expr->left);
 	if (parser->is_aborted)
 		return NULL;
@@ -856,7 +887,7 @@ expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 	case TK_VAR_ANON:
 	case TK_VAR_NUM:
 	case TK_VAR_NAME:
-		res = expr_var(parser, expr);
+		res = expr_var(expr);
 		break;
 	case TK_AND:
 	case TK_OR:

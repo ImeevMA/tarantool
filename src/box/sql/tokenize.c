@@ -947,9 +947,13 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast, const char *sql)
 		sql_finish_coding(parse);
 }
 
-/** Run the parser on the given SQL string. */
+/**
+ * Run the parser on the given SQL string. The mapping between the names and
+ * numbers of the bound variables is returned via var_list, if it is not NULL.
+ */
 static struct sql_ast *
-sql_run_parser(struct region *region, const char *zSql, int seed_token)
+sql_run_parser(struct region *region, const char *zSql, int seed_token,
+	       VList **var_list)
 {
 	int i;			/* Loop counter */
 	void *pEngine;		/* The LEMON-generated LALR(1) parser */
@@ -1017,43 +1021,58 @@ sql_run_parser(struct region *region, const char *zSql, int seed_token)
 		ctx.pos += last.n;
 	}
 	sqlParserFree(pEngine, free);
-	if (ctx.is_aborted)
+	if (ctx.is_aborted) {
+		sql_xfree(ctx.var_list);
 		return NULL;
+	}
+	ctx.ast->var_count = ctx.var_count;
+	if (var_list != NULL)
+		*var_list = ctx.var_list;
+	else
+		sql_xfree(ctx.var_list);
 	return ctx.ast;
 }
 
 struct sql_ast *
 sql_parse_statement(struct Parse *parser, const char *sql)
 {
-	return sql_run_parser(&parser->region, sql, 0);
+	assert(parser->pVList == NULL);
+	struct sql_ast *ast = sql_run_parser(&parser->region, sql, 0,
+					     &parser->pVList);
+	if (ast != NULL)
+		parser->nVar = ast->var_count;
+	return ast;
 }
 
 struct Expr *
 sql_parse_function(struct Parse *parser, const char *sql)
 {
 	struct sql_ast *ast = sql_run_parser(&parser->region, sql,
-					     TK_FUNCTION_ENTRY);
+					     TK_FUNCTION_ENTRY, NULL);
 	if (ast == NULL)
 		return NULL;
 	assert(ast->type == SQL_AST_FUNCTION);
-	struct Expr *res = expr_from_ast(parser, ast->expr);
-	if (res != NULL && parser->nVar > 0) {
+	if (ast->var_count > 0) {
 		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
 			 "Parameters are not allowed in functions");
 		parser->is_aborted = true;
-		sql_expr_delete(res);
 		return NULL;
 	}
-	return res;
+	return expr_from_ast(parser, ast->expr);
 }
 
 struct ast_select *
 sql_parse_view_ast(struct region *region, const char *sql)
 {
-	struct sql_ast *ast = sql_run_parser(region, sql, TK_VIEW_ENTRY);
+	struct sql_ast *ast = sql_run_parser(region, sql, TK_VIEW_ENTRY, NULL);
 	if (ast == NULL)
 		return NULL;
 	assert(ast->type == SQL_AST_VIEW);
+	if (ast->var_count > 0) {
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+			 "Parameters are not allowed in views");
+		return NULL;
+	}
 	return ast->select;
 }
 
@@ -1063,32 +1082,22 @@ sql_parse_view(struct Parse *parser, const char *sql)
 	struct ast_select *ast = sql_parse_view_ast(&parser->region, sql);
 	if (ast == NULL)
 		return NULL;
-	struct Select *res = select_from_ast(parser, ast);
-	if (res != NULL && parser->nVar > 0) {
-		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-			 "Parameters are not allowed in views");
-		parser->is_aborted = true;
-		sql_select_delete(res);
-		return NULL;
-	}
-	return res;
+	return select_from_ast(parser, ast);
 }
 
 struct sql_trigger *
 sql_parse_trigger(struct Parse *parser, const char *sql)
 {
 	struct sql_ast *ast = sql_run_parser(&parser->region, sql,
-					     TK_TRIGGER_ENTRY);
+					     TK_TRIGGER_ENTRY, NULL);
 	if (ast == NULL)
 		return NULL;
 	assert(ast->type == SQL_AST_TRIGGER);
-	struct sql_trigger *res = sql_trigger_from_ast(parser, &ast->trigger);
-	if (res != NULL && parser->nVar > 0) {
+	if (ast->var_count > 0) {
 		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
 			 "Parameters are not allowed in triggers");
 		parser->is_aborted = true;
-		sql_trigger_delete(res);
 		return NULL;
 	}
-	return res;
+	return sql_trigger_from_ast(parser, &ast->trigger);
 }

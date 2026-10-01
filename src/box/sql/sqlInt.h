@@ -1878,23 +1878,6 @@ struct Parse {
 	int iSelectId;		/* ID of current select for EXPLAIN output */
 	int iNextSelectId;	/* Next available select ID for EXPLAIN output */
 	VList *pVList;		/* Mapping between variable names and numbers */
-	/** Information about last name before anonymous variables (?). */
-	struct {
-		/**
-		 * Last name before anonymous variables (?).
-		 * If NULL, then there is no named variable before or
-		 * then the last variable was numeric ($N).
-		 */
-		const char *name;
-		/**
-		 * Relative position of the next anonymous variable (?):
-		 * an offset from the variable `name` when it is set,
-		 * otherwise an absolute position.
-		 */
-		int offset;
-		/** Position of last named variable. */
-		int pos;
-	} var;
 	TriggerPrg *pTriggerPrg;	/* Linked list of coded triggers */
 	With *pWith;		/* Current WITH clause, or NULL */
 	With *pWithToFree;	/* Free this WITH object at the end of the parse */
@@ -2541,7 +2524,6 @@ void
 sql_expr_set_join(struct Expr *expr, int cursor);
 
 Expr *sqlExprFunction(Parse *, ExprList *, Token *);
-void sqlExprAssignVarNumber(Parse *, Expr *, u32);
 
 /** Check if the token type denotes a bind variable. */
 static inline bool
