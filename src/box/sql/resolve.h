@@ -111,6 +111,17 @@ struct rast_expr {
 		} coll;
 		/** Subquery of a TK_SELECT or TK_EXISTS expression. */
 		struct rast_select *select;
+		/** Bound variable of a TK_VAR_* expression. */
+		struct {
+			/** Text of the variable in the query. */
+			const char *name;
+			/** Length of the text. */
+			uint32_t len;
+			/** Number of the variable, see struct ast_expr. */
+			int num;
+			/** Base of the variable, see struct ast_expr. */
+			int base;
+		} var;
 		/**
 		 * Result column referred to by a TK_AS expression, by its
 		 * alias or by its position in an ORDER BY term.

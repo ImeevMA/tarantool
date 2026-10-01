@@ -3080,6 +3080,16 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	case TK_RAISE:
 		resolve_raise(ctx, ast, res);
 		break;
+	case TK_VAR_ANON:
+	case TK_VAR_NUM:
+	case TK_VAR_NAME:
+		res->var.name = ast->str;
+		res->var.len = ast->len;
+		res->var.num = ast->var.num;
+		res->var.base = ast->var.base;
+		res->type = SQL_TYPE_BOOLEAN;
+		res->height = 1;
+		break;
 	case TK_NOT:
 	case TK_BITNOT:
 	case TK_ISNULL:
@@ -5462,6 +5472,20 @@ expr_from_rast(struct Parse *parser, const struct rast_build_scope *scope,
 		res->op = TK_RAISE;
 		res->v.action = expr->action;
 		break;
+	case TK_VAR_ANON:
+	case TK_VAR_NUM:
+	case TK_VAR_NAME: {
+		struct Token name = {
+			.z = expr->var.name,
+			.n = expr->var.len,
+			.isReserved = false,
+		};
+		res = sql_expr_new_dequoted(expr->op, &name);
+		res->flags |= EP_Leaf;
+		res->iColumn = expr->var.num;
+		res->var_base = expr->var.base;
+		break;
+	}
 	case TK_NOT:
 	case TK_BITNOT:
 	case TK_ISNULL:

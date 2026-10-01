@@ -435,3 +435,68 @@ g.test_bind_numbering_in_select_clauses = function(cg)
         box.execute([[DROP TABLE t;]])
     end)
 end
+
+--
+-- Make sure bind variables work in all parts of a resolved SELECT, including
+-- nested and unused subqueries, which still take their numbers.
+--
+g.test_bind_in_resolved_select = function(cg)
+    cg.server:exec(function()
+        box.execute([[CREATE TABLE t (id INT PRIMARY KEY, x INT);]])
+        box.execute([[INSERT INTO t VALUES (1, 10), (2, 20), (3, 30);]])
+
+        local sql = [[SELECT (SELECT ? + (SELECT ?)), ?;]]
+        local res = _G.execute(sql, {1, 2, 3})
+        t.assert_equals(res.rows, {{3, 3}})
+
+        sql = [[SELECT (SELECT x + ? FROM SEQSCAN t WHERE id = ?) + ?;]]
+        res = _G.execute(sql, {1, 2, 3})
+        t.assert_equals(res.rows, {{24}})
+
+        sql = [[SELECT id FROM SEQSCAN t AS a WHERE EXISTS
+                (SELECT ? FROM SEQSCAN t AS b WHERE b.id = a.id AND
+                 b.x > ?);]]
+        res = _G.execute(sql, {0, 15})
+        t.assert_equals(res.rows, {{2}, {3}})
+
+        sql = [[WITH c AS (SELECT ?) SELECT ?;]]
+        res = _G.execute(sql, {1, 2})
+        t.assert_equals(res.rows, {{2}})
+
+        sql = [[WITH RECURSIVE r(n) AS
+                (SELECT ? UNION ALL SELECT n + ? FROM SEQSCAN r WHERE n < ?)
+                SELECT n FROM SEQSCAN r;]]
+        res = _G.execute(sql, {1, 2, 5})
+        t.assert_equals(res.rows, {{1}, {3}, {5}})
+
+        sql = [[SELECT -?, ABS(?), COALESCE(?, :a), $1 + ?;]]
+        res = _G.execute(sql, {1, -2, box.NULL, {[':a'] = 5}})
+        t.assert_equals(res.rows, {{-1, 2, 5, -1}})
+
+        sql = [[SELECT x FROM SEQSCAN t WHERE x IN (?, :a)
+                ORDER BY x LIMIT ?;]]
+        res = _G.execute(sql, {10, {[':a'] = 30}, 1})
+        t.assert_equals(res.rows, {{10}})
+
+        box.execute([[DROP TABLE t;]])
+    end)
+end
+
+--
+-- Make sure the parameters of a prepared resolved SELECT are described
+-- correctly.
+--
+g.test_bind_params_of_resolved_select = function(cg)
+    cg.server:exec(function()
+        local sql = [[SELECT ?, (SELECT :a FROM (SELECT @b)), $1, #c;]]
+        local stmt = box.prepare(sql)
+        t.assert_equals(stmt.param_count, 4)
+        t.assert_equals(stmt.params, {
+            {name = '?', type = 'ANY'},
+            {name = ':a', type = 'ANY'},
+            {name = '@b', type = 'ANY'},
+            {name = '#c', type = 'ANY'},
+        })
+        box.unprepare(stmt.stmt_id)
+    end)
+end
