@@ -181,7 +181,7 @@ sqlWhereExplainOneScan(Parse * pParse,	/* Parse context */
 	if (pParse->explain == 0 && !is_search && pItem->fg.disallow_scan &&
 	    (pParse->sql_flags & SQL_SeqScan) == 0) {
 		const char *obj = pItem->zName == NULL ? "subselect" :
-				  tt_sprintf("'%s'", pItem->zName);
+				  tt_sprintf("'%s'", pItem->space->def->name);
 		diag_set(ClientError, ER_SQL_SEQ_SCAN, obj);
 		pParse->is_aborted = true;
 		return 0;
@@ -203,7 +203,7 @@ sqlWhereExplainOneScan(Parse * pParse,	/* Parse context */
 		if (pItem->pSelect) {
 			sqlXPrintf(&str, " SUBQUERY %d", pItem->iSelectId);
 		} else {
-			sqlXPrintf(&str, " TABLE %s", pItem->zName);
+			sqlXPrintf(&str, " TABLE %s", pItem->space->def->name);
 		}
 
 		if (pItem->zAlias) {

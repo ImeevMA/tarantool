@@ -210,3 +210,21 @@ g.test_seq_scan_not_select = function()
         t.assert(res ~= nil and err == nil)
     end)
 end
+
+--
+-- The space is referred to by its name, not by the name it is looked up with.
+--
+g.test_seq_scan_space_name = function()
+    g.server:exec(function()
+        box.execute([[CREATE TABLE "UP" (i INT PRIMARY KEY);]])
+        box.execute([[SET SESSION "sql_seq_scan" = false;]])
+
+        local _, err = box.execute([[SELECT * FROM up;]])
+        t.assert_equals(err.message, "Scanning is not allowed for 'UP'")
+
+        local res = box.execute([[EXPLAIN QUERY PLAN SELECT * FROM up AS x;]])
+        t.assert_equals(res.rows, {{0, 0, 0, 'SCAN TABLE UP AS x ' ..
+                                    '(~1048576 rows)'}})
+        box.execute([[DROP TABLE "UP";]])
+    end)
+end
