@@ -654,6 +654,11 @@ src_list_from_ast(struct Parse *parser, struct ast_source_list *list);
 struct ast_select *
 ast_select_new(struct region *region);
 
+/** Create a SELECT of all columns of the given sources: `SELECT * FROM ...`. */
+struct ast_select *
+ast_select_new_asterisk(struct region *region,
+			struct ast_source_list *sources);
+
 /**
  * Build `struct Select` object from `struct ast_select` object.
  *

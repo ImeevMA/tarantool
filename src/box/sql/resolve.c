@@ -2445,11 +2445,89 @@ rast_source_has_dup_field(const struct rast_source *src, uint32_t fieldno)
 	return false;
 }
 
+/** Check if the given source is a parenthesized list of sources. */
+static bool
+rast_source_is_nested(const struct rast_source *src)
+{
+	return src->select != NULL && (src->select->flags & SF_NestedFrom) != 0;
+}
+
+/**
+ * Check if the given part of a span, with the given length, is the given name
+ * or, if it is not NULL, the given legacy name.
+ */
+static bool
+span_part_is(const char *part, uint32_t len, const char *name,
+	     const char *legacy_name)
+{
+	if (strlen(name) == len && memcmp(part, name, len) == 0)
+		return true;
+	return legacy_name != NULL && strlen(legacy_name) == len &&
+	       memcmp(part, legacy_name, len) == 0;
+}
+
+/**
+ * Check if the span of the given column of a parenthesized list of sources,
+ * which is `source.column`, matches the given column name, if it is not NULL,
+ * qualified with the given source name, if it is not NULL, as
+ * sqlMatchSpanName() does. The names also match their legacy forms, if they
+ * are not NULL.
+ */
+static bool
+rast_span_matches(const struct rast_expr_list_entry *column,
+		  const char *tab_name, const char *legacy_tab_name,
+		  const char *name, const char *legacy_name)
+{
+	const char *span = column->span;
+	const char *dot = memchr(span, '.', column->span_len);
+	assert(dot != NULL);
+	uint32_t tab_len = dot - span;
+	if (tab_name != NULL &&
+	    !span_part_is(span, tab_len, tab_name, legacy_tab_name))
+		return false;
+	return name == NULL || span_part_is(dot + 1,
+					    column->span_len - tab_len - 1,
+					    name, legacy_name);
+}
+
+/**
+ * Count the fields of the given parenthesized list of sources whose spans match
+ * the given names, as sql_count_span_matches() does: the legacy names are used
+ * only if the names match no span. Sets the number of the last one.
+ */
+static uint32_t
+count_nested_fields(const struct rast_source *src, const char *tab_name,
+		    const char *legacy_tab_name, const char *name,
+		    const char *legacy_name, uint32_t *fieldno)
+{
+	const struct rast_expr_list *columns = &src->select->columns;
+	uint32_t count = 0;
+	for (uint32_t i = 0; i < columns->len; ++i) {
+		if (rast_span_matches(&columns->exprs[i], tab_name, NULL, name,
+				      NULL)) {
+			++count;
+			*fieldno = i;
+		}
+	}
+	if (count > 0 || (legacy_tab_name == NULL && legacy_name == NULL))
+		return count;
+	for (uint32_t i = 0; i < columns->len; ++i) {
+		if (rast_span_matches(&columns->exprs[i], tab_name,
+				      legacy_tab_name, name, legacy_name)) {
+			++count;
+			*fieldno = i;
+		}
+	}
+	return count;
+}
+
 /**
  * Find the column with the given name, optionally qualified with the given
  * source name, among the given sources. As in the legacy code, the name must
  * match one column of one source only, but once it matches one, a source
- * joined by NATURAL or by USING with the name is skipped.
+ * joined by NATURAL or by USING with the name is skipped. A column of a
+ * parenthesized list of sources is looked up by its span, and if no span
+ * matches a qualified name, among the fields of the list.
  *
  * Sets the position of the source, or UINT32_MAX if the column is not found,
  * and the number of the field.
@@ -2462,26 +2540,36 @@ find_column(const struct rast_source_list *sources, const char *tab_name,
 	    const char *legacy_name, uint32_t *source, uint32_t *fieldno)
 {
 	*source = UINT32_MAX;
+	uint32_t count = 0;
 	for (uint32_t i = 0; i < sources->len; ++i) {
 		const struct rast_source *src = &sources->sources[i];
+		if (rast_source_is_nested(src)) {
+			uint32_t hit = count_nested_fields(src, tab_name,
+							   legacy_tab_name,
+							   name, legacy_name,
+							   fieldno);
+			if (hit > 0) {
+				count += hit;
+				*source = i;
+			}
+			if (hit > 0 || tab_name == NULL)
+				continue;
+		}
 		uint32_t f = find_source_field(src, tab_name, legacy_tab_name,
 					       name, legacy_name);
 		if (f == UINT32_MAX)
 			continue;
-		if (*source == UINT32_MAX &&
-		    !rast_source_has_dup_field(src, f)) {
-			*source = i;
-			*fieldno = f;
+		if (count == 1 && ((src->join_type & JT_NATURAL) != 0 ||
+				   rast_source_uses(src, name, legacy_name)))
 			continue;
-		}
-		if (*source != UINT32_MAX &&
-		    ((src->join_type & JT_NATURAL) != 0 ||
-		     rast_source_uses(src, name, legacy_name)))
-			continue;
-		ambiguous_column_error(tab_name, name);
-		return -1;
+		count += rast_source_has_dup_field(src, f) ? 2 : 1;
+		*source = i;
+		*fieldno = f;
 	}
-	return 0;
+	if (count <= 1)
+		return 0;
+	ambiguous_column_error(tab_name, name);
+	return -1;
 }
 
 /**
@@ -3137,9 +3225,19 @@ ast_is_asterisk(const struct ast_expr *ast)
 	       (ast->op == TK_DOT && ast->right->op == TK_ASTERISK);
 }
 
+/** Return the dequoted source name of the given AST asterisk `table.*`. */
+static const char *
+asterisk_source_name(struct sql_resolve_context *ctx,
+		     const struct ast_expr *ast)
+{
+	return sql_name_temp(ctx->region, ast->left->str, ast->left->len);
+}
+
 /**
  * Check if the given AST asterisk is expanded over the given source. As in the
- * legacy code, `table.*` matches only the source with exactly the given name.
+ * legacy code, `table.*` matches the source with exactly the given name, or a
+ * parenthesized list of sources having a column whose span is qualified with
+ * exactly the given name.
  */
 static bool
 asterisk_matches_source(struct sql_resolve_context *ctx,
@@ -3148,9 +3246,13 @@ asterisk_matches_source(struct sql_resolve_context *ctx,
 {
 	if (ast->op == TK_ASTERISK)
 		return true;
-	const char *name = sql_name_temp(ctx->region, ast->left->str,
-					 ast->left->len);
-	return strcmp(name, rast_source_name(src)) == 0;
+	const char *name = asterisk_source_name(ctx, ast);
+	if (strcmp(name, rast_source_name(src)) == 0)
+		return true;
+	if (!rast_source_is_nested(src))
+		return false;
+	uint32_t unused;
+	return count_nested_fields(src, name, NULL, NULL, NULL, &unused) > 0;
 }
 
 /**
@@ -3173,20 +3275,34 @@ asterisk_column_name(struct region *region, const char *src_name,
 }
 
 /**
- * Check if the given field of the source with the given position in the given
- * sources is omitted when the given asterisk is expanded. As in the legacy
- * code, `*` omits the fields of the right source of a NATURAL join present in
- * the sources to the left of it, and the fields named in the USING clause of
- * the right source.
+ * Check if the field with the given number of the source with the given
+ * position in the given sources is omitted when the given asterisk is
+ * expanded. As in the legacy code, `*` omits the fields of the right source of
+ * a NATURAL join present in the sources to the left of it, and the fields
+ * named in the USING clause of the right source, and `table.*` over a
+ * parenthesized list of sources with another name omits the fields whose spans
+ * are not qualified with exactly the given name.
  */
 static bool
-asterisk_omits_field(const struct ast_expr *ast,
+asterisk_omits_field(struct sql_resolve_context *ctx,
+		     const struct ast_expr *ast,
 		     const struct rast_source_list *sources, uint32_t source,
-		     const char *field)
+		     uint32_t fieldno)
 {
-	if (ast->op != TK_ASTERISK || source == 0)
-		return false;
 	const struct rast_source *src = &sources->sources[source];
+	if (ast->op != TK_ASTERISK) {
+		if (!rast_source_is_nested(src))
+			return false;
+		const char *tab_name = asterisk_source_name(ctx, ast);
+		if (strcmp(tab_name, rast_source_name(src)) == 0)
+			return false;
+		const struct rast_expr_list_entry *column =
+			&src->select->columns.exprs[fieldno];
+		return !rast_span_matches(column, tab_name, NULL, NULL, NULL);
+	}
+	if (source == 0)
+		return false;
+	const char *field = rast_source_def(src)->fields[fieldno].name;
 	for (uint32_t i = 0; (src->join_type & JT_NATURAL) != 0 && i < source;
 	     ++i) {
 		if (rast_source_fieldno(&sources->sources[i], field,
@@ -3205,24 +3321,56 @@ asterisk_omits_field(const struct ast_expr *ast,
  * the source with the given position in the given sources.
  */
 static uint32_t
-asterisk_column_count(const struct ast_expr *ast,
+asterisk_column_count(struct sql_resolve_context *ctx,
+		      const struct ast_expr *ast,
 		      const struct rast_source_list *sources, uint32_t source)
 {
 	const struct rast_source *src = &sources->sources[source];
 	const struct space_def *def = rast_source_def(src);
 	uint32_t res = 0;
 	for (uint32_t i = 0; i < def->field_count; ++i) {
-		if (!asterisk_omits_field(ast, sources, source,
-					  def->fields[i].name))
+		if (!asterisk_omits_field(ctx, ast, sources, source, i))
 			++res;
 	}
 	return res;
 }
 
 /**
+ * Set the span of the given column of a parenthesized list of sources, which
+ * comes from the field with the given number of the given source, as
+ * selectExpander() does: it is the span of the field if the source is itself a
+ * parenthesized list of sources, and the name of the source and the name of
+ * the field joined with a dot otherwise.
+ */
+static void
+set_nested_column_span(struct region *region, const struct rast_source *src,
+		       uint32_t fieldno, struct rast_expr_list_entry *column)
+{
+	if (rast_source_is_nested(src)) {
+		const struct rast_expr_list_entry *field =
+			&src->select->columns.exprs[fieldno];
+		column->span = field->span;
+		column->span_len = field->span_len;
+		return;
+	}
+	const char *src_name = rast_source_name(src);
+	const char *name = rast_source_def(src)->fields[fieldno].name;
+	size_t src_len = strlen(src_name);
+	size_t name_len = strlen(name);
+	char *span = xregion_alloc(region, src_len + name_len + 1);
+	memcpy(span, src_name, src_len);
+	span[src_len] = '.';
+	memcpy(span + src_len + 1, name, name_len);
+	column->span = span;
+	column->span_len = src_len + name_len + 1;
+}
+
+/**
  * Set the names of the columns the given asterisk is expanded into over the
  * source with the given position in the given sources, starting from the given
  * entry. The names are qualified with the name of the source if they are full.
+ * The spans of the columns are set if the SELECT is a parenthesized list of
+ * sources.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -3230,20 +3378,24 @@ static int
 name_asterisk_columns(struct sql_resolve_context *ctx,
 		      const struct ast_expr *ast,
 		      const struct rast_source_list *sources, uint32_t source,
-		      bool is_full, struct rast_expr_list_entry *entries)
+		      bool is_full, bool is_nested,
+		      struct rast_expr_list_entry *entries)
 {
 	const struct rast_source *src = &sources->sources[source];
 	const struct space_def *def = rast_source_def(src);
 	const char *src_name = rast_source_name(src);
 	for (uint32_t i = 0; i < def->field_count; ++i) {
-		const char *field = def->fields[i].name;
-		if (asterisk_omits_field(ast, sources, source, field))
+		if (asterisk_omits_field(ctx, ast, sources, source, i))
 			continue;
 		const char *name = asterisk_column_name(ctx->region, src_name,
-							field, is_full);
+							def->fields[i].name,
+							is_full);
 		if (sql_check_identifier_name(name, strlen(name)) != 0)
 			return -1;
-		(entries++)->name = name;
+		entries->name = name;
+		if (is_nested)
+			set_nested_column_span(ctx->region, src, i, entries);
+		++entries;
 	}
 	return 0;
 }
@@ -3253,7 +3405,9 @@ name_asterisk_columns(struct sql_resolve_context *ctx,
  * expanded into over the source with the given position. As in the legacy
  * code, a column is a name qualified with the exact name of the source if the
  * names are full or there are several sources, and an unqualified name
- * otherwise, and it is looked up as such.
+ * otherwise, and it is looked up as such. A column of a parenthesized list of
+ * sources is referred to by its position, as the names of its columns may be
+ * the same.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -3265,24 +3419,25 @@ resolve_asterisk_columns(struct sql_resolve_context *ctx,
 	const struct rast_source_list *sources = ctx->scope->sources;
 	const struct rast_source *src = &sources->sources[source];
 	const struct space_def *def = rast_source_def(src);
+	bool is_nested = rast_source_is_nested(src);
 	bool is_qualified = is_full || sources->len > 1;
 	const char *tab_name = is_qualified ? rast_source_name(src) : NULL;
 	for (uint32_t i = 0; i < def->field_count; ++i) {
-		const char *field = def->fields[i].name;
-		if (asterisk_omits_field(ast, sources, source, field))
+		if (asterisk_omits_field(ctx, ast, sources, source, i))
 			continue;
-		uint32_t found;
-		uint32_t fieldno;
-		if (find_column(sources, tab_name, NULL, field, NULL, &found,
-				&fieldno) != 0)
+		uint32_t found = source;
+		uint32_t fieldno = i;
+		if (!is_nested &&
+		    find_column(sources, tab_name, NULL, def->fields[i].name,
+				NULL, &found, &fieldno) != 0)
 			return -1;
 		assert(found != UINT32_MAX);
 		resolve_source_column(ctx, ctx->scope, 0, found, fieldno,
 				      &entries->expr);
-		entries->expr.height = is_qualified ? 2 : 1;
+		entries->expr.height = is_qualified && !is_nested ? 2 : 1;
 		(entries++)->ref_depth = 0;
 	}
-	if (!is_qualified && ctx->scope->is_agg_allowed)
+	if (!is_qualified && !is_nested && ctx->scope->is_agg_allowed)
 		ctx->scope->has_unaggregated_name = true;
 	return 0;
 }
@@ -3294,14 +3449,15 @@ resolve_asterisk_columns(struct sql_resolve_context *ctx,
  * it is a column reference, and every asterisk is expanded into the columns of
  * the sources it matches, named after their fields, qualified with the name of
  * the source if full column names are on. The legacy code reports the last
- * asterisk that matched no source, so the same is done here.
+ * asterisk that matched no source, so the same is done here. If the SELECT is
+ * a parenthesized list of sources, the spans of the columns are set too.
  *
  * Returns 0 on success and -1 on error.
  */
 static int
 resolve_column_names(struct sql_resolve_context *ctx,
 		     const struct ast_expr_list *ast,
-		     const struct rast_source_list *sources,
+		     const struct rast_source_list *sources, bool is_nested,
 		     struct rast_expr_list *res)
 {
 	uint32_t len = 0;
@@ -3321,7 +3477,7 @@ resolve_column_names(struct sql_resolve_context *ctx,
 			if (!asterisk_matches_source(ctx, e, src))
 				continue;
 			is_matched = true;
-			len += asterisk_column_count(e, sources, i);
+			len += asterisk_column_count(ctx, e, sources, i);
 		}
 		if (!is_matched)
 			unmatched = e;
@@ -3349,9 +3505,10 @@ resolve_column_names(struct sql_resolve_context *ctx,
 					continue;
 				if (name_asterisk_columns(ctx, entry->expr,
 							  sources, i, is_full,
+							  is_nested,
 							  &res->exprs[j]) != 0)
 					return -1;
-				j += asterisk_column_count(entry->expr,
+				j += asterisk_column_count(ctx, entry->expr,
 							   sources, i);
 			}
 			continue;
@@ -3422,7 +3579,7 @@ resolve_column_list(struct sql_resolve_context *ctx,
 							     i, is_full,
 							     entries) != 0)
 					return -1;
-				j += asterisk_column_count(entry->expr,
+				j += asterisk_column_count(ctx, entry->expr,
 							   sources, i);
 			}
 			continue;
@@ -3721,26 +3878,6 @@ ast_expr_has_collate(const struct ast_expr *ast)
 }
 
 /**
- * Check if the given AST FROM clause can be resolved: it has no parenthesized
- * lists of sources.
- */
-static bool
-can_resolve_sources(const struct ast_source_list *ast)
-{
-	if (ast == NULL)
-		return true;
-	for (const struct stailq_entry *node = ast->head.first.value;
-	     node != NULL; node = node->next.value) {
-		const struct ast_source *src =
-			stailq_entry(node, struct ast_source, link);
-		if (src->select != NULL &&
-		    (src->select->flags & SF_NestedFrom) != 0)
-			return false;
-	}
-	return true;
-}
-
-/**
  * Check the join types of the given AST FROM clause, as the legacy code does
  * when converting the FROM clause.
  *
@@ -3910,7 +4047,7 @@ subquery_def_new(struct sql_resolve_context *ctx, const char *name,
 		for (uint32_t i = 0; i < sources->len; ++i) {
 			if (asterisk_matches_source(ctx, e,
 						    &sources->sources[i]))
-				j += asterisk_column_count(e, sources, i);
+				j += asterisk_column_count(ctx, e, sources, i);
 		}
 	}
 	assert(j == columns->len);
@@ -4134,7 +4271,7 @@ resolve_sources(struct sql_resolve_context *ctx,
 static bool
 can_resolve(const struct ast_select *ast)
 {
-	if (!can_resolve_sources(ast->sources) || ast->with != NULL)
+	if (ast->with != NULL)
 		return false;
 	if (ast->link.next == &ast->link)
 		return true;
@@ -4143,8 +4280,6 @@ can_resolve(const struct ast_select *ast)
 	do {
 		const struct ast_select *part =
 			rlist_entry(link, struct ast_select, link);
-		if (!can_resolve_sources(part->sources))
-			return false;
 		if (part->op != TK_SELECT && part->op != TK_ALL)
 			is_union_all = false;
 		link = link->next;
@@ -4180,8 +4315,9 @@ resolve_select_names(struct sql_resolve_context *ctx,
 		return -1;
 	if (!ctx->can_resolve)
 		return 0;
+	bool is_nested = (ast->flags & SF_NestedFrom) != 0;
 	return resolve_column_names(ctx, ast->columns, &res->sources,
-				    &res->columns);
+				    is_nested, &res->columns);
 }
 
 /**

@@ -106,6 +106,17 @@ ast_select_new(struct region *region)
 	return res;
 }
 
+struct ast_select *
+ast_select_new_asterisk(struct region *region, struct ast_source_list *sources)
+{
+	struct ast_select *res = ast_select_new(region);
+	struct ast_expr *asterisk = ast_expr_new(region, "*", 1, TK_ASTERISK);
+	res->columns = ast_expr_list_append(region, NULL, asterisk);
+	res->columns->is_select_list = true;
+	res->sources = sources;
+	return res;
+}
+
 /**
  * Build single `struct Select` object from `struct ast_select` object. The WITH
  * clause is not converted.

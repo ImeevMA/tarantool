@@ -470,11 +470,8 @@ selectnowith(A) ::= selectnowith(X) multiselect_op(Y) oneselect(Z).  {
   if (!rlist_empty(&Z->link)) {
     struct ast_source *new = ast_source_new(ctx->region);
     new->select = Z;
-    A = ast_select_new(ctx->region);
-    struct ast_expr *star = ast_expr_new(ctx->region, "*", 1, TK_ASTERISK);
-    A->columns = ast_expr_list_append(ctx->region, NULL, star);
-    A->columns->is_select_list = true;
-    A->sources = ast_source_list_append(ctx->region, NULL, new);
+    A = ast_select_new_asterisk(ctx->region,
+                                ast_source_list_append(ctx->region, NULL, new));
   }
   A->op = Y;
   A->flags |= SF_Compound;
@@ -599,8 +596,7 @@ source_list(A) ::= LP source_list(F) RP as(Z). {
     new->select = old->select;
     A = ast_source_list_append(ctx->region, NULL, new);
   } else {
-    struct ast_select *subquery = ast_select_new(ctx->region);
-    subquery->sources = F;
+    struct ast_select *subquery = ast_select_new_asterisk(ctx->region, F);
     subquery->flags = SF_NestedFrom;
     struct ast_source *src = ast_source_new(ctx->region);
     src->alias = Z;
@@ -628,8 +624,7 @@ source_list(A) ::= source_list(X) joinop(Y) LP source_list(F) RP as(Z) on_opt(N)
     new->join_using = U;
     A = ast_source_list_append(ctx->region, X, new);
   } else {
-    struct ast_select *subquery = ast_select_new(ctx->region);
-    subquery->sources = F;
+    struct ast_select *subquery = ast_select_new_asterisk(ctx->region, F);
     subquery->flags = SF_NestedFrom;
     struct ast_source *src = ast_source_new(ctx->region);
     src->alias = Z;

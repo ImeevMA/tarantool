@@ -705,6 +705,44 @@ g.test_subqueries = function()
 end
 
 --
+-- As in the legacy code, a parenthesized list of sources is a subquery
+-- selecting all columns of the sources, whose columns are looked up by their
+-- spans `source.column` and, if no span matches a qualified name, by the fields
+-- of the list. An asterisk refers to the columns of the list by position.
+--
+g.test_nested_sources = function()
+    g.server:exec(function()
+        box.execute([[CREATE TABLE r (y INT PRIMARY KEY);]])
+        box.execute([[INSERT INTO r VALUES (7);]])
+        local check = rawget(_G, 'check')
+        check([[SELECT b, r.y FROM (t, r) AS x WHERE t.a = 1;]], {{10, 7}})
+        check([[SELECT x.b FROM (t, r) AS x WHERE y = 7;]],
+              {{10}, {20}, {30}})
+        check([[SELECT a FROM (t, s) AS x;]], 'ambiguous column name: a')
+        check([[SELECT x.a FROM (t, s) AS x;]],
+              'ambiguous column name: x.a')
+        check([[SELECT "t.b" FROM (t, r) AS x;]],
+              "Can't resolve field 't.b'")
+        check([[SELECT t.b, s.x FROM ((t, r) AS x, s) AS z
+                WHERE s.a = t.a;]], {{10, 100}, {20, 200}})
+        check([[SELECT * FROM (t, s) AS x WHERE s.a = 2 AND t.a = 2;]],
+              {{2, 20, 2, 200}})
+        check([[SELECT x.* FROM (t, r) AS x WHERE t.a = 3;]], {{3, 30, 7}})
+        check([[SELECT r.* FROM (t, r) AS x WHERE t.a = 3;]], {{7}})
+        check([[SELECT * FROM s NATURAL JOIN (t, r) AS x;]],
+              {{1, 100, 10, 7}, {2, 200, 20, 7}})
+        check([[SELECT a FROM s WHERE 7 IN (SELECT r.* FROM (t, r) AS x);]],
+              {{1}, {2}})
+        check([[SELECT * FROM (t, r) AS x HAVING COUNT(*) > 0;]],
+              {{3, 30, 7}})
+        box.execute([[SET SESSION "sql_full_column_names" = true;]])
+        check([[SELECT t.b FROM (t, r) AS x WHERE t.a = 1;]], {{10}})
+        box.execute([[SET SESSION "sql_full_column_names" = false;]])
+        box.execute([[DROP TABLE r;]])
+    end)
+end
+
+--
 -- Sources are now resolved together with the expressions, so an unknown table
 -- is reported before an error found later in the conversion of the statement.
 --
