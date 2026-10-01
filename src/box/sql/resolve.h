@@ -157,6 +157,11 @@ struct rast_expr {
 			bool is_distinct;
 			/** Whether the function is an aggregate. */
 			bool is_agg;
+			/**
+			 * Number of subqueries between the aggregate function
+			 * and the SELECT it belongs to.
+			 */
+			uint32_t agg_depth;
 			/** Whether it is LIKELY, UNLIKELY or LIKELIHOOD. */
 			bool is_unlikely;
 			/** Whether the function is deterministic. */
@@ -203,15 +208,12 @@ struct rast_expr_list_entry {
 	 */
 	bool has_agg;
 	/**
-	 * Whether the expression refers to columns of sources outside of its
-	 * subqueries.
+	 * The least number of subqueries between the expression and the
+	 * SELECTs whose sources it refers to outside of its subqueries, or
+	 * UINT32_MAX if it does not refer to any source. Set for a select
+	 * list only.
 	 */
-	bool has_column_ref;
-	/**
-	 * Whether the expression refers to columns of sources of the enclosing
-	 * SELECTs outside of its subqueries.
-	 */
-	bool has_outer_column_ref;
+	uint32_t ref_depth;
 };
 
 /** Resolved expression list. */

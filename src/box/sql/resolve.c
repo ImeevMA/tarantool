@@ -68,16 +68,13 @@ struct sql_resolve_scope {
 	 */
 	bool has_unaggregated_name;
 	/**
-	 * Number of references to columns of sources found while resolving
-	 * the expressions of this scope, outside of their subqueries, directly
-	 * or through the aliases of the result columns.
+	 * The least number of subqueries between the expressions resolved in
+	 * this scope and the SELECTs whose sources they refer to, outside of
+	 * their subqueries, directly or through the aliases of the result
+	 * columns. It is reset to UINT32_MAX before resolving an expression
+	 * the references of which are needed.
 	 */
-	uint32_t column_ref_count;
-	/**
-	 * Number of the references above which refer to columns of sources of
-	 * the enclosing SELECTs.
-	 */
-	uint32_t outer_column_ref_count;
+	uint32_t ref_depth;
 	/**
 	 * Number of names found in this scope or in the scopes enclosing it,
 	 * while resolving the expressions of this scope. Used to find out if a
@@ -2333,9 +2330,7 @@ resolve_source_column(struct sql_resolve_context *ctx,
 	for (struct sql_resolve_scope *s = ctx->scope; s != scope->parent;
 	     s = s->parent)
 		++s->ref_count;
-	++ctx->scope->column_ref_count;
-	if (depth > 0)
-		++ctx->scope->outer_column_ref_count;
+	ctx->scope->ref_depth = MIN(ctx->scope->ref_depth, depth);
 	const struct rast_source *src = &scope->sources->sources[source];
 	struct space *space = space_by_id(src->space_id);
 	assert(space != NULL && fieldno < space->def->field_count);
@@ -2428,13 +2423,12 @@ resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 			scope->agg_flags |= SF_Aggregate;
 		/*
 		 * A reference to a result column is a copy of its expression,
-		 * so the column references of the expression are counted.
+		 * so the references of the expression are taken into account.
 		 */
-		if (entry->has_column_ref)
-			++ctx->scope->column_ref_count;
-		if (entry->has_outer_column_ref ||
-		    (entry->has_column_ref && depth > 0))
-			++ctx->scope->outer_column_ref_count;
+		if (entry->ref_depth != UINT32_MAX) {
+			ctx->scope->ref_depth = MIN(ctx->scope->ref_depth,
+						    entry->ref_depth + depth);
+		}
 		resolve_alias(scope->aliases, pos, depth, res);
 		return 0;
 	}
@@ -2642,24 +2636,22 @@ resolve_function(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		bool is_agg_allowed = ctx->scope->is_agg_allowed;
 		if (res->func.is_agg)
 			ctx->scope->is_agg_allowed = false;
-		uint32_t outer_count = ctx->scope->outer_column_ref_count;
+		uint32_t ref_depth = ctx->scope->ref_depth;
+		ctx->scope->ref_depth = UINT32_MAX;
 		int rc = resolve_operand_list(ctx, list, res->func.args,
 					      &height);
 		ctx->scope->is_agg_allowed = is_agg_allowed;
+		/*
+		 * As in the legacy code, an aggregate function belongs to the
+		 * nearest SELECT whose sources its arguments refer to, if any.
+		 */
+		if (res->func.is_agg && ctx->scope->ref_depth != UINT32_MAX)
+			res->func.agg_depth = ctx->scope->ref_depth;
+		ctx->scope->ref_depth = MIN(ctx->scope->ref_depth, ref_depth);
 		if (rc != 0)
 			return -1;
 		if (!ctx->can_resolve)
 			return 0;
-		/*
-		 * The legacy code makes an aggregate function, which refers
-		 * only to columns of the enclosing SELECTs, an aggregate of
-		 * the enclosing SELECT, which is not supported here.
-		 */
-		if (res->func.is_agg &&
-		    ctx->scope->outer_column_ref_count != outer_count) {
-			ctx->can_resolve = false;
-			return 0;
-		}
 	}
 	if ((flags & SQL_FUNC_UNLIKELY) != 0) {
 		res->func.is_unlikely = true;
@@ -2685,7 +2677,16 @@ resolve_function(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 						8388608 : 125829120;
 		}
 	}
-	if (res->func.is_agg && !ctx->scope->is_agg_allowed) {
+	struct sql_resolve_scope *owner = ctx->scope;
+	for (uint32_t i = 0; i < res->func.agg_depth; ++i)
+		owner = owner->parent;
+	/*
+	 * Unlike the legacy code, which reports it only when generating the
+	 * code, an aggregate function is also rejected where the SELECT it
+	 * belongs to does not allow it.
+	 */
+	if (res->func.is_agg &&
+	    (!ctx->scope->is_agg_allowed || !owner->is_agg_allowed)) {
 		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
 			 tt_sprintf("misuse of aggregate function %s()",
 				    res->func.name));
@@ -2724,9 +2725,9 @@ resolve_function(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	}
 	res->func.is_deterministic = func->def->is_deterministic;
 	if (res->func.is_agg) {
-		ctx->scope->agg_flags |= SF_Aggregate;
+		owner->agg_flags |= SF_Aggregate;
 		if ((flags & (SQL_FUNC_MIN | SQL_FUNC_MAX)) != 0)
-			ctx->scope->agg_flags |= SF_MinMaxAgg;
+			owner->agg_flags |= SF_MinMaxAgg;
 	}
 	res->type = sql_type_from_field_type(res->func.returns);
 	res->height = height + 1;
@@ -3080,7 +3081,7 @@ resolve_asterisk_columns(struct sql_resolve_context *ctx, uint32_t source,
 		resolve_source_column(ctx, ctx->scope, 0, source, i,
 				      &entries[i].expr);
 		entries[i].expr.height = is_full ? 2 : 1;
-		entries[i].has_column_ref = true;
+		entries[i].ref_depth = 0;
 	}
 	if (!is_full && ctx->scope->is_agg_allowed)
 		ctx->scope->has_unaggregated_name = true;
@@ -3220,19 +3221,15 @@ resolve_column_list(struct sql_resolve_context *ctx,
 		}
 		struct rast_expr_list_entry *expr = &res->exprs[j++];
 		uint32_t agg_flags = ctx->scope->agg_flags;
-		uint32_t ref_count = ctx->scope->column_ref_count;
-		uint32_t outer_count = ctx->scope->outer_column_ref_count;
 		ctx->scope->agg_flags = 0;
+		ctx->scope->ref_depth = UINT32_MAX;
 		if (resolve_expr(ctx, entry->expr, &expr->expr) != 0)
 			return -1;
 		if (!ctx->can_resolve)
 			return 0;
 		expr->has_agg = ctx->scope->agg_flags != 0;
 		ctx->scope->agg_flags |= agg_flags;
-		expr->has_column_ref =
-			ctx->scope->column_ref_count != ref_count;
-		expr->has_outer_column_ref =
-			ctx->scope->outer_column_ref_count != outer_count;
+		expr->ref_depth = ctx->scope->ref_depth;
 		expr->span = entry->expr->str;
 		expr->span_len = entry->expr->len;
 	}
@@ -4426,7 +4423,7 @@ expr_from_rast(struct Parse *parser, const struct rast_build_scope *scope,
 		res->flags |= EP_Propagate & sqlExprListFlags(list);
 		if (expr->func.is_agg) {
 			res->op = TK_AGG_FUNCTION;
-			res->op2 = 0;
+			res->op2 = expr->func.agg_depth;
 		}
 		if (expr->func.is_unlikely) {
 			res->flags |= EP_Unlikely | EP_Skip;

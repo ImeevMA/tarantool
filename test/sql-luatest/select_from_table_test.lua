@@ -220,10 +220,51 @@ g.test_correlated = function()
         check([[SELECT a FROM t WHERE a IN (SELECT a FROM s);]], {{1}, {2}})
         check([[SELECT (SELECT COUNT(*) FROM s WHERE s.a <= t.a) FROM t;]],
               {{1}, {2}, {2}})
-        -- An aggregate function of the enclosing SELECT.
+    end)
+end
+
+--
+-- As in the legacy code, an aggregate function belongs to the nearest SELECT
+-- whose sources its arguments refer to outside of their subqueries, directly
+-- or through the aliases of the result columns, or to its own SELECT.
+--
+g.test_aggregate_owner = function()
+    g.server:exec(function()
+        local check = rawget(_G, 'check')
         check([[SELECT (SELECT SUM(t.a)) FROM t;]], {{6}})
+        check([[SELECT (SELECT (SELECT MAX(t.a))) FROM t;]], {{3}})
+        check([[SELECT (SELECT COUNT(t.a) + COUNT(*)) FROM t;]], {{4}})
         check([[SELECT (SELECT SUM(x + t.a) FROM s) FROM t;]],
               {{302}, {304}, {306}})
+        check([[SELECT (SELECT COUNT(t.a) + COUNT(s.x) FROM s) FROM t;]],
+              {{5}})
+        check([[SELECT (SELECT (SELECT SUM(s.x + t.a)) FROM s) FROM t;]],
+              {{302}, {304}, {306}})
+        check([[SELECT b, (SELECT SUM(t.a)) FROM t GROUP BY b
+                ORDER BY b;]], {{10, 1}, {20, 2}, {30, 3}})
+        check([[SELECT b FROM t GROUP BY b HAVING (SELECT SUM(t.a)) > 1;]],
+              {{20}, {30}})
+        check([[SELECT 1 FROM t HAVING (SELECT COUNT(t.a)) > 0;]], {{1}})
+        check([[SELECT COUNT(*) FROM t ORDER BY (SELECT COUNT(t.a));]],
+              {{3}})
+        check([[SELECT a FROM t GROUP BY (SELECT COUNT(t.a));]],
+              'aggregate functions are not allowed in the GROUP BY clause')
+        check([[SELECT (SELECT 1 HAVING COUNT(t.a) > 0) FROM t;]],
+              'Failed to execute SQL statement: HAVING argument must ' ..
+              'appear in the GROUP BY clause or be used in an aggregate ' ..
+              'function')
+        check([[SELECT (SELECT 1 WHERE COUNT(t.a) > 0) FROM t;]],
+              'misuse of aggregate function COUNT()')
+
+        -- The legacy code reports these errors when generating the code.
+        check([[SELECT a FROM t WHERE (SELECT COUNT(t.a)) > 0;]],
+              'misuse of aggregate function COUNT()')
+        check([[SELECT COUNT((SELECT COUNT(t.a))) FROM t;]],
+              'misuse of aggregate function COUNT()')
+        check([[SELECT a AS y FROM t WHERE (SELECT COUNT(y) FROM s) > 0;]],
+              'misuse of aggregate function COUNT()')
+        check([[SELECT (SELECT COUNT(t.a)) AS w FROM t WHERE w > 0;]],
+              'misuse of aliased aggregate w')
     end)
 end
 
