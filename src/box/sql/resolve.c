@@ -2296,6 +2296,23 @@ rast_source_name(const struct rast_source *src)
 }
 
 /**
+ * Return the number of the field with the given name, or, if not found and the
+ * legacy name is not NULL, with the given legacy name, in the space of the
+ * given source, or UINT32_MAX if there is none.
+ */
+static uint32_t
+rast_source_fieldno(const struct rast_source *src, const char *name,
+		    const char *legacy_name)
+{
+	struct space *space = space_by_id(src->space_id);
+	assert(space != NULL);
+	uint32_t res = sql_space_fieldno(space, name);
+	if (res == UINT32_MAX && legacy_name != NULL)
+		res = sql_space_fieldno(space, legacy_name);
+	return res;
+}
+
+/**
  * Find the field with the given name in the given source. A qualified name
  * matches only the source with the given name, which is its alias, if any, or
  * the name of its space. As in the legacy code, an unquoted name is also looked
@@ -2363,6 +2380,63 @@ ambiguous_column_error(const char *tab_name, const char *name)
 }
 
 /**
+ * Check if the given USING names of the given source contain the given name
+ * or, if it is not NULL, the given legacy name.
+ */
+static bool
+rast_source_uses(const struct rast_source *src, const char *name,
+		 const char *legacy_name)
+{
+	for (uint32_t i = 0; i < src->using_count; ++i) {
+		if (strcmp(src->using_names[i], name) == 0)
+			return true;
+	}
+	for (uint32_t i = 0; legacy_name != NULL && i < src->using_count;
+	     ++i) {
+		if (strcmp(src->using_names[i], legacy_name) == 0)
+			return true;
+	}
+	return false;
+}
+
+/**
+ * Find the column with the given name, optionally qualified with the given
+ * source name, among the given sources. As in the legacy code, the name must
+ * match a column of one source only, but once it matches one, a source joined
+ * by NATURAL or by USING with the name is skipped.
+ *
+ * Sets the position of the source, or UINT32_MAX if the column is not found,
+ * and the number of the field.
+ *
+ * Returns 0 on success and -1 if the name is ambiguous.
+ */
+static int
+find_column(const struct rast_source_list *sources, const char *tab_name,
+	    const char *legacy_tab_name, const char *name,
+	    const char *legacy_name, uint32_t *source, uint32_t *fieldno)
+{
+	*source = UINT32_MAX;
+	for (uint32_t i = 0; i < sources->len; ++i) {
+		const struct rast_source *src = &sources->sources[i];
+		uint32_t f = find_source_field(src, tab_name, legacy_tab_name,
+					       name, legacy_name);
+		if (f == UINT32_MAX)
+			continue;
+		if (*source == UINT32_MAX) {
+			*source = i;
+			*fieldno = f;
+			continue;
+		}
+		if ((src->join_type & JT_NATURAL) != 0 ||
+		    rast_source_uses(src, name, legacy_name))
+			continue;
+		ambiguous_column_error(tab_name, name);
+		return -1;
+	}
+	return 0;
+}
+
+/**
  * Resolve an AST column reference: a column name, optionally qualified with a
  * source name, into the given rast_expr. As in the legacy code, the name is
  * looked up in the scopes from the current one outwards; in every scope first
@@ -2407,23 +2481,12 @@ resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	uint32_t depth = 0;
 	for (struct sql_resolve_scope *scope = ctx->scope;
 	     scope != NULL; scope = scope->parent, ++depth) {
-		const struct rast_source_list *sources = scope->sources;
 		uint32_t source = UINT32_MAX;
 		uint32_t fieldno = UINT32_MAX;
-		for (uint32_t i = 0; sources != NULL && i < sources->len; ++i) {
-			uint32_t f = find_source_field(&sources->sources[i],
-						       tab_name,
-						       legacy_tab_name, name,
-						       legacy_name);
-			if (f == UINT32_MAX)
-				continue;
-			if (source != UINT32_MAX) {
-				ambiguous_column_error(tab_name, name);
-				return -1;
-			}
-			source = i;
-			fieldno = f;
-		}
+		if (scope->sources != NULL &&
+		    find_column(scope->sources, tab_name, legacy_tab_name,
+				name, legacy_name, &source, &fieldno) != 0)
+			return -1;
 		if (source != UINT32_MAX) {
 			resolve_source_column(ctx, scope, depth, source,
 					      fieldno, res);
@@ -3042,15 +3105,6 @@ asterisk_matches_source(struct sql_resolve_context *ctx,
 	return strcmp(name, rast_source_name(src)) == 0;
 }
 
-/** Return the number of the fields of the space of the given source. */
-static uint32_t
-rast_source_field_count(const struct rast_source *src)
-{
-	struct space *space = space_by_id(src->space_id);
-	assert(space != NULL);
-	return space->def->field_count;
-}
-
 /**
  * Return the name of a column an asterisk is expanded into: the name of the
  * given field, qualified with the given name of its source if the name is full.
@@ -3071,68 +3125,116 @@ asterisk_column_name(struct region *region, const char *src_name,
 }
 
 /**
- * Set the names of the columns an asterisk is expanded into over the given
- * source, starting from the given entry. The names are qualified with the name
- * of the source if they are full.
+ * Check if the given field of the source with the given position in the given
+ * sources is omitted when the given asterisk is expanded. As in the legacy
+ * code, `*` omits the fields of the right source of a NATURAL join present in
+ * the sources to the left of it, and the fields named in the USING clause of
+ * the right source.
+ */
+static bool
+asterisk_omits_field(const struct ast_expr *ast,
+		     const struct rast_source_list *sources, uint32_t source,
+		     const char *field)
+{
+	if (ast->op != TK_ASTERISK || source == 0)
+		return false;
+	const struct rast_source *src = &sources->sources[source];
+	for (uint32_t i = 0; (src->join_type & JT_NATURAL) != 0 && i < source;
+	     ++i) {
+		if (rast_source_fieldno(&sources->sources[i], field,
+					NULL) != UINT32_MAX)
+			return true;
+	}
+	for (uint32_t i = 0; i < src->using_count; ++i) {
+		if (strcmp(src->using_names[i], field) == 0)
+			return true;
+	}
+	return false;
+}
+
+/**
+ * Return the number of the columns the given asterisk is expanded into over
+ * the source with the given position in the given sources.
+ */
+static uint32_t
+asterisk_column_count(const struct ast_expr *ast,
+		      const struct rast_source_list *sources, uint32_t source)
+{
+	struct space *space = space_by_id(sources->sources[source].space_id);
+	assert(space != NULL);
+	uint32_t res = 0;
+	for (uint32_t i = 0; i < space->def->field_count; ++i) {
+		if (!asterisk_omits_field(ast, sources, source,
+					  space->def->fields[i].name))
+			++res;
+	}
+	return res;
+}
+
+/**
+ * Set the names of the columns the given asterisk is expanded into over the
+ * source with the given position in the given sources, starting from the given
+ * entry. The names are qualified with the name of the source if they are full.
  *
  * Returns 0 on success and -1 on error.
  */
 static int
 name_asterisk_columns(struct sql_resolve_context *ctx,
-		      const struct rast_source *src, bool is_full,
-		      struct rast_expr_list_entry *entries)
+		      const struct ast_expr *ast,
+		      const struct rast_source_list *sources, uint32_t source,
+		      bool is_full, struct rast_expr_list_entry *entries)
 {
+	const struct rast_source *src = &sources->sources[source];
 	struct space *space = space_by_id(src->space_id);
 	assert(space != NULL);
 	const char *src_name = rast_source_name(src);
 	for (uint32_t i = 0; i < space->def->field_count; ++i) {
-		const char *name = asterisk_column_name(
-			ctx->region, src_name, space->def->fields[i].name,
-			is_full);
+		const char *field = space->def->fields[i].name;
+		if (asterisk_omits_field(ast, sources, source, field))
+			continue;
+		const char *name = asterisk_column_name(ctx->region, src_name,
+							field, is_full);
 		if (sql_check_identifier_name(name, strlen(name)) != 0)
 			return -1;
-		entries[i].name = name;
+		(entries++)->name = name;
 	}
 	return 0;
 }
 
 /**
- * Set the given entries to references to the columns an asterisk is expanded
- * into over the source with the given position. As in the legacy code, the
- * references are qualified with the name of the source if the names are full
- * or there are several sources, and are unqualified names otherwise. A
- * qualified reference is looked up by the exact names of the source and the
- * field, so it is ambiguous if another source has the same name and field.
+ * Set the given entries to references to the columns the given asterisk is
+ * expanded into over the source with the given position. As in the legacy
+ * code, a column is a name qualified with the exact name of the source if the
+ * names are full or there are several sources, and an unqualified name
+ * otherwise, and it is looked up as such.
  *
  * Returns 0 on success and -1 on error.
  */
 static int
-resolve_asterisk_columns(struct sql_resolve_context *ctx, uint32_t source,
+resolve_asterisk_columns(struct sql_resolve_context *ctx,
+			 const struct ast_expr *ast, uint32_t source,
 			 bool is_full, struct rast_expr_list_entry *entries)
 {
 	const struct rast_source_list *sources = ctx->scope->sources;
 	const struct rast_source *src = &sources->sources[source];
-	const char *src_name = rast_source_name(src);
 	struct space *space = space_by_id(src->space_id);
 	assert(space != NULL);
 	bool is_qualified = is_full || sources->len > 1;
+	const char *tab_name = is_qualified ? rast_source_name(src) : NULL;
 	for (uint32_t i = 0; i < space->def->field_count; ++i) {
 		const char *field = space->def->fields[i].name;
-		for (uint32_t j = 0; sources->len > 1 && j < sources->len;
-		     ++j) {
-			const struct rast_source *other = &sources->sources[j];
-			if (j == source ||
-			    strcmp(rast_source_name(other), src_name) != 0 ||
-			    sql_space_fieldno(space_by_id(other->space_id),
-					      field) == UINT32_MAX)
-				continue;
-			ambiguous_column_error(src_name, field);
+		if (asterisk_omits_field(ast, sources, source, field))
+			continue;
+		uint32_t found;
+		uint32_t fieldno;
+		if (find_column(sources, tab_name, NULL, field, NULL, &found,
+				&fieldno) != 0)
 			return -1;
-		}
-		resolve_source_column(ctx, ctx->scope, 0, source, i,
-				      &entries[i].expr);
-		entries[i].expr.height = is_qualified ? 2 : 1;
-		entries[i].ref_depth = 0;
+		assert(found != UINT32_MAX);
+		resolve_source_column(ctx, ctx->scope, 0, found, fieldno,
+				      &entries->expr);
+		entries->expr.height = is_qualified ? 2 : 1;
+		(entries++)->ref_depth = 0;
 	}
 	if (!is_qualified && ctx->scope->is_agg_allowed)
 		ctx->scope->has_unaggregated_name = true;
@@ -3167,15 +3269,16 @@ resolve_column_names(struct sql_resolve_context *ctx,
 			++len;
 			continue;
 		}
-		uint32_t count = 0;
+		bool is_matched = false;
 		for (uint32_t i = 0; i < sources->len; ++i) {
 			const struct rast_source *src = &sources->sources[i];
-			if (asterisk_matches_source(ctx, e, src))
-				count += rast_source_field_count(src);
+			if (!asterisk_matches_source(ctx, e, src))
+				continue;
+			is_matched = true;
+			len += asterisk_column_count(e, sources, i);
 		}
-		if (count == 0)
+		if (!is_matched)
 			unmatched = e;
-		len += count;
 	}
 	res->len = len;
 	res->exprs = NULL;
@@ -3198,10 +3301,12 @@ resolve_column_names(struct sql_resolve_context *ctx,
 				if (!asterisk_matches_source(ctx, entry->expr,
 							     src))
 					continue;
-				if (name_asterisk_columns(ctx, src, is_full,
+				if (name_asterisk_columns(ctx, entry->expr,
+							  sources, i, is_full,
 							  &res->exprs[j]) != 0)
 					return -1;
-				j += rast_source_field_count(src);
+				j += asterisk_column_count(entry->expr,
+							   sources, i);
 			}
 			continue;
 		}
@@ -3267,10 +3372,12 @@ resolve_column_list(struct sql_resolve_context *ctx,
 					continue;
 				struct rast_expr_list_entry *entries =
 					&res->exprs[j];
-				if (resolve_asterisk_columns(ctx, i, is_full,
+				if (resolve_asterisk_columns(ctx, entry->expr,
+							     i, is_full,
 							     entries) != 0)
 					return -1;
-				j += rast_source_field_count(src);
+				j += asterisk_column_count(entry->expr,
+							   sources, i);
 			}
 			continue;
 		}
@@ -3571,7 +3678,7 @@ ast_expr_has_collate(const struct ast_expr *ast)
 
 /**
  * Check if the given AST FROM clause can be resolved: it is empty or consists
- * of tables joined without NATURAL and USING.
+ * of tables.
  */
 static bool
 can_resolve_sources(const struct ast_source_list *ast)
@@ -3582,9 +3689,7 @@ can_resolve_sources(const struct ast_source_list *ast)
 	     node != NULL; node = node->next.value) {
 		const struct ast_source *src =
 			stailq_entry(node, struct ast_source, link);
-		if (src->select != NULL || src->name.n == 0 ||
-		    src->join_using != NULL ||
-		    (src->join_type & JT_NATURAL) != 0)
+		if (src->select != NULL || src->name.n == 0)
 			return false;
 	}
 	return true;
@@ -3674,6 +3779,139 @@ resolve_source(struct sql_resolve_context *ctx, const struct ast_source *ast,
 	}
 	res->disallow_scan = ast->disallow_scan;
 	res->on = NULL;
+	res->using_names = NULL;
+	res->using_count = 0;
+	res->join_columns = NULL;
+	res->join_column_count = 0;
+	return 0;
+}
+
+/**
+ * Resolve the NATURAL join of the source with the given position in the given
+ * sources, as sqlProcessJoin() does: every field of the source is joined to
+ * the field with exactly the same name of the leftmost source having one.
+ */
+static void
+resolve_natural_join(struct sql_resolve_context *ctx,
+		     struct rast_source_list *sources, uint32_t source)
+{
+	struct rast_source *right = &sources->sources[source];
+	struct space *space = space_by_id(right->space_id);
+	assert(space != NULL);
+	right->join_columns =
+		xregion_alloc_array(ctx->region, struct rast_join_column,
+				    space->def->field_count);
+	for (uint32_t f = 0; f < space->def->field_count; ++f) {
+		const char *name = space->def->fields[f].name;
+		for (uint32_t i = 0; i < source; ++i) {
+			uint32_t fieldno =
+				rast_source_fieldno(&sources->sources[i], name,
+						    NULL);
+			if (fieldno == UINT32_MAX)
+				continue;
+			struct rast_join_column *col =
+				right->join_columns + right->join_column_count;
+			++right->join_column_count;
+			col->left_source = i;
+			col->left_fieldno = fieldno;
+			col->right_fieldno = f;
+			break;
+		}
+	}
+}
+
+/**
+ * Resolve the given AST USING clause of the source with the given position in
+ * the given sources, as sqlProcessJoin() does: every name is joined to the
+ * field of the leftmost source having it. As in the legacy code, a field is
+ * looked up by the name as is and, if the name is not quoted, by the name in
+ * upper case.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_using(struct sql_resolve_context *ctx, const struct ast_id_list *ast,
+	      struct rast_source_list *sources, uint32_t source)
+{
+	struct rast_source *right = &sources->sources[source];
+	right->using_names = xregion_alloc_array(ctx->region, const char *,
+						 ast->len);
+	right->join_columns = xregion_alloc_array(ctx->region,
+						  struct rast_join_column,
+						  ast->len);
+	for (const struct stailq_entry *node = ast->head.first.value;
+	     node != NULL; node = node->next.value) {
+		const struct Token *id =
+			&stailq_entry(node, struct ast_id_entry, link)->id;
+		const char *name = sql_name_temp(ctx->region, id->z, id->n);
+		const char *legacy_name = NULL;
+		if (id->z[0] != '"') {
+			legacy_name = sql_legacy_name_temp(ctx->region, id->z,
+							   id->n);
+		}
+		right->using_names[right->using_count++] = name;
+		struct rast_join_column *col =
+			&right->join_columns[right->join_column_count++];
+		col->right_fieldno = rast_source_fieldno(right, name,
+							 legacy_name);
+		col->left_fieldno = UINT32_MAX;
+		for (uint32_t i = 0; i < source; ++i) {
+			col->left_source = i;
+			col->left_fieldno =
+				rast_source_fieldno(&sources->sources[i], name,
+						    legacy_name);
+			if (col->left_fieldno != UINT32_MAX)
+				break;
+		}
+		if (col->left_fieldno == UINT32_MAX ||
+		    col->right_fieldno == UINT32_MAX) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 tt_sprintf("cannot join using column %s - "
+					    "column not present in both "
+					    "tables", name));
+			return -1;
+		}
+	}
+	return 0;
+}
+
+/**
+ * Resolve the NATURAL joins and the USING clauses of the given AST FROM
+ * clause into the given rast_source_list, checking them as sqlProcessJoin()
+ * does.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_joins(struct sql_resolve_context *ctx,
+	      const struct ast_source_list *ast, struct rast_source_list *res)
+{
+	uint32_t i = 0;
+	for (const struct stailq_entry *node = ast->head.first.value;
+	     node != NULL; node = node->next.value, ++i) {
+		const struct ast_source *src =
+			stailq_entry(node, struct ast_source, link);
+		if (i == 0)
+			continue;
+		if ((src->join_type & JT_NATURAL) != 0) {
+			if (src->join_on != NULL || src->join_using != NULL) {
+				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+					 "a NATURAL join may not have an ON "
+					 "or USING clause");
+				return -1;
+			}
+			resolve_natural_join(ctx, res, i);
+		}
+		if (src->join_on != NULL && src->join_using != NULL) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 "cannot have both ON and USING clauses in "
+				 "the same join");
+			return -1;
+		}
+		if (src->join_using != NULL &&
+		    resolve_using(ctx, src->join_using, res, i) != 0)
+			return -1;
+	}
 	return 0;
 }
 
@@ -3704,7 +3942,7 @@ resolve_sources(struct sql_resolve_context *ctx,
 			return 0;
 		res->sources[i++].join_type = src->join_type;
 	}
-	return 0;
+	return resolve_joins(ctx, ast, res);
 }
 
 /**
@@ -3768,9 +4006,10 @@ resolve_select_names(struct sql_resolve_context *ctx,
 /**
  * Resolve the WHERE clause of the given AST SELECT statement and the ON clauses
  * of its sources into the given rast_select. As in the legacy code, the ON
- * clauses are a part of WHERE: they are joined to it with AND in the order of
- * the sources, and if WHERE or the ON clause of an inner join is FALSE, the
- * whole WHERE is FALSE, and the other clauses are not resolved.
+ * clauses and the columns joined by NATURAL or USING are a part of WHERE: they
+ * are joined to it with AND in the order of the sources, and if WHERE or the
+ * ON clause of an inner join is FALSE, the whole WHERE is FALSE, and the other
+ * clauses are not resolved.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -3790,6 +4029,9 @@ resolve_where(struct sql_resolve_context *ctx, const struct ast_select *ast,
 			is_false = true;
 	}
 	if (is_false) {
+		/* The joined columns are dropped from WHERE too. */
+		for (uint32_t i = 0; i < res->sources.len; ++i)
+			res->sources.sources[i].join_column_count = 0;
 		res->where = xregion_alloc_object(ctx->region,
 						  struct rast_expr);
 		memset(res->where, 0, sizeof(*res->where));
@@ -3814,6 +4056,10 @@ resolve_where(struct sql_resolve_context *ctx, const struct ast_select *ast,
 	     node = node->next.value, ++i) {
 		const struct ast_source *src =
 			stailq_entry(node, struct ast_source, link);
+		/* A column of NATURAL or USING joins as `a = b` of height 2. */
+		uint32_t count = res->sources.sources[i].join_column_count;
+		for (uint32_t j = 0; j < count; ++j)
+			height = height == 0 ? 2 : MAX(height, 2) + 1;
 		if (src->join_on == NULL)
 			continue;
 		struct rast_expr *on = xregion_alloc_object(ctx->region,
@@ -4671,11 +4917,50 @@ src_list_from_rast(struct Parse *parser, const struct rast_source_list *list)
 }
 
 /**
+ * Join the given term to the given WHERE expression with AND, without folding
+ * it, since the terms are already resolved.
+ */
+static struct Expr *
+where_append(struct Expr *where, struct Expr *term)
+{
+	if (where == NULL)
+		return term;
+	struct Expr *res = sql_expr_new_anon(TK_AND);
+	sqlExprAttachSubtrees(res, where, term);
+	ExprSetProperty(res, EP_Resolved);
+	return res;
+}
+
+/**
+ * Create the term `left = right` for the given pair of columns joined by
+ * NATURAL or USING to the source with the given position in the given sources,
+ * as addWhereTerm() does. The term of an outer join is a part of the join
+ * restriction.
+ */
+static struct Expr *
+join_column_from_rast(struct Parse *parser, struct SrcList *src,
+		      uint32_t source, const struct rast_join_column *col,
+		      bool is_outer)
+{
+	struct Expr *left = sql_expr_new_column(src, col->left_source,
+						col->left_fieldno);
+	struct Expr *right = sql_expr_new_column(src, source,
+						 col->right_fieldno);
+	struct Expr *res = sqlPExpr(parser, TK_EQ, left, right);
+	ExprSetProperty(res, EP_Resolved);
+	if (is_outer) {
+		ExprSetProperty(res, EP_FromJoin);
+		res->iRightJoinTable = right->iTable;
+	}
+	return res;
+}
+
+/**
  * Create the WHERE expression of the given resolved SELECT, with the given
- * scope of sources, from its WHERE clause and the ON clauses of its sources.
- * As in sqlProcessJoin(), the ON clauses are joined to WHERE with AND in the
- * order of the sources, and the ON clause of an outer join is marked as a
- * part of the join restriction.
+ * scope of sources, from its WHERE clause, the columns joined by NATURAL or
+ * USING and the ON clauses of its sources. As in sqlProcessJoin(), they are
+ * joined to WHERE with AND in the order of the sources, and the terms of an
+ * outer join are marked as a part of the join restriction.
  *
  * Returns NULL if there is no WHERE expression.
  */
@@ -4688,19 +4973,21 @@ where_from_rast(struct Parse *parser, const struct rast_build_scope *scope,
 		res = expr_from_rast(parser, scope, select->where);
 	for (uint32_t i = 0; i < select->sources.len; ++i) {
 		const struct rast_source *src = &select->sources.sources[i];
+		bool is_outer = (src->join_type & JT_OUTER) != 0;
+		for (uint32_t j = 0; j < src->join_column_count; ++j) {
+			const struct rast_join_column *col =
+				&src->join_columns[j];
+			struct Expr *eq =
+				join_column_from_rast(parser, scope->src, i,
+						      col, is_outer);
+			res = where_append(res, eq);
+		}
 		if (src->on == NULL)
 			continue;
 		struct Expr *on = expr_from_rast(parser, scope, src->on);
-		if ((src->join_type & JT_OUTER) != 0)
+		if (is_outer)
 			sql_expr_set_join(on, scope->src->a[i].iCursor);
-		if (res == NULL) {
-			res = on;
-			continue;
-		}
-		struct Expr *and = sql_expr_new_anon(TK_AND);
-		sqlExprAttachSubtrees(and, res, on);
-		ExprSetProperty(and, EP_Resolved);
-		res = and;
+		res = where_append(res, on);
 	}
 	return res;
 }

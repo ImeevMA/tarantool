@@ -224,6 +224,16 @@ struct rast_expr_list {
 	uint32_t len;
 };
 
+/** Pair of columns joined by NATURAL or USING. */
+struct rast_join_column {
+	/** Position of the source of the left column in the FROM clause. */
+	uint32_t left_source;
+	/** Number of the field of the left column. */
+	uint32_t left_fieldno;
+	/** Number of the field of the right column in the joined source. */
+	uint32_t right_fieldno;
+};
+
 /** Resolved source of a SELECT statement. */
 struct rast_source {
 	/** Identifier of the space the source refers to. */
@@ -240,6 +250,14 @@ struct rast_source {
 	uint8_t join_type;
 	/** Resolved ON clause of the join, NULL if there is none. */
 	struct rast_expr *on;
+	/** Dequoted names of the USING clause of the join. */
+	const char **using_names;
+	/** Number of the names above. */
+	uint32_t using_count;
+	/** Columns joined by NATURAL or USING. */
+	struct rast_join_column *join_columns;
+	/** Number of the joined columns. */
+	uint32_t join_column_count;
 };
 
 /** Resolved list of sources. */

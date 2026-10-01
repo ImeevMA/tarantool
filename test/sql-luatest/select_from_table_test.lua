@@ -558,6 +558,56 @@ g.test_on_false_and_depth = function()
 end
 
 --
+-- As in the legacy code, NATURAL and USING join the columns with the same
+-- names, a name of a joined column refers to the left column, and `*` omits
+-- the right columns.
+--
+g.test_natural_using = function()
+    g.server:exec(function()
+        box.execute([[CREATE TABLE nu (a INT PRIMARY KEY, b INT, n INT);]])
+        box.execute([[INSERT INTO nu VALUES (1, 10, 5), (3, 31, 7);]])
+        local check = rawget(_G, 'check')
+        local res = box.execute([[SELECT * FROM t NATURAL JOIN nu;]])
+        t.assert_equals(res.metadata, {
+            {name = 'a', type = 'integer'},
+            {name = 'b', type = 'integer'},
+            {name = 'n', type = 'integer'},
+        })
+        t.assert_equals(res.rows, {{1, 10, 5}})
+        check([[SELECT * FROM t NATURAL LEFT JOIN nu;]],
+              {{1, 10, 5}, {2, 20, box.NULL}, {3, 30, box.NULL}})
+        check([[SELECT a, x FROM t JOIN s USING (a);]],
+              {{1, 100}, {2, 200}})
+        check([[SELECT * FROM t JOIN nu USING (b);]], {{1, 10, 1, 5}})
+        check([[SELECT * FROM t LEFT JOIN s USING (a) WHERE x IS NULL;]],
+              {{3, 30, box.NULL}})
+        check([[SELECT a FROM t JOIN s USING (a) JOIN nu USING (a);]],
+              {{1}})
+        check([[SELECT s.*, * FROM t NATURAL JOIN s;]],
+              {{1, 100, 1, 10, 100}, {2, 200, 2, 20, 200}})
+        check([[SELECT t.* FROM t JOIN s USING (a);]], {{1, 10}, {2, 20}})
+        check([[SELECT a FROM t JOIN nu USING (b);]],
+              'ambiguous column name: a')
+        check([[SELECT * FROM t JOIN t USING (a);]],
+              'ambiguous column name: t.b')
+        check([[SELECT * FROM t JOIN s USING (x);]],
+              'cannot join using column x - column not present in both ' ..
+              'tables')
+        check([[SELECT * FROM t NATURAL JOIN s ON TRUE;]],
+              'a NATURAL join may not have an ON or USING clause')
+        check([[SELECT * FROM t JOIN s ON TRUE USING (a);]],
+              'cannot have both ON and USING clauses in the same join')
+        -- The joined columns are a part of WHERE.
+        check([[SELECT * FROM t NATURAL JOIN s WHERE nosuch AND FALSE;]], {})
+        local where = '1' .. string.rep(' + 1', 198) .. ' > 0'
+        check('SELECT 1 FROM t NATURAL JOIN s WHERE ' .. where .. ';',
+              'Number of nodes in expression tree 201 exceeds the limit ' ..
+              '(200)')
+        box.execute([[DROP TABLE nu;]])
+    end)
+end
+
+--
 -- Sources are now resolved together with the expressions, so an unknown table
 -- is reported before an error found later in the conversion of the statement.
 --
