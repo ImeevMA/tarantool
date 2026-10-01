@@ -2349,12 +2349,27 @@ resolve_source_column(struct sql_resolve_context *ctx,
 }
 
 /**
+ * Report an error for a column name, optionally qualified with the given
+ * source name, which refers to more than one column.
+ */
+static void
+ambiguous_column_error(const char *tab_name, const char *name)
+{
+	const char *err = tab_name == NULL ?
+			  tt_sprintf("ambiguous column name: %s", name) :
+			  tt_sprintf("ambiguous column name: %s.%s", tab_name,
+				     name);
+	diag_set(ClientError, ER_SQL_PARSER_GENERIC, err);
+}
+
+/**
  * Resolve an AST column reference: a column name, optionally qualified with a
  * source name, into the given rast_expr. As in the legacy code, the name is
  * looked up in the scopes from the current one outwards; in every scope first
- * among the columns of the sources, then, if the name is not qualified, among
- * the aliases of the result columns. If the reference is not resolved, the
- * error is reported with the same message as the legacy code does.
+ * among the columns of the sources, where it must match one column only, then,
+ * if the name is not qualified, among the aliases of the result columns. If the
+ * reference is not resolved, the error is reported with the same message as
+ * the legacy code does.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -2393,15 +2408,25 @@ resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	for (struct sql_resolve_scope *scope = ctx->scope;
 	     scope != NULL; scope = scope->parent, ++depth) {
 		const struct rast_source_list *sources = scope->sources;
+		uint32_t source = UINT32_MAX;
+		uint32_t fieldno = UINT32_MAX;
 		for (uint32_t i = 0; sources != NULL && i < sources->len; ++i) {
-			uint32_t fieldno =
-				find_source_field(&sources->sources[i],
-						  tab_name, legacy_tab_name,
-						  name, legacy_name);
-			if (fieldno == UINT32_MAX)
+			uint32_t f = find_source_field(&sources->sources[i],
+						       tab_name,
+						       legacy_tab_name, name,
+						       legacy_name);
+			if (f == UINT32_MAX)
 				continue;
-			resolve_source_column(ctx, scope, depth, i, fieldno,
-					      res);
+			if (source != UINT32_MAX) {
+				ambiguous_column_error(tab_name, name);
+				return -1;
+			}
+			source = i;
+			fieldno = f;
+		}
+		if (source != UINT32_MAX) {
+			resolve_source_column(ctx, scope, depth, source,
+					      fieldno, res);
 			return 0;
 		}
 		if (tab_name != NULL || scope->aliases == NULL)
@@ -3074,23 +3099,44 @@ name_asterisk_columns(struct sql_resolve_context *ctx,
 /**
  * Set the given entries to references to the columns an asterisk is expanded
  * into over the source with the given position. As in the legacy code, the
- * references are qualified with the name of the source if the names are full,
- * and are unqualified names otherwise.
+ * references are qualified with the name of the source if the names are full
+ * or there are several sources, and are unqualified names otherwise. A
+ * qualified reference is looked up by the exact names of the source and the
+ * field, so it is ambiguous if another source has the same name and field.
+ *
+ * Returns 0 on success and -1 on error.
  */
-static void
+static int
 resolve_asterisk_columns(struct sql_resolve_context *ctx, uint32_t source,
 			 bool is_full, struct rast_expr_list_entry *entries)
 {
-	const struct rast_source *src = &ctx->scope->sources->sources[source];
-	uint32_t count = rast_source_field_count(src);
-	for (uint32_t i = 0; i < count; ++i) {
+	const struct rast_source_list *sources = ctx->scope->sources;
+	const struct rast_source *src = &sources->sources[source];
+	const char *src_name = rast_source_name(src);
+	struct space *space = space_by_id(src->space_id);
+	assert(space != NULL);
+	bool is_qualified = is_full || sources->len > 1;
+	for (uint32_t i = 0; i < space->def->field_count; ++i) {
+		const char *field = space->def->fields[i].name;
+		for (uint32_t j = 0; sources->len > 1 && j < sources->len;
+		     ++j) {
+			const struct rast_source *other = &sources->sources[j];
+			if (j == source ||
+			    strcmp(rast_source_name(other), src_name) != 0 ||
+			    sql_space_fieldno(space_by_id(other->space_id),
+					      field) == UINT32_MAX)
+				continue;
+			ambiguous_column_error(src_name, field);
+			return -1;
+		}
 		resolve_source_column(ctx, ctx->scope, 0, source, i,
 				      &entries[i].expr);
-		entries[i].expr.height = is_full ? 2 : 1;
+		entries[i].expr.height = is_qualified ? 2 : 1;
 		entries[i].ref_depth = 0;
 	}
-	if (!is_full && ctx->scope->is_agg_allowed)
+	if (!is_qualified && ctx->scope->is_agg_allowed)
 		ctx->scope->has_unaggregated_name = true;
+	return 0;
 }
 
 /**
@@ -3219,8 +3265,11 @@ resolve_column_list(struct sql_resolve_context *ctx,
 				if (!asterisk_matches_source(ctx, entry->expr,
 							     src))
 					continue;
-				resolve_asterisk_columns(ctx, i, is_full,
-							 &res->exprs[j]);
+				struct rast_expr_list_entry *entries =
+					&res->exprs[j];
+				if (resolve_asterisk_columns(ctx, i, is_full,
+							     entries) != 0)
+					return -1;
 				j += rast_source_field_count(src);
 			}
 			continue;
@@ -3522,19 +3571,51 @@ ast_expr_has_collate(const struct ast_expr *ast)
 
 /**
  * Check if the given AST FROM clause can be resolved: it is empty or consists
- * of a single table.
+ * of tables joined without NATURAL, ON and USING.
  */
 static bool
 can_resolve_sources(const struct ast_source_list *ast)
 {
 	if (ast == NULL)
 		return true;
-	if (ast->len != 1)
-		return false;
-	const struct ast_source *src =
-		stailq_entry(ast->head.first.value, struct ast_source, link);
-	return src->select == NULL && src->name.n > 0 &&
-	       src->join_on == NULL && src->join_using == NULL;
+	for (const struct stailq_entry *node = ast->head.first.value;
+	     node != NULL; node = node->next.value) {
+		const struct ast_source *src =
+			stailq_entry(node, struct ast_source, link);
+		if (src->select != NULL || src->name.n == 0 ||
+		    src->join_on != NULL || src->join_using != NULL ||
+		    (src->join_type & JT_NATURAL) != 0)
+			return false;
+	}
+	return true;
+}
+
+/**
+ * Check the join types of the given AST FROM clause, as the legacy code does
+ * when converting the FROM clause.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+check_join_types(const struct ast_source_list *ast)
+{
+	for (const struct stailq_entry *node = ast->head.first.value;
+	     node != NULL; node = node->next.value) {
+		int type = stailq_entry(node, struct ast_source,
+					link)->join_type;
+		if ((type & JT_INNER) != 0 && (type & JT_OUTER) != 0) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 "JOIN cannot be both OUTER and INNER");
+			return -1;
+		}
+		if ((type & JT_OUTER) != 0 &&
+		    (type & (JT_LEFT | JT_RIGHT)) != JT_LEFT) {
+			diag_set(ClientError, ER_UNSUPPORTED, "Tarantool",
+				 "RIGHT and FULL OUTER JOINs");
+			return -1;
+		}
+	}
+	return 0;
 }
 
 /**
@@ -3606,6 +3687,8 @@ resolve_sources(struct sql_resolve_context *ctx,
 {
 	if (ast == NULL)
 		return 0;
+	if (check_join_types(ast) != 0)
+		return -1;
 	res->len = ast->len;
 	res->sources = xregion_alloc_array(ctx->region, typeof(*res->sources),
 					   res->len);
@@ -3614,10 +3697,11 @@ resolve_sources(struct sql_resolve_context *ctx,
 	     node != NULL; node = node->next.value) {
 		const struct ast_source *src =
 			stailq_entry(node, struct ast_source, link);
-		if (resolve_source(ctx, src, &res->sources[i++]) != 0)
+		if (resolve_source(ctx, src, &res->sources[i]) != 0)
 			return -1;
 		if (!ctx->can_resolve)
 			return 0;
+		res->sources[i++].join_type = src->join_type;
 	}
 	return 0;
 }
@@ -4397,6 +4481,11 @@ expr_from_rast(struct Parse *parser, const struct rast_build_scope *scope,
 		if (s->src != NULL) {
 			res = sql_expr_new_column(s->src, expr->column.source,
 						  expr->column.fieldno);
+			struct SrcList_item *item =
+				&s->src->a[expr->column.source];
+			/* The right table of a LEFT JOIN can be all NULLs. */
+			if ((item->fg.jointype & JT_LEFT) != 0)
+				ExprSetProperty(res, EP_CanBeNull);
 			break;
 		}
 		/*
@@ -4506,6 +4595,7 @@ src_list_from_rast(struct Parse *parser, const struct rast_source_list *list)
 		if (src->alias != NULL)
 			item->zAlias = sql_xstrdup(src->alias);
 		item->space = space;
+		item->fg.jointype = src->join_type;
 		item->fg.disallow_scan = src->disallow_scan;
 		item->fg.notIndexed = src->is_not_indexed;
 		if (src->index_id != UINT32_MAX) {

@@ -236,6 +236,8 @@ struct rast_source {
 	bool is_not_indexed;
 	/** Whether scanning is not allowed for this source. */
 	bool disallow_scan;
+	/** Type of the join with the previous source, JT_* flags. */
+	uint8_t join_type;
 };
 
 /** Resolved list of sources. */

@@ -420,6 +420,88 @@ g.test_indexed_by = function()
 end
 
 --
+-- With several sources, a name must match a column of one source only.
+--
+g.test_several_sources = function()
+    g.server:exec(function()
+        local check = rawget(_G, 'check')
+        check([[SELECT b, x FROM t, s WHERE t.a = s.a;]],
+              {{10, 100}, {20, 200}})
+        check([[SELECT t2.a, t.b FROM t, t AS t2 WHERE t.a + 1 = t2.a;]],
+              {{2, 10}, {3, 20}})
+        check([[SELECT COUNT(*) FROM t, s, lt;]], {{6}})
+        check([[SELECT (SELECT COUNT(*) FROM s, lt WHERE s.a = t.a) FROM t;]],
+              {{1}, {1}, {0}})
+        check([[SELECT a FROM t, s;]], 'ambiguous column name: a')
+        check([[SELECT t.a FROM t, t;]], 'ambiguous column name: t.a')
+        check([[SELECT t.a FROM t, s ORDER BY a;]],
+              'ambiguous column name: a')
+        check([[SELECT 1 FROM t, s WHERE (SELECT a) = 1;]],
+              'ambiguous column name: a')
+        check([[SELECT nosuch.a FROM t, s;]],
+              "Field 'a' was not found in space 'nosuch' format")
+        check([[SELECT 1 FROM t, nosuch;]], "Space 'nosuch' does not exist")
+    end)
+end
+
+--
+-- As in the legacy code, the join types are checked, and the columns of the
+-- right table of a LEFT JOIN can be NULL.
+--
+g.test_join_types = function()
+    g.server:exec(function()
+        local check = rawget(_G, 'check')
+        check([[SELECT t.a FROM t CROSS JOIN s WHERE t.a = s.a;]],
+              {{1}, {2}})
+        check([[SELECT t.a FROM t INNER JOIN s WHERE t.a = s.a;]],
+              {{1}, {2}})
+        check([[SELECT t.a, s.x FROM t LEFT OUTER JOIN s WHERE s.a = t.a;]],
+              {{1, 100}, {2, 200}})
+        check([[SELECT t.a, s.x FROM t LEFT JOIN s WHERE s.x IS NULL;]], {})
+        local res = box.execute([[SELECT s.x FROM t LEFT JOIN s
+                                  WHERE s.a = t.a;]])
+        t.assert_equals(res.rows, {{100}, {200}})
+        check([[SELECT 1 FROM t RIGHT JOIN s;]],
+              'Tarantool does not support RIGHT and FULL OUTER JOINs')
+        check([[SELECT 1 FROM t OUTER JOIN s;]],
+              'Tarantool does not support RIGHT and FULL OUTER JOINs')
+        check([[SELECT 1 FROM t INNER OUTER JOIN s;]],
+              'JOIN cannot be both OUTER and INNER')
+        check([[SELECT 1 FROM t RIGHT JOIN nosuch;]],
+              'Tarantool does not support RIGHT and FULL OUTER JOINs')
+    end)
+end
+
+--
+-- With several sources, an asterisk is expanded into references qualified
+-- with the exact name of the source, so they can be ambiguous.
+--
+g.test_asterisks_several_sources = function()
+    g.server:exec(function()
+        local check = rawget(_G, 'check')
+        local res = box.execute([[SELECT * FROM t, s WHERE t.a = s.a;]])
+        t.assert_equals(res.metadata, {
+            {name = 'a', type = 'integer'},
+            {name = 'b', type = 'integer'},
+            {name = 'a', type = 'integer'},
+            {name = 'x', type = 'integer'},
+        })
+        t.assert_equals(res.rows, {{1, 10, 1, 100}, {2, 20, 2, 200}})
+        check([[SELECT s.*, t.* FROM t, s WHERE t.a = s.a AND t.a = 1;]],
+              {{1, 100, 1, 10}})
+        check([[SELECT * FROM t, t AS t2 WHERE t.a = 1 AND t2.a = 2;]],
+              {{1, 10, 2, 20}})
+        check([[SELECT * FROM t, t;]], 'ambiguous column name: t.a')
+        check([[SELECT * FROM t AS "UP", "UP";]],
+              'ambiguous column name: UP.a')
+        check([[SELECT x.* FROM t, s;]], "Space 'x' does not exist")
+        -- Qualified references are not unqualified names.
+        check([[SELECT * FROM t, s HAVING COUNT(*) > 0;]],
+              {{3, 30, 2, 200}})
+    end)
+end
+
+--
 -- Sources are now resolved together with the expressions, so an unknown table
 -- is reported before an error found later in the conversion of the statement.
 --
