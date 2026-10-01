@@ -4421,14 +4421,18 @@ convertCompoundSelectToSubquery(Walker * pWalker, Select * p)
 	struct Expr *expr = sql_expr_new_anon(TK_ASTERISK);
 	p->pEList = sql_expr_list_append(NULL, expr);
 	p->op = TK_SELECT;
-	p->pWhere = 0;
-	pNew->pGroupBy = 0;
-	pNew->pHaving = 0;
+	/*
+	 * Only ORDER BY, LIMIT and OFFSET belong to the whole compound SELECT,
+	 * the other clauses and DISTINCT belong to its rightmost part.
+	 */
+	p->pWhere = NULL;
+	p->pGroupBy = NULL;
+	p->pHaving = NULL;
 	pNew->pOrderBy = 0;
 	p->pPrior = 0;
 	p->pNext = 0;
 	p->pWith = 0;
-	p->selFlags &= ~SF_Compound;
+	p->selFlags &= ~(SF_Compound | SF_Distinct | SF_All | SF_Values);
 	assert((p->selFlags & SF_Converted) == 0);
 	p->selFlags |= SF_Converted;
 	assert(pNew->pPrior != 0);
