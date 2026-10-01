@@ -161,9 +161,7 @@ select_from_rast_in(struct Parse *parser,
 
 /**
  * Create a source list of a SELECT, which is a subquery of a SELECT with the
- * given scope of sources, from the given resolved source list, and assign
- * cursors to its sources. As in the legacy code, the SELECTs of the views are
- * created after the cursors are assigned to all the sources.
+ * given scope of sources, from the given resolved source list.
  *
  * Returns NULL if the list is empty or on error.
  */
@@ -3478,10 +3476,9 @@ find_equal_column(struct sql_resolve_context *ctx,
 {
 	struct Parse *parser = ctx->parser;
 	/*
-	 * The expressions are built only to be compared, so their sources
-	 * are not built, and the cursors their subqueries take are released.
+	 * The expressions are built only to be compared, so their sources are
+	 * not built.
 	 */
-	int cursor_count = parser->nTab;
 	uint32_t len = ctx->select_depth + 1;
 	struct rast_build_scope *scopes =
 		xregion_alloc_array(ctx->region, typeof(*scopes), len);
@@ -3504,7 +3501,6 @@ find_equal_column(struct sql_resolve_context *ctx,
 		}
 	}
 	sql_expr_delete(e);
-	parser->nTab = cursor_count;
 	return res;
 }
 
@@ -3804,6 +3800,7 @@ resolve_source(struct sql_resolve_context *ctx, const struct ast_source *ast,
 		return -1;
 	}
 	res->select = NULL;
+	res->cursor = -1;
 	if (space->def->opts.is_view) {
 		if (resolve_view(ctx, space, res) != 0)
 			return -1;
@@ -4951,6 +4948,7 @@ src_list_from_rast(struct Parse *parser, const struct rast_build_scope *parent,
 		if (src->alias != NULL)
 			item->zAlias = sql_xstrdup(src->alias);
 		item->space = space;
+		item->iCursor = src->cursor;
 		item->fg.jointype = src->join_type;
 		item->fg.disallow_scan = src->disallow_scan;
 		item->fg.notIndexed = src->is_not_indexed;
@@ -4962,7 +4960,6 @@ src_list_from_rast(struct Parse *parser, const struct rast_build_scope *parent,
 	}
 	if (res == NULL)
 		return NULL;
-	sqlSrcListAssignCursors(parser, res);
 	for (uint32_t i = 0; i < list->len; ++i) {
 		struct rast_select *select = list->sources[i].select;
 		if (select == NULL)
@@ -5142,8 +5139,164 @@ select_from_rast_in(struct Parse *parser,
 	return res;
 }
 
+/**
+ * Assign cursors to the given resolved sources, as sqlSrcListAssignCursors()
+ * does.
+ */
+static void
+rast_sources_assign_cursors(struct Parse *parser,
+			    struct rast_source_list *sources)
+{
+	for (uint32_t i = 0; i < sources->len; ++i) {
+		struct rast_source *src = &sources->sources[i];
+		if (src->cursor >= 0)
+			break;
+		src->cursor = parser->nTab++;
+	}
+}
+
+/**
+ * Assign cursors to the sources of the given resolved SELECT, which may be a
+ * compound one, and of its subqueries, in the same order as the legacy code
+ * does when expanding the SELECT: the parts of a compound SELECT from right to
+ * left, and in every part its sources, the SELECTs of its views, and then the
+ * subqueries of its clauses. The ON clauses are a part of WHERE. Even if the
+ * LIMIT of the SELECT is replaced, its subqueries take their cursors.
+ */
+static void
+rast_select_assign_cursors(struct Parse *parser, struct rast_select *select);
+
+/**
+ * Assign cursors to the sources of the subqueries of the given resolved
+ * expression, visiting them in the same order as the legacy walker visits the
+ * expression it creates. A reference to a result column is a copy of its
+ * expression, which shares the cursors of the original.
+ */
+static void
+rast_expr_assign_cursors(struct Parse *parser, const struct rast_expr *expr)
+{
+	switch (expr->op) {
+	case TK_NOT:
+	case TK_BITNOT:
+	case TK_ISNULL:
+	case TK_NOTNULL:
+	case TK_UMINUS:
+	case TK_UPLUS:
+	case TK_CAST:
+		rast_expr_assign_cursors(parser, expr->expr);
+		break;
+	case TK_LT:
+	case TK_LE:
+	case TK_GT:
+	case TK_GE:
+	case TK_EQ:
+	case TK_NE:
+	case TK_OR:
+	case TK_AND:
+	case TK_CONCAT:
+	case TK_PLUS:
+	case TK_MINUS:
+	case TK_STAR:
+	case TK_SLASH:
+	case TK_REM:
+	case TK_BITAND:
+	case TK_BITOR:
+	case TK_LSHIFT:
+	case TK_RSHIFT:
+		rast_expr_assign_cursors(parser, expr->left);
+		rast_expr_assign_cursors(parser, expr->right);
+		break;
+	case TK_BETWEEN:
+		rast_expr_assign_cursors(parser, expr->between.value);
+		rast_expr_assign_cursors(parser, expr->between.lower);
+		rast_expr_assign_cursors(parser, expr->between.upper);
+		break;
+	case TK_IN:
+		rast_expr_assign_cursors(parser, expr->in.value);
+		if (expr->in.select != NULL)
+			rast_select_assign_cursors(parser, expr->in.select);
+		for (uint32_t i = 0; i < expr->in.len; ++i)
+			rast_expr_assign_cursors(parser, &expr->in.exprs[i]);
+		break;
+	case TK_CASE:
+		if (expr->cs.value != NULL)
+			rast_expr_assign_cursors(parser, expr->cs.value);
+		for (uint32_t i = 0; i < expr->cs.len; ++i)
+			rast_expr_assign_cursors(parser, &expr->cs.exprs[i]);
+		break;
+	case TK_VECTOR:
+	case TK_ARRAY:
+	case TK_MAP:
+		for (uint32_t i = 0; i < expr->list.len; ++i)
+			rast_expr_assign_cursors(parser, &expr->list.exprs[i]);
+		break;
+	case TK_GETITEM:
+		for (uint32_t i = 0; i < expr->getitem.len; ++i) {
+			rast_expr_assign_cursors(parser,
+						 &expr->getitem.exprs[i]);
+		}
+		rast_expr_assign_cursors(parser, expr->getitem.value);
+		break;
+	case TK_COLLATE:
+		rast_expr_assign_cursors(parser, expr->coll.expr);
+		break;
+	case TK_SELECT:
+	case TK_EXISTS:
+		rast_select_assign_cursors(parser, expr->select);
+		break;
+	case TK_FUNCTION:
+		for (uint32_t i = 0; i < expr->func.n_args; ++i)
+			rast_expr_assign_cursors(parser, &expr->func.args[i]);
+		break;
+	default:
+		break;
+	}
+}
+
+/**
+ * Assign cursors to the sources of the subqueries of the given resolved
+ * expression list.
+ */
+static void
+rast_expr_list_assign_cursors(struct Parse *parser,
+			      const struct rast_expr_list *list)
+{
+	for (uint32_t i = 0; i < list->len; ++i)
+		rast_expr_assign_cursors(parser, &list->exprs[i].expr);
+}
+
+static void
+rast_select_assign_cursors(struct Parse *parser, struct rast_select *select)
+{
+	for (struct rast_select *p = select; p != NULL; p = p->prior) {
+		rast_sources_assign_cursors(parser, &p->sources);
+		for (uint32_t i = 0; i < p->sources.len; ++i) {
+			struct rast_select *view = p->sources.sources[i].select;
+			if (view != NULL)
+				rast_select_assign_cursors(parser, view);
+		}
+		rast_expr_list_assign_cursors(parser, &p->columns);
+		if (p->where != NULL)
+			rast_expr_assign_cursors(parser, p->where);
+		for (uint32_t i = 0; i < p->sources.len; ++i) {
+			const struct rast_expr *on = p->sources.sources[i].on;
+			if (on != NULL)
+				rast_expr_assign_cursors(parser, on);
+		}
+		rast_expr_list_assign_cursors(parser, &p->group_by);
+		if (p->having != NULL)
+			rast_expr_assign_cursors(parser, p->having);
+		rast_expr_list_assign_cursors(parser, &p->order_by);
+		if (p->limit != NULL)
+			rast_expr_assign_cursors(parser, p->limit);
+		if (p->offset != NULL)
+			rast_expr_assign_cursors(parser, p->offset);
+	}
+}
+
 struct Select *
 select_from_rast(struct Parse *parser, struct rast_select *select)
 {
+	rast_select_assign_cursors(parser, select);
 	return select_from_rast_in(parser, NULL, select);
 }

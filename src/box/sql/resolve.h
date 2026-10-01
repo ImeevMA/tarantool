@@ -260,6 +260,10 @@ struct rast_source {
 	uint32_t join_column_count;
 	/** Resolved SELECT of a view, NULL for a table. */
 	struct rast_select *select;
+	/**
+	 * Cursor of the source, assigned when the SELECT is built, or -1.
+	 */
+	int cursor;
 };
 
 /** Resolved list of sources. */
