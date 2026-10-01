@@ -2298,6 +2298,8 @@ find_alias(const struct rast_expr_list *columns, const char *name,
 static const struct space_def *
 rast_source_def(const struct rast_source *src)
 {
+	if (src->def != NULL)
+		return src->def;
 	struct space *space = space_by_id(src->space_id);
 	assert(space != NULL);
 	return space->def;
@@ -2428,10 +2430,26 @@ rast_source_uses(const struct rast_source *src, const char *name,
 }
 
 /**
+ * Check if the definition of the given source has a field after the one with
+ * the given number with the same name, which only a subquery can have.
+ */
+static bool
+rast_source_has_dup_field(const struct rast_source *src, uint32_t fieldno)
+{
+	const struct space_def *def = rast_source_def(src);
+	const char *name = def->fields[fieldno].name;
+	for (uint32_t i = fieldno + 1; i < def->field_count; ++i) {
+		if (strcmp(def->fields[i].name, name) == 0)
+			return true;
+	}
+	return false;
+}
+
+/**
  * Find the column with the given name, optionally qualified with the given
  * source name, among the given sources. As in the legacy code, the name must
- * match a column of one source only, but once it matches one, a source joined
- * by NATURAL or by USING with the name is skipped.
+ * match one column of one source only, but once it matches one, a source
+ * joined by NATURAL or by USING with the name is skipped.
  *
  * Sets the position of the source, or UINT32_MAX if the column is not found,
  * and the number of the field.
@@ -2450,13 +2468,15 @@ find_column(const struct rast_source_list *sources, const char *tab_name,
 					       name, legacy_name);
 		if (f == UINT32_MAX)
 			continue;
-		if (*source == UINT32_MAX) {
+		if (*source == UINT32_MAX &&
+		    !rast_source_has_dup_field(src, f)) {
 			*source = i;
 			*fieldno = f;
 			continue;
 		}
-		if ((src->join_type & JT_NATURAL) != 0 ||
-		    rast_source_uses(src, name, legacy_name))
+		if (*source != UINT32_MAX &&
+		    ((src->join_type & JT_NATURAL) != 0 ||
+		     rast_source_uses(src, name, legacy_name)))
 			continue;
 		ambiguous_column_error(tab_name, name);
 		return -1;
@@ -3701,8 +3721,8 @@ ast_expr_has_collate(const struct ast_expr *ast)
 }
 
 /**
- * Check if the given AST FROM clause can be resolved: it is empty or consists
- * of tables.
+ * Check if the given AST FROM clause can be resolved: it has no parenthesized
+ * lists of sources.
  */
 static bool
 can_resolve_sources(const struct ast_source_list *ast)
@@ -3713,7 +3733,8 @@ can_resolve_sources(const struct ast_source_list *ast)
 	     node != NULL; node = node->next.value) {
 		const struct ast_source *src =
 			stailq_entry(node, struct ast_source, link);
-		if (src->select != NULL || src->name.n == 0)
+		if (src->select != NULL &&
+		    (src->select->flags & SF_NestedFrom) != 0)
 			return false;
 	}
 	return true;
@@ -3793,8 +3814,8 @@ resolve_view(struct sql_resolve_context *ctx, const struct space *space,
  * Returns 0 on success and -1 on error.
  */
 static int
-resolve_source(struct sql_resolve_context *ctx, const struct ast_source *ast,
-	       struct rast_source *res)
+resolve_space_source(struct sql_resolve_context *ctx,
+		     const struct ast_source *ast, struct rast_source *res)
 {
 	const char *name = sql_name_temp(ctx->region, ast->name.z,
 					 ast->name.n);
@@ -3815,8 +3836,6 @@ resolve_source(struct sql_resolve_context *ctx, const struct ast_source *ast,
 			 "spaces without primary key");
 		return -1;
 	}
-	res->select = NULL;
-	res->cursor = -1;
 	if (space->def->opts.is_view) {
 		if (resolve_view(ctx, space, res) != 0)
 			return -1;
@@ -3824,12 +3843,6 @@ resolve_source(struct sql_resolve_context *ctx, const struct ast_source *ast,
 			return 0;
 	}
 	res->space_id = space->def->id;
-	res->alias = NULL;
-	if (ast->alias.n > 0) {
-		res->alias = sql_name_temp(ctx->region, ast->alias.z,
-					   ast->alias.n);
-	}
-	res->index_id = UINT32_MAX;
 	/* NOT INDEXED is a token of length 1 without text, see parse.y. */
 	res->is_not_indexed = ast->indexed_by.n == 1 &&
 			      ast->indexed_by.z == NULL;
@@ -3843,12 +3856,115 @@ resolve_source(struct sql_resolve_context *ctx, const struct ast_source *ast,
 			return -1;
 		}
 	}
+	return 0;
+}
+
+/**
+ * Create the definition of a subquery source with the given name from the
+ * given AST and resolved leftmost parts of its SELECT, as selectExpander()
+ * does. As in sqlColumnsFromExprList(), a field is named after the name of
+ * its column, which is a column reference as written if it has no alias. The
+ * types of the fields are unknown until the SELECT is built.
+ */
+static const struct space_def *
+subquery_def_new(struct sql_resolve_context *ctx, const char *name,
+		 const struct ast_select *ast, const struct rast_select *select)
+{
+	const struct rast_expr_list *columns = &select->columns;
+	size_t name_len = strlen(name);
+	size_t size = sizeof(struct space_def) + name_len + 1;
+	struct space_def *def = xregion_aligned_alloc(ctx->region, size,
+						      alignof(*def));
+	memset(def, 0, sizeof(*def));
+	memcpy(def->name, name, name_len + 1);
+	def->field_count = columns->len;
+	def->fields = xregion_alloc_array(ctx->region, struct field_def,
+					  columns->len);
+	for (uint32_t i = 0; i < columns->len; ++i) {
+		struct field_def *field = &def->fields[i];
+		*field = field_def_default;
+		field->nullable_action = ON_CONFLICT_ACTION_NONE;
+		field->is_nullable = true;
+		field->name = (char *)columns->exprs[i].name;
+	}
+	uint32_t j = 0;
+	for (const struct stailq_entry *node = ast->columns->head.first.value;
+	     node != NULL; node = node->next.value) {
+		const struct ast_expr *e =
+			stailq_entry(node, struct ast_expr_list_entry,
+				     link)->expr;
+		if (!ast_is_asterisk(e)) {
+			struct field_def *field = &def->fields[j++];
+			if (field->name != NULL)
+				continue;
+			while (e->op == TK_PARENTHESES)
+				e = e->left;
+			if (e->op == TK_DOT)
+				e = e->right;
+			assert(e->op == TK_ID);
+			field->name = sql_name_temp(ctx->region, e->str,
+						    e->len);
+			continue;
+		}
+		const struct rast_source_list *sources = &select->sources;
+		for (uint32_t i = 0; i < sources->len; ++i) {
+			if (asterisk_matches_source(ctx, e,
+						    &sources->sources[i]))
+				j += asterisk_column_count(e, sources, i);
+		}
+	}
+	assert(j == columns->len);
+	return def;
+}
+
+/**
+ * Resolve the given AST SELECT of a subquery source into the given
+ * rast_source. As in selectExpander(), the source is named after its address.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_subquery_source(struct sql_resolve_context *ctx,
+			const struct ast_select *ast, struct rast_source *res)
+{
+	res->select = xregion_alloc_object(ctx->region, struct rast_select);
+	if (resolve_source_select(ctx, ast, res->select) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
+	const struct rast_select *select = res->select;
+	while (select->prior != NULL)
+		select = select->prior;
+	const struct ast_select *leftmost =
+		rlist_entry(ast->link.next, struct ast_select, link);
+	const char *name = tt_sprintf("sql_sq_%llX", (long long)res);
+	res->def = subquery_def_new(ctx, name, leftmost, select);
+	return 0;
+}
+
+/**
+ * Resolve the given AST source, which is a table, a view or a subquery, into
+ * the given rast_source.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_source(struct sql_resolve_context *ctx, const struct ast_source *ast,
+	       struct rast_source *res)
+{
+	memset(res, 0, sizeof(*res));
+	res->index_id = UINT32_MAX;
+	res->cursor = -1;
+	int rc = ast->select != NULL ?
+		 resolve_subquery_source(ctx, ast->select, res) :
+		 resolve_space_source(ctx, ast, res);
+	if (rc != 0 || !ctx->can_resolve)
+		return rc;
+	if (ast->alias.n > 0) {
+		res->alias = sql_name_temp(ctx->region, ast->alias.z,
+					   ast->alias.n);
+	}
 	res->disallow_scan = ast->disallow_scan;
-	res->on = NULL;
-	res->using_names = NULL;
-	res->using_count = 0;
-	res->join_columns = NULL;
-	res->join_column_count = 0;
 	return 0;
 }
 
@@ -4955,11 +5071,24 @@ src_list_from_rast(struct Parse *parser, const struct rast_build_scope *parent,
 	struct SrcList *res = NULL;
 	for (uint32_t i = 0; i < list->len; ++i) {
 		const struct rast_source *src = &list->sources[i];
-		struct space *space = space_by_id(src->space_id);
-		assert(space != NULL);
 		res = sql_src_list_append(res, NULL);
 		struct SrcList_item *item = &res->a[res->nSrc - 1];
-		item->zName = sql_xstrdup(space->def->name);
+		struct space *space;
+		if (src->def != NULL) {
+			space = sql_template_space_new(sqlParseToplevel(parser),
+						       src->def->name);
+			uint32_t count = src->def->field_count;
+			space->def->fields =
+				xregion_alloc_array(&parser->region,
+						    struct field_def, count);
+			memcpy(space->def->fields, src->def->fields,
+			       count * sizeof(struct field_def));
+			space->def->field_count = count;
+		} else {
+			space = space_by_id(src->space_id);
+			assert(space != NULL);
+			item->zName = sql_xstrdup(space->def->name);
+		}
 		if (src->alias != NULL)
 			item->zAlias = sql_xstrdup(src->alias);
 		item->space = space;
@@ -4986,6 +5115,13 @@ src_list_from_rast(struct Parse *parser, const struct rast_build_scope *parent,
 			return NULL;
 		}
 		item->fg.isCorrelated = select->is_correlated;
+		if (list->sources[i].def == NULL)
+			continue;
+		struct Select *leftmost = item->pSelect;
+		while (leftmost->pPrior != NULL)
+			leftmost = leftmost->pPrior;
+		sqlSelectAddColumnTypeAndCollation(parser, item->space->def,
+						   leftmost);
 	}
 	return res;
 }
@@ -5156,7 +5292,8 @@ select_from_rast_in(struct Parse *parser,
 
 /**
  * Assign cursors to the given resolved sources, as sqlSrcListAssignCursors()
- * does.
+ * does: every subquery source is followed by the sources of the rightmost part
+ * of its SELECT.
  */
 static void
 rast_sources_assign_cursors(struct Parse *parser,
@@ -5167,6 +5304,9 @@ rast_sources_assign_cursors(struct Parse *parser,
 		if (src->cursor >= 0)
 			break;
 		src->cursor = parser->nTab++;
+		if (src->def != NULL)
+			rast_sources_assign_cursors(parser,
+						    &src->select->sources);
 	}
 }
 
@@ -5174,9 +5314,10 @@ rast_sources_assign_cursors(struct Parse *parser,
  * Assign cursors to the sources of the given resolved SELECT, which may be a
  * compound one, and of its subqueries, in the same order as the legacy code
  * does when expanding the SELECT: the parts of a compound SELECT from right to
- * left, and in every part its sources, the SELECTs of its views, and then the
- * subqueries of its clauses. The ON clauses are a part of WHERE. Even if the
- * LIMIT of the SELECT is replaced, its subqueries take their cursors.
+ * left, and in every part its sources, the SELECTs of its views and
+ * subqueries, and then the subqueries of its clauses. The ON clauses are a
+ * part of WHERE. Even if the LIMIT of the SELECT is replaced, its subqueries
+ * take their cursors.
  */
 static void
 rast_select_assign_cursors(struct Parse *parser, struct rast_select *select);
@@ -5286,9 +5427,9 @@ rast_select_assign_cursors(struct Parse *parser, struct rast_select *select)
 	for (struct rast_select *p = select; p != NULL; p = p->prior) {
 		rast_sources_assign_cursors(parser, &p->sources);
 		for (uint32_t i = 0; i < p->sources.len; ++i) {
-			struct rast_select *view = p->sources.sources[i].select;
-			if (view != NULL)
-				rast_select_assign_cursors(parser, view);
+			struct rast_select *sub = p->sources.sources[i].select;
+			if (sub != NULL)
+				rast_select_assign_cursors(parser, sub);
 		}
 		rast_expr_list_assign_cursors(parser, &p->columns);
 		if (p->where != NULL)

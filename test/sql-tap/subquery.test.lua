@@ -567,7 +567,7 @@ test:do_catchsql_test(
         SELECT MAX((SELECT a FROM (SELECT COUNT(x) AS a FROM t35b))) FROM t35a;
     ]], {
         -- <subquery-3.5.6>
-        1, "misuse of aggregate: COUNT()"
+        1, "misuse of aggregate function COUNT()"
         -- </subquery-3.5.6>
     })
 

@@ -652,6 +652,59 @@ g.test_views = function()
 end
 
 --
+-- As in the legacy code, the fields of a subquery in FROM are named after the
+-- result columns of the leftmost part of its SELECT: after their aliases or,
+-- if there are none, after the column references as written. A name of
+-- several fields refers to none of them. The result columns of the subquery
+-- are named automatically before the result columns of the SELECT using it.
+--
+g.test_subqueries = function()
+    g.server:exec(function()
+        local check = rawget(_G, 'check')
+        local res = box.execute([[SELECT 1 + 1, * FROM (SELECT 2 + 2, 3);]])
+        t.assert_equals(res.metadata, {
+            {name = 'COLUMN_3', type = 'integer'},
+            {name = 'COLUMN_1', type = 'integer'},
+            {name = 'COLUMN_2', type = 'integer'},
+        })
+        t.assert_equals(res.rows, {{2, 4, 3}})
+        check([[SELECT x.b FROM (SELECT b FROM t) AS x WHERE b > 10;]],
+              {{20}, {30}})
+        check([[SELECT * FROM (SELECT (t.a), b AS c FROM t) WHERE c = 20;]],
+              {{2, 20}})
+        check([[SELECT "a" FROM (SELECT a FROM t) WHERE a = 1;]], {{1}})
+        check([[SELECT A FROM (SELECT a FROM t);]],
+              "Can't resolve field 'A'")
+        check([[SELECT a, A FROM (SELECT "a", "A" FROM q);]], {{2, 1}})
+        check([[SELECT p FROM (SELECT 1 AS p UNION SELECT 2 AS r);]],
+              {{1}, {2}})
+        check([[SELECT * FROM (VALUES (1, 2), (3, 4)) WHERE COLUMN_4 = 4;]],
+              {{3, 4}})
+        check([[SELECT a FROM t INTERSECT VALUES (1), (5);]], {{1}})
+        check([[SELECT * FROM (SELECT * FROM t) NATURAL JOIN s;]],
+              {{1, 10, 100}, {2, 20, 200}})
+        check([[SELECT * FROM s LEFT JOIN (SELECT a, b FROM t) AS x
+                ON x.a = s.a + 1;]], {{1, 100, 2, 20}, {2, 200, 3, 30}})
+        check([[SELECT * FROM (SELECT x FROM s), (SELECT b FROM t)
+                WHERE x = 100 AND b = 30;]], {{100, 30}})
+        check([[SELECT (SELECT y FROM (SELECT t.a + 1 AS y)) FROM t;]],
+              {{2}, {3}, {4}})
+        check([[SELECT * FROM (SELECT * FROM (SELECT b FROM t)) LIMIT 1;]],
+              {{10}})
+        check([[SELECT * FROM (SELECT 'a' COLLATE "unicode_ci" AS k)
+                WHERE k = 'A';]], {{'a'}})
+        check([[SELECT * FROM (SELECT a, a FROM t);]],
+              'ambiguous column name: a')
+        check([[SELECT x.a FROM (SELECT a, b AS a FROM t) AS x;]],
+              'ambiguous column name: x.a')
+        check([[SELECT b FROM (SELECT a, a FROM t), t WHERE b = 10;]],
+              {{10}, {10}, {10}})
+        check([[SELECT * FROM (SELECT nosuch FROM t);]],
+              "Can't resolve field 'nosuch'")
+    end)
+end
+
+--
 -- Sources are now resolved together with the expressions, so an unknown table
 -- is reported before an error found later in the conversion of the statement.
 --

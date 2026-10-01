@@ -471,6 +471,9 @@ selectnowith(A) ::= selectnowith(X) multiselect_op(Y) oneselect(Z).  {
     struct ast_source *new = ast_source_new(ctx->region);
     new->select = Z;
     A = ast_select_new(ctx->region);
+    struct ast_expr *star = ast_expr_new(ctx->region, "*", 1, TK_ASTERISK);
+    A->columns = ast_expr_list_append(ctx->region, NULL, star);
+    A->columns->is_select_list = true;
     A->sources = ast_source_list_append(ctx->region, NULL, new);
   }
   A->op = Y;

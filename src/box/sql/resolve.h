@@ -236,7 +236,7 @@ struct rast_join_column {
 
 /** Resolved source of a SELECT statement. */
 struct rast_source {
-	/** Identifier of the space the source refers to. */
+	/** Identifier of the space the source refers to, 0 for a subquery. */
 	uint32_t space_id;
 	/** Dequoted alias of the source, or NULL. */
 	const char *alias;
@@ -258,8 +258,10 @@ struct rast_source {
 	struct rast_join_column *join_columns;
 	/** Number of the joined columns. */
 	uint32_t join_column_count;
-	/** Resolved SELECT of a view, NULL for a table. */
+	/** Resolved SELECT of a view or a subquery, NULL for a table. */
 	struct rast_select *select;
+	/** Definition of a subquery, NULL for a table or a view. */
+	const struct space_def *def;
 	/**
 	 * Cursor of the source, assigned when the SELECT is built, or -1.
 	 */
