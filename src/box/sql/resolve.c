@@ -231,6 +231,12 @@ resolveAlias(struct Parse *parser, struct ExprList *pEList, int iCol,
 		incrAggFunctionDepth(pDup, nSubquery);
 	if (pExpr->op == TK_COLLATE)
 		pDup = sql_expr_new_collate(parser, pDup, pExpr->v.id);
+	/*
+	 * The alias may be in the ON clause of a LEFT JOIN, so the copy must
+	 * be a part of the join restriction too.
+	 */
+	if (ExprHasProperty(pExpr, EP_FromJoin))
+		sql_expr_set_join(pDup, pExpr->iRightJoinTable);
 
 	/* Before calling sql_expr_delete(), set the EP_Static flag. This
 	 * prevents ExprDelete() from deleting the Expr structure itself,

@@ -636,48 +636,21 @@ addWhereTerm(Parse * pParse,	/* Parsing context */
 	*ppWhere = sql_and_expr_new(*ppWhere, pEq);
 }
 
-/*
- * Set the EP_FromJoin property on all terms of the given expression.
- * And set the Expr.iRightJoinTable to iTable for every term in the
- * expression.
- *
- * The EP_FromJoin property is used on terms of an expression to tell
- * the LEFT OUTER JOIN processing logic that this term is part of the
- * join restriction specified in the ON or USING clause and not a part
- * of the more general WHERE clause.  These terms are moved over to the
- * WHERE clause during join processing but we need to remember that they
- * originated in the ON or USING clause.
- *
- * The Expr.iRightJoinTable tells the WHERE clause processing that the
- * expression depends on table iRightJoinTable even if that table is not
- * explicitly mentioned in the expression.  That information is needed
- * for cases like this:
- *
- *    SELECT * FROM t1 LEFT JOIN t2 ON t1.a=t2.b AND t1.x=5
- *
- * The where clause needs to defer the handling of the t1.x=5
- * term until after the t2 loop of the join.  In that way, a
- * NULL t2 row will be inserted whenever t1.x!=5.  If we do not
- * defer the handling of t1.x=5, it will be processed immediately
- * after the t1 loop and rows with t1.x!=5 will never appear in
- * the output, which is incorrect.
- */
-static void
-setJoinExpr(Expr * p, int iTable)
+void
+sql_expr_set_join(struct Expr *expr, int cursor)
 {
-	while (p) {
-		ExprSetProperty(p, EP_FromJoin);
-		assert(!ExprHasProperty(p, EP_TokenOnly | EP_Reduced));
-		ExprSetVVAProperty(p, EP_NoReduce);
-		p->iRightJoinTable = (i16) iTable;
-		if (p->op == TK_FUNCTION && p->x.pList) {
-			int i;
-			for (i = 0; i < p->x.pList->nExpr; i++) {
-				setJoinExpr(p->x.pList->a[i].pExpr, iTable);
-			}
+	while (expr != NULL) {
+		ExprSetProperty(expr, EP_FromJoin);
+		assert(!ExprHasProperty(expr, EP_TokenOnly | EP_Reduced));
+		ExprSetVVAProperty(expr, EP_NoReduce);
+		expr->iRightJoinTable = (i16)cursor;
+		if (expr->op == TK_FUNCTION && expr->x.pList != NULL) {
+			struct ExprList *list = expr->x.pList;
+			for (int i = 0; i < list->nExpr; i++)
+				sql_expr_set_join(list->a[i].pExpr, cursor);
 		}
-		setJoinExpr(p->pLeft, iTable);
-		p = p->pRight;
+		sql_expr_set_join(expr->pLeft, cursor);
+		expr = expr->pRight;
 	}
 }
 
@@ -756,7 +729,7 @@ sqlProcessJoin(Parse * pParse, Select * p)
 		 */
 		if (pRight->pOn) {
 			if (isOuter)
-				setJoinExpr(pRight->pOn, pRight->iCursor);
+				sql_expr_set_join(pRight->pOn, pRight->iCursor);
 			p->pWhere = sql_and_expr_new(p->pWhere, pRight->pOn);
 			pRight->pOn = 0;
 		}

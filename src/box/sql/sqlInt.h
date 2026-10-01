@@ -2511,6 +2511,28 @@ void sqlPExprAddSelect(Parse *, Expr *, Select *);
 struct Expr *
 sql_and_expr_new(struct Expr *left_expr, struct Expr *right_expr);
 
+/**
+ * Set the EP_FromJoin property on all terms of the given expression, and set
+ * their Expr.iRightJoinTable to the given cursor.
+ *
+ * The EP_FromJoin property tells the LEFT OUTER JOIN processing logic that the
+ * term is a part of the join restriction specified in the ON or USING clause
+ * and not a part of the more general WHERE clause. These terms are moved to the
+ * WHERE clause during join processing, but it must be remembered that they
+ * originated in the ON or USING clause.
+ *
+ * The Expr.iRightJoinTable tells the WHERE clause processing that the
+ * expression depends on the table even if the table is not explicitly
+ * mentioned in the expression. That information is needed for cases like this:
+ *
+ *     SELECT * FROM t1 LEFT JOIN t2 ON t1.a = t2.b AND t1.x = 5
+ *
+ * The handling of the t1.x = 5 term must be deferred until after the t2 loop of
+ * the join, so that a NULL t2 row is inserted whenever t1.x != 5.
+ */
+void
+sql_expr_set_join(struct Expr *expr, int cursor);
+
 Expr *sqlExprFunction(Parse *, ExprList *, Token *);
 void sqlExprAssignVarNumber(Parse *, Expr *, u32);
 
