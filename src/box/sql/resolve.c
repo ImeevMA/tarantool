@@ -2292,17 +2292,41 @@ find_alias(const struct rast_expr_list *columns, const char *name,
 }
 
 /**
+ * Return the definition of the given source, describing its name and its
+ * fields.
+ */
+static const struct space_def *
+rast_source_def(const struct rast_source *src)
+{
+	struct space *space = space_by_id(src->space_id);
+	assert(space != NULL);
+	return space->def;
+}
+
+/**
  * Return the name of the given source: its alias, if any, or the name of its
- * space.
+ * definition.
  */
 static const char *
 rast_source_name(const struct rast_source *src)
 {
 	if (src->alias != NULL)
 		return src->alias;
-	struct space *space = space_by_id(src->space_id);
-	assert(space != NULL);
-	return space->def->name;
+	return rast_source_def(src)->name;
+}
+
+/**
+ * Return the number of the field with exactly the given name in the given
+ * definition, or UINT32_MAX if there is none.
+ */
+static uint32_t
+space_def_fieldno(const struct space_def *def, const char *name)
+{
+	for (uint32_t i = 0; i < def->field_count; ++i) {
+		if (strcmp(def->fields[i].name, name) == 0)
+			return i;
+	}
+	return UINT32_MAX;
 }
 
 /**
@@ -2314,11 +2338,10 @@ static uint32_t
 rast_source_fieldno(const struct rast_source *src, const char *name,
 		    const char *legacy_name)
 {
-	struct space *space = space_by_id(src->space_id);
-	assert(space != NULL);
-	uint32_t res = sql_space_fieldno(space, name);
+	const struct space_def *def = rast_source_def(src);
+	uint32_t res = space_def_fieldno(def, name);
 	if (res == UINT32_MAX && legacy_name != NULL)
-		res = sql_space_fieldno(space, legacy_name);
+		res = space_def_fieldno(def, legacy_name);
 	return res;
 }
 
@@ -2335,8 +2358,6 @@ find_source_field(const struct rast_source *src, const char *tab_name,
 		  const char *legacy_tab_name, const char *name,
 		  const char *legacy_name)
 {
-	struct space *space = space_by_id(src->space_id);
-	assert(space != NULL);
 	if (tab_name != NULL) {
 		const char *src_name = rast_source_name(src);
 		if (strcmp(src_name, tab_name) != 0 &&
@@ -2344,10 +2365,7 @@ find_source_field(const struct rast_source *src, const char *tab_name,
 		     strcmp(src_name, legacy_tab_name) != 0))
 			return UINT32_MAX;
 	}
-	uint32_t fieldno = sql_space_fieldno(space, name);
-	if (fieldno == UINT32_MAX && legacy_name != NULL)
-		fieldno = sql_space_fieldno(space, legacy_name);
-	return fieldno;
+	return rast_source_fieldno(src, name, legacy_name);
 }
 
 /**
@@ -2364,14 +2382,14 @@ resolve_source_column(struct sql_resolve_context *ctx,
 	     s = s->parent)
 		++s->ref_count;
 	ctx->scope->ref_depth = MIN(ctx->scope->ref_depth, depth);
-	const struct rast_source *src = &scope->sources->sources[source];
-	struct space *space = space_by_id(src->space_id);
-	assert(space != NULL && fieldno < space->def->field_count);
+	const struct space_def *def =
+		rast_source_def(&scope->sources->sources[source]);
+	assert(fieldno < def->field_count);
 	res->op = TK_COLUMN_REF;
 	res->column.depth = depth;
 	res->column.source = source;
 	res->column.fieldno = fieldno;
-	res->column.field_type = space->def->fields[fieldno].type;
+	res->column.field_type = def->fields[fieldno].type;
 	res->type = sql_type_from_field_type(res->column.field_type);
 }
 
@@ -3170,12 +3188,12 @@ static uint32_t
 asterisk_column_count(const struct ast_expr *ast,
 		      const struct rast_source_list *sources, uint32_t source)
 {
-	struct space *space = space_by_id(sources->sources[source].space_id);
-	assert(space != NULL);
+	const struct rast_source *src = &sources->sources[source];
+	const struct space_def *def = rast_source_def(src);
 	uint32_t res = 0;
-	for (uint32_t i = 0; i < space->def->field_count; ++i) {
+	for (uint32_t i = 0; i < def->field_count; ++i) {
 		if (!asterisk_omits_field(ast, sources, source,
-					  space->def->fields[i].name))
+					  def->fields[i].name))
 			++res;
 	}
 	return res;
@@ -3195,11 +3213,10 @@ name_asterisk_columns(struct sql_resolve_context *ctx,
 		      bool is_full, struct rast_expr_list_entry *entries)
 {
 	const struct rast_source *src = &sources->sources[source];
-	struct space *space = space_by_id(src->space_id);
-	assert(space != NULL);
+	const struct space_def *def = rast_source_def(src);
 	const char *src_name = rast_source_name(src);
-	for (uint32_t i = 0; i < space->def->field_count; ++i) {
-		const char *field = space->def->fields[i].name;
+	for (uint32_t i = 0; i < def->field_count; ++i) {
+		const char *field = def->fields[i].name;
 		if (asterisk_omits_field(ast, sources, source, field))
 			continue;
 		const char *name = asterisk_column_name(ctx->region, src_name,
@@ -3227,12 +3244,11 @@ resolve_asterisk_columns(struct sql_resolve_context *ctx,
 {
 	const struct rast_source_list *sources = ctx->scope->sources;
 	const struct rast_source *src = &sources->sources[source];
-	struct space *space = space_by_id(src->space_id);
-	assert(space != NULL);
+	const struct space_def *def = rast_source_def(src);
 	bool is_qualified = is_full || sources->len > 1;
 	const char *tab_name = is_qualified ? rast_source_name(src) : NULL;
-	for (uint32_t i = 0; i < space->def->field_count; ++i) {
-		const char *field = space->def->fields[i].name;
+	for (uint32_t i = 0; i < def->field_count; ++i) {
+		const char *field = def->fields[i].name;
 		if (asterisk_omits_field(ast, sources, source, field))
 			continue;
 		uint32_t found;
@@ -3846,13 +3862,12 @@ resolve_natural_join(struct sql_resolve_context *ctx,
 		     struct rast_source_list *sources, uint32_t source)
 {
 	struct rast_source *right = &sources->sources[source];
-	struct space *space = space_by_id(right->space_id);
-	assert(space != NULL);
+	const struct space_def *def = rast_source_def(right);
 	right->join_columns =
 		xregion_alloc_array(ctx->region, struct rast_join_column,
-				    space->def->field_count);
-	for (uint32_t f = 0; f < space->def->field_count; ++f) {
-		const char *name = space->def->fields[f].name;
+				    def->field_count);
+	for (uint32_t f = 0; f < def->field_count; ++f) {
+		const char *name = def->fields[f].name;
 		for (uint32_t i = 0; i < source; ++i) {
 			uint32_t fieldno =
 				rast_source_fieldno(&sources->sources[i], name,
