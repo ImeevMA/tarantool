@@ -4001,9 +4001,11 @@ const char *
 sql_select_op_name(int id);
 
 /**
- * Subqueries stores the original table and column names for their result sets
- * in ExprList.a[].zSpan, in the form "TABLE.COLUMN". Check to see if the span
- * given to this routine matches given table or column names.
+ * A parenthesized list of sources stores the original table and column names
+ * of its columns in ExprList.a[].zSpan, in the form "TABLE.COLUMN". Check if
+ * the given span matches the given column name, if it is not NULL, qualified
+ * with the given table name, if it is not NULL. The names also match their
+ * legacy forms, if they are not NULL.
  */
 bool
 sqlMatchSpanName(const char *span, const char *col, const char *tab,

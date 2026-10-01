@@ -4916,8 +4916,14 @@ selectExpander(Walker * pWalker, Select * p)
 			if (pSub != NULL &&
 			    (pSub->selFlags & SF_NestedFrom) == 0)
 				pSub = NULL;
-			if (pSub == NULL && zTName != NULL &&
-			    strcmp(zTName, zTabName) != 0)
+			/*
+			 * TABLE.* matches all columns of a source with the
+			 * name TABLE, and the columns of a parenthesized list
+			 * of sources whose spans are qualified with TABLE.
+			 */
+			bool is_source_matched = zTName == NULL ||
+						 strcmp(zTName, zTabName) == 0;
+			if (pSub == NULL && !is_source_matched)
 				continue;
 			for (j = 0; j < (int)space->def->field_count; j++) {
 				char *zName = space->def->fields[j].name;
@@ -4929,10 +4935,9 @@ selectExpander(Walker * pWalker, Select * p)
 				Token sColname;
 
 				assert(zName != NULL);
-				if (zTName != NULL && pSub != NULL &&
-				    sqlMatchSpanName(pSub->pEList->a[j].zSpan,
-						     NULL, zTName, NULL,
-						     NULL) == 0)
+				if (!is_source_matched &&
+				    !sqlMatchSpanName(pSub->pEList->a[j].zSpan,
+						      NULL, zTName, NULL, NULL))
 					continue;
 				tableSeen = 1;
 
@@ -4953,23 +4958,37 @@ selectExpander(Walker * pWalker, Select * p)
 				if (i > 0 && zTName == NULL &&
 				    sqlIdListIndex(pFrom->pUsing, zName) >= 0)
 					continue;
-				pRight = sql_expr_new_named(TK_ID, zName);
 				zColname = zName;
 				zToFree = NULL;
-				if (longNames != 0 || pTabList->nSrc > 1) {
+				if (longNames != 0) {
+					zColname = sqlMPrintf("%s.%s", zTabName,
+							      zName);
+					zToFree = zColname;
+				}
+				if (pSub != NULL) {
+					/*
+					 * The names of the columns of a
+					 * parenthesized list of sources may be
+					 * the same, so a column is referred to
+					 * by its position.
+					 */
+					pExpr = sql_expr_new_column(pTabList, i,
+								    j);
+					if ((pFrom->fg.jointype & JT_LEFT) != 0)
+						ExprSetProperty(pExpr,
+								EP_CanBeNull);
+				} else if (longNames != 0 ||
+					   pTabList->nSrc > 1) {
 					struct Expr *pLeft;
 					pLeft = sql_expr_new_named(TK_ID,
 								   zTabName);
+					pRight = sql_expr_new_named(TK_ID,
+								    zName);
 					pExpr = sqlPExpr(pParse, TK_DOT, pLeft,
 							 pRight);
-					if (longNames != 0) {
-						zColname = sqlMPrintf("%s.%s",
-								      zTabName,
-								      zName);
-						zToFree = zColname;
-					}
 				} else {
-					pExpr = pRight;
+					pExpr = sql_expr_new_named(TK_ID,
+								   zName);
 				}
 				pNew = sql_expr_list_append(pNew, pExpr);
 				sqlTokenInit(&sColname, zColname);
@@ -4986,8 +5005,7 @@ selectExpander(Walker * pWalker, Select * p)
 					pX->zSpan = sql_xstrdup(str);
 				} else {
 					pX->zSpan = sqlMPrintf("%s.%s",
-							       zTabName,
-							       zColname);
+							       zTabName, zName);
 				}
 				pX->bSpanIsTab = 1;
 				sql_xfree(zToFree);

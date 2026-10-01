@@ -152,47 +152,61 @@ nameInUsingClause(struct IdList *pUsing, const char *zCol, const char *old_col)
 	return false;
 }
 
+/**
+ * Check if the given part of a span, with the given length, is the given name
+ * or, if it is not NULL, the given legacy name.
+ */
+static bool
+span_part_matches(const char *part, size_t len, const char *name,
+		  const char *old_name)
+{
+	if (strlen(name) == len && strncmp(part, name, len) == 0)
+		return true;
+	return old_name != NULL && strlen(old_name) == len &&
+	       strncmp(part, old_name, len) == 0;
+}
+
 bool
 sqlMatchSpanName(const char *span, const char *col, const char *tab,
 		 const char *old_col, const char *old_tab)
 {
-	size_t n;
-	const char *name = span;
-	size_t len = strlen(span);
-	for (n = 0; n < len && span[n] != '.'; n++) {
-	}
-	if (tab != NULL) {
-		if ((strlen(tab) != n || strncmp(name, tab, n) != 0) &&
-		    (old_tab == NULL || strlen(old_tab) != n ||
-		     strncmp(name, old_tab, n) != 0))
-			return false;
-		name += n + 1;
-		len -= n + 1;
-	}
-	if (col == NULL)
-		return true;
-	if ((strlen(col) != len || strncmp(name, col, len) != 0) &&
-	    (old_col == NULL || strlen(old_col) != len ||
-	     strncmp(name, old_col, len) != 0))
+	const char *dot = strchr(span, '.');
+	assert(dot != NULL);
+	if (tab != NULL && !span_part_matches(span, dot - span, tab, old_tab))
 		return false;
-	return true;
+	return col == NULL ||
+	       span_part_matches(dot + 1, strlen(dot + 1), col, old_col);
 }
 
 /**
- * Match spans for all expressions of the list with the table name and the
- * column name.
+ * Count the expressions of the given list whose spans match the given column
+ * name, qualified with the given table name if it is not NULL, and set the
+ * position of the last one. As for the fields of a space, the legacy names
+ * are used only if the names match no span.
  */
 static int
-sql_find_column_expr(const struct ExprList *list, const char *tab_name,
-		     const char *col_name, const char *old_tab,
-		     const char *old_col)
+sql_count_span_matches(const struct ExprList *list, const char *tab_name,
+		       const char *col_name, const char *old_tab,
+		       const char *old_col, int *pos)
 {
+	int count = 0;
 	for (int j = 0; j < list->nExpr; j++) {
 		if (sqlMatchSpanName(list->a[j].zSpan, col_name, tab_name,
-				     old_col, old_tab))
-			return j;
+				     NULL, NULL)) {
+			++count;
+			*pos = j;
+		}
 	}
-	return -1;
+	if (count > 0 || (old_tab == NULL && old_col == NULL))
+		return count;
+	for (int j = 0; j < list->nExpr; j++) {
+		if (sqlMatchSpanName(list->a[j].zSpan, col_name, tab_name,
+				     old_col, old_tab)) {
+			++count;
+			*pos = j;
+		}
+	}
+	return count;
 }
 
 /**
@@ -295,21 +309,26 @@ lookupName(struct Parse *pParse, struct Expr *pExpr, struct NameContext *pNC)
 				       pItem->space->def->name != NULL);
 				struct space_def *space_def = pItem->space->def;
 				assert(space_def->field_count > 0);
+				/*
+				 * A column of a parenthesized list of sources
+				 * is looked up by its span, and if it is not
+				 * found, a qualified name is looked up among
+				 * the fields of the list as usual.
+				 */
 				if (pItem->pSelect
 				    && (pItem->pSelect->
 					selFlags & SF_NestedFrom) != 0) {
-					int hit = 0;
 					pEList = pItem->pSelect->pEList;
-					j = sql_find_column_expr(pEList, zTab,
-								 zCol, old_tab,
-								 old_col);
-					if (j >= 0) {
-						cnt++;
+					int hit = sql_count_span_matches(
+						pEList, zTab, zCol, old_tab,
+						old_col, &j);
+					if (hit > 0) {
+						cnt += hit;
 						cntTab = 2;
 						pMatch = pItem;
 						pExpr->iColumn = j;
 					}
-					if (hit || zTab == 0)
+					if (hit > 0 || zTab == 0)
 						continue;
 				}
 				if (zTab) {
