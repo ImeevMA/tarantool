@@ -124,6 +124,20 @@ struct rast_expr {
 			 */
 			uint32_t depth;
 		} alias;
+		/** Column of a source referred to by a TK_COLUMN_REF. */
+		struct {
+			/**
+			 * Number of subqueries between the reference and the
+			 * SELECT the source belongs to.
+			 */
+			uint32_t depth;
+			/** Position of the source in the FROM clause. */
+			uint32_t source;
+			/** Number of the field in the space of the source. */
+			uint32_t fieldno;
+			/** Exact type of the field. */
+			enum field_type field_type;
+		} column;
 		/** Name and arguments of a TK_FUNCTION expression. */
 		struct {
 			/** Name of the resolved function. */
@@ -188,6 +202,16 @@ struct rast_expr_list_entry {
 	 * it belongs to, directly or through the aliases of the result columns.
 	 */
 	bool has_agg;
+	/**
+	 * Whether the expression refers to columns of sources outside of its
+	 * subqueries.
+	 */
+	bool has_column_ref;
+	/**
+	 * Whether the expression refers to columns of sources of the enclosing
+	 * SELECTs outside of its subqueries.
+	 */
+	bool has_outer_column_ref;
 };
 
 /** Resolved expression list. */

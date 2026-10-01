@@ -15,6 +15,12 @@ g.before_all(function()
         box.execute([[CREATE TABLE "UP" (a INT PRIMARY KEY);]])
         box.execute([[INSERT INTO "UP" VALUES (8);]])
         box.execute([[CREATE VIEW v AS SELECT 5;]])
+        box.execute([[CREATE TABLE s (a INT PRIMARY KEY, x INT);]])
+        box.execute([[INSERT INTO s VALUES (1, 100), (2, 200);]])
+        box.execute([[CREATE TABLE q ("A" INT PRIMARY KEY, "a" INT);]])
+        box.execute([[INSERT INTO q VALUES (1, 2);]])
+        box.execute([[CREATE TABLE ty (a INT PRIMARY KEY, u UNSIGNED,
+                                       n NUMBER, g ARRAY);]])
         box.schema.space.create('NOPK', {format = {{'a', 'integer'}}})
         local s = box.schema.space.create('NOFMT')
         s:create_index('pk')
@@ -127,6 +133,143 @@ g.test_names = function()
         check([[SELECT 7 IN lt, 8 NOT IN lt;]], {{true, true}})
         check([[SELECT * FROM lt;]], {{7}})
         check([[SELECT lt.* FROM lt;]], {{7}})
+    end)
+end
+
+--
+-- A column is looked up by its name as is and, if the name is not quoted, by
+-- its name in upper case. A qualified column is looked up only in the source
+-- with the given name, which is its alias, if any, or the name of its space.
+--
+g.test_column_lookup = function()
+    g.server:exec(function()
+        local check = rawget(_G, 'check')
+        check([[SELECT a, b FROM t WHERE a = 1;]], {{1, 10}})
+        check([[SELECT t.a, "b" FROM t WHERE a = 1;]], {{1, 10}})
+        check([[SELECT x.a FROM t AS x WHERE x.b > 10;]], {{2}, {3}})
+        check([[SELECT a, "A" FROM q;]], {{2, 1}})
+        check([[SELECT A FROM t;]], "Can't resolve field 'A'")
+        check([[SELECT nosuch FROM t;]], "Can't resolve field 'nosuch'")
+        check([[SELECT t.nosuch FROM t;]],
+              "Field 'nosuch' was not found in space 't' format")
+        check([[SELECT T.a FROM t;]],
+              "Field 'a' was not found in space 'T' format")
+        check([[SELECT t.a FROM t AS x;]],
+              "Field 'a' was not found in space 't' format")
+        check([[SELECT a FROM t LIMIT a;]], "Can't resolve field 'a'")
+    end)
+end
+
+--
+-- The type of a column reference is the exact type of the field.
+--
+g.test_column_types = function()
+    g.server:exec(function()
+        local res = box.execute([[SELECT a, u, n, g, u + 1,
+                                  TYPEOF(n) FROM ty;]])
+        t.assert_equals(res.metadata, {
+            {name = 'a', type = 'integer'},
+            {name = 'u', type = 'unsigned'},
+            {name = 'n', type = 'number'},
+            {name = 'g', type = 'array'},
+            {name = 'COLUMN_1', type = 'integer'},
+            {name = 'COLUMN_2', type = 'string'},
+        })
+        local check = rawget(_G, 'check')
+        check([[SELECT a FROM ty ORDER BY g;]],
+              'Type mismatch: can not convert array to comparable type')
+    end)
+end
+
+--
+-- In every scope, a name refers to a column of a source before an alias of a
+-- result column. An ORDER BY term which is a name refers to an alias first.
+--
+g.test_columns_and_aliases = function()
+    g.server:exec(function()
+        local check = rawget(_G, 'check')
+        check([[SELECT a AS b FROM t WHERE b > 15;]], {{2}, {3}})
+        check([[SELECT a AS z FROM t WHERE z > 1;]], {{2}, {3}})
+        check([[SELECT b AS a FROM t GROUP BY a;]], {{10}, {20}, {30}})
+        check([[SELECT b AS a FROM t ORDER BY a DESC;]], {{30}, {20}, {10}})
+        check([[SELECT a AS y, b FROM t ORDER BY y + b DESC;]],
+              {{3, 30}, {2, 20}, {1, 10}})
+        check([[SELECT b AS a, (SELECT a) FROM t;]],
+              {{10, 1}, {20, 2}, {30, 3}})
+        check([[SELECT a + 1 AS y FROM t ORDER BY
+                (SELECT y FROM s WHERE s.a = 1);]], {{2}, {3}, {4}})
+        check([[SELECT a AS y, (SELECT y FROM s) FROM t;]],
+              "Can't resolve field 'y'")
+    end)
+end
+
+--
+-- Subqueries can refer to the columns of the sources of the enclosing SELECTs.
+--
+g.test_correlated = function()
+    g.server:exec(function()
+        local check = rawget(_G, 'check')
+        check([[SELECT (SELECT x FROM s WHERE s.a = t.a) FROM t;]],
+              {{100}, {200}, {box.NULL}})
+        check([[SELECT (SELECT b FROM s WHERE a = t.a) FROM t;]],
+              {{10}, {20}, {box.NULL}})
+        check([[SELECT (SELECT t.a FROM s AS t WHERE t.a = 2) FROM t;]],
+              {{2}, {2}, {2}})
+        check([[SELECT a FROM t WHERE EXISTS
+                (SELECT 1 FROM s WHERE s.a = t.a);]], {{1}, {2}})
+        check([[SELECT a FROM t WHERE a IN (SELECT a FROM s);]], {{1}, {2}})
+        check([[SELECT (SELECT COUNT(*) FROM s WHERE s.a <= t.a) FROM t;]],
+              {{1}, {2}, {2}})
+        -- An aggregate function of the enclosing SELECT.
+        check([[SELECT (SELECT SUM(t.a)) FROM t;]], {{6}})
+        check([[SELECT (SELECT SUM(x + t.a) FROM s) FROM t;]],
+              {{302}, {304}, {306}})
+    end)
+end
+
+g.test_aggregates = function()
+    g.server:exec(function()
+        local check = rawget(_G, 'check')
+        check([[SELECT SUM(a), MAX(b) FROM t;]], {{6, 30}})
+        check([[SELECT b, COUNT(*) FROM t GROUP BY b HAVING b > 10;]],
+              {{20, 1}, {30, 1}})
+        check([[SELECT a FROM t GROUP BY a ORDER BY SUM(b) DESC;]],
+              {{3}, {2}, {1}})
+        check([[SELECT 1 FROM t HAVING SUM(a) > 0;]], {{1}})
+        -- As in the legacy code, only unqualified names are checked.
+        check([[SELECT 1 FROM t HAVING COUNT(*) > 0 AND t.a > 0;]], {{1}})
+        local exp_err = 'Failed to execute SQL statement: HAVING argument ' ..
+                        'must appear in the GROUP BY clause or be used in ' ..
+                        'an aggregate function'
+        check([[SELECT 1 FROM t HAVING COUNT(*) > 0 AND a > 0;]], exp_err)
+        check([[SELECT a FROM t WHERE SUM(a) > 0;]],
+              'misuse of aggregate function SUM()')
+        check([[SELECT a FROM t GROUP BY SUM(a);]],
+              'aggregate functions are not allowed in the GROUP BY clause')
+    end)
+end
+
+--
+-- An ORDER BY term of a compound SELECT is matched against the result columns
+-- of its parts. As in the legacy code, once a term cannot be resolved in a
+-- part, no term matches a column as an expression.
+--
+g.test_compound_order_by_columns = function()
+    g.server:exec(function()
+        local check = rawget(_G, 'check')
+        check([[SELECT x FROM s UNION SELECT a FROM t ORDER BY x DESC;]],
+              {{200}, {100}, {3}, {2}, {1}})
+        check([[SELECT a + 0 FROM t UNION SELECT x FROM s ORDER BY a + 0;]],
+              {{1}, {2}, {3}, {100}, {200}})
+        check([[SELECT a, b FROM t UNION SELECT a, x FROM s ORDER BY t.b
+                LIMIT 2;]], {{1, 10}, {2, 20}})
+        local exp_err = 'Error at ORDER BY in place 1: term does not ' ..
+                        'match any column in the result set'
+        check([[SELECT a FROM t UNION SELECT x FROM s ORDER BY x;]], exp_err)
+        check([[SELECT a FROM t UNION SELECT x FROM s ORDER BY a + 0;]],
+              exp_err)
+        check([[SELECT a AS p FROM t UNION SELECT x AS q FROM s
+                ORDER BY q;]], "Can't resolve field 'q'")
     end)
 end
 
