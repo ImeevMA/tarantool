@@ -4264,17 +4264,13 @@ resolve_sources(struct sql_resolve_context *ctx,
 }
 
 /**
- * Check if the given SELECT, which may be a compound one, can be resolved. The
- * legacy code turns a compound SELECT, which is not UNION ALL, with a COLLATE
- * clause in its ORDER BY into a SELECT from a subquery.
+ * Check if the given compound SELECT is turned into a SELECT from a subquery,
+ * as convertCompoundSelectToSubquery() does: it is not UNION ALL and has a
+ * COLLATE clause in its ORDER BY.
  */
 static bool
-can_resolve(const struct ast_select *ast)
+ast_is_converted_compound(const struct ast_select *ast)
 {
-	if (ast->with != NULL)
-		return false;
-	if (ast->link.next == &ast->link)
-		return true;
 	bool is_union_all = true;
 	const struct rlist *link = &ast->link;
 	do {
@@ -4285,15 +4281,15 @@ can_resolve(const struct ast_select *ast)
 		link = link->next;
 	} while (link != &ast->link);
 	if (is_union_all || ast->order_by == NULL)
-		return true;
+		return false;
 	for (const struct stailq_entry *node = ast->order_by->head.first.value;
 	     node != NULL; node = node->next.value) {
 		const struct ast_expr_list_entry *entry =
 			stailq_entry(node, struct ast_expr_list_entry, link);
 		if (ast_expr_has_collate(entry->expr))
-			return false;
+			return true;
 	}
-	return true;
+	return false;
 }
 
 /**
@@ -4740,6 +4736,77 @@ check_compound_parts(const struct rast_select *select)
 }
 
 /**
+ * Turn the given resolved compound SELECT, resolved from the given AST one,
+ * into a SELECT from a subquery, as convertCompoundSelectToSubquery() does:
+ * the compound SELECT without its ORDER BY, LIMIT and OFFSET becomes the only
+ * source of a SELECT of all its columns, which takes the ORDER BY, LIMIT and
+ * OFFSET. The terms of ORDER BY, already replaced with the positions of the
+ * columns, are resolved as in a SELECT that is not compound. The subquery is
+ * correlated if the compound SELECT refers to the names of the given scope or
+ * the scopes enclosing it, which had the given number of references before.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+convert_compound_select(struct sql_resolve_context *ctx,
+			const struct ast_select *ast, struct rast_select *res,
+			struct sql_resolve_scope *outer, uint32_t ref_count)
+{
+	struct rast_select *sub = xregion_alloc_object(ctx->region,
+						       struct rast_select);
+	*sub = *res;
+	sub->is_correlated = outer != NULL && outer->ref_count != ref_count;
+	memset(res, 0, sizeof(*res));
+	res->op = TK_SELECT;
+	res->flags = (ast->flags & ~(SF_Compound | SF_Distinct | SF_All |
+				     SF_Values)) | SF_Converted;
+	res->order_by = sub->order_by;
+	res->limit = sub->limit;
+	res->offset = sub->offset;
+	memset(&sub->order_by, 0, sizeof(sub->order_by));
+	sub->limit = NULL;
+	sub->offset = NULL;
+	res->sources.len = 1;
+	res->sources.sources = xregion_alloc_object(ctx->region,
+						    struct rast_source);
+	struct rast_source *src = &res->sources.sources[0];
+	memset(src, 0, sizeof(*src));
+	src->index_id = UINT32_MAX;
+	src->cursor = -1;
+	src->select = sub;
+	const struct rast_select *select = sub;
+	while (select->prior != NULL)
+		select = select->prior;
+	const struct ast_select *leftmost =
+		rlist_entry(ast->link.next, struct ast_select, link);
+	const char *name = tt_sprintf("sql_sq_%llX", (long long)src);
+	src->def = subquery_def_new(ctx, name, leftmost, select);
+
+	struct sql_resolve_scope scope;
+	memset(&scope, 0, sizeof(scope));
+	scope.sources = &res->sources;
+	scope.parent = outer;
+	scope.ref_depth = UINT32_MAX;
+	ctx->scope = &scope;
+	struct ast_expr *asterisk = ast_expr_new(ctx->region, "*", 1,
+						 TK_ASTERISK);
+	struct ast_expr_list *columns =
+		ast_expr_list_append(ctx->region, NULL, asterisk);
+	if (resolve_column_names(ctx, columns, &res->sources, false,
+				 &res->columns) != 0 ||
+	    resolve_column_list(ctx, columns, &res->columns) != 0)
+		return -1;
+	for (uint32_t i = 0; i < res->order_by.len; ++i) {
+		struct rast_expr_list_entry *item = &res->order_by.exprs[i];
+		if (resolve_order_by_col(ctx, &res->columns,
+					 item->order_by_col - 1,
+					 &item->expr) != 0)
+			return -1;
+	}
+	return 0;
+}
+
+/**
  * Resolve the given AST SELECT statement, which may be a compound one, into the
  * given rast_select. As in the legacy code, the columns of all the parts of a
  * compound SELECT are named first, and then the parts are resolved, from right
@@ -4751,9 +4818,10 @@ static int
 resolve_compound_select(struct sql_resolve_context *ctx,
 			const struct ast_select *ast, struct rast_select *res)
 {
-	ctx->can_resolve = can_resolve(ast);
+	ctx->can_resolve = ast->with == NULL;
 	if (!ctx->can_resolve)
 		return 0;
+	uint32_t ref_count = ctx->scope != NULL ? ctx->scope->ref_count : 0;
 	const struct rlist *head = &ast->link;
 	bool is_compound = head->next != head;
 	/* The legacy code does not limit the number of rows of VALUES. */
@@ -4824,7 +4892,11 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 		return -1;
 	if (!ctx->can_resolve)
 		return 0;
-	return check_compound_parts(res);
+	if (check_compound_parts(res) != 0)
+		return -1;
+	if (!ast_is_converted_compound(ast))
+		return 0;
+	return convert_compound_select(ctx, ast, res, outer, ref_count);
 }
 
 static int

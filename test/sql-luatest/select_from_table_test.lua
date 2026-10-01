@@ -743,6 +743,33 @@ g.test_nested_sources = function()
 end
 
 --
+-- As in the legacy code, a compound SELECT, which is not UNION ALL, with
+-- COLLATE in ORDER BY is a SELECT of all columns from the compound SELECT
+-- without ORDER BY, LIMIT and OFFSET, which belong to the outer SELECT.
+--
+g.test_compound_order_by_collate = function()
+    g.server:exec(function()
+        box.execute([[CREATE TABLE cs (id INT PRIMARY KEY, s STRING);]])
+        box.execute([[INSERT INTO cs VALUES (1, 'a'), (2, 'B'), (3, 'b');]])
+        local check = rawget(_G, 'check')
+        local coll = ' ORDER BY 1 COLLATE "unicode_ci"'
+        check([[SELECT s FROM cs UNION SELECT 'C']] .. coll,
+              {{'a'}, {'B'}, {'b'}, {'C'}})
+        check([[SELECT s AS x FROM cs EXCEPT SELECT 'B' ORDER BY x
+                COLLATE "unicode_ci" DESC LIMIT 1 OFFSET 0;]], {{'b'}})
+        check([[SELECT s FROM cs UNION SELECT s FROM cs GROUP BY s
+                HAVING COUNT(*) > 1]] .. coll, {{'a'}, {'B'}, {'b'}})
+        check([[SELECT s FROM cs UNION SELECT MAX(s) FROM cs]] .. coll ..
+              ' LIMIT 2', {{'a'}, {'B'}})
+        check([[SELECT (SELECT s FROM cs UNION SELECT '0']] .. coll ..
+              ' LIMIT 1);', {{'0'}})
+        check([[SELECT s, s FROM cs UNION SELECT 'C', 'C']] .. coll,
+              'ambiguous column name: s')
+        box.execute([[DROP TABLE cs;]])
+    end)
+end
+
+--
 -- Sources are now resolved together with the expressions, so an unknown table
 -- is reported before an error found later in the conversion of the statement.
 --
