@@ -274,6 +274,76 @@ g.test_compound_order_by_columns = function()
 end
 
 --
+-- An asterisk is expanded into the columns of the sources it matches, named
+-- after their fields. As in the legacy code, `table.*` matches only the source
+-- with exactly the given name, and the last unmatched asterisk is reported.
+--
+g.test_asterisks = function()
+    g.server:exec(function()
+        local check = rawget(_G, 'check')
+        local res = box.execute([[SELECT * FROM t WHERE a = 1;]])
+        t.assert_equals(res.metadata, {
+            {name = 'a', type = 'integer'},
+            {name = 'b', type = 'integer'},
+        })
+        t.assert_equals(res.rows, {{1, 10}})
+        check([[SELECT t.*, a, * FROM t WHERE a = 2;]], {{2, 20, 2, 2, 20}})
+        check([[SELECT x.* FROM t AS x WHERE x.a = 3;]], {{3, 30}})
+        check([[SELECT "UP".* FROM up;]], {{8}})
+        check([[SELECT * FROM t ORDER BY b DESC LIMIT 1;]], {{3, 30}})
+        check([[SELECT * FROM t UNION SELECT * FROM s ORDER BY 2 LIMIT 2;]],
+              {{1, 10}, {2, 20}})
+        check([[SELECT (1, 100) IN (SELECT * FROM s);]], {{true}})
+        check([[SELECT up.* FROM up;]], "Space 'up' does not exist")
+        check([[SELECT t.* FROM t AS x;]], "Space 't' does not exist")
+        check([[SELECT x.*, nosuch.* FROM t AS x;]],
+              "Space 'nosuch' does not exist")
+        check([[SELECT nosuch.*, nosuch2.* FROM t;]],
+              "Space 'nosuch2' does not exist")
+        check([[SELECT * FROM t UNION SELECT a FROM s;]],
+              'SELECTs to the left and right of UNION do not have the same ' ..
+              'number of result columns')
+
+        -- An expanded column is an unqualified name, unless the column names
+        -- are full.
+        local exp_err = 'Failed to execute SQL statement: HAVING argument ' ..
+                        'must appear in the GROUP BY clause or be used in ' ..
+                        'an aggregate function'
+        check([[SELECT * FROM t HAVING COUNT(*) > 0;]], exp_err)
+        box.execute([[SET SESSION "sql_full_column_names" = true;]])
+        res = box.execute([[SELECT * FROM t AS x WHERE a = 1;]])
+        t.assert_equals(res.metadata, {
+            {name = 'x.a', type = 'integer'},
+            {name = 'x.b', type = 'integer'},
+        })
+        check([[SELECT * FROM t HAVING COUNT(*) > 0;]], {{3, 30}})
+        box.execute([[SET SESSION "sql_full_column_names" = false;]])
+    end)
+end
+
+--
+-- The number of the result columns is checked after the asterisks are
+-- expanded.
+--
+g.test_asterisks_limit = function()
+    g.server:exec(function()
+        local fields = {}
+        for i = 1, 1999 do
+            fields[i] = 'c' .. i .. ' INT'
+        end
+        box.execute('CREATE TABLE w (id INT PRIMARY KEY, ' ..
+                    table.concat(fields, ', ') .. ');')
+        local res, err = box.execute([[SELECT * FROM w;]])
+        t.assert_equals(err, nil)
+        t.assert_equals(#res.metadata, 2000)
+        local check = rawget(_G, 'check')
+        check([[SELECT *, 1 FROM w;]], 'The number of columns in result ' ..
+              'set 2001 exceeds the limit (2000)')
+        box.execute([[DROP TABLE w;]])
+    end)
+end
+
+--
 -- Sources are now resolved together with the expressions, so an unknown table
 -- is reported before an error found later in the conversion of the statement.
 --

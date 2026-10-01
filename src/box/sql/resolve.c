@@ -2279,6 +2279,20 @@ find_alias(const struct rast_expr_list *columns, const char *name,
 }
 
 /**
+ * Return the name of the given source: its alias, if any, or the name of its
+ * space.
+ */
+static const char *
+rast_source_name(const struct rast_source *src)
+{
+	if (src->alias != NULL)
+		return src->alias;
+	struct space *space = space_by_id(src->space_id);
+	assert(space != NULL);
+	return space->def->name;
+}
+
+/**
  * Find the field with the given name in the given source. A qualified name
  * matches only the source with the given name, which is its alias, if any, or
  * the name of its space. As in the legacy code, an unquoted name is also looked
@@ -2294,8 +2308,7 @@ find_source_field(const struct rast_source *src, const char *tab_name,
 	struct space *space = space_by_id(src->space_id);
 	assert(space != NULL);
 	if (tab_name != NULL) {
-		const char *src_name = src->alias != NULL ? src->alias :
-				       space->def->name;
+		const char *src_name = rast_source_name(src);
 		if (strcmp(src_name, tab_name) != 0 &&
 		    (legacy_tab_name == NULL ||
 		     strcmp(src_name, legacy_tab_name) != 0))
@@ -2308,14 +2321,23 @@ find_source_field(const struct rast_source *src, const char *tab_name,
 }
 
 /**
- * Set the given rast_expr to a reference to the given field of the given
- * source of a SELECT the given number of subqueries up.
+ * Set the given rast_expr to a reference to the given field of the given source
+ * of the SELECT of the given scope, which is the given number of subqueries up
+ * from the current scope, and count the reference.
  */
 static void
-resolve_source_column(const struct rast_source_list *sources, uint32_t source,
-		      uint32_t fieldno, uint32_t depth, struct rast_expr *res)
+resolve_source_column(struct sql_resolve_context *ctx,
+		      const struct sql_resolve_scope *scope, uint32_t depth,
+		      uint32_t source, uint32_t fieldno, struct rast_expr *res)
 {
-	struct space *space = space_by_id(sources->sources[source].space_id);
+	for (struct sql_resolve_scope *s = ctx->scope; s != scope->parent;
+	     s = s->parent)
+		++s->ref_count;
+	++ctx->scope->column_ref_count;
+	if (depth > 0)
+		++ctx->scope->outer_column_ref_count;
+	const struct rast_source *src = &scope->sources->sources[source];
+	struct space *space = space_by_id(src->space_id);
 	assert(space != NULL && fieldno < space->def->field_count);
 	res->op = TK_COLUMN_REF;
 	res->column.depth = depth;
@@ -2377,13 +2399,8 @@ resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 						  name, legacy_name);
 			if (fieldno == UINT32_MAX)
 				continue;
-			for (struct sql_resolve_scope *s = ctx->scope;
-			     s != scope->parent; s = s->parent)
-				++s->ref_count;
-			++ctx->scope->column_ref_count;
-			if (depth > 0)
-				++ctx->scope->outer_column_ref_count;
-			resolve_source_column(sources, i, fieldno, depth, res);
+			resolve_source_column(ctx, scope, depth, i, fieldno,
+					      res);
 			return 0;
 		}
 		if (tab_name != NULL || scope->aliases == NULL)
@@ -2969,29 +2986,173 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	return 0;
 }
 
+/** Check if the given AST expression is `*` or `table.*`. */
+static bool
+ast_is_asterisk(const struct ast_expr *ast)
+{
+	return ast->op == TK_ASTERISK ||
+	       (ast->op == TK_DOT && ast->right->op == TK_ASTERISK);
+}
+
 /**
- * Set the names of the columns of the given AST column list into the given
- * rast_expr_list, allocating its entries. As in the legacy code, a column
- * without an alias is named automatically unless it is a column reference.
+ * Check if the given AST asterisk is expanded over the given source. As in the
+ * legacy code, `table.*` matches only the source with exactly the given name.
+ */
+static bool
+asterisk_matches_source(struct sql_resolve_context *ctx,
+			const struct ast_expr *ast,
+			const struct rast_source *src)
+{
+	if (ast->op == TK_ASTERISK)
+		return true;
+	const char *name = sql_name_temp(ctx->region, ast->left->str,
+					 ast->left->len);
+	return strcmp(name, rast_source_name(src)) == 0;
+}
+
+/** Return the number of the fields of the space of the given source. */
+static uint32_t
+rast_source_field_count(const struct rast_source *src)
+{
+	struct space *space = space_by_id(src->space_id);
+	assert(space != NULL);
+	return space->def->field_count;
+}
+
+/**
+ * Return the name of a column an asterisk is expanded into: the name of the
+ * given field, qualified with the given name of its source if the name is full.
+ */
+static const char *
+asterisk_column_name(struct region *region, const char *src_name,
+		     const char *field, bool is_full)
+{
+	size_t prefix_len = is_full ? strlen(src_name) + 1 : 0;
+	size_t field_len = strlen(field);
+	char *res = xregion_alloc(region, prefix_len + field_len + 1);
+	if (is_full) {
+		memcpy(res, src_name, prefix_len - 1);
+		res[prefix_len - 1] = '.';
+	}
+	memcpy(res + prefix_len, field, field_len + 1);
+	return res;
+}
+
+/**
+ * Set the names of the columns an asterisk is expanded into over the given
+ * source, starting from the given entry. The names are qualified with the name
+ * of the source if they are full.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+name_asterisk_columns(struct sql_resolve_context *ctx,
+		      const struct rast_source *src, bool is_full,
+		      struct rast_expr_list_entry *entries)
+{
+	struct space *space = space_by_id(src->space_id);
+	assert(space != NULL);
+	const char *src_name = rast_source_name(src);
+	for (uint32_t i = 0; i < space->def->field_count; ++i) {
+		const char *name = asterisk_column_name(
+			ctx->region, src_name, space->def->fields[i].name,
+			is_full);
+		if (sql_check_identifier_name(name, strlen(name)) != 0)
+			return -1;
+		entries[i].name = name;
+	}
+	return 0;
+}
+
+/**
+ * Set the given entries to references to the columns an asterisk is expanded
+ * into over the source with the given position. As in the legacy code, the
+ * references are qualified with the name of the source if the names are full,
+ * and are unqualified names otherwise.
+ */
+static void
+resolve_asterisk_columns(struct sql_resolve_context *ctx, uint32_t source,
+			 bool is_full, struct rast_expr_list_entry *entries)
+{
+	const struct rast_source *src = &ctx->scope->sources->sources[source];
+	uint32_t count = rast_source_field_count(src);
+	for (uint32_t i = 0; i < count; ++i) {
+		resolve_source_column(ctx, ctx->scope, 0, source, i,
+				      &entries[i].expr);
+		entries[i].expr.height = is_full ? 2 : 1;
+		entries[i].has_column_ref = true;
+	}
+	if (!is_full && ctx->scope->is_agg_allowed)
+		ctx->scope->has_unaggregated_name = true;
+}
+
+/**
+ * Set the names of the columns of the given AST column list of a SELECT with
+ * the given sources into the given rast_expr_list, allocating its entries. As
+ * in the legacy code, a column without an alias is named automatically unless
+ * it is a column reference, and every asterisk is expanded into the columns of
+ * the sources it matches, named after their fields, qualified with the name of
+ * the source if full column names are on. The legacy code reports the last
+ * asterisk that matched no source, so the same is done here.
  *
  * Returns 0 on success and -1 on error.
  */
 static int
 resolve_column_names(struct sql_resolve_context *ctx,
 		     const struct ast_expr_list *ast,
+		     const struct rast_source_list *sources,
 		     struct rast_expr_list *res)
 {
-	res->exprs = xregion_alloc_array(ctx->region, typeof(*res->exprs),
-					 ast->len);
-	res->len = ast->len;
-	memset(res->exprs, 0, sizeof(*res->exprs) * res->len);
+	uint32_t len = 0;
+	const struct ast_expr *unmatched = NULL;
+	for (const struct stailq_entry *node = ast->head.first.value;
+	     node != NULL; node = node->next.value) {
+		const struct ast_expr *e =
+			stailq_entry(node, struct ast_expr_list_entry,
+				     link)->expr;
+		if (!ast_is_asterisk(e)) {
+			++len;
+			continue;
+		}
+		uint32_t count = 0;
+		for (uint32_t i = 0; i < sources->len; ++i) {
+			const struct rast_source *src = &sources->sources[i];
+			if (asterisk_matches_source(ctx, e, src))
+				count += rast_source_field_count(src);
+		}
+		if (count == 0)
+			unmatched = e;
+		len += count;
+	}
+	res->len = len;
+	res->exprs = NULL;
+	if (len > 0) {
+		res->exprs = xregion_alloc_array(ctx->region,
+						 typeof(*res->exprs), len);
+		memset(res->exprs, 0, sizeof(*res->exprs) * len);
+	}
 
-	int i = 0;
+	bool is_full = (ctx->parser->sql_flags & SQL_FullColNames) != 0;
+	uint32_t j = 0;
 	for (const struct stailq_entry *node = ast->head.first.value;
 	     node != NULL; node = node->next.value) {
 		const struct ast_expr_list_entry *entry =
 			stailq_entry(node, struct ast_expr_list_entry, link);
-		struct rast_expr_list_entry *expr = &res->exprs[i++];
+		if (ast_is_asterisk(entry->expr)) {
+			for (uint32_t i = 0; i < sources->len; ++i) {
+				const struct rast_source *src =
+					&sources->sources[i];
+				if (!asterisk_matches_source(ctx, entry->expr,
+							     src))
+					continue;
+				if (name_asterisk_columns(ctx, src, is_full,
+							  &res->exprs[j]) != 0)
+					return -1;
+				j += rast_source_field_count(src);
+			}
+			continue;
+		}
+		struct rast_expr_list_entry *expr = &res->exprs[j++];
 		if (entry->name.n > 0) {
 			expr->name = sql_name_temp(ctx->region, entry->name.z,
 						   entry->name.n);
@@ -3006,18 +3167,30 @@ resolve_column_names(struct sql_resolve_context *ctx,
 		const struct ast_expr *e = entry->expr;
 		while (e->op == TK_PARENTHESES)
 			e = e->left;
-		if (e->op == TK_ID || e->op == TK_DOT || e->op == TK_ASTERISK)
+		if (e->op == TK_ID || e->op == TK_DOT)
 			continue;
 		const char *name =
 			sql_generate_column_name(++ctx->autoname_count);
 		expr->name = sql_name_temp(ctx->region, name, strlen(name));
 	}
-	return 0;
+	assert(j == len);
+	if (unmatched == NULL)
+		return 0;
+	if (unmatched->op == TK_ASTERISK) {
+		diag_set(ClientError, ER_SQL_SELECT_WILDCARD);
+		return -1;
+	}
+	diag_set(ClientError, ER_NO_SUCH_SPACE,
+		 sql_name_temp(ctx->region, unmatched->left->str,
+			       unmatched->left->len));
+	return -1;
 }
 
 /**
  * Resolve every expression of the given AST column list into the entries of
- * the given rast_expr_list.
+ * the given rast_expr_list. As in the legacy code, an asterisk is expanded
+ * into references to the columns, which are qualified with the name of the
+ * source if full column names are on.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -3025,12 +3198,27 @@ static int
 resolve_column_list(struct sql_resolve_context *ctx,
 		    const struct ast_expr_list *ast, struct rast_expr_list *res)
 {
-	int i = 0;
+	const struct rast_source_list *sources = ctx->scope->sources;
+	bool is_full = (ctx->parser->sql_flags & SQL_FullColNames) != 0;
+	uint32_t j = 0;
 	for (const struct stailq_entry *node = ast->head.first.value;
 	     node != NULL; node = node->next.value) {
 		const struct ast_expr_list_entry *entry =
 			stailq_entry(node, struct ast_expr_list_entry, link);
-		struct rast_expr_list_entry *expr = &res->exprs[i++];
+		if (ast_is_asterisk(entry->expr)) {
+			for (uint32_t i = 0; i < sources->len; ++i) {
+				const struct rast_source *src =
+					&sources->sources[i];
+				if (!asterisk_matches_source(ctx, entry->expr,
+							     src))
+					continue;
+				resolve_asterisk_columns(ctx, i, is_full,
+							 &res->exprs[j]);
+				j += rast_source_field_count(src);
+			}
+			continue;
+		}
+		struct rast_expr_list_entry *expr = &res->exprs[j++];
 		uint32_t agg_flags = ctx->scope->agg_flags;
 		uint32_t ref_count = ctx->scope->column_ref_count;
 		uint32_t outer_count = ctx->scope->outer_column_ref_count;
@@ -3266,45 +3454,6 @@ resolve_order_by(struct sql_resolve_context *ctx, const char *clause,
 }
 
 /**
- * Check that the given column list of a SELECT with the given sources has no
- * asterisk. Asterisks over sources are expanded by the legacy code, so they
- * fall back. Without sources, the legacy code expands asterisks before
- * resolving the columns and reports the last asterisk that matched no source,
- * so the same is done here.
- *
- * Returns 0 on success and -1 on error.
- */
-static int
-resolve_asterisks(struct sql_resolve_context *ctx,
-		  const struct ast_expr_list *ast,
-		  const struct rast_source_list *sources)
-{
-	const struct ast_expr *last = NULL;
-	for (const struct stailq_entry *node = ast->head.first.value;
-	     node != NULL; node = node->next.value) {
-		const struct ast_expr *expr =
-			stailq_entry(node, struct ast_expr_list_entry,
-				     link)->expr;
-		if (expr->op == TK_ASTERISK ||
-		    (expr->op == TK_DOT && expr->right->op == TK_ASTERISK))
-			last = expr;
-	}
-	if (last == NULL)
-		return 0;
-	if (sources->len > 0) {
-		ctx->can_resolve = false;
-		return 0;
-	}
-	if (last->op == TK_ASTERISK) {
-		diag_set(ClientError, ER_SQL_SELECT_WILDCARD);
-		return -1;
-	}
-	diag_set(ClientError, ER_NO_SUCH_SPACE,
-		 sql_name_temp(ctx->region, last->left->str, last->left->len));
-	return -1;
-}
-
-/**
  * Resolve the given AST LIMIT or OFFSET expression into a new rast_expr, or set
  * the result to NULL if there is no expression. As in the legacy code, the
  * expression cannot refer to any name or use an aggregate function.
@@ -3495,7 +3644,7 @@ can_resolve(const struct ast_select *ast)
 /**
  * Set up the given rast_select for the given AST SELECT statement, which is not
  * compound or is a part of a compound one: resolve its sources and set the
- * names of its columns. As in the legacy code, the asterisks are checked at
+ * names of its columns, expanding the asterisks, as the legacy code does at
  * the same point.
  *
  * Returns 0 on success and -1 on error.
@@ -3511,9 +3660,8 @@ resolve_select_names(struct sql_resolve_context *ctx,
 		return -1;
 	if (!ctx->can_resolve)
 		return 0;
-	if (resolve_column_names(ctx, ast->columns, &res->columns) != 0)
-		return -1;
-	return resolve_asterisks(ctx, ast->columns, &res->sources);
+	return resolve_column_names(ctx, ast->columns, &res->sources,
+				    &res->columns);
 }
 
 /**
