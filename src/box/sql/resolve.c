@@ -48,6 +48,8 @@
  * name that is not found in a scope is looked up in the enclosing one.
  */
 struct sql_resolve_scope {
+	/** Sources whose columns are visible, or NULL. */
+	const struct rast_source_list *sources;
 	/** Result columns whose aliases are visible, or NULL. */
 	const struct rast_expr_list *aliases;
 	/** Enclosing scope, or NULL if its names are not visible. */
@@ -2224,13 +2226,21 @@ find_alias(const struct rast_expr_list *columns, const char *name,
 	return -1;
 }
 
+/** Check if columns of any source are visible in the given scope. */
+static bool
+scope_has_sources(const struct sql_resolve_scope *scope)
+{
+	return scope->sources != NULL && scope->sources->len > 0;
+}
+
 /**
  * Resolve an AST column reference: a column name, optionally qualified with a
- * source name, into the given rast_expr. A resolved SELECT and all the SELECTs
- * enclosing it have no sources, so an unqualified name can refer only to a
- * result column alias visible in the current scope or in the enclosing ones,
- * and a qualified name never matches. If the reference is not resolved, the
- * error is reported with the same message as the legacy code does.
+ * source name, into the given rast_expr. Columns of sources are resolved by
+ * the legacy code, so a reference that can refer to one falls back. Otherwise
+ * an unqualified name can refer only to a result column alias visible in the
+ * current scope or in the enclosing ones, and a qualified name never matches.
+ * If the reference is not resolved, the error is reported with the same
+ * message as the legacy code does.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -2249,6 +2259,10 @@ resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		uint32_t depth = 0;
 		for (struct sql_resolve_scope *scope = ctx->scope;
 		     scope != NULL; scope = scope->parent, ++depth) {
+			if (scope_has_sources(scope)) {
+				ctx->can_resolve = false;
+				return 0;
+			}
 			if (scope->aliases == NULL)
 				continue;
 			int col = find_alias(scope->aliases, name, legacy_name);
@@ -2283,6 +2297,13 @@ resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	}
 	assert(ast->op == TK_DOT && ast->left->op == TK_ID &&
 	       ast->right->op == TK_ID);
+	for (struct sql_resolve_scope *scope = ctx->scope; scope != NULL;
+	     scope = scope->parent) {
+		if (scope_has_sources(scope)) {
+			ctx->can_resolve = false;
+			return 0;
+		}
+	}
 	diag_set(ClientError, ER_NO_SUCH_FIELD_NAME_IN_SPACE,
 		 sql_name_temp(ctx->region, ast->right->str, ast->right->len),
 		 sql_name_temp(ctx->region, ast->left->str, ast->left->len));
@@ -3055,8 +3076,9 @@ resolve_order_by(struct sql_resolve_context *ctx, const char *clause,
 }
 
 /**
- * Check that the given column list of a FROM-less SELECT has no asterisk, which
- * can only be expanded over sources. The legacy code expands asterisks before
+ * Check that the given column list of a SELECT with the given sources has no
+ * asterisk. Asterisks over sources are expanded by the legacy code, so they
+ * fall back. Without sources, the legacy code expands asterisks before
  * resolving the columns and reports the last asterisk that matched no source,
  * so the same is done here.
  *
@@ -3064,7 +3086,8 @@ resolve_order_by(struct sql_resolve_context *ctx, const char *clause,
  */
 static int
 resolve_asterisks(struct sql_resolve_context *ctx,
-		  const struct ast_expr_list *ast)
+		  const struct ast_expr_list *ast,
+		  const struct rast_source_list *sources)
 {
 	const struct ast_expr *last = NULL;
 	for (const struct stailq_entry *node = ast->head.first.value;
@@ -3078,6 +3101,10 @@ resolve_asterisks(struct sql_resolve_context *ctx,
 	}
 	if (last == NULL)
 		return 0;
+	if (sources->len > 0) {
+		ctx->can_resolve = false;
+		return 0;
+	}
 	if (last->op == TK_ASTERISK) {
 		diag_set(ClientError, ER_SQL_SELECT_WILDCARD);
 		return -1;
@@ -3152,14 +3179,106 @@ ast_expr_has_collate(const struct ast_expr *ast)
 }
 
 /**
+ * Check if the given AST FROM clause can be resolved: it is empty or consists
+ * of a single table without INDEXED BY.
+ */
+static bool
+can_resolve_sources(const struct ast_source_list *ast)
+{
+	if (ast == NULL)
+		return true;
+	if (ast->len != 1)
+		return false;
+	const struct ast_source *src =
+		stailq_entry(ast->head.first.value, struct ast_source, link);
+	return src->select == NULL && src->name.n > 0 &&
+	       src->join_on == NULL && src->join_using == NULL &&
+	       src->indexed_by.n == 0;
+}
+
+/**
+ * Resolve the given AST source, which is a table, into the given rast_source.
+ * The space is looked up and checked as in sql_lookup_space(). A view falls
+ * back.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_source(struct sql_resolve_context *ctx, const struct ast_source *ast,
+	       struct rast_source *res)
+{
+	const char *name = sql_name_temp(ctx->region, ast->name.z,
+					 ast->name.n);
+	struct space *space = space_by_name0(name);
+	if (space == NULL && ast->name.z[0] != '"') {
+		space = space_by_name0(sql_legacy_name_temp(ctx->region,
+							    ast->name.z,
+							    ast->name.n));
+	}
+	if (space == NULL) {
+		diag_set(ClientError, ER_NO_SUCH_SPACE, name);
+		return -1;
+	}
+	if (space->def->opts.is_view) {
+		ctx->can_resolve = false;
+		return 0;
+	}
+	if (sql_space_def_check_format(space->def) != 0)
+		return -1;
+	if (space->index_count == 0) {
+		diag_set(ClientError, ER_UNSUPPORTED, "SQL",
+			 "spaces without primary key");
+		return -1;
+	}
+	res->space_id = space->def->id;
+	res->alias = NULL;
+	if (ast->alias.n > 0) {
+		res->alias = sql_name_temp(ctx->region, ast->alias.z,
+					   ast->alias.n);
+	}
+	res->disallow_scan = ast->disallow_scan;
+	return 0;
+}
+
+/**
+ * Resolve the given AST FROM clause into the given rast_source_list.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_sources(struct sql_resolve_context *ctx,
+		const struct ast_source_list *ast, struct rast_source_list *res)
+{
+	if (ast == NULL)
+		return 0;
+	res->len = ast->len;
+	res->sources = xregion_alloc_array(ctx->region, typeof(*res->sources),
+					   res->len);
+	uint32_t i = 0;
+	for (const struct stailq_entry *node = ast->head.first.value;
+	     node != NULL; node = node->next.value) {
+		const struct ast_source *src =
+			stailq_entry(node, struct ast_source, link);
+		if (resolve_source(ctx, src, &res->sources[i++]) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+	}
+	return 0;
+}
+
+/**
  * Check if the given SELECT, which may be a compound one, can be resolved. The
  * legacy code turns a compound SELECT, which is not UNION ALL, with a COLLATE
- * clause in its ORDER BY into a SELECT from a subquery.
+ * clause in its ORDER BY into a SELECT from a subquery. A SELECT without
+ * columns, as in `x IN table`, selects all columns of its source, which is
+ * expanded by the legacy code.
  */
 static bool
 can_resolve(const struct ast_select *ast)
 {
-	if (ast->sources != NULL || ast->with != NULL)
+	if (ast->columns == NULL || !can_resolve_sources(ast->sources) ||
+	    ast->with != NULL)
 		return false;
 	if (ast->link.next == &ast->link)
 		return true;
@@ -3168,7 +3287,7 @@ can_resolve(const struct ast_select *ast)
 	do {
 		const struct ast_select *part =
 			rlist_entry(link, struct ast_select, link);
-		if (part->sources != NULL)
+		if (!can_resolve_sources(part->sources))
 			return false;
 		if (part->op != TK_SELECT && part->op != TK_ALL)
 			is_union_all = false;
@@ -3188,8 +3307,9 @@ can_resolve(const struct ast_select *ast)
 
 /**
  * Set up the given rast_select for the given AST SELECT statement, which is not
- * compound or is a part of a compound one, and set the names of its columns. As
- * in the legacy code, the asterisks are checked at the same point.
+ * compound or is a part of a compound one: resolve its sources and set the
+ * names of its columns. As in the legacy code, the asterisks are checked at
+ * the same point.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -3200,9 +3320,13 @@ resolve_select_names(struct sql_resolve_context *ctx,
 	memset(res, 0, sizeof(*res));
 	res->flags = ast->flags;
 	res->op = ast->op;
+	if (resolve_sources(ctx, ast->sources, &res->sources) != 0)
+		return -1;
+	if (!ctx->can_resolve)
+		return 0;
 	if (resolve_column_names(ctx, ast->columns, &res->columns) != 0)
 		return -1;
-	return resolve_asterisks(ctx, ast->columns);
+	return resolve_asterisks(ctx, ast->columns, &res->sources);
 }
 
 /**
@@ -3232,6 +3356,7 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 	if (!ctx->can_resolve)
 		return 0;
 	struct sql_resolve_scope scope = {
+		.sources = &res->sources,
 		.parent = outer,
 		.is_agg_allowed = true,
 	};
@@ -3249,6 +3374,7 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 		res->flags |= SF_Aggregate;
 	if (ast->having != NULL) {
 		struct sql_resolve_scope having_scope = {
+			.sources = &res->sources,
 			.aliases = &res->columns,
 			.parent = outer,
 			.is_agg_allowed = true,
@@ -3275,10 +3401,12 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 	}
 	if (ast->where != NULL) {
 		/*
-		 * WHERE can refer to the result columns and to the names of
-		 * the enclosing SELECTs, but cannot use aggregate functions.
+		 * WHERE can refer to the columns of the sources, to the result
+		 * columns and to the names of the enclosing SELECTs, but cannot
+		 * use aggregate functions.
 		 */
 		struct sql_resolve_scope where_scope = {
+			.sources = &res->sources,
 			.aliases = &res->columns,
 			.parent = outer,
 		};
@@ -3290,10 +3418,12 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 			return rc;
 	}
 	/*
-	 * The ORDER BY and GROUP BY terms can refer to the result columns, but
-	 * not to the names of the enclosing SELECTs.
+	 * The ORDER BY and GROUP BY terms can refer to the columns of the
+	 * sources and to the result columns, but not to the names of the
+	 * enclosing SELECTs.
 	 */
 	struct sql_resolve_scope order_by_scope = {
+		.sources = &res->sources,
 		.aliases = &res->columns,
 		.is_agg_allowed = true,
 	};
@@ -3305,6 +3435,7 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 			return rc;
 	}
 	struct sql_resolve_scope group_by_scope = {
+		.sources = &res->sources,
 		.aliases = &res->columns,
 		.is_agg_allowed = true,
 	};
@@ -3405,6 +3536,7 @@ find_compound_order_by_col(struct sql_resolve_context *ctx,
 			return col + 1;
 	}
 	struct sql_resolve_scope scope = {
+		.sources = &part->sources,
 		.aliases = columns,
 		.is_agg_allowed = true,
 	};
@@ -3597,6 +3729,8 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 	}
 	if (resolve_select_names(ctx, ast, res) != 0)
 		return -1;
+	if (!ctx->can_resolve)
+		return 0;
 	struct rast_select *next = res;
 	for (const struct rlist *l = head->prev; l != head; l = l->prev) {
 		const struct ast_select *part =
@@ -3605,6 +3739,8 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 						   struct rast_select);
 		if (resolve_select_names(ctx, part, next->prior) != 0)
 			return -1;
+		if (!ctx->can_resolve)
+			return 0;
 		next = next->prior;
 	}
 
@@ -4008,6 +4144,33 @@ expr_list_find_columns(struct ExprList *list, const struct ExprList *cols)
 }
 
 /**
+ * Create a source list from the given resolved source list and assign cursors
+ * to its sources.
+ *
+ * Returns NULL if the list is empty.
+ */
+static struct SrcList *
+src_list_from_rast(struct Parse *parser, const struct rast_source_list *list)
+{
+	struct SrcList *res = NULL;
+	for (uint32_t i = 0; i < list->len; ++i) {
+		const struct rast_source *src = &list->sources[i];
+		struct space *space = space_by_id(src->space_id);
+		assert(space != NULL);
+		res = sql_src_list_append(res, NULL);
+		struct SrcList_item *item = &res->a[res->nSrc - 1];
+		item->zName = sql_xstrdup(space->def->name);
+		if (src->alias != NULL)
+			item->zAlias = sql_xstrdup(src->alias);
+		item->space = space;
+		item->fg.disallow_scan = src->disallow_scan;
+	}
+	if (res != NULL)
+		sqlSrcListAssignCursors(parser, res);
+	return res;
+}
+
+/**
  * Create a SELECT statement from the given part of a resolved compound SELECT,
  * without the parts to the left of it.
  *
@@ -4016,14 +4179,29 @@ expr_list_find_columns(struct ExprList *list, const struct ExprList *cols)
 static struct Select *
 select_part_from_rast(struct Parse *parser, struct rast_select *select)
 {
+	struct SrcList *src = src_list_from_rast(parser, &select->sources);
 	struct ExprList *cols = expr_list_from_rast(parser, &select->columns);
-	if (parser->is_aborted)
+	if (parser->is_aborted) {
+		sqlSrcListDelete(src);
 		return NULL;
+	}
 	/*
 	 * The SELECT is already fully resolved, so the legacy resolver
 	 * (sqlSelectPrep()) must not walk this SELECT again.
 	 */
 	uint32_t flags = select->flags | SF_Resolved | SF_HasTypeInfo;
+	struct Expr *where = NULL;
+	if (select->where != NULL)
+		where = expr_from_rast(parser, select->where);
+	struct ExprList *group_by = expr_list_from_rast(parser,
+							&select->group_by);
+	expr_list_find_columns(group_by, cols);
+	struct Expr *having = NULL;
+	if (select->having != NULL)
+		having = expr_from_rast(parser, select->having);
+	struct ExprList *order_by = expr_list_from_rast(parser,
+							&select->order_by);
+	expr_list_find_columns(order_by, cols);
 	struct Expr *limit = NULL;
 	if (select->having != NULL && select->group_by.len == 0) {
 		/*
@@ -4039,19 +4217,7 @@ select_part_from_rast(struct Parse *parser, struct rast_select *select)
 	struct Expr *offset = NULL;
 	if (select->offset != NULL)
 		offset = expr_from_rast(parser, select->offset);
-	struct Expr *where = NULL;
-	if (select->where != NULL)
-		where = expr_from_rast(parser, select->where);
-	struct ExprList *group_by = expr_list_from_rast(parser,
-							&select->group_by);
-	expr_list_find_columns(group_by, cols);
-	struct Expr *having = NULL;
-	if (select->having != NULL)
-		having = expr_from_rast(parser, select->having);
-	struct ExprList *order_by = expr_list_from_rast(parser,
-							&select->order_by);
-	expr_list_find_columns(order_by, cols);
-	struct Select *res = sqlSelectNew(cols, NULL, where, group_by, having,
+	struct Select *res = sqlSelectNew(cols, src, where, group_by, having,
 					  order_by, flags, limit, offset);
 	res->op = select->op;
 	return res;
@@ -4061,30 +4227,28 @@ struct Select *
 select_from_rast(struct Parse *parser, struct rast_select *select)
 {
 	/*
-	 * The parts are built from left to right, but not recursively, since
-	 * VALUES may have any number of rows.
+	 * The parts are built in the order the legacy code expands them in,
+	 * so that the cursors are assigned in the same order: the sources
+	 * first, then the subqueries of the clauses, then the SELECT to the
+	 * left. The parts are not built recursively, since VALUES may have
+	 * any number of rows.
 	 */
-	uint32_t count = 0;
-	for (struct rast_select *p = select; p != NULL; p = p->prior)
-		++count;
-	struct rast_select **parts =
-		xregion_alloc_array(&parser->region, typeof(*parts), count);
-	uint32_t i = count;
-	for (struct rast_select *p = select; p != NULL; p = p->prior)
-		parts[--i] = p;
-	struct Select *prior = NULL;
-	for (i = 0; i < count; ++i) {
-		struct Select *res = select_part_from_rast(parser, parts[i]);
+	struct Select *res = NULL;
+	struct Select *next = NULL;
+	for (struct rast_select *p = select; p != NULL; p = p->prior) {
+		struct Select *part = select_part_from_rast(parser, p);
 		if (parser->is_aborted) {
+			sql_select_delete(part);
 			sql_select_delete(res);
-			sql_select_delete(prior);
 			return NULL;
 		}
-		if (prior != NULL) {
-			res->pPrior = prior;
-			prior->pNext = res;
+		if (next == NULL) {
+			res = part;
+		} else {
+			next->pPrior = part;
+			part->pNext = next;
 		}
-		prior = res;
+		next = part;
 	}
-	return prior;
+	return res;
 }

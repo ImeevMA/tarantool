@@ -198,8 +198,28 @@ struct rast_expr_list {
 	uint32_t len;
 };
 
+/** Resolved source of a SELECT statement. */
+struct rast_source {
+	/** Identifier of the space the source refers to. */
+	uint32_t space_id;
+	/** Dequoted alias of the source, or NULL. */
+	const char *alias;
+	/** Whether scanning is not allowed for this source. */
+	bool disallow_scan;
+};
+
+/** Resolved list of sources. */
+struct rast_source_list {
+	/** Array of sources. */
+	struct rast_source *sources;
+	/** Number of sources. */
+	uint32_t len;
+};
+
 /** Resolved SELECT statement. */
 struct rast_select {
+	/** Resolved FROM clause. */
+	struct rast_source_list sources;
 	/** Resolved list of columns. */
 	struct rast_expr_list columns;
 	/** Resolved LIMIT expression, NULL if there is none. */
