@@ -3514,8 +3514,24 @@ sql_emit_select(struct Parse *parser, struct rast_select *select)
 	sql_select_delete(res);
 }
 
+/** Emit VDBE bytecode for the given resolved CREATE VIEW statement. */
+static void
+sql_emit_create_view(struct Parse *parser, struct rast_create_view *stmt,
+		     const char *sql)
+{
+	parser->disableLookaside++;
+	sql_get()->lookaside.bDisable++;
+	parser->initiateTTrans = true;
+	struct Select *select = select_from_rast(parser, stmt->select);
+	if (parser->is_aborted)
+		return;
+	struct ExprList *cols = expr_list_from_ids(parser, stmt->columns);
+	sql_create_view(parser, sql, &stmt->name, cols, select,
+			stmt->if_not_exists);
+}
+
 void
-sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast)
+sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast, const char *sql)
 {
 	switch (rast->type) {
 	case SQL_AST_SELECT: {
@@ -3524,6 +3540,9 @@ sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast)
 	}
 	case SQL_AST_INSERT:
 		sql_emit_insert(parser, &rast->insert);
+		break;
+	case SQL_AST_CREATE_VIEW:
+		sql_emit_create_view(parser, &rast->create_view, sql);
 		break;
 	default:
 		unreachable();

@@ -2611,9 +2611,12 @@ sql_emit_show_create_table_all(struct Parse *parse);
 void
 sql_show_create_table(uint32_t space_id, struct Mem *ret, struct Mem *err);
 
-/** Emit VDBE bytecode for resolved statement AST. */
+/**
+ * Emit VDBE bytecode for resolved statement AST. The text of the statement is
+ * given to be saved for the objects defined by it.
+ */
 void
-sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast);
+sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast, const char *sql);
 
 /**
  * Return true if given column is part of primary key.

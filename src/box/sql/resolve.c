@@ -5520,6 +5520,57 @@ resolve_insert(struct sql_resolve_context *ctx, const struct ast_insert *ast,
 	return 0;
 }
 
+/**
+ * Resolve the given AST CREATE VIEW statement into the given rast_create_view.
+ * As in sql_create_view(), the names of the columns, the absence of bound
+ * variables and the name of the view are checked before the SELECT, which is
+ * resolved without the session SQL flags.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_create_view(struct sql_resolve_context *ctx,
+		    const struct ast_create_view *ast,
+		    struct rast_create_view *res)
+{
+	res->name = ast->name;
+	res->columns = ast->columns;
+	res->if_not_exists = ast->if_not_exists;
+	int rc = 0;
+	if (ast->columns != NULL) {
+		for (const struct stailq_entry *node =
+			ast->columns->head.first.value;
+		     node != NULL; node = node->next.value) {
+			const struct Token *id =
+				&stailq_entry(node, struct ast_id_entry,
+					      link)->id;
+			if (id->n == 0)
+				continue;
+			const char *name = sql_name_temp(ctx->region, id->z,
+							 id->n);
+			if (sql_check_identifier_name(name, strlen(name)) != 0)
+				rc = -1;
+		}
+	}
+	if (rc != 0)
+		return -1;
+	if (ctx->parser->nVar > 0) {
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+			 "Parameters are not allowed in views");
+		return -1;
+	}
+	const char *name = sql_name_temp(ctx->region, ast->name.z,
+					 ast->name.n);
+	if (sql_check_identifier_name(name, strlen(name)) != 0)
+		return -1;
+	res->select = xregion_alloc_object(ctx->region, struct rast_select);
+	uint32_t sql_flags = ctx->parser->sql_flags;
+	ctx->parser->sql_flags = 0;
+	rc = resolve_select(ctx, ast->select, res->select);
+	ctx->parser->sql_flags = sql_flags;
+	return rc;
+}
+
 /** Build the resolved AST for the given parsed statement. */
 struct sql_rast *
 sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
@@ -5542,6 +5593,13 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 		break;
 	case SQL_AST_INSERT:
 		if (resolve_insert(&ctx, ast->insert, &rast->insert) != 0) {
+			parser->is_aborted = true;
+			return NULL;
+		}
+		break;
+	case SQL_AST_CREATE_VIEW:
+		if (resolve_create_view(&ctx, &ast->create_view,
+					&rast->create_view) != 0) {
 			parser->is_aborted = true;
 			return NULL;
 		}

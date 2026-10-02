@@ -68,7 +68,7 @@ sql_stmt_compile(const char *zSql)
 	if (!rast->is_resolved)
 		sql_code_ast(&sParse, ast, zSql);
 	else
-		sql_emit_vdbe(&sParse, rast);
+		sql_emit_vdbe(&sParse, rast, zSql);
 	if (sParse.is_aborted) {
 		sql_parser_destroy(&sParse);
 		return NULL;

@@ -476,3 +476,47 @@ g.test_wrong_view_def = function(cg)
         box.execute([[DROP TABLE t;]])
     end)
 end
+
+--
+-- Make sure the names of the columns and of the view and the absence of bound
+-- variables are checked before the SELECT of the view is resolved, and the
+-- number of the column names after it.
+--
+g.test_create_view_check_order = function(cg)
+    cg.server:exec(function()
+        local function check(sql, exp)
+            local _, err = box.execute(sql)
+            t.assert_equals(err.message, exp, sql)
+        end
+        local exp = "Invalid identifier '' (expected printable symbols " ..
+                    "only or it is too long)"
+        check([[CREATE VIEW v(x, "") AS SELECT ?, nosuch;]], exp)
+        check([[CREATE VIEW "" AS SELECT ?, nosuch;]],
+              "Parameters are not allowed in views")
+        check([[CREATE VIEW "" AS SELECT nosuch;]], exp)
+        check([[CREATE VIEW v(x) AS SELECT nosuch;]],
+              "Can't resolve field 'nosuch'")
+        check([[CREATE VIEW v(x, y) AS SELECT 1;]],
+              "Failed to create space 'v': number of aliases doesn't " ..
+              "match provided columns")
+    end)
+end
+
+--
+-- Make sure the names of the columns of a view do not depend on the session
+-- setting of full column names.
+--
+g.test_create_view_full_column_names = function(cg)
+    cg.server:exec(function()
+        box.execute([[CREATE TABLE t (a INT PRIMARY KEY);]])
+        box.execute([[CREATE TABLE s (b INT PRIMARY KEY);]])
+        box.execute([[SET SESSION "sql_full_column_names" = true;]])
+        box.execute([[CREATE VIEW v AS SELECT * FROM t, s;]])
+        box.execute([[SET SESSION "sql_full_column_names" = false;]])
+        t.assert_equals(box.space.v:format()[1].name, 'a')
+        t.assert_equals(box.space.v:format()[2].name, 'b')
+        box.execute([[DROP VIEW v;]])
+        box.execute([[DROP TABLE s;]])
+        box.execute([[DROP TABLE t;]])
+    end)
+end

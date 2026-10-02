@@ -368,6 +368,18 @@ struct rast_insert {
 	enum on_conflict_action action;
 };
 
+/** Resolved CREATE VIEW statement. */
+struct rast_create_view {
+	/** Name of the view. */
+	struct Token name;
+	/** Names of the columns of the view, or NULL. */
+	struct ast_id_list *columns;
+	/** SELECT of the view. */
+	struct rast_select *select;
+	/** Whether the view may already exist. */
+	bool if_not_exists;
+};
+
 /**
  * Resolved AST. During resolve separation it is a thin overlay over the parsed
  * AST: the resolve phase gradually moves work here from bytecode generation.
@@ -380,6 +392,8 @@ struct sql_rast {
 		struct rast_select select;
 		/** Resolved INSERT statement. */
 		struct rast_insert insert;
+		/** Resolved CREATE VIEW statement. */
+		struct rast_create_view create_view;
 	};
 	/** Whether the statement is resolved. */
 	bool is_resolved;
