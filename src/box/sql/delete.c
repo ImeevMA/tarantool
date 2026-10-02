@@ -180,8 +180,6 @@ sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 void
 sql_emit_delete(struct Parse *parse, struct rast_delete *del)
 {
-	sqlSubProgramsRemaining = SQL_MAX_COMPILING_TRIGGERS;
-	parse->initiateTTrans = true;
 	struct rast_source *target = &del->target.sources[0];
 	struct space *space = space_by_id(target->space_id);
 	struct sql_trigger *trigger_list =

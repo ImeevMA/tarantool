@@ -3539,15 +3539,21 @@ sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast, const char *sql)
 		break;
 	}
 	case SQL_AST_INSERT:
+		sqlSubProgramsRemaining = SQL_MAX_COMPILING_TRIGGERS;
+		parser->initiateTTrans = true;
 		sql_emit_insert(parser, &rast->insert);
 		break;
 	case SQL_AST_CREATE_VIEW:
 		sql_emit_create_view(parser, &rast->create_view, sql);
 		break;
 	case SQL_AST_UPDATE:
+		sqlSubProgramsRemaining = SQL_MAX_COMPILING_TRIGGERS;
+		parser->initiateTTrans = true;
 		sql_emit_update(parser, &rast->update);
 		break;
 	case SQL_AST_DELETE:
+		sqlSubProgramsRemaining = SQL_MAX_COMPILING_TRIGGERS;
+		parser->initiateTTrans = true;
 		sql_emit_delete(parser, &rast->del);
 		break;
 	case SQL_AST_TRUNCATE:

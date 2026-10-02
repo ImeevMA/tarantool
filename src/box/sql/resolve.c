@@ -2628,6 +2628,70 @@ find_column(const struct rast_source_list *sources, const char *tab_name,
 }
 
 /**
+ * Check if a source of the given list has the given name, or the given legacy
+ * name if it is not NULL.
+ */
+static bool
+sources_have_name(const struct rast_source_list *sources, const char *name,
+		  const char *legacy_name)
+{
+	for (uint32_t i = 0; i < sources->len; ++i) {
+		const char *src_name = rast_source_name(&sources->sources[i]);
+		if (strcmp(src_name, name) == 0 ||
+		    (legacy_name != NULL && strcmp(src_name, legacy_name) == 0))
+			return true;
+	}
+	return false;
+}
+
+/**
+ * Resolve a column name qualified with the given source name, which is not
+ * the name of a source of the given scope or of the scopes inside it, as a
+ * column of the OLD or NEW row of the trigger being coded, if any, as the
+ * legacy code does: NEW is not available in a DELETE trigger, and OLD is not
+ * available in an INSERT trigger. Sets the flag if the source name is the name
+ * of a row.
+ *
+ * Returns true if the column is resolved.
+ */
+static bool
+resolve_trigger_column(struct sql_resolve_context *ctx,
+		       const struct sql_resolve_scope *scope,
+		       const char *tab_name, const char *name,
+		       const char *legacy_name, struct rast_expr *res,
+		       bool *is_row)
+{
+	const struct space *space = ctx->parser->triggered_space;
+	if (space == NULL)
+		return false;
+	int op = ctx->parser->eTriggerOp;
+	uint32_t row;
+	if (op != TK_DELETE && sqlStrICmp(tab_name, "new") == 0)
+		row = 1;
+	else if (op != TK_INSERT && sqlStrICmp(tab_name, "old") == 0)
+		row = 0;
+	else
+		return false;
+	*is_row = true;
+	const struct space_def *def = space->def;
+	uint32_t fieldno = space_def_fieldno(def, name);
+	if (fieldno == UINT32_MAX && legacy_name != NULL)
+		fieldno = space_def_fieldno(def, legacy_name);
+	if (fieldno == UINT32_MAX)
+		return false;
+	for (struct sql_resolve_scope *s = ctx->scope; s != scope->parent;
+	     s = s->parent)
+		++s->ref_count;
+	res->op = TK_TRIGGER;
+	res->column.depth = 0;
+	res->column.source = row;
+	res->column.fieldno = fieldno;
+	res->column.field_type = def->fields[fieldno].type;
+	res->type = sql_type_from_field_type(res->column.field_type);
+	return true;
+}
+
+/**
  * Resolve an AST column reference: a column name, optionally qualified with a
  * source name, into the given rast_expr. As in the legacy code, the name is
  * looked up in the scopes from the current one outwards; in every scope first
@@ -2669,6 +2733,11 @@ resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	}
 	/* As in the legacy code, a qualified name is a node of height 2. */
 	res->height = ast->op == TK_DOT ? 2 : 1;
+	/*
+	 * Whether the source name is the name of a source of the scopes
+	 * looked through or of a row of the trigger being coded.
+	 */
+	bool is_tab_found = false;
 	uint32_t depth = 0;
 	for (struct sql_resolve_scope *scope = ctx->scope;
 	     scope != NULL; scope = scope->parent, ++depth) {
@@ -2683,6 +2752,14 @@ resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 					      fieldno, res);
 			return 0;
 		}
+		if (tab_name != NULL && scope->sources != NULL &&
+		    sources_have_name(scope->sources, tab_name,
+				      legacy_tab_name))
+			is_tab_found = true;
+		if (tab_name != NULL && !is_tab_found &&
+		    resolve_trigger_column(ctx, scope, tab_name, name,
+					   legacy_name, res, &is_tab_found))
+			return 0;
 		if (tab_name != NULL || scope->aliases == NULL)
 			continue;
 		int pos = find_alias(scope->aliases, name, legacy_name);
@@ -2852,6 +2929,7 @@ rast_expr_field_type(const struct rast_expr *expr)
 	case TK_AS:
 		return rast_expr_field_type(expr->alias.expr);
 	case TK_COLUMN_REF:
+	case TK_TRIGGER:
 		return expr->column.field_type;
 	}
 	return sql_type_to_field_type(expr->type);
@@ -4009,16 +4087,17 @@ resolve_view(struct sql_resolve_context *ctx, const struct space *space,
 
 /**
  * Find the space with the given name, as sql_space_by_token() does: an unquoted
- * name is also looked up in its legacy form.
+ * name is also looked up in its legacy form, unless the given flag is set.
  *
  * Returns NULL and sets an error if not found.
  */
 static struct space *
-find_space(struct sql_resolve_context *ctx, const struct Token *name)
+find_space(struct sql_resolve_context *ctx, const struct Token *name,
+	   bool is_exact)
 {
 	const char *str = sql_name_temp(ctx->region, name->z, name->n);
 	struct space *space = space_by_name0(str);
-	if (space == NULL && name->z[0] != '"') {
+	if (space == NULL && !is_exact && name->z[0] != '"') {
 		space = space_by_name0(sql_legacy_name_temp(ctx->region,
 							    name->z, name->n));
 	}
@@ -4029,14 +4108,15 @@ find_space(struct sql_resolve_context *ctx, const struct Token *name)
 
 /**
  * Look up the space with the given name and check it, as sql_lookup_space()
- * does.
+ * does. The name is looked up as find_space() does.
  *
  * Returns NULL on error.
  */
 static struct space *
-lookup_space(struct sql_resolve_context *ctx, const struct Token *name)
+lookup_space(struct sql_resolve_context *ctx, const struct Token *name,
+	     bool is_exact)
 {
-	struct space *space = find_space(ctx, name);
+	struct space *space = find_space(ctx, name, is_exact);
 	if (space == NULL)
 		return NULL;
 	if (sql_space_def_check_format(space->def) != 0)
@@ -4087,7 +4167,7 @@ static int
 resolve_space_source(struct sql_resolve_context *ctx,
 		     const struct ast_source *ast, struct rast_source *res)
 {
-	struct space *space = lookup_space(ctx, &ast->name);
+	struct space *space = lookup_space(ctx, &ast->name, false);
 	if (space == NULL)
 		return -1;
 	if (space->def->opts.is_view) {
@@ -5457,7 +5537,12 @@ resolve_insert(struct sql_resolve_context *ctx, const struct ast_insert *ast,
 {
 	memset(res, 0, sizeof(*res));
 	res->action = ast->action;
-	res->space = lookup_space(ctx, &ast->table);
+	/*
+	 * As targetSrcList() does, the space of a statement of a trigger is
+	 * looked up by its exact name.
+	 */
+	res->space = lookup_space(ctx, &ast->table,
+				  ctx->parser->triggered_space != NULL);
 	if (res->space == NULL)
 		return -1;
 	struct space_def *def = res->space->def;
@@ -5606,7 +5691,7 @@ static int
 resolve_truncate(struct sql_resolve_context *ctx,
 		 const struct ast_truncate *ast, struct rast_truncate *res)
 {
-	res->space = find_space(ctx, &ast->table);
+	res->space = find_space(ctx, &ast->table, false);
 	if (res->space == NULL)
 		return -1;
 	if (res->space->def->opts.is_view) {
@@ -5630,7 +5715,13 @@ static struct space *
 resolve_target(struct sql_resolve_context *ctx, const struct Token *name,
 	       const struct Token *indexed_by, struct rast_source_list *res)
 {
-	struct space *space = lookup_space(ctx, name);
+	/*
+	 * As targetSrcList() does, the space of a statement of a trigger is
+	 * looked up by its exact name.
+	 */
+	struct space *space = lookup_space(ctx, name,
+					   ctx->parser->triggered_space !=
+					   NULL);
 	if (space == NULL)
 		return NULL;
 	struct rast_source *target = xregion_alloc_object(ctx->region,
@@ -6235,6 +6326,16 @@ expr_from_rast(struct Parse *parser, const struct rast_build_scope *scope,
 		if (expr->select->is_correlated)
 			ExprSetProperty(res, EP_VarSelect);
 		break;
+	case TK_TRIGGER: {
+		res = sql_expr_new_anon(TK_TRIGGER);
+		res->iTable = expr->column.source;
+		res->iColumn = expr->column.fieldno;
+		res->space_def = parser->triggered_space->def;
+		uint64_t *mask = res->iTable == 0 ? &parser->oldmask :
+				 &parser->newmask;
+		column_mask_set_fieldno(mask, res->iColumn);
+		break;
+	}
 	case TK_COLUMN_REF: {
 		const struct rast_build_scope *s = scope;
 		for (uint32_t i = 0; i < expr->column.depth; ++i)
@@ -6759,6 +6860,26 @@ select_from_rast(struct Parse *parser, struct rast_select *select)
 {
 	rast_select_assign_cursors(parser, select);
 	return select_from_rast_in(parser, NULL, select);
+}
+
+struct Expr *
+sql_trigger_when_from_ast(struct Parse *parser, const struct ast_expr *when)
+{
+	struct sql_resolve_context ctx;
+	memset(&ctx, 0, sizeof(ctx));
+	ctx.parser = parser;
+	ctx.region = &parser->region;
+	ctx.can_resolve = true;
+	struct sql_resolve_scope scope;
+	memset(&scope, 0, sizeof(scope));
+	ctx.scope = &scope;
+	struct rast_expr res;
+	if (resolve_expr(&ctx, when, &res) != 0) {
+		parser->is_aborted = true;
+		return NULL;
+	}
+	assert(ctx.can_resolve);
+	return expr_from_rast_in(parser, NULL, &res);
 }
 
 struct SrcList *

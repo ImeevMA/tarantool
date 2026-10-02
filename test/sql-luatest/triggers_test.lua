@@ -878,3 +878,69 @@ g.test_indexed_by_in_update_delete = function(cg)
         box.execute([[DROP TABLE t;]])
     end)
 end
+
+--
+-- Make sure the columns of the OLD and NEW rows are resolved in the body of a
+-- trigger at any depth of subqueries, unless a source has the name of a row,
+-- and only the rows available for the event of the trigger are visible.
+--
+g.test_trigger_rows = function(cg)
+    cg.server:exec(function()
+        box.execute([[CREATE TABLE t (a INT PRIMARY KEY, b INT);]])
+        box.execute([[CREATE TABLE s (a INT PRIMARY KEY, b INT);]])
+        box.execute([[INSERT INTO s VALUES (1, 100), (2, 200);]])
+        box.execute([[CREATE TABLE lg (id INT PRIMARY KEY AUTOINCREMENT,
+                                       x INT);]])
+        local function check(body, exp)
+            box.execute([[CREATE TRIGGER r AFTER INSERT ON t FOR EACH ROW
+                          WHEN new.b > 0 BEGIN ]] .. body .. [[ END;]])
+            local _, err = box.execute([[INSERT INTO t VALUES (1, 2);]])
+            local res = err ~= nil and err.message or
+                        box.execute([[SELECT x FROM lg;]]).rows
+            t.assert_equals(res, exp, body)
+            box.execute([[DROP TRIGGER r;]])
+            box.execute([[DELETE FROM t;]])
+            box.execute([[DELETE FROM lg;]])
+        end
+        check([[INSERT INTO lg(x) VALUES (NEW.a + "new".b);]], {{3}})
+        check([[INSERT INTO lg(x) SELECT (SELECT b FROM s
+                WHERE s.a = new.a);]], {{100}})
+        check([[INSERT INTO lg(x) SELECT new.b FROM s AS new;]],
+              {{100}, {200}})
+        check([[INSERT INTO lg(x) SELECT new.x FROM s AS new;]],
+              "Field 'x' was not found in space 'new' format")
+        check([[INSERT INTO lg(x) VALUES (old.a);]],
+              "Field 'a' was not found in space 'old' format")
+        check([[INSERT INTO lg(x) VALUES (COUNT(*));]],
+              "misuse of aggregate function COUNT()")
+        box.execute([[DROP TABLE lg;]])
+        box.execute([[DROP TABLE s;]])
+        box.execute([[DROP TABLE t;]])
+    end)
+end
+
+--
+-- Make sure the space of a statement in the body of a trigger is looked up
+-- by its exact name.
+--
+g.test_trigger_target_name = function(cg)
+    cg.server:exec(function()
+        box.execute([[CREATE TABLE t (a INT PRIMARY KEY);]])
+        box.execute([[CREATE TABLE "S" (a INT PRIMARY KEY);]])
+        box.execute([[CREATE TRIGGER r AFTER INSERT ON t FOR EACH ROW
+                      BEGIN INSERT INTO s VALUES (new.a); END;]])
+        local _, err = box.execute([[INSERT INTO t VALUES (1);]])
+        t.assert_equals(err.message, "Space 's' does not exist")
+        box.execute([[DROP TRIGGER r;]])
+        box.execute([[CREATE TRIGGER r AFTER INSERT ON t FOR EACH ROW
+                      BEGIN INSERT INTO "S" SELECT a + 10 FROM s
+                      WHERE a = new.a - 1; END;]])
+        box.execute([[INSERT INTO "S" VALUES (1);]])
+        box.execute([[INSERT INTO t VALUES (2);]])
+        t.assert_equals(box.execute([[SELECT * FROM "S";]]).rows,
+                        {{1}, {11}})
+        box.execute([[DROP TRIGGER r;]])
+        box.execute([[DROP TABLE "S";]])
+        box.execute([[DROP TABLE t;]])
+    end)
+end

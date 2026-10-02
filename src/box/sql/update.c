@@ -528,8 +528,6 @@ sqlUpdate(struct Parse *parse, struct SrcList *src, struct ExprList *changes,
 void
 sql_emit_update(struct Parse *parse, struct rast_update *update)
 {
-	sqlSubProgramsRemaining = SQL_MAX_COMPILING_TRIGGERS;
-	parse->initiateTTrans = true;
 	struct SrcList *src = src_list_from_rast_target(parse, &update->target);
 	struct ExprList *names = set_list_names_from_rast(parse, update);
 	update_emit(parse, src, names, NULL, update->action, update);

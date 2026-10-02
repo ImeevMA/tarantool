@@ -1081,6 +1081,17 @@ sql_parse_view(struct Parse *parser, const char *sql)
 	return select_from_ast(parser, ast);
 }
 
+struct ast_trigger *
+sql_parse_trigger_ast(struct region *region, const char *sql)
+{
+	struct sql_ast *ast = sql_run_parser(region, sql, TK_TRIGGER_ENTRY,
+					     NULL);
+	if (ast == NULL)
+		return NULL;
+	assert(ast->type == SQL_AST_TRIGGER);
+	return &ast->trigger;
+}
+
 struct sql_trigger *
 sql_parse_trigger(struct Parse *parser, const char *sql)
 {

@@ -763,8 +763,6 @@ sqlInsert(Parse * pParse,	/* Parser context */
 void
 sql_emit_insert(struct Parse *parser, struct rast_insert *insert)
 {
-	sqlSubProgramsRemaining = SQL_MAX_COMPILING_TRIGGERS;
-	parser->initiateTTrans = true;
 	struct space_def *def = insert->space->def;
 	if (insert->xfer_source != NULL) {
 		sqlVdbeCountChanges(sqlGetVdbe(parser));

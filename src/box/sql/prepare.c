@@ -170,6 +170,8 @@ sql_trigger_compile(const char *sql)
 	sql_parser_create(&parser, SQL_DEFAULT_FLAGS);
 	struct sql_trigger *res = sql_parse_trigger(&parser, sql);
 	sql_parser_destroy(&parser);
+	if (res != NULL)
+		res->sql = sql_xstrdup(sql);
 	return res;
 }
 

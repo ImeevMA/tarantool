@@ -755,7 +755,6 @@ typedef struct StrAccum StrAccum;
 typedef struct Token Token;
 typedef struct TreeView TreeView;
 typedef struct TriggerPrg TriggerPrg;
-typedef struct TriggerStep TriggerStep;
 typedef struct UnpackedRecord UnpackedRecord;
 typedef struct Walker Walker;
 typedef struct WhereInfo WhereInfo;
@@ -1984,10 +1983,6 @@ struct Parse {
  * linked list, using the next member of struct sql_trigger. A
  * pointer to the first element of the linked list is stored as
  * sql_triggers member of the associated space.
- *
- * The "step_list" member points to the first element of a linked
- * list containing the SQL statements specified as the trigger
- * program.
  */
 struct sql_trigger {
 	/** The name of the trigger. */
@@ -1998,15 +1993,16 @@ struct sql_trigger {
 	u8 op;
 	/** One of TRIGGER_BEFORE, TRIGGER_AFTER. */
 	u8 tr_tm;
-	/** The WHEN clause of the expression (may be NULL). */
-	Expr *pWhen;
 	/**
 	 * If this is an UPDATE OF <column-list> trigger,
 	 * the <column-list> is stored here
 	 */
 	IdList *pColumns;
-	/** Link list of trigger program steps. */
-	TriggerStep *step_list;
+	/**
+	 * Text of the CREATE TRIGGER statement, whose WHEN clause and body
+	 * are parsed and resolved every time the trigger is coded.
+	 */
+	char *sql;
 	/** Next trigger associated with the table. */
 	struct sql_trigger *next;
 };
@@ -2020,56 +2016,6 @@ struct sql_trigger {
  */
 #define TRIGGER_BEFORE  1
 #define TRIGGER_AFTER   2
-
-/*
- * An instance of struct TriggerStep is used to store a single SQL statement
- * that is a part of a trigger-program.
- *
- * Instances of struct TriggerStep are stored in a singly linked list (linked
- * using the "pNext" member) referenced by the "step_list" member of the
- * associated struct sql_trigger instance. The first element of the linked list
- * is the first step of the trigger-program.
- *
- * The "op" member indicates whether this is a "DELETE", "INSERT", "UPDATE" or
- * "SELECT" statement. The meanings of the other members is determined by the
- * value of "op" as follows:
- *
- * (op == TK_INSERT)
- * orconf    -> stores the ON CONFLICT algorithm
- * pSelect   -> If this is an INSERT INTO ... SELECT ... statement, then
- *              this stores a pointer to the SELECT statement. Otherwise NULL.
- * zTarget   -> Dequoted name of the table to insert into.
- * pExprList -> If this is an INSERT INTO ... VALUES ... statement, then
- *              this stores values to be inserted. Otherwise NULL.
- * pIdList   -> If this is an INSERT INTO ... (<column-names>) VALUES ...
- *              statement, then this stores the column-names to be
- *              inserted into.
- *
- * (op == TK_DELETE)
- * zTarget   -> Dequoted name of the table to delete from.
- * pWhere    -> The WHERE clause of the DELETE statement if one is specified.
- *              Otherwise NULL.
- *
- * (op == TK_UPDATE)
- * zTarget   -> Dequoted name of the table to update.
- * pWhere    -> The WHERE clause of the UPDATE statement if one is specified.
- *              Otherwise NULL.
- * pExprList -> A list of the columns to update and the expressions to update
- *              them to. See sqlUpdate() documentation of "pChanges"
- *              argument.
- *
- */
-struct TriggerStep {
-	u8 op;			/* One of TK_DELETE, TK_UPDATE, TK_INSERT, TK_SELECT */
-	u8 orconf;		/* ON_CONFLICT_ACTION_ROLLBACK etc. */
-	Select *pSelect;	/* SELECT statement or RHS of INSERT INTO SELECT ... */
-	char *zTarget;		/* Target table for DELETE, UPDATE, INSERT */
-	Expr *pWhere;		/* The WHERE clause for DELETE or UPDATE steps */
-	ExprList *pExprList;	/* SET clause for UPDATE. */
-	IdList *pIdList;	/* Column names for INSERT */
-	TriggerStep *pNext;	/* Next in the link-list */
-	TriggerStep *pLast;	/* Last element in link-list. Valid for 1st elem only */
-};
 
 /*
  * An objected used to accumulate the text of a string where we
@@ -2394,6 +2340,15 @@ sql_parse_view_ast(struct region *region, const char *sql);
  */
 struct sql_trigger *
 sql_parse_trigger(struct Parse *parser, const char *sql);
+
+/**
+ * Parse the given text of a CREATE TRIGGER statement into an AST allocated on
+ * the given region.
+ *
+ * Return the AST of the trigger on success, or NULL on error.
+ */
+struct ast_trigger *
+sql_parse_trigger_ast(struct region *region, const char *sql);
 
 /** Code given AST. */
 void
@@ -3488,8 +3443,7 @@ sql_materialize_view(struct Parse *parse, const char *name, struct Expr *where,
 /** Create a new `struct sql_trigger` object. */
 struct sql_trigger *
 sql_trigger_new(struct Parse *parser, struct Token *name, struct Token *table,
-		uint8_t time, uint8_t event, struct IdList *columns,
-		struct Expr *when, struct TriggerStep *step_list);
+		uint8_t time, uint8_t event, struct IdList *columns);
 
 /**
  * Emit code to write SQL trigger definition to `_trigger`.
@@ -3623,67 +3577,6 @@ vdbe_code_row_trigger_direct(struct Parse *parser, struct sql_trigger *trigger,
 			     struct space *space, int reg, int orconf,
 			     int ignore_jump);
 
-/** Delete a linked list of TriggerStep structures. */
-void
-sqlDeleteTriggerStep(struct TriggerStep *pTriggerStep);
-
-/**
- * Turn a SELECT statement (that the select parameter points to)
- * into a trigger step.
- * The parser calls this routine when it finds a SELECT statement
- * in body of a TRIGGER.
- *
- * @param select The SELECT statement to process. Deleted on
- *        error.
- * @retval Not NULL TriggerStep object on success.
- */
-struct TriggerStep *
-sql_trigger_select_step(struct Select *select);
-
-/**
- * Build a trigger step out of an INSERT statement.
- * The parser calls this routine when it sees an INSERT inside the
- * body of a trigger.
- *
- * @param table_name Name of the table into which we insert.
- * @param column_list List of columns in table to insert into. Is
- *        deleted on error.
- * @param select The SELECT statement that supplies values. Is
- *        deleted anyway.
- * @param orconf A conflict processing algorithm.
- * @retval Not NULL TriggerStep object on success.
- */
-struct TriggerStep *
-sql_trigger_insert_step(struct Token *table_name, struct ast_id_list *columns,
-			struct Select *select, enum on_conflict_action orconf);
-
-/**
- * Construct a trigger step that implements an UPDATE statemen.
- * The parser calls this routine when it sees an UPDATE statement
- * inside the body of a CREATE TRIGGER.
- *
- * @param table_name Name of the table to be updated.
- * @param new_list The SET clause: list of column and new values.
- *        Is deleted anyway.
- * @param where The WHERE clause. Is deleted anyway.
- * @param orconf A conflict processing algorithm.
- * @retval Not NULL TriggerStep object on success.
- */
-struct TriggerStep *
-sql_trigger_update_step(struct Token *table_name, struct ExprList *new_list,
-			struct Expr *where, enum on_conflict_action orconf);
-
-/**
- * Construct a trigger step that implements a DELETE statement.
- * The parser calls this routine when it sees a DELETE statement
- * inside the body of a CREATE TRIGGER.
- *
- * @param table_name The table from which rows are deleted.
- * @param where The WHERE clause. Is deleted anyway.
- * @retval Not NULL TriggerStep object on success.
- */
-struct TriggerStep *
-sql_trigger_delete_step(struct Token *table_name, struct Expr *where);
 
 /**
  * Triggers may access values stored in the old.* or new.*

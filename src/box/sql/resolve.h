@@ -139,14 +139,21 @@ struct rast_expr {
 			 */
 			uint32_t depth;
 		} alias;
-		/** Column of a source referred to by a TK_COLUMN_REF. */
+		/**
+		 * Column of a source referred to by a TK_COLUMN_REF, or of
+		 * the OLD or NEW row of a trigger referred to by a
+		 * TK_TRIGGER.
+		 */
 		struct {
 			/**
 			 * Number of subqueries between the reference and the
 			 * SELECT the source belongs to.
 			 */
 			uint32_t depth;
-			/** Position of the source in the FROM clause. */
+			/**
+			 * Position of the source in the FROM clause, or 0 for
+			 * the OLD row and 1 for the NEW row of a trigger.
+			 */
 			uint32_t source;
 			/** Number of the field in the space of the source. */
 			uint32_t fieldno;
@@ -468,6 +475,15 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast);
  */
 struct Select *
 select_from_rast(struct Parse *parser, struct rast_select *select);
+
+/**
+ * Create the WHEN clause of a trigger from the given AST, resolved in the
+ * scope of the trigger being coded by the given parser.
+ *
+ * Returns NULL on error.
+ */
+struct Expr *
+sql_trigger_when_from_ast(struct Parse *parser, const struct ast_expr *when);
 
 /**
  * Create a source list from the given resolved list of the only source of a

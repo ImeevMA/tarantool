@@ -1165,70 +1165,53 @@ ast_table_properties_append_constraint(struct ast_table_properties *properties,
 	return properties;
 }
 
-/** Convert UPDATE statement to trigger UPDATE step. */
-static struct TriggerStep *
-sql_trigger_step_update(struct Parse *parser, struct ast_update *stmt)
+/**
+ * Check the given action of a trigger by converting it as the legacy code
+ * does, to report the same errors when the trigger is created.
+ */
+static void
+sql_trigger_action_check(struct Parse *parser,
+			 const struct ast_trigger_action *action)
 {
-	if (stmt->indexed_by.n > 0) {
-		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-			 "The INDEXED BY clause is not allowed on UPDATE or "
-			 "DELETE statements within triggers");
-		parser->is_aborted = true;
-		return NULL;
+	struct ExprList *list = NULL;
+	struct Expr *where = NULL;
+	struct Select *select = NULL;
+	switch (action->op) {
+	case TK_UPDATE:
+	case TK_DELETE: {
+		const struct Token *indexed_by = action->op == TK_UPDATE ?
+						 &action->update->indexed_by :
+						 &action->del->indexed_by;
+		if (indexed_by->n > 0) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 "The INDEXED BY clause is not allowed on "
+				 "UPDATE or DELETE statements within triggers");
+			parser->is_aborted = true;
+			return;
+		}
+		if (action->op == TK_UPDATE) {
+			struct ast_update *update = action->update;
+			list = expr_list_from_set_list(parser,
+						       update->set_list);
+			if (!parser->is_aborted)
+				where = expr_from_ast(parser, update->where);
+		} else {
+			where = expr_from_ast(parser, action->del->where);
+		}
+		break;
 	}
-	struct ExprList *set_list =
-		expr_list_from_set_list(parser, stmt->set_list);
-	if (parser->is_aborted)
-		return NULL;
-	struct Expr *where = expr_from_ast(parser, stmt->where);
-	if (parser->is_aborted) {
-		sql_expr_list_delete(set_list);
-		return NULL;
+	case TK_INSERT:
+		select = select_from_ast(parser, action->insert->select);
+		break;
+	case TK_SELECT:
+		select = select_from_ast(parser, action->select);
+		break;
+	default:
+		unreachable();
 	}
-	return sql_trigger_update_step(&stmt->table, set_list, where,
-				       stmt->action);
-}
-
-/** Convert INSERT statement to trigger INSERT step. */
-static struct TriggerStep *
-sql_trigger_step_insert(struct Parse *parser, struct ast_insert *stmt)
-{
-	struct Select *select = select_from_ast(parser, stmt->select);
-	if (parser->is_aborted) {
-		sql_select_delete(select);
-		return NULL;
-	}
-	return sql_trigger_insert_step(&stmt->table, stmt->columns, select,
-				       stmt->action);
-}
-
-/** Convert DELETE statement to trigger DELETE step. */
-static struct TriggerStep *
-sql_trigger_step_delete(struct Parse *parser, struct ast_delete *stmt)
-{
-	if (stmt->indexed_by.n > 0) {
-		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-			 "The INDEXED BY clause is not allowed on UPDATE or "
-			 "DELETE statements within triggers");
-		parser->is_aborted = true;
-		return NULL;
-	}
-	struct Expr *where = expr_from_ast(parser, stmt->where);
-	if (parser->is_aborted)
-		return NULL;
-	return sql_trigger_delete_step(&stmt->table, where);
-}
-
-/** Convert SELECT statement to trigger SELECT step. */
-static struct TriggerStep *
-sql_trigger_step_select(struct Parse *parser, struct ast_select *stmt)
-{
-	struct Select *select = select_from_ast(parser, stmt);
-	if (parser->is_aborted) {
-		sql_select_delete(select);
-		return NULL;
-	}
-	return sql_trigger_select_step(select);
+	sql_expr_list_delete(list);
+	sql_expr_delete(where);
+	sql_select_delete(select);
 }
 
 struct sql_trigger *
@@ -1243,50 +1226,23 @@ sql_trigger_from_ast(struct Parse *parser, struct ast_trigger *def)
 		parser->is_aborted = true;
 		return NULL;
 	}
-
-	struct Expr *when = expr_from_ast(parser, def->when);
+	/*
+	 * The WHEN clause and the actions are resolved and coded every time
+	 * the trigger is coded, so here they are only checked.
+	 */
+	sql_expr_delete(expr_from_ast(parser, def->when));
 	if (parser->is_aborted)
 		return NULL;
-
 	parser->initiateTTrans = true;
-	struct TriggerStep *steps = NULL;
 	struct ast_trigger_action *action;
 	stailq_foreach_entry(action, &def->actions->head, link) {
-		struct TriggerStep *step = NULL;
-		switch (action->op) {
-		case TK_UPDATE:
-			step = sql_trigger_step_update(parser, action->update);
-			break;
-		case TK_INSERT:
-			step = sql_trigger_step_insert(parser, action->insert);
-			break;
-		case TK_DELETE:
-			step = sql_trigger_step_delete(parser, action->del);
-			break;
-		case TK_SELECT:
-			step = sql_trigger_step_select(parser, action->select);
-			break;
-		default:
-			assert(false);
-		}
+		sql_trigger_action_check(parser, action);
 		if (parser->is_aborted)
-			break;
-		if (steps != NULL)
-			steps->pLast->pNext = step;
-		else
-			steps = step;
-		steps->pLast = step;
+			return NULL;
 	}
-
-	if (parser->is_aborted) {
-		sqlDeleteTriggerStep(steps);
-		sql_expr_delete(when);
-		return NULL;
-	}
-
 	struct IdList *columns = id_list_from_ast(def->columns);
 	return sql_trigger_new(parser, &def->name, &def->table, def->time,
-			       def->event, columns, when, steps);
+			       def->event, columns);
 }
 
 struct sql_ast *
