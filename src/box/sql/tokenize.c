@@ -41,6 +41,7 @@
 
 #include "say.h"
 #include "sqlInt.h"
+#include "resolve.h"
 
 /* Character classes for tokenizing
  *
@@ -1054,7 +1055,7 @@ sql_parse_function(struct Parse *parser, const char *sql)
 		parser->is_aborted = true;
 		return NULL;
 	}
-	return expr_from_ast(parser, ast->expr);
+	return sql_func_expr_from_ast(parser, ast->expr);
 }
 
 struct ast_select *

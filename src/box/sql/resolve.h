@@ -477,6 +477,16 @@ struct Select *
 select_from_rast(struct Parse *parser, struct rast_select *select);
 
 /**
+ * Create the body of an SQL_EXPR function from the given AST, resolved in the
+ * scope of a row whose fields are referred to by their names, looked up when
+ * the function is called.
+ *
+ * Returns NULL on error.
+ */
+struct Expr *
+sql_func_expr_from_ast(struct Parse *parser, const struct ast_expr *ast);
+
+/**
  * Create the WHEN clause of a trigger from the given AST, resolved in the
  * scope of the trigger being coded by the given parser.
  *

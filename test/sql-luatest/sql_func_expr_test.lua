@@ -188,3 +188,44 @@ g.test_sql_expr_parsing = function()
         t.assert_equals(err.message, exp_err)
     end)
 end
+
+--
+-- Make sure names in the body of an SQL_EXPR function refer to the fields of
+-- a row by their names, and references to spaces, scalar subqueries, unknown
+-- functions and wrong numbers of arguments are reported when the function is
+-- created.
+--
+g.test_sql_func_expr_resolve = function()
+    g.server:exec(function()
+        local function check(body, exp)
+            local def = {language = 'SQL_EXPR', is_deterministic = true,
+                         body = body}
+            local ok, err = pcall(box.schema.func.create, 'f', def)
+            t.assert_not(ok, body)
+            t.assert_equals(err.message, exp, body)
+        end
+        check('t.a > 0', 'SQL expressions does not support reference ' ..
+              'to spaces')
+        check('(SELECT 1) > a', 'SQL expressions does not support subselects')
+        check('EXISTS (SELECT 1)',
+              'SQL expressions does not support subselects')
+        check('nosuch(a)', "Function 'nosuch' does not exist")
+        check('ABS(a, b)', 'Wrong number of arguments is passed to ABS(): ' ..
+              'expected 1, got 2')
+
+        local def = {language = 'SQL_EXPR', is_deterministic = true,
+                     body = 'ABS("x") + y > 3'}
+        box.schema.func.create('f', def)
+        local format = {{'x', 'integer'}, {'Y', 'integer'},
+                        {'y', 'integer'}}
+        local s = box.schema.space.create('test', {format = format,
+                                                   constraint = 'f'})
+        s:create_index('i')
+        t.assert_equals(s:insert{-2, 0, 2}, {-2, 0, 2})
+        t.assert_error_msg_content_equals(
+            "Check constraint 'f' failed for a tuple", s.insert, s,
+            {1, 5, 1})
+        s:drop()
+        box.schema.func.drop('f')
+    end)
+end

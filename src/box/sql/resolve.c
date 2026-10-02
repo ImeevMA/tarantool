@@ -152,6 +152,12 @@ struct sql_resolve_context {
 	 * functions.
 	 */
 	bool is_insert_row;
+	/**
+	 * Whether the expression being resolved is the body of an SQL_EXPR
+	 * function, whose names refer to the fields of a row by their names,
+	 * see sql_func_expr_from_ast().
+	 */
+	bool is_row_expr;
 };
 
 /**
@@ -2706,6 +2712,23 @@ static int
 resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		   struct rast_expr *res)
 {
+	if (ctx->is_row_expr) {
+		/*
+		 * As in the legacy code, a name is looked up when the
+		 * function is called.
+		 */
+		if (ast->op == TK_DOT) {
+			diag_set(ClientError, ER_UNSUPPORTED, "SQL expressions",
+				 "reference to spaces");
+			return -1;
+		}
+		res->op = TK_ID;
+		res->z = (char *)sql_name_temp(ctx->region, ast->str, ast->len);
+		res->n = strlen(res->z);
+		res->type = SQL_TYPE_ANY;
+		res->height = 1;
+		return 0;
+	}
 	const char *tab_name = NULL;
 	const char *legacy_tab_name = NULL;
 	const struct ast_expr *col = ast;
@@ -2815,6 +2838,15 @@ static int
 resolve_subquery(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		 struct rast_expr *res)
 {
+	/*
+	 * As in the legacy code, a scalar subquery and EXISTS are not allowed
+	 * in the body of an SQL_EXPR function, unlike an IN subquery.
+	 */
+	if (ctx->is_row_expr) {
+		diag_set(ClientError, ER_UNSUPPORTED, "SQL expressions",
+			 "subselects");
+		return -1;
+	}
 	bool outer = ctx->can_resolve;
 	res->select = xregion_alloc_object(ctx->region, struct rast_select);
 	if (resolve_nested_select(ctx, ast->select, res->select) != 0)
@@ -2990,7 +3022,11 @@ resolve_function(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		return -1;
 	}
 	uint32_t flags = sql_func_flags_by_name(res->func.name, is_legacy);
-	res->func.is_agg = (flags & SQL_FUNC_AGG) != 0;
+	/*
+	 * As in the legacy code, an aggregate function is called as a regular
+	 * one in the body of an SQL_EXPR function.
+	 */
+	res->func.is_agg = (flags & SQL_FUNC_AGG) != 0 && !ctx->is_row_expr;
 	uint32_t height = 0;
 	if (res->func.n_args > 0) {
 		res->func.args = xregion_alloc_array(ctx->region,
@@ -6326,6 +6362,15 @@ expr_from_rast(struct Parse *parser, const struct rast_build_scope *scope,
 		if (expr->select->is_correlated)
 			ExprSetProperty(res, EP_VarSelect);
 		break;
+	case TK_ID: {
+		struct Token name = {
+			.z = expr->z,
+			.n = expr->n,
+			.isReserved = false,
+		};
+		res = sql_expr_new(TK_ID, &name);
+		break;
+	}
 	case TK_TRIGGER: {
 		res = sql_expr_new_anon(TK_TRIGGER);
 		res->iTable = expr->column.source;
@@ -6860,6 +6905,27 @@ select_from_rast(struct Parse *parser, struct rast_select *select)
 {
 	rast_select_assign_cursors(parser, select);
 	return select_from_rast_in(parser, NULL, select);
+}
+
+struct Expr *
+sql_func_expr_from_ast(struct Parse *parser, const struct ast_expr *ast)
+{
+	struct sql_resolve_context ctx;
+	memset(&ctx, 0, sizeof(ctx));
+	ctx.parser = parser;
+	ctx.region = &parser->region;
+	ctx.can_resolve = true;
+	ctx.is_row_expr = true;
+	struct sql_resolve_scope scope;
+	memset(&scope, 0, sizeof(scope));
+	ctx.scope = &scope;
+	struct rast_expr res;
+	if (resolve_expr(&ctx, ast, &res) != 0) {
+		parser->is_aborted = true;
+		return NULL;
+	}
+	assert(ctx.can_resolve);
+	return expr_from_rast_in(parser, NULL, &res);
 }
 
 struct Expr *
