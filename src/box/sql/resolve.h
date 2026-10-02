@@ -368,6 +368,12 @@ struct rast_insert {
 	enum on_conflict_action action;
 };
 
+/** Resolved TRUNCATE statement. */
+struct rast_truncate {
+	/** Space to truncate. */
+	struct space *space;
+};
+
 /** Resolved CREATE VIEW statement. */
 struct rast_create_view {
 	/** Name of the view. */
@@ -394,6 +400,8 @@ struct sql_rast {
 		struct rast_insert insert;
 		/** Resolved CREATE VIEW statement. */
 		struct rast_create_view create_view;
+		/** Resolved TRUNCATE statement. */
+		struct rast_truncate truncate;
 	};
 	/** Whether the statement is resolved. */
 	bool is_resolved;

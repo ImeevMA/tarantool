@@ -3544,6 +3544,10 @@ sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast, const char *sql)
 	case SQL_AST_CREATE_VIEW:
 		sql_emit_create_view(parser, &rast->create_view, sql);
 		break;
+	case SQL_AST_TRUNCATE:
+		parser->initiateTTrans = true;
+		sql_table_truncate(parser, rast->truncate.space);
+		break;
 	default:
 		unreachable();
 	}

@@ -137,6 +137,10 @@ g.test_2201_truncate_table = function (cg)
         local res = box.execute("SELECT * FROM t1;")
         t.assert_equals(res.rows, {{1, 1, "one"}, {2, 2, "two"}})
 
+        -- Can't truncate a space that does not exist.
+        _, err = box.execute("TRUNCATE TABLE nosuch;")
+        t.assert_equals(err.message, "Space 'nosuch' does not exist")
+
         -- Can't truncate view.
         box.execute("CREATE VIEW v1 AS SELECT * FROM t1;")
         _, err = box.execute("TRUNCATE TABLE v1;")

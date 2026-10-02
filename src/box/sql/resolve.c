@@ -4008,6 +4008,26 @@ resolve_view(struct sql_resolve_context *ctx, const struct space *space,
 }
 
 /**
+ * Find the space with the given name, as sql_space_by_token() does: an unquoted
+ * name is also looked up in its legacy form.
+ *
+ * Returns NULL and sets an error if not found.
+ */
+static struct space *
+find_space(struct sql_resolve_context *ctx, const struct Token *name)
+{
+	const char *str = sql_name_temp(ctx->region, name->z, name->n);
+	struct space *space = space_by_name0(str);
+	if (space == NULL && name->z[0] != '"') {
+		space = space_by_name0(sql_legacy_name_temp(ctx->region,
+							    name->z, name->n));
+	}
+	if (space == NULL)
+		diag_set(ClientError, ER_NO_SUCH_SPACE, str);
+	return space;
+}
+
+/**
  * Look up the space with the given name and check it, as sql_lookup_space()
  * does.
  *
@@ -4016,16 +4036,9 @@ resolve_view(struct sql_resolve_context *ctx, const struct space *space,
 static struct space *
 lookup_space(struct sql_resolve_context *ctx, const struct Token *name)
 {
-	const char *str = sql_name_temp(ctx->region, name->z, name->n);
-	struct space *space = space_by_name0(str);
-	if (space == NULL && name->z[0] != '"') {
-		space = space_by_name0(sql_legacy_name_temp(ctx->region,
-							    name->z, name->n));
-	}
-	if (space == NULL) {
-		diag_set(ClientError, ER_NO_SUCH_SPACE, str);
+	struct space *space = find_space(ctx, name);
+	if (space == NULL)
 		return NULL;
-	}
 	if (sql_space_def_check_format(space->def) != 0)
 		return NULL;
 	if (space->index_count == 0 && !space->def->opts.is_view) {
@@ -5571,6 +5584,28 @@ resolve_create_view(struct sql_resolve_context *ctx,
 	return rc;
 }
 
+/**
+ * Resolve the given AST TRUNCATE statement into the given rast_truncate.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_truncate(struct sql_resolve_context *ctx,
+		 const struct ast_truncate *ast, struct rast_truncate *res)
+{
+	res->space = find_space(ctx, &ast->table);
+	if (res->space == NULL)
+		return -1;
+	if (res->space->def->opts.is_view) {
+		const char *err = tt_sprintf("can not truncate space '%s' "
+					     "because space is a view",
+					     res->space->def->name);
+		diag_set(ClientError, ER_SQL_EXECUTE, err);
+		return -1;
+	}
+	return 0;
+}
+
 /** Build the resolved AST for the given parsed statement. */
 struct sql_rast *
 sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
@@ -5593,6 +5628,13 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 		break;
 	case SQL_AST_INSERT:
 		if (resolve_insert(&ctx, ast->insert, &rast->insert) != 0) {
+			parser->is_aborted = true;
+			return NULL;
+		}
+		break;
+	case SQL_AST_TRUNCATE:
+		if (resolve_truncate(&ctx, &ast->truncate,
+				     &rast->truncate) != 0) {
 			parser->is_aborted = true;
 			return NULL;
 		}

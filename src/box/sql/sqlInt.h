@@ -2995,14 +2995,9 @@ void
 sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 		      struct Expr *where);
 
-/**
- * Generate a code for TRUNCATE TABLE statement.
- *
- * @param parse Parsing context.
- * @param table Name of table to truncate.
- */
+/** Generate a code for TRUNCATE TABLE statement of the given space. */
 void
-sql_table_truncate(struct Parse *parse, struct Token *table);
+sql_table_truncate(struct Parse *parse, const struct space *space);
 
 /** Free a WhereInfo structure. */
 void
