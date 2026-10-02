@@ -32,6 +32,7 @@
 #include "box/box.h"
 #include "box/schema.h"
 #include "sqlInt.h"
+#include "resolve.h"
 #include "tarantoolInt.h"
 
 struct space *
@@ -63,6 +64,19 @@ sql_lookup_space(struct Parse *parse, struct SrcList_item *space_name)
 	return res;
 }
 
+/**
+ * Generate the code storing the rows of the given SELECT realizing a view in
+ * the ephemeral space with the given cursor, and delete the SELECT.
+ */
+static void
+materialize_select(struct Parse *parse, struct Select *select, int cursor)
+{
+	struct SelectDest dest;
+	sqlSelectDestInit(&dest, SRT_EphemTab, cursor, ++parse->nMem);
+	sqlSelect(parse, select, &dest);
+	sql_select_delete(select);
+}
+
 void
 sql_materialize_view(struct Parse *parse, const char *name, struct Expr *where,
 		     int cursor)
@@ -75,10 +89,7 @@ sql_materialize_view(struct Parse *parse, const char *name, struct Expr *where,
 	assert(from->a[0].pUsing == NULL);
 	struct Select *select = sqlSelectNew(NULL, from, where, NULL,
 					     NULL, NULL, 0, NULL, NULL);
-	struct SelectDest dest;
-	sqlSelectDestInit(&dest, SRT_EphemTab, cursor, ++parse->nMem);
-	sqlSelect(parse, select, &dest);
-	sql_select_delete(select);
+	materialize_select(parse, select, cursor);
 }
 
 void
@@ -87,6 +98,16 @@ sql_table_truncate(struct Parse *parse, const struct space *space)
 	struct Vdbe *v = sqlGetVdbe(parse);
 	sqlVdbeAddOp2(v, OP_Clear, space->def->id, true);
 }
+
+/**
+ * Generate the code deleting the rows of the given space, which is the only
+ * source of the given list with the cursors assigned, matching the given WHERE
+ * clause, which is resolved, firing the given triggers.
+ */
+static void
+vdbe_emit_delete(struct Parse *parse, struct SrcList *tab_list,
+		 struct space *space, struct Expr *where,
+		 struct sql_trigger *trigger_list);
 
 void
 sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
@@ -107,15 +128,11 @@ sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 	 * being deleted from is a view.
 	 */
 	struct sql_trigger *trigger_list = NULL;
-	/* True if there are triggers or FKs or subqueries in the
-	 * WHERE clause.
-	 */
 	struct space *space = sql_lookup_space(parse, tab_list->a);
 	if (space == NULL)
 		goto delete_from_cleanup;
 	trigger_list = sql_triggers_exist(space->def, TK_DELETE,
 					  NULL, parse->sql_flags, NULL);
-	bool is_complex = trigger_list != NULL;
 	bool is_view = space->def->opts.is_view;
 
 	/* If table is really a view, make sure it has been
@@ -150,6 +167,97 @@ sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 				     tab_cursor);
 	}
 
+	/* Resolve the column names in the WHERE clause. */
+	struct NameContext nc;
+	memset(&nc, 0, sizeof(nc));
+	nc.pParse = parse;
+	nc.pSrcList = tab_list;
+	if (sqlResolveExprNames(&nc, where) != 0)
+		goto delete_from_cleanup;
+	vdbe_emit_delete(parse, tab_list, space, where, trigger_list);
+
+ delete_from_cleanup:
+	sqlSrcListDelete(tab_list);
+	sql_expr_delete(where);
+}
+
+void
+sql_emit_delete(struct Parse *parse, struct rast_delete *del)
+{
+	sqlSubProgramsRemaining = SQL_MAX_COMPILING_TRIGGERS;
+	parse->initiateTTrans = true;
+	struct rast_source *target = &del->target.sources[0];
+	struct space *space = space_by_id(target->space_id);
+	struct sql_trigger *trigger_list =
+		sql_triggers_exist(space->def, TK_DELETE, NULL,
+				   parse->sql_flags, NULL);
+	bool is_view = space->def->opts.is_view;
+	if (is_view &&
+	    sql_view_assign_cursors(parse, space->def->opts.sql) != 0)
+		return;
+	target->cursor = parse->nTab++;
+	parse->nTab += space->index_count;
+	struct SrcList *tab_list = src_list_from_rast_target(parse,
+							     &del->target);
+	struct Vdbe *v = sqlGetVdbe(parse);
+	sqlVdbeCountChanges(v);
+	if (is_view) {
+		struct Select *select = select_from_rast(parse,
+							 del->view_select);
+		if (parse->is_aborted) {
+			sqlSrcListDelete(tab_list);
+			return;
+		}
+		materialize_select(parse, select, target->cursor);
+	}
+	struct Expr *where = NULL;
+	if (del->where != NULL)
+		where = expr_from_rast_in(parse, tab_list, del->where);
+	if (!parse->is_aborted)
+		vdbe_emit_delete(parse, tab_list, space, where, trigger_list);
+	sqlSrcListDelete(tab_list);
+	sql_expr_delete(where);
+}
+
+/**
+ * Check if the given expression contains a correlated subquery outside of its
+ * subqueries.
+ */
+static bool
+expr_has_var_select(struct Expr *expr)
+{
+	if (expr == NULL)
+		return false;
+	if (ExprHasProperty(expr, EP_VarSelect))
+		return true;
+	if (ExprHasProperty(expr, EP_TokenOnly | EP_Leaf))
+		return false;
+	if (expr_has_var_select(expr->pLeft) ||
+	    expr_has_var_select(expr->pRight))
+		return true;
+	if (ExprHasProperty(expr, EP_xIsSelect) || expr->x.pList == NULL)
+		return false;
+	for (int i = 0; i < expr->x.pList->nExpr; ++i) {
+		if (expr_has_var_select(expr->x.pList->a[i].pExpr))
+			return true;
+	}
+	return false;
+}
+
+static void
+vdbe_emit_delete(struct Parse *parse, struct SrcList *tab_list,
+		 struct space *space, struct Expr *where,
+		 struct sql_trigger *trigger_list)
+{
+	struct Vdbe *v = parse->pVdbe;
+	int tab_cursor = tab_list->a[0].iCursor;
+	bool is_view = space->def->opts.is_view;
+	/*
+	 * True if there are triggers or correlated subqueries in the WHERE
+	 * clause.
+	 */
+	bool is_complex = trigger_list != NULL || expr_has_var_select(where);
+
 	/* Special case: A DELETE without a WHERE clause deletes
 	 * everything. It is easier just to erase the whole table.
 	 */
@@ -166,17 +274,8 @@ sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 		 */
 		parse->initiateTTrans = false;
 	} else {
-		/* Resolve the column names in the WHERE clause. */
-		struct NameContext nc;
-		memset(&nc, 0, sizeof(nc));
-		nc.pParse = parse;
-		nc.pSrcList = tab_list;
-		if (sqlResolveExprNames(&nc, where))
-			goto delete_from_cleanup;
 		uint16_t wcf = WHERE_ONEPASS_DESIRED | WHERE_DUPLICATES_OK |
 			WHERE_SEEK_TABLE;
-		if (nc.ncFlags & NC_VarSelect)
-			is_complex = true;
 		wcf |= (is_complex ? 0 : WHERE_ONEPASS_MULTIROW);
 		/* Create an ephemeral table used to hold all
 		 * primary keys for rows to be deleted. Since VIEW
@@ -243,7 +342,7 @@ sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 		    sqlWhereBegin(parse, tab_list, where, NULL, NULL, wcf,
 				      tab_cursor + 1);
 		if (winfo == NULL)
-			goto delete_from_cleanup;
+			return;
 
 		/* The write cursors opened by WHERE_ONEPASS */
 		int one_pass_cur[2];
@@ -366,10 +465,6 @@ sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 			sqlVdbeJumpHere(v, addr_loop);
 		}
 	}
-
- delete_from_cleanup:
-	sqlSrcListDelete(tab_list);
-	sql_expr_delete(where);
 }
 
 void

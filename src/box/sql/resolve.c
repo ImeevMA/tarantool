@@ -4050,6 +4050,32 @@ lookup_space(struct sql_resolve_context *ctx, const struct Token *name)
 }
 
 /**
+ * Resolve the given INDEXED BY or NOT INDEXED clause of a source with the given
+ * space into the given rast_source. The index is looked up as in
+ * sqlIndexedByLookup().
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_indexed_by(struct sql_resolve_context *ctx, struct space *space,
+		   const struct Token *indexed_by, struct rast_source *res)
+{
+	/* NOT INDEXED is a token of length 1 without text, see parse.y. */
+	res->is_not_indexed = indexed_by->n == 1 && indexed_by->z == NULL;
+	if (indexed_by->n == 0 || res->is_not_indexed)
+		return 0;
+	res->index_id = sql_index_id_by_token(space, indexed_by);
+	if (res->index_id == UINT32_MAX) {
+		diag_set(ClientError, ER_NO_SUCH_INDEX_NAME,
+			 sql_name_temp(ctx->region, indexed_by->z,
+				       indexed_by->n),
+			 space->def->name);
+		return -1;
+	}
+	return 0;
+}
+
+/**
  * Resolve the given AST source, which is a table or a view, into the given
  * rast_source. The space is looked up and checked as in sql_lookup_space(),
  * the SELECT of a view is resolved, and the index given by INDEXED BY is
@@ -4071,20 +4097,7 @@ resolve_space_source(struct sql_resolve_context *ctx,
 			return 0;
 	}
 	res->space_id = space->def->id;
-	/* NOT INDEXED is a token of length 1 without text, see parse.y. */
-	res->is_not_indexed = ast->indexed_by.n == 1 &&
-			      ast->indexed_by.z == NULL;
-	if (ast->indexed_by.n > 0 && !res->is_not_indexed) {
-		res->index_id = sql_index_id_by_token(space, &ast->indexed_by);
-		if (res->index_id == UINT32_MAX) {
-			diag_set(ClientError, ER_NO_SUCH_INDEX_NAME,
-				 sql_name_temp(ctx->region, ast->indexed_by.z,
-					       ast->indexed_by.n),
-				 space->def->name);
-			return -1;
-		}
-	}
-	return 0;
+	return resolve_indexed_by(ctx, space, &ast->indexed_by, res);
 }
 
 /**
@@ -5606,6 +5619,90 @@ resolve_truncate(struct sql_resolve_context *ctx,
 	return 0;
 }
 
+/**
+ * Resolve the given AST DELETE statement, whose WITH clause is visible, into
+ * the given rast_delete, see resolve_delete().
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_delete_in(struct sql_resolve_context *ctx, const struct ast_delete *ast,
+		  struct rast_delete *res)
+{
+	struct space *space = lookup_space(ctx, &ast->table);
+	if (space == NULL)
+		return -1;
+	struct rast_source *target = xregion_alloc_object(ctx->region,
+							  struct rast_source);
+	memset(target, 0, sizeof(*target));
+	target->space_id = space->def->id;
+	target->index_id = UINT32_MAX;
+	target->cursor = -1;
+	res->target.sources = target;
+	res->target.len = 1;
+	if (resolve_indexed_by(ctx, space, &ast->indexed_by, target) != 0)
+		return -1;
+	if (space->def->opts.is_view) {
+		if (sql_triggers_exist(space->def, TK_DELETE, NULL,
+				       ctx->parser->sql_flags, NULL) == NULL) {
+			diag_set(ClientError, ER_ALTER_SPACE, space->def->name,
+				 "space is a view");
+			return -1;
+		}
+		/*
+		 * As sql_materialize_view() does, the view is realized by
+		 * SELECT * FROM the view with the WHERE clause, which is
+		 * resolved there before it is resolved for the view.
+		 */
+		struct ast_source *src = ast_source_new(ctx->region);
+		src->name = ast->table;
+		struct ast_select *select = ast_select_new_asterisk(
+			ctx->region,
+			ast_source_list_append(ctx->region, NULL, src));
+		select->where = ast->where;
+		res->view_select = xregion_alloc_object(ctx->region,
+							struct rast_select);
+		if (resolve_select(ctx, select, res->view_select) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+	}
+	if (ast->where == NULL)
+		return 0;
+	struct sql_resolve_scope scope = {
+		.sources = &res->target,
+	};
+	ctx->scope = &scope;
+	res->where = xregion_alloc_object(ctx->region, struct rast_expr);
+	int rc = resolve_expr(ctx, ast->where, res->where);
+	ctx->scope = NULL;
+	return rc;
+}
+
+/**
+ * Resolve the given AST DELETE statement into the given rast_delete. As
+ * sql_table_delete_from() does, the space is checked before the WHERE clause,
+ * which is resolved in the scope of the space without allowing aggregate
+ * functions.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_delete(struct sql_resolve_context *ctx, const struct ast_delete *ast,
+	       struct rast_delete *res)
+{
+	memset(res, 0, sizeof(*res));
+	struct sql_resolve_with *outer_with = ctx->with;
+	struct sql_resolve_with with;
+	if (ast->with != NULL && push_with(ctx, ast->with, &with) != 0)
+		return -1;
+	int rc = resolve_delete_in(ctx, ast, res);
+	if (rc == 0 && ctx->can_resolve && ast->with != NULL)
+		rc = check_unused_ctes(ctx, &with);
+	ctx->with = outer_with;
+	return rc;
+}
+
 /** Build the resolved AST for the given parsed statement. */
 struct sql_rast *
 sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
@@ -5628,6 +5725,12 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 		break;
 	case SQL_AST_INSERT:
 		if (resolve_insert(&ctx, ast->insert, &rast->insert) != 0) {
+			parser->is_aborted = true;
+			return NULL;
+		}
+		break;
+	case SQL_AST_DELETE:
+		if (resolve_delete(&ctx, ast->del, &rast->del) != 0) {
 			parser->is_aborted = true;
 			return NULL;
 		}
@@ -6405,4 +6508,22 @@ select_from_rast(struct Parse *parser, struct rast_select *select)
 {
 	rast_select_assign_cursors(parser, select);
 	return select_from_rast_in(parser, NULL, select);
+}
+
+struct SrcList *
+src_list_from_rast_target(struct Parse *parser, struct rast_source_list *list)
+{
+	return src_list_from_rast(parser, NULL, list);
+}
+
+struct Expr *
+expr_from_rast_in(struct Parse *parser, struct SrcList *src,
+		  const struct rast_expr *expr)
+{
+	rast_expr_assign_cursors(parser, expr);
+	struct rast_build_scope scope = {
+		.src = src,
+		.parent = NULL,
+	};
+	return expr_from_rast(parser, &scope, expr);
 }

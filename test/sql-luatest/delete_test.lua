@@ -173,3 +173,75 @@ g.test_2201_truncate_table = function (cg)
         box.execute("DROP TABLE t2;")
     end)
 end
+
+--
+-- Make sure the space of DELETE is checked before its WHERE clause, which is
+-- resolved in the scope of the space without allowing aggregate functions.
+--
+g.test_delete_resolve = function(cg)
+    cg.server:exec(function()
+        box.execute([[CREATE TABLE t (a INT PRIMARY KEY, b INT);]])
+        box.execute([[CREATE VIEW v AS SELECT * FROM t;]])
+        local function check(sql, exp)
+            local _, err = box.execute(sql)
+            t.assert_equals(err.message, exp, sql)
+        end
+        check([[DELETE FROM nosuch WHERE nosuch = 1;]],
+              "Space 'nosuch' does not exist")
+        check([[DELETE FROM t INDEXED BY nosuch WHERE nosuch = 1;]],
+              "No index 'nosuch' is defined in space 't'")
+        check([[DELETE FROM v WHERE nosuch = 1;]],
+              "Can't modify space 'v': space is a view")
+        check([[DELETE FROM t WHERE nosuch = 1;]],
+              "Can't resolve field 'nosuch'")
+        check([[DELETE FROM t WHERE x.a = 1;]],
+              "Field 'a' was not found in space 'x' format")
+        check([[DELETE FROM t WHERE COUNT(*) > 0;]],
+              "misuse of aggregate function COUNT()")
+        box.execute([[DROP VIEW v;]])
+        box.execute([[DROP TABLE t;]])
+    end)
+end
+
+--
+-- Make sure the rows to delete are found before any of them is deleted if the
+-- WHERE clause of DELETE contains a correlated subquery.
+--
+g.test_delete_correlated_subquery = function(cg)
+    cg.server:exec(function()
+        box.execute([[CREATE TABLE t (a INT PRIMARY KEY);]])
+        box.execute([[INSERT INTO t VALUES (1), (2), (3);]])
+        local sql = [[DELETE FROM t WHERE
+                      (SELECT COUNT(*) FROM t AS u WHERE u.a < t.a) < 2;]]
+        t.assert_equals(box.execute(sql), {row_count = 2})
+        t.assert_equals(box.execute([[SELECT * FROM t;]]).rows, {{3}})
+        box.execute([[DROP TABLE t;]])
+    end)
+end
+
+--
+-- Make sure the rows of a view with an INSTEAD OF DELETE trigger are found by
+-- the WHERE clause of DELETE, which may refer to other spaces.
+--
+g.test_delete_view = function(cg)
+    cg.server:exec(function()
+        box.execute([[CREATE TABLE t (a INT PRIMARY KEY, b INT);]])
+        box.execute([[INSERT INTO t VALUES (1, 10), (2, 20), (3, 30);]])
+        box.execute([[CREATE TABLE s (a INT PRIMARY KEY);]])
+        box.execute([[INSERT INTO s VALUES (2), (3);]])
+        box.execute([[CREATE TABLE lg (a INT PRIMARY KEY);]])
+        box.execute([[CREATE VIEW v AS SELECT a, b FROM t WHERE a > 1;]])
+        box.execute([[CREATE TRIGGER v1 INSTEAD OF DELETE ON v
+                      FOR EACH ROW BEGIN
+                      INSERT INTO lg VALUES (old.a); END;]])
+        local sql = [[DELETE FROM v WHERE b < 30 AND
+                      EXISTS (SELECT 1 FROM s WHERE s.a = v.a);]]
+        box.execute(sql)
+        t.assert_equals(box.execute([[SELECT * FROM lg;]]).rows, {{2}})
+        t.assert_equals(box.space.t:count(), 3)
+        box.execute([[DROP VIEW v;]])
+        box.execute([[DROP TABLE lg;]])
+        box.execute([[DROP TABLE s;]])
+        box.execute([[DROP TABLE t;]])
+    end)
+end

@@ -10,6 +10,9 @@
 
 struct Parse;
 struct space;
+struct Expr;
+struct Select;
+struct SrcList;
 
 /** Expression resolved into the form the build stage consumes. */
 struct rast_expr {
@@ -368,6 +371,19 @@ struct rast_insert {
 	enum on_conflict_action action;
 };
 
+/** Resolved DELETE statement. */
+struct rast_delete {
+	/** The space the rows are deleted from, as the only source. */
+	struct rast_source_list target;
+	/** WHERE clause in the scope of the target, or NULL. */
+	struct rast_expr *where;
+	/**
+	 * SELECT * FROM the view with the WHERE clause realizing the view the
+	 * rows are deleted from, or NULL if the space is not a view.
+	 */
+	struct rast_select *view_select;
+};
+
 /** Resolved TRUNCATE statement. */
 struct rast_truncate {
 	/** Space to truncate. */
@@ -402,6 +418,8 @@ struct sql_rast {
 		struct rast_create_view create_view;
 		/** Resolved TRUNCATE statement. */
 		struct rast_truncate truncate;
+		/** Resolved DELETE statement. */
+		struct rast_delete del;
 	};
 	/** Whether the statement is resolved. */
 	bool is_resolved;
@@ -419,3 +437,19 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast);
  */
 struct Select *
 select_from_rast(struct Parse *parser, struct rast_select *select);
+
+/**
+ * Create a source list from the given resolved list of the only source of a
+ * DELETE or UPDATE statement, whose cursor is assigned.
+ */
+struct SrcList *
+src_list_from_rast_target(struct Parse *parser, struct rast_source_list *list);
+
+/**
+ * Create an expression of a DELETE or UPDATE statement from the given resolved
+ * expression in the scope of the given source list, assigning cursors to the
+ * sources of its subqueries.
+ */
+struct Expr *
+expr_from_rast_in(struct Parse *parser, struct SrcList *src,
+		  const struct rast_expr *expr);

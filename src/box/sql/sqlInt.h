@@ -259,6 +259,7 @@ struct tt_uuid;
 struct sql_key_info;
 struct sql_rast;
 struct rast_insert;
+struct rast_delete;
 
 enum sql_ret_code {
 	/** sql_step() has another row ready. */
@@ -2994,6 +2995,10 @@ sql_lookup_space(struct Parse *parse, struct SrcList_item *space_name);
 void
 sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 		      struct Expr *where);
+
+/** Generate the code for the given resolved DELETE statement. */
+void
+sql_emit_delete(struct Parse *parse, struct rast_delete *del);
 
 /** Generate a code for TRUNCATE TABLE statement of the given space. */
 void
