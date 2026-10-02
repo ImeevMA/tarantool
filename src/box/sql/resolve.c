@@ -146,6 +146,12 @@ struct sql_resolve_context {
 	const struct rast_source *recursive_cte;
 	/** Unused tables of WITH clauses converted by the legacy code. */
 	struct sql_resolve_converted *converted;
+	/**
+	 * Whether the SELECT resolved next is the single row of VALUES of an
+	 * INSERT, whose values sqlInsert() resolves without allowing aggregate
+	 * functions.
+	 */
+	bool is_insert_row;
 };
 
 /**
@@ -4002,6 +4008,35 @@ resolve_view(struct sql_resolve_context *ctx, const struct space *space,
 }
 
 /**
+ * Look up the space with the given name and check it, as sql_lookup_space()
+ * does.
+ *
+ * Returns NULL on error.
+ */
+static struct space *
+lookup_space(struct sql_resolve_context *ctx, const struct Token *name)
+{
+	const char *str = sql_name_temp(ctx->region, name->z, name->n);
+	struct space *space = space_by_name0(str);
+	if (space == NULL && name->z[0] != '"') {
+		space = space_by_name0(sql_legacy_name_temp(ctx->region,
+							    name->z, name->n));
+	}
+	if (space == NULL) {
+		diag_set(ClientError, ER_NO_SUCH_SPACE, str);
+		return NULL;
+	}
+	if (sql_space_def_check_format(space->def) != 0)
+		return NULL;
+	if (space->index_count == 0 && !space->def->opts.is_view) {
+		diag_set(ClientError, ER_UNSUPPORTED, "SQL",
+			 "spaces without primary key");
+		return NULL;
+	}
+	return space;
+}
+
+/**
  * Resolve the given AST source, which is a table or a view, into the given
  * rast_source. The space is looked up and checked as in sql_lookup_space(),
  * the SELECT of a view is resolved, and the index given by INDEXED BY is
@@ -4013,25 +4048,9 @@ static int
 resolve_space_source(struct sql_resolve_context *ctx,
 		     const struct ast_source *ast, struct rast_source *res)
 {
-	const char *name = sql_name_temp(ctx->region, ast->name.z,
-					 ast->name.n);
-	struct space *space = space_by_name0(name);
-	if (space == NULL && ast->name.z[0] != '"') {
-		space = space_by_name0(sql_legacy_name_temp(ctx->region,
-							    ast->name.z,
-							    ast->name.n));
-	}
-	if (space == NULL) {
-		diag_set(ClientError, ER_NO_SUCH_SPACE, name);
+	struct space *space = lookup_space(ctx, &ast->name);
+	if (space == NULL)
 		return -1;
-	}
-	if (sql_space_def_check_format(space->def) != 0)
-		return -1;
-	if (space->index_count == 0 && !space->def->opts.is_view) {
-		diag_set(ClientError, ER_UNSUPPORTED, "SQL",
-			 "spaces without primary key");
-		return -1;
-	}
 	if (space->def->opts.is_view) {
 		if (resolve_view(ctx, space, res) != 0)
 			return -1;
@@ -4711,8 +4730,9 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 	struct sql_resolve_scope scope = {
 		.sources = &res->sources,
 		.parent = outer,
-		.is_agg_allowed = true,
+		.is_agg_allowed = !ctx->is_insert_row,
 	};
+	ctx->is_insert_row = false;
 	ctx->scope = &scope;
 	/*
 	 * A clause may turn out to be not resolvable, in which case the whole
@@ -5367,6 +5387,139 @@ resolve_nested_select(struct sql_resolve_context *ctx,
 	return 0;
 }
 
+/**
+ * Return the space whose tuples are copied as they are by the given INSERT
+ * with the given resolved SELECT producing its rows, as sqlInsert() and
+ * xferOptimization() check: SELECT * from a single space without any other
+ * clauses, and no column list and no WITH clauses, or NULL.
+ */
+static struct space *
+insert_xfer_source(const struct ast_insert *ast,
+		   const struct rast_select *select)
+{
+	const struct ast_select *sel = ast->select;
+	if (ast->columns != NULL || ast->with != NULL || sel->with != NULL)
+		return NULL;
+	if (select->prior != NULL || select->sources.len != 1 ||
+	    select->where != NULL || select->group_by.len != 0 ||
+	    select->order_by.len != 0 || select->limit != NULL ||
+	    (select->flags & SF_Distinct) != 0)
+		return NULL;
+	const struct rast_source *src = &select->sources.sources[0];
+	if (src->space_id == 0 || src->is_cte)
+		return NULL;
+	if (sel->columns == NULL || sel->columns->len != 1)
+		return NULL;
+	const struct ast_expr_list_entry *col =
+		stailq_first_entry(&sel->columns->head,
+				   struct ast_expr_list_entry, link);
+	if (col->expr->op != TK_ASTERISK)
+		return NULL;
+	return space_by_id(src->space_id);
+}
+
+/**
+ * Resolve the given AST INSERT statement into the given rast_insert. As
+ * sqlInsert() does, the space and the column list are checked before the
+ * rows, and the number of values in a row after them.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_insert(struct sql_resolve_context *ctx, const struct ast_insert *ast,
+	       struct rast_insert *res)
+{
+	memset(res, 0, sizeof(*res));
+	res->action = ast->action;
+	res->space = lookup_space(ctx, &ast->table);
+	if (res->space == NULL)
+		return -1;
+	struct space_def *def = res->space->def;
+	int tmask;
+	if (def->opts.is_view &&
+	    sql_triggers_exist(def, TK_INSERT, NULL, ctx->parser->sql_flags,
+			       &tmask) == NULL) {
+		diag_set(ClientError, ER_ALTER_SPACE, def->name,
+			 "space is a view");
+		return -1;
+	}
+	const char *name = sql_name_temp(ctx->region, ast->table.z,
+					 ast->table.n);
+	if (ast->columns != NULL) {
+		res->fieldno_count = ast->columns->len;
+		res->fieldnos = xregion_alloc_array(ctx->region, uint32_t,
+						    res->fieldno_count);
+		uint32_t i = 0;
+		for (const struct stailq_entry *node =
+			ast->columns->head.first.value;
+		     node != NULL; node = node->next.value) {
+			const struct Token *id =
+				&stailq_entry(node, struct ast_id_entry,
+					      link)->id;
+			const char *col = sql_name_temp(ctx->region, id->z,
+							id->n);
+			uint32_t fieldno = space_def_fieldno(def, col);
+			if (fieldno == UINT32_MAX && id->z[0] != '"') {
+				const char *legacy =
+					sql_legacy_name_temp(ctx->region,
+							     id->z, id->n);
+				fieldno = space_def_fieldno(def, legacy);
+			}
+			if (fieldno == UINT32_MAX) {
+				diag_set(ClientError,
+					 ER_NO_SUCH_FIELD_NAME_IN_SPACE, col,
+					 name);
+				return -1;
+			}
+			for (uint32_t j = 0; j < i; ++j) {
+				if (res->fieldnos[j] != fieldno)
+					continue;
+				const char *err = "table id list: duplicate "
+						  "column name %s";
+				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+					 tt_sprintf(err, col));
+				return -1;
+			}
+			res->fieldnos[i++] = fieldno;
+		}
+	}
+	uint32_t value_count = 0;
+	if (ast->select != NULL) {
+		struct sql_resolve_with *outer_with = ctx->with;
+		struct sql_resolve_with with;
+		if (ast->with != NULL && push_with(ctx, ast->with, &with) != 0)
+			return -1;
+		res->select = xregion_alloc_object(ctx->region,
+						   struct rast_select);
+		const struct rlist *head = &ast->select->link;
+		ctx->is_insert_row = (ast->select->flags & SF_Values) != 0 &&
+				     head->next == head;
+		int rc = resolve_select(ctx, ast->select, res->select);
+		if (rc == 0 && ctx->can_resolve && ast->with != NULL)
+			rc = check_unused_ctes(ctx, &with);
+		ctx->with = outer_with;
+		if (rc != 0 || !ctx->can_resolve)
+			return rc;
+		value_count = res->select->columns.len;
+		res->xfer_source = insert_xfer_source(ast, res->select);
+	}
+	if (ast->columns == NULL && value_count != 0 &&
+	    value_count != def->field_count) {
+		const char *err =
+			"table %s has %d columns but %d values were supplied";
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+			 tt_sprintf(err, name, def->field_count, value_count));
+		return -1;
+	}
+	if (ast->columns != NULL && value_count != res->fieldno_count) {
+		const char *err = "%d values for %d columns";
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+			 tt_sprintf(err, value_count, res->fieldno_count));
+		return -1;
+	}
+	return 0;
+}
+
 /** Build the resolved AST for the given parsed statement. */
 struct sql_rast *
 sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
@@ -5383,6 +5536,12 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 	switch (rast->type) {
 	case SQL_AST_SELECT:
 		if (resolve_select(&ctx, ast->select, &rast->select) != 0) {
+			parser->is_aborted = true;
+			return NULL;
+		}
+		break;
+	case SQL_AST_INSERT:
+		if (resolve_insert(&ctx, ast->insert, &rast->insert) != 0) {
 			parser->is_aborted = true;
 			return NULL;
 		}

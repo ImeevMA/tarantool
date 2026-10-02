@@ -9,6 +9,7 @@
 #include "core/decimal.h"
 
 struct Parse;
+struct space;
 
 /** Expression resolved into the form the build stage consumes. */
 struct rast_expr {
@@ -344,6 +345,29 @@ struct rast_select {
 	uint8_t op;
 };
 
+/** Resolved INSERT statement. */
+struct rast_insert {
+	/** Space the rows are inserted into. */
+	struct space *space;
+	/**
+	 * Numbers of the fields the values of a row are inserted into, in the
+	 * order of the values, or NULL if no column list is given.
+	 */
+	uint32_t *fieldnos;
+	/** Number of the fields above. */
+	uint32_t fieldno_count;
+	/** SELECT producing the rows, or NULL for DEFAULT VALUES. */
+	struct rast_select *select;
+	/**
+	 * Space whose tuples are copied as they are, as xferOptimization()
+	 * does, if the rows are produced by SELECT * from a single space
+	 * without any other clauses, or NULL.
+	 */
+	struct space *xfer_source;
+	/** Action on conflict. */
+	enum on_conflict_action action;
+};
+
 /**
  * Resolved AST. During resolve separation it is a thin overlay over the parsed
  * AST: the resolve phase gradually moves work here from bytecode generation.
@@ -354,6 +378,8 @@ struct sql_rast {
 	union {
 		/** Resolved SELECT statement. */
 		struct rast_select select;
+		/** Resolved INSERT statement. */
+		struct rast_insert insert;
 	};
 	/** Whether the statement is resolved. */
 	bool is_resolved;

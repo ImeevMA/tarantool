@@ -258,6 +258,7 @@ struct sql_vfs {
 struct tt_uuid;
 struct sql_key_info;
 struct sql_rast;
+struct rast_insert;
 
 enum sql_ret_code {
 	/** sql_step() has another row ready. */
@@ -2793,6 +2794,10 @@ sql_drop_table(struct Parse *parse_context, struct Token *table, bool if_exists,
 
 void sqlInsert(Parse *, SrcList *, Select *, IdList *,
 	       enum on_conflict_action);
+
+/** Emit VDBE bytecode for the given resolved INSERT statement. */
+void
+sql_emit_insert(struct Parse *parser, struct rast_insert *insert);
 
 /**
  * pArray is a pointer to an array of objects. Each object in the

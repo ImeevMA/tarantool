@@ -34,6 +34,7 @@
  * to handle INSERT statements in sql.
  */
 #include "sqlInt.h"
+#include "resolve.h"
 #include "tarantoolInt.h"
 #include "mem.h"
 #include "vdbeInt.h"
@@ -120,6 +121,14 @@ vdbe_has_space_open(struct Parse *parser, uint32_t space_id)
 	}
 	return false;
 }
+
+/**
+ * Attempt the transfer optimization of an INSERT into the given space of the
+ * tuples of the given source space, see xferOptimization().
+ */
+static int
+xfer_space(struct Parse *pParse, struct space *dest, const struct space *src,
+	   int onError);
 
 /* Forward declaration */
 static int
@@ -752,6 +761,41 @@ sqlInsert(Parse * pParse,	/* Parser context */
 }
 
 void
+sql_emit_insert(struct Parse *parser, struct rast_insert *insert)
+{
+	sqlSubProgramsRemaining = SQL_MAX_COMPILING_TRIGGERS;
+	parser->initiateTTrans = true;
+	struct space_def *def = insert->space->def;
+	if (insert->xfer_source != NULL) {
+		sqlVdbeCountChanges(sqlGetVdbe(parser));
+		if (xfer_space(parser, insert->space, insert->xfer_source,
+			       insert->action))
+			return;
+	}
+	struct Select *select = NULL;
+	if (insert->select != NULL) {
+		select = select_from_rast(parser, insert->select);
+		if (parser->is_aborted)
+			return;
+	}
+	struct SrcList *src = sql_src_list_new();
+	src->a[0].zName = sql_xstrdup(def->name);
+	struct IdList *columns = NULL;
+	if (insert->fieldnos != NULL) {
+		columns = sql_xmalloc0(sizeof(*columns));
+		columns->nId = insert->fieldno_count;
+		columns->a = sql_xmalloc0(insert->fieldno_count *
+					  sizeof(columns->a[0]));
+		for (uint32_t i = 0; i < insert->fieldno_count; ++i) {
+			uint32_t fieldno = insert->fieldnos[i];
+			columns->a[i].zName =
+				sql_xstrdup(def->fields[fieldno].name);
+		}
+	}
+	sqlInsert(parser, src, select, columns, insert->action);
+}
+
+void
 vdbe_emit_constraint_checks(struct Parse *parse_context, struct space *space,
 			    int new_tuple_reg,
 			    enum on_conflict_action on_conflict,
@@ -970,14 +1014,7 @@ xferOptimization(Parse * pParse,	/* Parser context */
 		 int onError)		/* How to handle constraint errors */
 {
 	ExprList *pEList;	/* The result set of the SELECT */
-	struct index *pSrcIdx, *pDestIdx;
 	struct SrcList_item *pItem;	/* An element of pSelect->pSrc */
-	int i;			/* Loop counter */
-	int iSrc, iDest;	/* Cursors from source and destination */
-	int addr1;		/* Loop addresses */
-	int emptyDestTest = 0;	/* Address of test for empty pDest */
-	int regData, regTupleid;	/* Registers holding data and tupleid */
-	bool is_err_action_default = false;
 
 	if (pSelect == NULL)
 		return 0;	/* Must be of the form  INSERT INTO ... SELECT ... */
@@ -987,13 +1024,6 @@ xferOptimization(Parse * pParse,	/* Parser context */
 		 * error if pSelect reads from a CTE named "xxx".
 		 */
 		return 0;
-	}
-	/* The pDest must not have triggers. */
-	if (dest->sql_triggers != NULL)
-		return 0;
-	if (onError == ON_CONFLICT_ACTION_DEFAULT) {
-		onError = ON_CONFLICT_ACTION_ABORT;
-		is_err_action_default = true;
 	}
 	assert(pSelect->pSrc);	/* allocated even if there is no FROM clause */
 	if (pSelect->pSrc->nSrc != 1) {
@@ -1043,6 +1073,28 @@ xferOptimization(Parse * pParse,	/* Parser context */
 	/* FROM clause does not contain a real table. */
 	if (src == NULL)
 		return 0;
+	return xfer_space(pParse, dest, src, onError);
+}
+
+static int
+xfer_space(struct Parse *pParse, struct space *dest, const struct space *src,
+	   int onError)
+{
+	struct index *pSrcIdx, *pDestIdx;
+	int i;			/* Loop counter */
+	int iSrc, iDest;	/* Cursors from source and destination */
+	int addr1;		/* Loop addresses */
+	int emptyDestTest = 0;	/* Address of test for empty pDest */
+	int regData, regTupleid;	/* Registers holding data and tupleid */
+	bool is_err_action_default = false;
+
+	/* The pDest must not have triggers. */
+	if (dest->sql_triggers != NULL)
+		return 0;
+	if (onError == ON_CONFLICT_ACTION_DEFAULT) {
+		onError = ON_CONFLICT_ACTION_ABORT;
+		is_err_action_default = true;
+	}
 	/* Src and dest may not be the same table. */
 	if (src->def->id == dest->def->id)
 		return 0;

@@ -3522,6 +3522,9 @@ sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast)
 		sql_emit_select(parser, &rast->select);
 		break;
 	}
+	case SQL_AST_INSERT:
+		sql_emit_insert(parser, &rast->insert);
+		break;
 	default:
 		unreachable();
 	}
