@@ -64,12 +64,8 @@ sql_lookup_space(struct Parse *parse, struct SrcList_item *space_name)
 	return res;
 }
 
-/**
- * Generate the code storing the rows of the given SELECT realizing a view in
- * the ephemeral space with the given cursor, and delete the SELECT.
- */
-static void
-materialize_select(struct Parse *parse, struct Select *select, int cursor)
+void
+sql_materialize_select(struct Parse *parse, struct Select *select, int cursor)
 {
 	struct SelectDest dest;
 	sqlSelectDestInit(&dest, SRT_EphemTab, cursor, ++parse->nMem);
@@ -89,7 +85,7 @@ sql_materialize_view(struct Parse *parse, const char *name, struct Expr *where,
 	assert(from->a[0].pUsing == NULL);
 	struct Select *select = sqlSelectNew(NULL, from, where, NULL,
 					     NULL, NULL, 0, NULL, NULL);
-	materialize_select(parse, select, cursor);
+	sql_materialize_select(parse, select, cursor);
 }
 
 void
@@ -208,7 +204,7 @@ sql_emit_delete(struct Parse *parse, struct rast_delete *del)
 			sqlSrcListDelete(tab_list);
 			return;
 		}
-		materialize_select(parse, select, target->cursor);
+		sql_materialize_select(parse, select, target->cursor);
 	}
 	struct Expr *where = NULL;
 	if (del->where != NULL)

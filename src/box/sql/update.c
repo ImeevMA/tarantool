@@ -34,9 +34,60 @@
  * to handle UPDATE statements.
  */
 #include "sqlInt.h"
+#include "resolve.h"
 #include "tarantoolInt.h"
 #include "box/tuple_format.h"
 #include "box/schema.h"
+
+/**
+ * Create the list of the values of the SET clause of the given resolved UPDATE
+ * statement in the scope of the given source list, as sql_code_update() does.
+ */
+static struct ExprList *
+set_list_from_rast(struct Parse *parse, struct SrcList *src,
+		   const struct rast_update *update)
+{
+	struct ExprList *res = NULL;
+	for (uint32_t i = 0; i < update->set_len; ++i) {
+		const struct rast_set_entry *set = &update->set[i];
+		struct Expr *expr = expr_from_rast_in(parse, src, &set->expr);
+		if (set->ids != NULL) {
+			struct IdList *ids = id_list_from_ast(set->ids);
+			res = sqlExprListAppendVector(parse, res, ids, expr);
+		} else {
+			res = sql_expr_list_append(res, expr);
+			sqlExprListSetName(parse, res,
+					   (struct Token *)&set->name, 1);
+		}
+	}
+	return res;
+}
+
+/**
+ * Create the list of the names of the columns of the SET clause of the given
+ * resolved UPDATE statement, without the values.
+ */
+static struct ExprList *
+set_list_names_from_rast(struct Parse *parse,
+			 const struct rast_update *update)
+{
+	struct ExprList *res = NULL;
+	for (uint32_t i = 0; i < update->set_len; ++i) {
+		const struct rast_set_entry *set = &update->set[i];
+		if (set->ids == NULL) {
+			res = sql_expr_list_append(res, NULL);
+			sqlExprListSetName(parse, res,
+					   (struct Token *)&set->name, 1);
+			continue;
+		}
+		struct ast_id_entry *id;
+		stailq_foreach_entry(id, &set->ids->head, link) {
+			res = sql_expr_list_append(res, NULL);
+			sqlExprListSetName(parse, res, &id->id, 1);
+		}
+	}
+	return res;
+}
 
 /*
  * Process an UPDATE statement.
@@ -44,13 +95,15 @@
  *   UPDATE OR IGNORE table_wxyz SET a=b, c=d WHERE e<5 AND f NOT NULL;
  *          \_______/ \________/     \______/       \________________/
 *            on_error   pTabList      pChanges             pWhere
+ *
+ * If the given resolved UPDATE is not NULL, the space is the only source of
+ * the list, pChanges are only the names of its columns, and pWhere is NULL:
+ * the values and the WHERE clause are built from the resolved UPDATE.
  */
-void
-sqlUpdate(Parse * pParse,		/* The parser context */
-	      SrcList * pTabList,	/* The table in which we should change things */
-	      ExprList * pChanges,	/* Things to be changed */
-	      Expr * pWhere,		/* The WHERE clause.  May be null */
-	      enum on_conflict_action on_error)
+static void
+update_emit(struct Parse *pParse, struct SrcList *pTabList,
+	    struct ExprList *pChanges, struct Expr *pWhere,
+	    enum on_conflict_action on_error, const struct rast_update *rast)
 {
 	int i, j;		/* Loop counters */
 	int addrTop = 0;	/* VDBE instruction address of the start of the loop */
@@ -88,7 +141,8 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 
 	/* Locate the table which we want to update.
 	 */
-	struct space *space = sql_lookup_space(pParse, pTabList->a);
+	struct space *space = rast != NULL ? pTabList->a[0].space :
+			      sql_lookup_space(pParse, pTabList->a);
 	if (space == NULL)
 		goto update_cleanup;
 
@@ -129,6 +183,12 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 	 * of the UPDATE statement.  Also find the column index
 	 * for each column to be updated in the pChanges array.
 	 */
+	if (rast != NULL) {
+		sql_expr_list_delete(pChanges);
+		pChanges = set_list_from_rast(pParse, pTabList, rast);
+		if (pParse->is_aborted)
+			goto update_cleanup;
+	}
 	bool is_pk_modified = false;
 	for (i = 0; i < pChanges->nExpr; i++) {
 		if (sqlResolveExprNames(&sNC, pChanges->a[i].pExpr)) {
@@ -180,7 +240,16 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 	 * an ephemeral table.
 	 */
 	uint32_t pk_part_count;
-	if (is_view) {
+	if (is_view && rast != NULL) {
+		struct Select *select = select_from_rast(pParse,
+							 rast->view_select);
+		if (pParse->is_aborted)
+			goto update_cleanup;
+		sql_materialize_select(pParse, select, pk_cursor);
+		/* Number of columns from SELECT plus ID.*/
+		pk_part_count = def->field_count + 1;
+		nKey = pk_part_count;
+	} else if (is_view) {
 		sql_materialize_view(pParse, def->name, pWhere, pk_cursor);
 		/* Number of columns from SELECT plus ID.*/
 		pk_part_count = nKey = def->field_count + 1;
@@ -193,9 +262,12 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 	/* Resolve the column names in all the expressions in the
 	 * WHERE clause.
 	 */
-	if (sqlResolveExprNames(&sNC, pWhere)) {
+	if (rast != NULL && rast->where != NULL)
+		pWhere = expr_from_rast_in(pParse, pTabList, rast->where);
+	else if (sqlResolveExprNames(&sNC, pWhere) != 0)
 		goto update_cleanup;
-	}
+	if (pParse->is_aborted)
+		goto update_cleanup;
 	/* First of nPk memory cells holding PRIMARY KEY value. */
 	int iPk = pParse->nMem + 1;
 	pParse->nMem += pk_part_count;
@@ -444,4 +516,21 @@ sqlUpdate(Parse * pParse,		/* The parser context */
 	sql_expr_list_delete(pChanges);
 	sql_expr_delete(pWhere);
 	return;
+}
+
+void
+sqlUpdate(struct Parse *parse, struct SrcList *src, struct ExprList *changes,
+	  struct Expr *where, enum on_conflict_action on_error)
+{
+	update_emit(parse, src, changes, where, on_error, NULL);
+}
+
+void
+sql_emit_update(struct Parse *parse, struct rast_update *update)
+{
+	sqlSubProgramsRemaining = SQL_MAX_COMPILING_TRIGGERS;
+	parse->initiateTTrans = true;
+	struct SrcList *src = src_list_from_rast_target(parse, &update->target);
+	struct ExprList *names = set_list_names_from_rast(parse, update);
+	update_emit(parse, src, names, NULL, update->action, update);
 }

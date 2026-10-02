@@ -371,6 +371,35 @@ struct rast_insert {
 	enum on_conflict_action action;
 };
 
+/** Resolved entry of the SET clause of an UPDATE statement. */
+struct rast_set_entry {
+	/** Name of the column, if the value is assigned to one column. */
+	struct Token name;
+	/** Names of the columns the value is assigned to, or NULL. */
+	struct ast_id_list *ids;
+	/** The value. */
+	struct rast_expr expr;
+};
+
+/** Resolved UPDATE statement. */
+struct rast_update {
+	/** The space the rows are updated in, as the only source. */
+	struct rast_source_list target;
+	/** Entries of the SET clause in the scope of the target. */
+	struct rast_set_entry *set;
+	/** Number of the entries above. */
+	uint32_t set_len;
+	/** WHERE clause in the scope of the target, or NULL. */
+	struct rast_expr *where;
+	/**
+	 * SELECT * FROM the view with the WHERE clause realizing the view the
+	 * rows are updated in, or NULL if the space is not a view.
+	 */
+	struct rast_select *view_select;
+	/** Action on conflict. */
+	enum on_conflict_action action;
+};
+
 /** Resolved DELETE statement. */
 struct rast_delete {
 	/** The space the rows are deleted from, as the only source. */
@@ -420,6 +449,8 @@ struct sql_rast {
 		struct rast_truncate truncate;
 		/** Resolved DELETE statement. */
 		struct rast_delete del;
+		/** Resolved UPDATE statement. */
+		struct rast_update update;
 	};
 	/** Whether the statement is resolved. */
 	bool is_resolved;

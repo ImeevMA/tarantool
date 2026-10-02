@@ -105,3 +105,90 @@ g.test_3566_update_ignore_delection_old_entry = function(cg)
         box.execute("DROP TABLE tj;")
     end)
 end
+
+--
+-- Make sure the SET clause of UPDATE is checked as it is converted, then the
+-- space, and then the values of the SET clause and their columns in turn
+-- before the WHERE clause, all resolved in the scope of the space without
+-- allowing aggregate functions.
+--
+g.test_update_resolve = function(cg)
+    cg.server:exec(function()
+        box.execute([[CREATE TABLE t (a INT PRIMARY KEY, b INT);]])
+        box.execute([[CREATE VIEW v AS SELECT * FROM t;]])
+        local function check(sql, exp)
+            local _, err = box.execute(sql)
+            t.assert_equals(err.message, exp, sql)
+        end
+        check([[UPDATE nosuch SET (a, b) = (1, 2, 3), "" = 1;]],
+              "2 columns assigned 3 values")
+        check([[UPDATE nosuch SET "" = 1, (a, b) = (1, 2, 3);]],
+              "Invalid identifier '' (expected printable symbols only " ..
+              "or it is too long)")
+        check([[UPDATE nosuch SET nosuch = nosuch;]],
+              "Space 'nosuch' does not exist")
+        check([[UPDATE v SET nosuch = nosuch;]],
+              "Can't modify space 'v': space is a view")
+        check([[UPDATE t SET b = 1, nosuch = nosuch2 WHERE nosuch3 = 1;]],
+              "Can't resolve field 'nosuch2'")
+        check([[UPDATE t SET nosuch = 1 WHERE nosuch2 = 1;]],
+              "Field 'nosuch' was not found in space 't' format")
+        check([[UPDATE t SET (b, b) = (1, 2) WHERE nosuch = 1;]],
+              "set id list: duplicate column name b")
+        check([[UPDATE t SET b = 1 WHERE nosuch = 1;]],
+              "Can't resolve field 'nosuch'")
+        check([[UPDATE t SET b = COUNT(*);]],
+              "misuse of aggregate function COUNT()")
+        box.execute([[DROP VIEW v;]])
+        box.execute([[DROP TABLE t;]])
+    end)
+end
+
+--
+-- Make sure a vector is assigned to the columns of the SET clause of UPDATE,
+-- and a view with an INSTEAD OF UPDATE OF trigger is updated only if one of
+-- its columns is assigned.
+--
+g.test_update_vector_and_view = function(cg)
+    cg.server:exec(function()
+        box.execute([[CREATE TABLE t (a INT PRIMARY KEY, b INT, c INT);]])
+        box.execute([[INSERT INTO t VALUES (1, 10, 100), (2, 20, 200);]])
+        box.execute([[CREATE TABLE s (a INT PRIMARY KEY, x INT);]])
+        box.execute([[INSERT INTO s VALUES (2, 7);]])
+        box.execute([[UPDATE t SET (b, c) = (SELECT a, x FROM s
+                      WHERE s.a = t.a) WHERE a = 2;]])
+        t.assert_equals(box.execute([[SELECT * FROM t;]]).rows,
+                        {{1, 10, 100}, {2, 2, 7}})
+
+        box.execute([[CREATE TABLE lg (b INT PRIMARY KEY);]])
+        box.execute([[CREATE VIEW v AS SELECT a, b FROM t;]])
+        box.execute([[CREATE TRIGGER v1 INSTEAD OF UPDATE OF b ON v
+                      FOR EACH ROW BEGIN
+                      INSERT INTO lg VALUES (new.b); END;]])
+        local _, err = box.execute([[UPDATE v SET a = 5;]])
+        t.assert_equals(err.message, "Can't modify space 'v': space is a view")
+        box.execute([[UPDATE v SET b = b + 1 WHERE a IN (SELECT a FROM s);]])
+        t.assert_equals(box.execute([[SELECT * FROM lg;]]).rows, {{3}})
+
+        box.execute([[DROP VIEW v;]])
+        box.execute([[DROP TABLE lg;]])
+        box.execute([[DROP TABLE s;]])
+        box.execute([[DROP TABLE t;]])
+    end)
+end
+
+--
+-- Make sure an error building the WHERE clause of UPDATE is reported.
+--
+g.test_update_where_error = function(cg)
+    cg.server:exec(function()
+        box.execute([[CREATE TABLE t (a INT PRIMARY KEY, b INT);]])
+        box.execute([[SET SESSION "sql_seq_scan" = false;]])
+        local _, err = box.execute([[WITH c AS (SELECT 5 AS y)
+                                     UPDATE t SET b = 1
+                                     WHERE a IN (SELECT y - 4 FROM c);]])
+        box.execute([[SET SESSION "sql_seq_scan" = true;]])
+        t.assert_equals(err.message, "Scanning is not allowed for 'c'")
+        box.execute([[DROP TABLE t;]])
+    end)
+end

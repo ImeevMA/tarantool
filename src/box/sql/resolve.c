@@ -5620,6 +5620,73 @@ resolve_truncate(struct sql_resolve_context *ctx,
 }
 
 /**
+ * Look up the space of a DELETE or UPDATE statement with the given name and
+ * INDEXED BY clause, and make it the only source of the given list, as
+ * sql_lookup_space() does.
+ *
+ * Returns the space or NULL on error.
+ */
+static struct space *
+resolve_target(struct sql_resolve_context *ctx, const struct Token *name,
+	       const struct Token *indexed_by, struct rast_source_list *res)
+{
+	struct space *space = lookup_space(ctx, name);
+	if (space == NULL)
+		return NULL;
+	struct rast_source *target = xregion_alloc_object(ctx->region,
+							  struct rast_source);
+	memset(target, 0, sizeof(*target));
+	target->space_id = space->def->id;
+	target->index_id = UINT32_MAX;
+	target->cursor = -1;
+	res->sources = target;
+	res->len = 1;
+	if (resolve_indexed_by(ctx, space, indexed_by, target) != 0)
+		return NULL;
+	return space;
+}
+
+/**
+ * Resolve SELECT * FROM the view with the given name and the given WHERE
+ * clause into the given rast_select, realizing the view as
+ * sql_materialize_view() does.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_view_select(struct sql_resolve_context *ctx, const struct Token *name,
+		    struct ast_expr *where, struct rast_select *res)
+{
+	struct ast_source *src = ast_source_new(ctx->region);
+	src->name = *name;
+	struct ast_select *select = ast_select_new_asterisk(
+		ctx->region, ast_source_list_append(ctx->region, NULL, src));
+	select->where = where;
+	return resolve_select(ctx, select, res);
+}
+
+/**
+ * Resolve the given AST expression of a DELETE or UPDATE statement into the
+ * given rast_expr in the scope of the given target, without allowing
+ * aggregate functions.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_target_expr(struct sql_resolve_context *ctx,
+		    struct rast_source_list *target, const struct ast_expr *ast,
+		    struct rast_expr *res)
+{
+	struct sql_resolve_scope scope = {
+		.sources = target,
+	};
+	ctx->scope = &scope;
+	int rc = resolve_expr(ctx, ast, res);
+	ctx->scope = NULL;
+	return rc;
+}
+
+/**
  * Resolve the given AST DELETE statement, whose WITH clause is visible, into
  * the given rast_delete, see resolve_delete().
  *
@@ -5629,18 +5696,9 @@ static int
 resolve_delete_in(struct sql_resolve_context *ctx, const struct ast_delete *ast,
 		  struct rast_delete *res)
 {
-	struct space *space = lookup_space(ctx, &ast->table);
+	struct space *space = resolve_target(ctx, &ast->table,
+					     &ast->indexed_by, &res->target);
 	if (space == NULL)
-		return -1;
-	struct rast_source *target = xregion_alloc_object(ctx->region,
-							  struct rast_source);
-	memset(target, 0, sizeof(*target));
-	target->space_id = space->def->id;
-	target->index_id = UINT32_MAX;
-	target->cursor = -1;
-	res->target.sources = target;
-	res->target.len = 1;
-	if (resolve_indexed_by(ctx, space, &ast->indexed_by, target) != 0)
 		return -1;
 	if (space->def->opts.is_view) {
 		if (sql_triggers_exist(space->def, TK_DELETE, NULL,
@@ -5650,33 +5708,21 @@ resolve_delete_in(struct sql_resolve_context *ctx, const struct ast_delete *ast,
 			return -1;
 		}
 		/*
-		 * As sql_materialize_view() does, the view is realized by
-		 * SELECT * FROM the view with the WHERE clause, which is
-		 * resolved there before it is resolved for the view.
+		 * The WHERE clause is resolved in the SELECT realizing the
+		 * view before it is resolved for the view.
 		 */
-		struct ast_source *src = ast_source_new(ctx->region);
-		src->name = ast->table;
-		struct ast_select *select = ast_select_new_asterisk(
-			ctx->region,
-			ast_source_list_append(ctx->region, NULL, src));
-		select->where = ast->where;
 		res->view_select = xregion_alloc_object(ctx->region,
 							struct rast_select);
-		if (resolve_select(ctx, select, res->view_select) != 0)
+		if (resolve_view_select(ctx, &ast->table, ast->where,
+					res->view_select) != 0)
 			return -1;
 		if (!ctx->can_resolve)
 			return 0;
 	}
 	if (ast->where == NULL)
 		return 0;
-	struct sql_resolve_scope scope = {
-		.sources = &res->target,
-	};
-	ctx->scope = &scope;
 	res->where = xregion_alloc_object(ctx->region, struct rast_expr);
-	int rc = resolve_expr(ctx, ast->where, res->where);
-	ctx->scope = NULL;
-	return rc;
+	return resolve_target_expr(ctx, &res->target, ast->where, res->where);
 }
 
 /**
@@ -5697,6 +5743,205 @@ resolve_delete(struct sql_resolve_context *ctx, const struct ast_delete *ast,
 	if (ast->with != NULL && push_with(ctx, ast->with, &with) != 0)
 		return -1;
 	int rc = resolve_delete_in(ctx, ast, res);
+	if (rc == 0 && ctx->can_resolve && ast->with != NULL)
+		rc = check_unused_ctes(ctx, &with);
+	ctx->with = outer_with;
+	return rc;
+}
+
+/**
+ * Check the names of the columns of the given AST SET clause of an UPDATE as
+ * sql_code_update() does while converting it: the name of a column assigned a
+ * value is checked to be a valid identifier, the number of the columns
+ * assigned a vector to match its size, unless it is a SELECT, and the number
+ * of the columns not to exceed the limit.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+check_set_list(struct sql_resolve_context *ctx, const struct ast_set_list *ast)
+{
+	uint32_t count = 0;
+	for (const struct stailq_entry *node = ast->head.first.value;
+	     node != NULL; node = node->next.value) {
+		const struct ast_set_list_entry *entry =
+			stailq_entry(node, struct ast_set_list_entry, link);
+		if (entry->ids == NULL) {
+			++count;
+			const char *name = sql_name_temp(ctx->region,
+							 entry->name.z,
+							 entry->name.n);
+			if (sql_check_identifier_name(name, strlen(name)) != 0)
+				return -1;
+			continue;
+		}
+		uint32_t len = entry->ids->len;
+		uint32_t size = 1;
+		if (entry->expr->op == TK_VECTOR)
+			size = entry->expr->list != NULL ?
+			       entry->expr->list->len : 0;
+		if (entry->expr->op != TK_SELECT && len != size) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 tt_sprintf("%d columns assigned %d values",
+					    len, size));
+			return -1;
+		}
+		count += len;
+	}
+	if (count > SQL_MAX_COLUMN) {
+		diag_set(ClientError, ER_SQL_PARSER_LIMIT,
+			 "The number of columns in set list", count,
+			 SQL_MAX_COLUMN);
+		return -1;
+	}
+	return 0;
+}
+
+/**
+ * Create a list of the names of the columns of the given AST SET clause, as
+ * sql_code_update() names the entries of the list it creates from it.
+ */
+static struct ExprList *
+set_list_names(struct Parse *parser, const struct ast_set_list *ast)
+{
+	struct ExprList *res = NULL;
+	for (const struct stailq_entry *node = ast->head.first.value;
+	     node != NULL; node = node->next.value) {
+		const struct ast_set_list_entry *entry =
+			stailq_entry(node, struct ast_set_list_entry, link);
+		if (entry->ids == NULL) {
+			res = sql_expr_list_append(res, NULL);
+			sqlExprListSetName(parser, res,
+					   (struct Token *)&entry->name, 1);
+			continue;
+		}
+		struct ast_id_entry *id;
+		stailq_foreach_entry(id, &entry->ids->head, link) {
+			res = sql_expr_list_append(res, NULL);
+			sqlExprListSetName(parser, res, &id->id, 1);
+		}
+	}
+	return res;
+}
+
+/**
+ * Resolve the given AST UPDATE statement, whose WITH clause is visible, into
+ * the given rast_update, see resolve_update().
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_update_in(struct sql_resolve_context *ctx, const struct ast_update *ast,
+		  struct rast_update *res)
+{
+	if (check_set_list(ctx, ast->set_list) != 0)
+		return -1;
+	struct space *space = resolve_target(ctx, &ast->table,
+					     &ast->indexed_by, &res->target);
+	if (space == NULL)
+		return -1;
+	struct space_def *def = space->def;
+	if (def->opts.is_view) {
+		struct ExprList *names = set_list_names(ctx->parser,
+							ast->set_list);
+		int tmask;
+		sql_triggers_exist(def, TK_UPDATE, names,
+				   ctx->parser->sql_flags, &tmask);
+		sql_expr_list_delete(names);
+		if (tmask == 0) {
+			diag_set(ClientError, ER_ALTER_SPACE, def->name,
+				 "space is a view");
+			return -1;
+		}
+	}
+	res->set_len = ast->set_list->len;
+	res->set = xregion_alloc_array(ctx->region, struct rast_set_entry,
+				       res->set_len);
+	uint32_t *fieldnos = xregion_alloc_array(ctx->region, uint32_t,
+						 SQL_MAX_COLUMN);
+	uint32_t fieldno_count = 0;
+	uint32_t i = 0;
+	for (const struct stailq_entry *node = ast->set_list->head.first.value;
+	     node != NULL; node = node->next.value, ++i) {
+		const struct ast_set_list_entry *entry =
+			stailq_entry(node, struct ast_set_list_entry, link);
+		struct rast_set_entry *set = &res->set[i];
+		set->name = entry->name;
+		set->ids = entry->ids;
+		if (resolve_target_expr(ctx, &res->target, entry->expr,
+					&set->expr) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+		struct ast_id_entry *id = NULL;
+		if (entry->ids != NULL)
+			id = stailq_first_entry(&entry->ids->head,
+						struct ast_id_entry, link);
+		do {
+			const struct Token *tok = id != NULL ? &id->id :
+						  &entry->name;
+			const char *name = sql_name_temp(ctx->region, tok->z,
+							 tok->n);
+			uint32_t fieldno = space_def_fieldno(def, name);
+			if (fieldno == UINT32_MAX && tok->z[0] != '"') {
+				const char *legacy =
+					sql_legacy_name_temp(ctx->region,
+							     tok->z, tok->n);
+				fieldno = space_def_fieldno(def, legacy);
+			}
+			if (fieldno == UINT32_MAX) {
+				diag_set(ClientError,
+					 ER_NO_SUCH_FIELD_NAME_IN_SPACE, name,
+					 def->name);
+				return -1;
+			}
+			for (uint32_t j = 0; j < fieldno_count; ++j) {
+				if (fieldnos[j] != fieldno)
+					continue;
+				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+					 tt_sprintf("set id list: duplicate "
+						    "column name %s", name));
+				return -1;
+			}
+			fieldnos[fieldno_count++] = fieldno;
+			id = id != NULL ? stailq_next_entry(id, link) : NULL;
+		} while (id != NULL);
+	}
+	if (def->opts.is_view) {
+		res->view_select = xregion_alloc_object(ctx->region,
+							struct rast_select);
+		if (resolve_view_select(ctx, &ast->table, ast->where,
+					res->view_select) != 0)
+			return -1;
+		if (!ctx->can_resolve)
+			return 0;
+	}
+	if (ast->where == NULL)
+		return 0;
+	res->where = xregion_alloc_object(ctx->region, struct rast_expr);
+	return resolve_target_expr(ctx, &res->target, ast->where, res->where);
+}
+
+/**
+ * Resolve the given AST UPDATE statement into the given rast_update. As
+ * sqlUpdate() does, the space is checked before the SET clause, whose values
+ * are resolved and whose columns are looked up in turn, and then the WHERE
+ * clause is resolved, all in the scope of the space without allowing
+ * aggregate functions.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_update(struct sql_resolve_context *ctx, const struct ast_update *ast,
+	       struct rast_update *res)
+{
+	memset(res, 0, sizeof(*res));
+	res->action = ast->action;
+	struct sql_resolve_with *outer_with = ctx->with;
+	struct sql_resolve_with with;
+	if (ast->with != NULL && push_with(ctx, ast->with, &with) != 0)
+		return -1;
+	int rc = resolve_update_in(ctx, ast, res);
 	if (rc == 0 && ctx->can_resolve && ast->with != NULL)
 		rc = check_unused_ctes(ctx, &with);
 	ctx->with = outer_with;
@@ -5725,6 +5970,12 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 		break;
 	case SQL_AST_INSERT:
 		if (resolve_insert(&ctx, ast->insert, &rast->insert) != 0) {
+			parser->is_aborted = true;
+			return NULL;
+		}
+		break;
+	case SQL_AST_UPDATE:
+		if (resolve_update(&ctx, ast->update, &rast->update) != 0) {
 			parser->is_aborted = true;
 			return NULL;
 		}

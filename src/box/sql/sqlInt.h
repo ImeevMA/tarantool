@@ -260,6 +260,7 @@ struct sql_key_info;
 struct sql_rast;
 struct rast_insert;
 struct rast_delete;
+struct rast_update;
 
 enum sql_ret_code {
 	/** sql_step() has another row ready. */
@@ -3010,6 +3011,10 @@ whereInfoFree(struct WhereInfo *pWInfo);
 
 void sqlUpdate(Parse *, SrcList *, ExprList *, Expr *,
 		   enum on_conflict_action);
+
+/** Generate the code for the given resolved UPDATE statement. */
+void
+sql_emit_update(struct Parse *parse, struct rast_update *update);
 WhereInfo *sqlWhereBegin(Parse *, SrcList *, Expr *, ExprList *, ExprList *,
 			     u16, int);
 void sqlWhereEnd(WhereInfo *);
@@ -3457,6 +3462,13 @@ void sqlSelectSetName(Select *, const char *);
 #else
 #define sqlSelectSetName(A,B)
 #endif
+
+/**
+ * Generate the code storing the rows of the given SELECT realizing a view in
+ * the ephemeral space with the given cursor, and delete the SELECT.
+ */
+void
+sql_materialize_select(struct Parse *parse, struct Select *select, int cursor);
 
 /**
  * Evaluate a view and store its result in an ephemeral table.
