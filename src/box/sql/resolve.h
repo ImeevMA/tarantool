@@ -426,6 +426,31 @@ struct rast_truncate {
 	struct space *space;
 };
 
+/** Resolved part of an index: a column and its collation. */
+struct rast_index_part {
+	/** Number of the field of the column. */
+	uint32_t fieldno;
+	/** ID of the collation of the part. */
+	uint32_t coll_id;
+};
+
+/** Resolved CREATE INDEX statement. */
+struct rast_create_index {
+	/**
+	 * Space the index is created for, or NULL if the statement does
+	 * nothing: the space or the index does not exist with IF NOT EXISTS.
+	 */
+	struct space *space;
+	/** Name of the index. */
+	struct Token name;
+	/** Parts of the index. */
+	struct rast_index_part *parts;
+	/** Number of the parts of the index. */
+	uint32_t part_count;
+	/** Whether the index is unique. */
+	bool is_unique;
+};
+
 /** Resolved CREATE VIEW statement. */
 struct rast_create_view {
 	/** Name of the view. */
@@ -454,6 +479,8 @@ struct sql_rast {
 		struct rast_create_view create_view;
 		/** Resolved TRUNCATE statement. */
 		struct rast_truncate truncate;
+		/** Resolved CREATE INDEX statement. */
+		struct rast_create_index create_index;
 		/** Resolved DELETE statement. */
 		struct rast_delete del;
 		/** Resolved UPDATE statement. */

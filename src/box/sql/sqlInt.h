@@ -2871,26 +2871,23 @@ void
 sqlIdListDelete(struct IdList *pList);
 
 /**
- * Create a new index for an SQL table.  name is the name of the
- * index and tbl_name is the name of the table that is to be
- * indexed.  Both will be NULL for a primary key or an index that
- * is created to satisfy a UNIQUE constraint.  If tbl_name and
- * name are NULL, use parse->new_space as the table to be indexed.
- * parse->create_tale_def->new_space is a space that is currently
- * being constructed by a CREATE TABLE statement.
+ * Create an index for a UNIQUE or PRIMARY KEY constraint. If
+ * parse->new_space or parse->space is set, it is the table to be
+ * indexed: the one being constructed by a CREATE TABLE statement or
+ * altered by adding a column. Otherwise the table is looked up by
+ * name.
  *
  * @param parse All information about this parse.
  * @param table Name of the table on which the index will be created.
- * @param name Name of the index.
+ * @param name Name of the constraint.
  * @param col_list Column list of the index.
- * @param idx_type UNIQUE, NOT UNIQUE or PRIMARY KEY type of the index.
+ * @param idx_type UNIQUE or PRIMARY KEY constraint type of the index.
  * @param sort_order Sort order in case of column UNIQUE/PRIMARY KEY constraint.
- * @param if_not_exists If TRUE do not raise an error when the index exists.
  */
 void
 sql_create_index(struct Parse *parse, struct Token *table, struct Token *name,
 		 struct ExprList *col_list, enum sql_index_type idx_type,
-		 enum sort_order sort_order, bool if_not_exists);
+		 enum sort_order sort_order);
 
 /**
  * This routine will drop an existing named index.  This routine

@@ -5741,6 +5741,126 @@ resolve_truncate(struct sql_resolve_context *ctx,
 }
 
 /**
+ * Resolve the given AST column of an index of the space with the given
+ * definition into the given rast_index_part, as index_fill_def() does. The
+ * column must be a name of a field, possibly with collations, of which the
+ * outermost one is used.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_index_part(struct sql_resolve_context *ctx,
+		   const struct space_def *def, const struct ast_expr *ast,
+		   struct rast_index_part *res)
+{
+	const struct ast_expr *coll = NULL;
+	while (ast->op == TK_PARENTHESES || ast->op == TK_COLLATE) {
+		if (ast->op == TK_COLLATE && coll == NULL)
+			coll = ast;
+		ast = ast->left;
+	}
+	if (ast->op != TK_ID) {
+		diag_set(ClientError, ER_INDEX_DEF_UNSUPPORTED, "Expressions");
+		return -1;
+	}
+	const char *name = sql_name_temp(ctx->region, ast->str, ast->len);
+	res->fieldno = space_def_fieldno(def, name);
+	if (res->fieldno == UINT32_MAX && ast->str[0] != '"') {
+		const char *legacy = sql_legacy_name_temp(ctx->region, ast->str,
+							  ast->len);
+		res->fieldno = space_def_fieldno(def, legacy);
+	}
+	if (res->fieldno == UINT32_MAX) {
+		diag_set(ClientError, ER_SQL_CANT_RESOLVE_FIELD, name);
+		return -1;
+	}
+	if (coll == NULL) {
+		res->coll_id = def->fields[res->fieldno].coll_id;
+		return 0;
+	}
+	return sql_coll_id(&res->coll_id, coll->right->str, coll->right->len);
+}
+
+/**
+ * Resolve the given AST CREATE INDEX statement into the given
+ * rast_create_index. As in the legacy code, the columns are converted first,
+ * so the same errors are reported, and are resolved after the space and the
+ * name of the index are checked.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_create_index(struct sql_resolve_context *ctx,
+		     const struct ast_create_index *ast,
+		     struct rast_create_index *res)
+{
+	memset(res, 0, sizeof(*res));
+	res->name = ast->name;
+	res->is_unique = ast->is_unique;
+	struct ExprList *columns = expr_list_from_ast(ctx->parser,
+						      ast->columns);
+	if (columns == NULL)
+		return -1;
+	sql_expr_list_delete(columns);
+
+	struct space *space = find_space(ctx, &ast->table, false);
+	if (space == NULL) {
+		if (!ast->if_not_exists)
+			return -1;
+		diag_clear(diag_get());
+		return 0;
+	}
+	struct space_def *def = space->def;
+	if (def->opts.is_view) {
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+			 "Views can not be indexed");
+		return -1;
+	}
+	if (sql_space_def_check_format(def) != 0)
+		return -1;
+	const char *name = sql_name_temp(ctx->region, ast->name.z,
+					 ast->name.n);
+	if (space_index_by_name0(space, name) != NULL) {
+		if (ast->if_not_exists)
+			return 0;
+		diag_set(ClientError, ER_INDEX_EXISTS_IN_SPACE, name,
+			 def->name);
+		return -1;
+	}
+	if (sql_check_identifier_name(name, strlen(name)) != 0)
+		return -1;
+	if (space_is_system(space)) {
+		diag_set(ClientError, ER_MODIFY_INDEX, name, def->name,
+			 "can't create index on system space");
+		return -1;
+	}
+	res->part_count = ast->columns->len;
+	res->parts = xregion_alloc_array(ctx->region, struct rast_index_part,
+					 res->part_count);
+	uint32_t i = 0;
+	for (const struct stailq_entry *node = ast->columns->head.first.value;
+	     node != NULL; node = node->next.value, ++i) {
+		const struct ast_expr_list_entry *entry =
+			stailq_entry(node, struct ast_expr_list_entry, link);
+		if (resolve_index_part(ctx, def, entry->expr,
+				       &res->parts[i]) != 0)
+			return -1;
+		/*
+		 * As in sql_create_index(), the number of the columns is
+		 * reported only if the first one is resolved.
+		 */
+		if (res->part_count > SQL_MAX_COLUMN) {
+			diag_set(ClientError, ER_SQL_PARSER_LIMIT,
+				 "The number of columns in index",
+				 res->part_count, SQL_MAX_COLUMN);
+			return -1;
+		}
+	}
+	res->space = space;
+	return 0;
+}
+
+/**
  * Look up the space of a DELETE or UPDATE statement with the given name and
  * INDEXED BY clause, and make it the only source of the given list, as
  * sql_lookup_space() does.
@@ -6116,6 +6236,13 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 	case SQL_AST_TRUNCATE:
 		if (resolve_truncate(&ctx, &ast->truncate,
 				     &rast->truncate) != 0) {
+			parser->is_aborted = true;
+			return NULL;
+		}
+		break;
+	case SQL_AST_CREATE_INDEX:
+		if (resolve_create_index(&ctx, &ast->create_index,
+					 &rast->create_index) != 0) {
 			parser->is_aborted = true;
 			return NULL;
 		}

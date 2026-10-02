@@ -562,7 +562,7 @@ sqlAddPrimaryKey(struct Parse *pParse, struct Token *name,
 		return;
 	}
 	sql_create_index(pParse, &Token_nil, name, col_list,
-			 SQL_INDEX_TYPE_CONSTRAINT_PK, sort_order, false);
+			 SQL_INDEX_TYPE_CONSTRAINT_PK, sort_order);
 	if (pParse->is_aborted)
 		return;
 
@@ -2415,9 +2415,8 @@ sql_space_def_check_format(const struct space_def *space_def)
  * @param iid Index ID.
  * @param name Index name.
  * @param name_len Index name length.
- * @param expr_list List of expressions, describe which columns
- *                  of 'table' are used in index and also their
- *                  collations, orders, etc.
+ * @param parts Resolved parts of the index.
+ * @param part_count Number of the parts.
  * @param idx_type Index type: non-unique index, unique index,
  *                 index implementing UNIQUE constraint or
  *                 index implementing PK constraint.
@@ -2426,8 +2425,8 @@ sql_space_def_check_format(const struct space_def *space_def)
 static int
 index_fill_def(struct Parse *parse, struct index *index,
 	       struct space_def *space_def, uint32_t iid, const char *name,
-	       uint32_t name_len, struct ExprList *expr_list,
-	       enum sql_index_type idx_type)
+	       uint32_t name_len, const struct rast_index_part *parts,
+	       uint32_t part_count, enum sql_index_type idx_type)
 {
 	struct index_opts opts;
 	index_opts_create(&opts);
@@ -2439,27 +2438,9 @@ index_fill_def(struct Parse *parse, struct index *index,
 	size_t region_svp = region_used(&fiber()->gc);
 	struct key_part_def *key_parts =
 		xregion_alloc_array(&fiber()->gc, typeof(key_parts[0]),
-				    expr_list->nExpr);
-	for (int i = 0; i < expr_list->nExpr; i++) {
-		struct Expr *expr = expr_list->a[i].pExpr;
-		sql_resolve_self_reference(parse, space_def, expr);
-		if (parse->is_aborted)
-			goto cleanup;
-
-		struct Expr *column_expr = sqlExprSkipCollate(expr);
-		assert(column_expr->op == TK_COLUMN_REF);
-
-		uint32_t fieldno = column_expr->iColumn;
-		if (parse->autoinc_fieldno == &expr->iColumn) {
-			parse->autoinc_fieldno =
-				xregion_alloc_object(&parse->region, int);
-			*parse->autoinc_fieldno = fieldno;
-		}
-		uint32_t coll_id;
-		if (expr->op == TK_COLLATE)
-			coll_id = expr->v.id;
-		else
-			sql_column_collation(space_def, fieldno, &coll_id);
+				    part_count);
+	for (uint32_t i = 0; i < part_count; i++) {
+		uint32_t fieldno = parts[i].fieldno;
 		/*
 		 * Tarantool: DESC indexes are not supported so
 		 * far.
@@ -2471,10 +2452,10 @@ index_fill_def(struct Parse *parse, struct index *index,
 		part->is_nullable = part->nullable_action == ON_CONFLICT_ACTION_NONE;
 		part->exclude_null = false;
 		part->sort_order = SORT_ORDER_ASC;
-		part->coll_id = coll_id;
+		part->coll_id = parts[i].coll_id;
 		part->path = NULL;
 	}
-	key_def = key_def_new(key_parts, expr_list->nExpr, 0);
+	key_def = key_def_new(key_parts, part_count, 0);
 	if (key_def == NULL)
 		goto tnt_error;
 	/*
@@ -2509,23 +2490,28 @@ constraint_is_named(const char *name)
 		strncmp(name, "unique_unnamed_", strlen("unique_unnamed_"));
 }
 
+/**
+ * Create an index with the given name and resolved parts for the given space.
+ * If the given flag is set, the space is being built by CREATE TABLE or
+ * ALTER TABLE ADD COLUMN, and the index is added to it, otherwise the code
+ * inserting the index into the schema is generated.
+ */
+static void
+sql_index_create(struct Parse *parse, struct space *space,
+		 const char *index_name, const struct rast_index_part *parts,
+		 uint32_t part_count, enum sql_index_type idx_type,
+		 bool is_create_table_or_add_col);
+
 void
 sql_create_index(struct Parse *parse, struct Token *table, struct Token *name,
 		 struct ExprList *col_list, enum sql_index_type idx_type,
-		 enum sort_order sort_order, bool if_not_exists)
+		 enum sort_order sort_order)
 {
-	/* The index to be created. */
-	struct index *index = NULL;
 	/* Name of the index. */
 	char *index_name = NULL;
 
 	if (parse->is_aborted)
 		goto exit_create_index;
-	if (idx_type == SQL_INDEX_TYPE_UNIQUE ||
-	    idx_type == SQL_INDEX_TYPE_NON_UNIQUE) {
-		Vdbe *v = sqlGetVdbe(parse);
-		sqlVdbeCountChanges(v);
-	}
 
 	/*
 	 * Find the table that is to be indexed.
@@ -2539,11 +2525,9 @@ sql_create_index(struct Parse *parse, struct Token *table, struct Token *name,
 		assert(table != NULL && table->n > 0);
 		const struct space *origin = sql_space_by_token(table);
 		if (origin == NULL) {
-			if (!if_not_exists) {
-				diag_set(ClientError, ER_NO_SUCH_SPACE,
-					 sql_tt_name_from_token(table));
-				parse->is_aborted = true;
-			}
+			diag_set(ClientError, ER_NO_SUCH_SPACE,
+				 sql_tt_name_from_token(table));
+			parse->is_aborted = true;
 			goto exit_create_index;
 		}
 		space = space_by_id(origin->def->id);
@@ -2584,11 +2568,9 @@ sql_create_index(struct Parse *parse, struct Token *table, struct Token *name,
 		assert(name->z != NULL);
 		index_name = sql_name_from_token(name);
 		if (space_index_by_name0(space, index_name) != NULL) {
-			if (!if_not_exists) {
-				diag_set(ClientError, ER_INDEX_EXISTS_IN_SPACE,
-					 index_name, def->name);
-				parse->is_aborted = true;
-			}
+			diag_set(ClientError, ER_INDEX_EXISTS_IN_SPACE,
+				 index_name, def->name);
+			parse->is_aborted = true;
 			goto exit_create_index;
 		}
 	} else {
@@ -2656,7 +2638,44 @@ sql_create_index(struct Parse *parse, struct Token *table, struct Token *name,
 			parse->is_aborted = true;
 		}
 	}
-	index = xregion_alloc_object(&parse->region, typeof(*index));
+	struct rast_index_part *parts =
+		xregion_alloc_array(&parse->region, struct rast_index_part,
+				    col_list->nExpr);
+	for (int i = 0; i < col_list->nExpr; i++) {
+		struct Expr *expr = col_list->a[i].pExpr;
+		sql_resolve_self_reference(parse, def, expr);
+		if (parse->is_aborted)
+			goto exit_create_index;
+		struct Expr *column_expr = sqlExprSkipCollate(expr);
+		assert(column_expr->op == TK_COLUMN_REF);
+		uint32_t fieldno = column_expr->iColumn;
+		if (parse->autoinc_fieldno == &expr->iColumn) {
+			parse->autoinc_fieldno =
+				xregion_alloc_object(&parse->region, int);
+			*parse->autoinc_fieldno = fieldno;
+		}
+		parts[i].fieldno = fieldno;
+		if (expr->op == TK_COLLATE)
+			parts[i].coll_id = expr->v.id;
+		else
+			sql_column_collation(def, fieldno, &parts[i].coll_id);
+	}
+	sql_index_create(parse, space, index_name, parts, col_list->nExpr,
+			 idx_type, is_create_table_or_add_col);
+exit_create_index:
+	sql_expr_list_delete(col_list);
+	sql_xfree(index_name);
+}
+
+static void
+sql_index_create(struct Parse *parse, struct space *space,
+		 const char *index_name, const struct rast_index_part *parts,
+		 uint32_t part_count, enum sql_index_type idx_type,
+		 bool is_create_table_or_add_col)
+{
+	struct space_def *def = space->def;
+	struct index *index = xregion_alloc_object(&parse->region,
+						   typeof(*index));
 	memset(index, 0, sizeof(*index));
 
 	/*
@@ -2671,32 +2690,33 @@ sql_create_index(struct Parse *parse, struct Token *table, struct Token *name,
 	else
 		iid = 0;
 	if (index_fill_def(parse, index, def, iid, index_name,
-			   strlen(index_name), col_list, idx_type) != 0)
-		goto exit_create_index;
+			   strlen(index_name), parts, part_count,
+			   idx_type) != 0)
+		goto exit;
 	/*
 	 * Remove all redundant columns from the PRIMARY KEY.
 	 * For example, change "PRIMARY KEY(a,b,a,b,c,b,c,d)" into
 	 * just "PRIMARY KEY(a,b,c,d)". Later code assumes the
 	 * PRIMARY KEY contains no repeated columns.
 	 */
-	struct key_part *parts = index->def->key_def->parts;
-	uint32_t part_count = index->def->key_def->part_count;
+	struct key_part *key_parts = index->def->key_def->parts;
+	uint32_t key_part_count = index->def->key_def->part_count;
 	uint32_t new_part_count = 1;
-	for(uint32_t i = 1; i < part_count; i++) {
+	for (uint32_t i = 1; i < key_part_count; i++) {
 		uint32_t j;
-		for(j = 0; j < new_part_count; j++) {
-			if(parts[i].fieldno == parts[j].fieldno)
+		for (j = 0; j < new_part_count; j++) {
+			if (key_parts[i].fieldno == key_parts[j].fieldno)
 				break;
 		}
 
 		if (j == new_part_count)
-			parts[new_part_count++] = parts[i];
+			key_parts[new_part_count++] = key_parts[i];
 	}
 	index->def->key_def->part_count = new_part_count;
 
 	if (index_def_check(index->def, def->name) != 0) {
 		parse->is_aborted = true;
-		goto exit_create_index;
+		goto exit;
 	}
 
 	/*
@@ -2758,13 +2778,13 @@ sql_create_index(struct Parse *parse, struct Token *table, struct Token *name,
 			if (idx_type == SQL_INDEX_TYPE_CONSTRAINT_PK &&
 			    iid != 0 && !is_named) {
 				existing_idx->def->iid = 0;
-				goto exit_create_index;
+				goto exit;
 			}
 
 			/* CREATE TABLE t(a, PRIMARY KEY(a), UNIQUE(a)). */
 			if (idx_type == SQL_INDEX_TYPE_CONSTRAINT_UNIQUE &&
 			    !constraint_is_named(index->def->name))
-				goto exit_create_index;
+				goto exit;
 		}
 
 	/*
@@ -2814,7 +2834,7 @@ sql_create_index(struct Parse *parse, struct Token *table, struct Token *name,
 	if (is_create_table_or_add_col) {
 		sql_space_add_index(parse, space, index);
 		index = NULL;
-		goto exit_create_index;
+		goto exit;
 	}
 
 	if (parse->autoinc_fieldno != NULL) {
@@ -2832,12 +2852,9 @@ sql_create_index(struct Parse *parse, struct Token *table, struct Token *name,
 		sqlVdbeAddOp2(v, OP_SInsert, BOX_SPACE_SEQUENCE_ID, reg);
 	}
 
-	/* Clean up before exiting. */
- exit_create_index:
+exit:
 	if (index != NULL && index->def != NULL)
 		index_def_delete(index->def);
-	sql_expr_list_delete(col_list);
-	sql_xfree(index_name);
 }
 
 void
@@ -3514,6 +3531,25 @@ sql_emit_select(struct Parse *parser, struct rast_select *select)
 	sql_select_delete(res);
 }
 
+/** Emit VDBE bytecode for the given resolved CREATE INDEX statement. */
+static void
+sql_emit_create_index(struct Parse *parser,
+		      const struct rast_create_index *stmt)
+{
+	parser->disableLookaside++;
+	sql_get()->lookaside.bDisable++;
+	parser->initiateTTrans = true;
+	sqlVdbeCountChanges(sqlGetVdbe(parser));
+	if (stmt->space == NULL)
+		return;
+	char *name = sql_name_from_token(&stmt->name);
+	enum sql_index_type type = stmt->is_unique ? SQL_INDEX_TYPE_UNIQUE :
+						     SQL_INDEX_TYPE_NON_UNIQUE;
+	sql_index_create(parser, stmt->space, name, stmt->parts,
+			 stmt->part_count, type, false);
+	sql_xfree(name);
+}
+
 /** Emit VDBE bytecode for the given resolved CREATE VIEW statement. */
 static void
 sql_emit_create_view(struct Parse *parser, struct rast_create_view *stmt,
@@ -3545,6 +3581,9 @@ sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast, const char *sql)
 		break;
 	case SQL_AST_CREATE_VIEW:
 		sql_emit_create_view(parser, &rast->create_view, sql);
+		break;
+	case SQL_AST_CREATE_INDEX:
+		sql_emit_create_index(parser, &rast->create_index);
 		break;
 	case SQL_AST_UPDATE:
 		sqlSubProgramsRemaining = SQL_MAX_COMPILING_TRIGGERS;

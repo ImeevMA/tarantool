@@ -154,3 +154,67 @@ g.test_on_conflict = function(cg)
         t.assert_str_contains(err.message, exp_err)
     end)
 end
+
+--
+-- Make sure the columns of CREATE INDEX are converted before the space and
+-- the name of the index are checked, and are resolved after them.
+--
+g.test_create_index_check_order = function(cg)
+    cg.server:exec(function()
+        local function check(sql, exp)
+            local _, err = box.execute(sql)
+            t.assert_equals(err.message, exp, sql)
+        end
+        box.execute([[CREATE TABLE t (a INT PRIMARY KEY, "B" STRING);]])
+        box.execute([[CREATE VIEW v AS SELECT * FROM t;]])
+        box.execute([[CREATE INDEX i ON t(a);]])
+        box.schema.space.create('nofmt')
+
+        check([[CREATE INDEX i ON nosuch(a COLLATE nosuch);]],
+              "Collation 'nosuch' does not exist")
+        check([[CREATE INDEX i ON nosuch(a + 99999999999999999999);]],
+              "Integer literal 99999999999999999999 exceeds the " ..
+              "supported range [-9223372036854775808, 18446744073709551615]")
+        check([[CREATE INDEX i ON nosuch(nosuch);]],
+              "Space 'nosuch' does not exist")
+        check([[CREATE INDEX i ON v(nosuch);]], "Views can not be indexed")
+        check([[CREATE INDEX i ON nofmt(nosuch);]],
+              "SQL does not support space without format")
+        check([[CREATE INDEX i ON t(nosuch);]],
+              "Index 'i' already exists in space 't'")
+        check([[CREATE INDEX "" ON t(nosuch);]],
+              "Invalid identifier '' (expected printable symbols only " ..
+              "or it is too long)")
+        check([[CREATE INDEX i ON "_space"(nosuch);]],
+              "Can't create or modify index 'i' in space '_space': " ..
+              "can't create index on system space")
+        check([[CREATE INDEX i1 ON t(a, nosuch, a + 1);]],
+              "Can't resolve field 'nosuch'")
+        check([[CREATE INDEX i1 ON t(a, t.a, nosuch);]],
+              "Expressions are prohibited in an index definition")
+
+        local res = box.execute([[CREATE INDEX IF NOT EXISTS i ON
+                                  nosuch(nosuch);]])
+        t.assert_equals(res, {row_count = 0})
+        res = box.execute([[CREATE INDEX IF NOT EXISTS i ON t(nosuch);]])
+        t.assert_equals(res, {row_count = 0})
+
+        -- The number of the columns is checked after the first one.
+        local cols = string.rep(', a', 2000)
+        check("CREATE INDEX i1 ON t(nosuch" .. cols .. ");",
+              "Can't resolve field 'nosuch'")
+        check("CREATE INDEX i1 ON t(a" .. cols .. ");",
+              "The number of columns in index 2001 exceeds the limit (2000)")
+
+        -- The outermost collation is used, unquoted names have legacy form.
+        box.execute([[CREATE INDEX i1 ON t((b) COLLATE "unicode_ci"
+                                           COLLATE "unicode");]])
+        local parts = box.space.t.index.i1.parts
+        t.assert_equals(parts[1].fieldno, 2)
+        t.assert_equals(parts[1].collation, 'unicode')
+
+        box.space.nofmt:drop()
+        box.execute([[DROP VIEW v;]])
+        box.execute([[DROP TABLE t;]])
+    end)
+end

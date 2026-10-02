@@ -561,7 +561,7 @@ sql_code_ast_property(struct Parse *parser, struct Token *table,
 			expr_list_from_ast(parser, property->columns);
 		sql_create_index(parser, table, &property->name, columns,
 				 SQL_INDEX_TYPE_CONSTRAINT_UNIQUE,
-				 SORT_ORDER_ASC, false);
+				 SORT_ORDER_ASC);
 		break;
 	}
 	case SQL_AST_PROPERTY_PRIMARY_KEY: {
@@ -581,7 +581,7 @@ sql_code_ast_property(struct Parse *parser, struct Token *table,
 		}
 		sql_create_index(parser, table, &property->name, columns,
 				 SQL_INDEX_TYPE_CONSTRAINT_PK,
-				 SORT_ORDER_ASC, false);
+				 SORT_ORDER_ASC);
 		break;
 	}
 	case SQL_AST_PROPERTY_DEFAULT: {
@@ -691,22 +691,6 @@ sql_code_create_view(struct Parse *parser, struct ast_create_view *stmt,
 	}
 	sql_create_view(parser, sql, &stmt->name, cols, select,
 			stmt->if_not_exists);
-}
-
-/** Code AST for CREATE INDEX. */
-static void
-sql_code_create_index(struct Parse *parser, struct ast_create_index *stmt)
-{
-	parser->disableLookaside++;
-	sql_get()->lookaside.bDisable++;
-	parser->initiateTTrans = true;
-	struct ExprList *columns = expr_list_from_ast(parser, stmt->columns);
-	if (parser->is_aborted)
-		return;
-	int type = stmt->is_unique ? SQL_INDEX_TYPE_UNIQUE :
-				     SQL_INDEX_TYPE_NON_UNIQUE;
-	sql_create_index(parser, &stmt->table, &stmt->name, columns, type,
-			 SORT_ORDER_ASC, stmt->if_not_exists);
 }
 
 /** Code AST for CREATE TRIGGER. */
@@ -869,9 +853,6 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast, const char *sql)
 		break;
 	case SQL_AST_CREATE_VIEW:
 		sql_code_create_view(parse, &ast->create_view, sql);
-		break;
-	case SQL_AST_CREATE_INDEX:
-		sql_code_create_index(parse, &ast->create_index);
 		break;
 	case SQL_AST_CREATE_TRIGGER:
 		sql_code_create_trigger(parse, &ast->create_trigger, sql);
