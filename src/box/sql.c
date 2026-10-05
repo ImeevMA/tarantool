@@ -1628,15 +1628,6 @@ sql_space_by_token(const struct Token *name)
 	return res;
 }
 
-const struct space *
-sql_space_by_src(const struct SrcList_item *src)
-{
-	struct space *res = space_by_name0(src->zName);
-	if (res != NULL || src->legacy_name == NULL)
-		return res;
-	return space_by_name0(src->legacy_name);
-}
-
 /**
  * Return id of index with the given name. Return UINT32_MAX if the index was
  * not found.
@@ -1692,15 +1683,6 @@ sql_fieldno_by_token(const struct space *space, const struct Token *name)
 	uint32_t res = sql_space_fieldno(space, name_str);
 	sql_xfree(name_str);
 	return res;
-}
-
-uint32_t
-sql_fieldno_by_id(const struct space *space, const struct IdList_item *id)
-{
-	uint32_t res = sql_space_fieldno(space, id->zName);
-	if (res != UINT32_MAX || id->legacy_name == NULL)
-		return res;
-	return sql_space_fieldno(space, id->legacy_name);
 }
 
 /**

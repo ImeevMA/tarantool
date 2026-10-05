@@ -35,35 +35,6 @@
 #include "resolve.h"
 #include "tarantoolInt.h"
 
-struct space *
-sql_lookup_space(struct Parse *parse, struct SrcList_item *space_name)
-{
-	assert(space_name != NULL);
-	assert(space_name->space == NULL);
-	const struct space *space = sql_space_by_src(space_name);
-	if (space == NULL) {
-		diag_set(ClientError, ER_NO_SUCH_SPACE, space_name->zName);
-		parse->is_aborted = true;
-		return NULL;
-	}
-	assert(space != NULL);
-	if (sql_space_def_check_format(space->def) != 0) {
-		parse->is_aborted = true;
-		return NULL;
-	}
-	if (space->index_count == 0 && !space->def->opts.is_view) {
-		diag_set(ClientError, ER_UNSUPPORTED, "SQL",
-			 "spaces without primary key");
-		parse->is_aborted = true;
-		return NULL;
-	}
-	struct space *res = space_by_id(space->def->id);
-	space_name->space = res;
-	if (sqlIndexedByLookup(parse, space_name) != 0)
-		space = NULL;
-	return res;
-}
-
 void
 sql_materialize_select(struct Parse *parse, struct Select *select, int cursor)
 {

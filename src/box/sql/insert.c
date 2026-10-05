@@ -57,15 +57,21 @@ sql_emit_table_types(struct Vdbe *v, struct space_def *def, int reg)
 			  (char *)colls_type, P4_DYNAMIC);
 }
 
+/**
+ * Create the info of an ephemeral space for the rows of an INSERT into the
+ * space with the given definition: the given number of fields, whose numbers
+ * in the space are given (NULL if they are the first fields in order), and a
+ * rowid, which is the only part of the primary key.
+ */
 static struct sql_space_info *
-sql_space_info_new_from_id_list(const struct space_def *def, int len,
-				const struct IdList *list)
+sql_space_info_new_from_fieldnos(const struct space_def *def, int len,
+				 const uint32_t *fieldnos)
 {
 	struct sql_space_info *info = sql_space_info_new(len + 1, 1);
 	assert(len > 0 && len <= (int)def->field_count);
 	struct field_def *fields = def->fields;
 	for (int i = 0; i < len; ++i) {
-		int j = list == NULL ? i : list->a[i].idx;
+		int j = fieldnos == NULL ? i : (int)fieldnos[i];
 		info->types[i] =  fields[j].type;
 		info->coll_ids[i] =  fields[j].coll_id;
 	}
@@ -123,19 +129,27 @@ vdbe_has_space_open(struct Parse *parser, uint32_t space_id)
 }
 
 /**
- * Attempt the transfer optimization of an INSERT into the given space of the
- * tuples of the given source space, see xferOptimization().
+ * Attempt the transfer optimization of an INSERT of the form
+ *
+ *     INSERT INTO dest SELECT * FROM src;
+ *
+ * The raw records are transferred from the given source space to the given
+ * destination space. Columns are not decoded and reassembled, which greatly
+ * improves performance. Raw index records are transferred in the same way.
+ * The optimization is only attempted if the spaces are compatible, see the
+ * comments embedded in the code for details.
+ *
+ * Return TRUE if the optimization is guaranteed to be used. Sometimes it only
+ * works if the destination space is empty, which can only be determined at
+ * run-time. In that case the code for the optimization is generated together
+ * with a test for the destination being empty, which jumps over that code if
+ * the test fails, and FALSE is returned so that the caller goes ahead and
+ * generates an unoptimized transfer. FALSE is also returned if there is no
+ * chance that the optimization can be applied.
  */
 static int
 xfer_space(struct Parse *pParse, struct space *dest, const struct space *src,
 	   int onError);
-
-/* Forward declaration */
-static int
-xferOptimization(Parse * pParse,	/* Parser context */
-		 struct space *dest,
-		 Select * pSelect,	/* A SELECT statement to use as the data source */
-		 int onError);	/* How to handle constraint errors */
 
 /*
  * This routine is called to handle SQL of the following forms:
@@ -175,8 +189,6 @@ xferOptimization(Parse * pParse,	/* Parser context */
  * if <table2> and <table1> are distinct tables but have identical
  * schemas, including all the same indices, then a special optimization
  * is invoked that copies raw records from <table2> over to <table1>.
- * See the xferOptimization() function for the implementation of this
- * template.  This is the 2nd template.
  *
  *         open a write cursor to <table>
  *         open read cursor on <table2>
@@ -234,14 +246,11 @@ xferOptimization(Parse * pParse,	/* Parser context */
  *         end loop
  *      D: cleanup
  */
-void
-sqlInsert(Parse * pParse,	/* Parser context */
-	      SrcList * pTabList,	/* Name of table into which we are inserting */
-	      Select * pSelect,	/* A SELECT statement to use as the data source */
-	      IdList * pColumn,	/* Column names corresponding to IDLIST. */
-	      enum on_conflict_action on_error)
+static void
+insert_emit(struct Parse *pParse, struct space *space, struct Select *pSelect,
+	    const uint32_t *fieldnos, uint32_t fieldno_count,
+	    enum on_conflict_action on_error)
 {
-	char *zTab;		/* Name of the table into which we are inserting */
 	int i, j;		/* Loop counters */
 	Vdbe *v;		/* Generate code into this virtual machine */
 	int nColumn;		/* Number of columns in the data */
@@ -280,17 +289,6 @@ sqlInsert(Parse * pParse,	/* Parser context */
 		pSelect = 0;
 	}
 
-	/* Locate the table into which we will be inserting new information.
-	 */
-	assert(pTabList->nSrc == 1);
-	zTab = pTabList->a[0].zName;
-	if (NEVER(zTab == 0))
-		goto insert_cleanup;
-	struct space *space = sql_lookup_space(pParse, pTabList->a);
-
-	if (space == NULL)
-		goto insert_cleanup;
-
 	/* Figure out if we have any triggers and if the table being
 	 * inserted into is a view
 	 */
@@ -307,34 +305,11 @@ sqlInsert(Parse * pParse,	/* Parser context */
 	 */
 	if (is_view && sql_view_assign_cursors(pParse, space_def->opts.sql) != 0)
 		goto insert_cleanup;
-
-	/* Cannot insert into a read-only table. */
-	if (is_view && tmask == 0) {
-		diag_set(ClientError, ER_ALTER_SPACE, space->def->name,
-			 "space is a view");
-		pParse->is_aborted = true;
-		goto insert_cleanup;
-	}
+	assert(!is_view || tmask != 0);
 
 	/* Allocate a VDBE. */
 	v = sqlGetVdbe(pParse);
 	sqlVdbeCountChanges(v);
-
-	/* If the statement is of the form
-	 *
-	 *       INSERT INTO <table1> SELECT * FROM <table2>;
-	 *
-	 * Then special optimizations can be applied that make the transfer
-	 * very fast and which reduce fragmentation of indices.
-	 *
-	 * This is the 2nd template.
-	 */
-	if (pColumn == NULL &&
-	    xferOptimization(pParse, space, pSelect, on_error)) {
-		assert(trigger == NULL);
-		assert(pList == 0);
-		goto insert_cleanup;
-	}
 
 	/*
 	 * Allocate registers for holding the tupleid of the new
@@ -346,44 +321,10 @@ sqlInsert(Parse * pParse,	/* Parser context */
 	pParse->nMem += space_def->field_count + 1;
 	regData = regTupleid + 1;
 
-	/* If the INSERT statement included an IDLIST term, then make sure
-	 * all elements of the IDLIST really are columns of the table and
-	 * remember the column indices.
-	 */
-	/* Create bitmask to mark used columns of the table. */
-	void *used_columns = tt_static_buf();
-	/* The size of used_columns buffer is checked during compilation time
-	 * using SQL_MAX_COLUMN constant.
-	 */
-	memset(used_columns, 0, (space_def->field_count + 7) / 8);
 	bIdListInOrder = 1;
-	if (pColumn) {
-		for (i = 0; i < pColumn->nId; i++) {
-			pColumn->a[i].idx = -1;
-		}
-		for (i = 0; i < pColumn->nId; i++) {
-			uint32_t id = sql_fieldno_by_id(space, &pColumn->a[i]);
-			if (id == UINT32_MAX) {
-				diag_set(ClientError,
-					 ER_NO_SUCH_FIELD_NAME_IN_SPACE,
-					 pColumn->a[i].zName,
-					 pTabList->a[0].zName);
-				pParse->is_aborted = true;
-				goto insert_cleanup;
-			}
-			pColumn->a[i].idx = id;
-			if ((uint32_t)i != id)
-				bIdListInOrder = 0;
-			if (bit_test(used_columns, id)) {
-				const char *err = "table id list: duplicate "\
-						  "column name %s";
-				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-					 tt_sprintf(err, pColumn->a[i].zName));
-				pParse->is_aborted = true;
-				goto insert_cleanup;
-			}
-			bit_set(used_columns, id);
-		}
+	for (i = 0; i < (int)fieldno_count; i++) {
+		if ((uint32_t)i != fieldnos[i])
+			bIdListInOrder = 0;
 	}
 
 	int reg = ++pParse->nMem;
@@ -426,23 +367,9 @@ sqlInsert(Parse * pParse,	/* Parser context */
 		nColumn = pList != NULL ? pList->nExpr : 0;
 	}
 
-	if (pColumn == NULL && nColumn != 0 &&
-	    nColumn != (int)space_def->field_count) {
-		const char *err =
-			"table %s has %d columns but %d values were supplied";
-		err = tt_sprintf(err, pTabList->a[0].zName,
-				 space_def->field_count, nColumn);
-		diag_set(ClientError, ER_SQL_PARSER_GENERIC, err);
-		pParse->is_aborted = true;
-		goto insert_cleanup;
-	}
-	if (pColumn != 0 && nColumn != pColumn->nId) {
-		const char *err = "%d values for %d columns";
-		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-			 tt_sprintf(err, nColumn, pColumn->nId));
-		pParse->is_aborted = true;
-		goto insert_cleanup;
-	}
+	assert(fieldnos != NULL || nColumn == 0 ||
+	       nColumn == (int)space_def->field_count);
+	assert(fieldnos == NULL || nColumn == (int)fieldno_count);
 
 	/* Invoke the coroutine to extract information from the SELECT
 	 * and add it to a transient table srcTab. The code generated
@@ -490,8 +417,8 @@ sqlInsert(Parse * pParse,	/* Parser context */
 		 * other parts.
 		 */
 		struct sql_space_info *info =
-			sql_space_info_new_from_id_list(space_def, nColumn,
-							pColumn);
+			sql_space_info_new_from_fieldnos(space_def, nColumn,
+							 fieldnos);
 		sqlVdbeAddOp4(v, OP_OpenTEphemeral, reg_eph, 0, 0,
 			      (char *)info, P4_DYNAMIC);
 		sqlVdbeAddOp3(v, OP_IteratorOpen, srcTab, 0, reg_eph);
@@ -549,14 +476,14 @@ sqlInsert(Parse * pParse,	/* Parser context */
 		/* Create the new column data
 		 */
 		for (i = j = 0; i < (int)space_def->field_count; i++) {
-			if (pColumn) {
-				for (j = 0; j < pColumn->nId; j++) {
-					if (pColumn->a[j].idx == i)
+			if (fieldnos != NULL) {
+				for (j = 0; j < (int)fieldno_count; j++) {
+					if ((int)fieldnos[j] == i)
 						break;
 				}
 			}
-			if ((!useTempTable && !pList)
-			    || (pColumn && j >= pColumn->nId)) {
+			if ((!useTempTable && !pList) ||
+			    (fieldnos != NULL && j >= (int)fieldno_count)) {
 				int reg = regCols + i + 1;
 				if (i == (int)autoinc_fieldno)
 					sqlVdbeAddOp2(v, OP_Integer, -1, reg);
@@ -571,7 +498,7 @@ sqlInsert(Parse * pParse,	/* Parser context */
 							pList->a[j].pExpr,
 							regCols + i + 1);
 			}
-			if (pColumn == 0)
+			if (fieldnos == NULL)
 				j++;
 		}
 
@@ -603,16 +530,16 @@ sqlInsert(Parse * pParse,	/* Parser context */
 		 */
 		for (i = 0; i < (int) space_def->field_count; i++) {
 			int iRegStore = regData + i;
-			if (pColumn == 0) {
+			if (fieldnos == NULL) {
 				j = i;
 			} else {
-				for (j = 0; j < pColumn->nId; j++) {
-					if (pColumn->a[j].idx == i)
+				for (j = 0; j < (int)fieldno_count; j++) {
+					if ((int)fieldnos[j] == i)
 						break;
 				}
 			}
-			if (j < 0 || nColumn == 0
-			    || (pColumn && j >= pColumn->nId)) {
+			if (j < 0 || nColumn == 0 ||
+			    (fieldnos != NULL && j >= (int)fieldno_count)) {
 				sqlVdbeAddOp2(v, OP_Null, 0, iRegStore);
 			} else if (useTempTable) {
 				if (i == (int) autoinc_fieldno) {
@@ -743,17 +670,14 @@ sqlInsert(Parse * pParse,	/* Parser context */
 	}
 
  insert_cleanup:
-	sqlSrcListDelete(pTabList);
 	sql_expr_list_delete(pList);
 	sql_select_delete(pSelect);
-	sqlIdListDelete(pColumn);
 	sql_xfree(aRegIdx);
 }
 
 void
 sql_emit_insert(struct Parse *parser, struct rast_insert *insert)
 {
-	struct space_def *def = insert->space->def;
 	if (insert->xfer_source != NULL) {
 		sqlVdbeCountChanges(sqlGetVdbe(parser));
 		if (xfer_space(parser, insert->space, insert->xfer_source,
@@ -766,21 +690,8 @@ sql_emit_insert(struct Parse *parser, struct rast_insert *insert)
 		if (parser->is_aborted)
 			return;
 	}
-	struct SrcList *src = sql_src_list_new();
-	src->a[0].zName = sql_xstrdup(def->name);
-	struct IdList *columns = NULL;
-	if (insert->fieldnos != NULL) {
-		columns = sql_xmalloc0(sizeof(*columns));
-		columns->nId = insert->fieldno_count;
-		columns->a = sql_xmalloc0(insert->fieldno_count *
-					  sizeof(columns->a[0]));
-		for (uint32_t i = 0; i < insert->fieldno_count; ++i) {
-			uint32_t fieldno = insert->fieldnos[i];
-			columns->a[i].zName =
-				sql_xstrdup(def->fields[fieldno].name);
-		}
-	}
-	sqlInsert(parser, src, select, columns, insert->action);
+	insert_emit(parser, insert->space, select, insert->fieldnos,
+		    insert->fieldno_count, insert->action);
 }
 
 void
@@ -970,91 +881,6 @@ sql_index_is_xfer_compatible(const struct index_def *dest,
 	return key_part_cmp(src->key_def->parts, src->key_def->part_count,
 			    dest->key_def->parts,
 			    dest->key_def->part_count) == 0;
-}
-
-/*
- * Attempt the transfer optimization on INSERTs of the form
- *
- *     INSERT INTO tab1 SELECT * FROM tab2;
- *
- * The xfer optimization transfers raw records from tab2 over to tab1.
- * Columns are not decoded and reassembled, which greatly improves
- * performance.  Raw index records are transferred in the same way.
- *
- * The xfer optimization is only attempted if tab1 and tab2 are compatible.
- * There are lots of rules for determining compatibility - see comments
- * embedded in the code for details.
- *
- * This routine returns TRUE if the optimization is guaranteed to be used.
- * Sometimes the xfer optimization will only work if the destination table
- * is empty - a factor that can only be determined at run-time.  In that
- * case, this routine generates code for the xfer optimization but also
- * does a test to see if the destination table is empty and jumps over the
- * xfer optimization code if the test fails.  In that case, this routine
- * returns FALSE so that the caller will know to go ahead and generate
- * an unoptimized transfer.  This routine also returns FALSE if there
- * is no chance that the xfer optimization can be applied.
- */
-static int
-xferOptimization(Parse * pParse,	/* Parser context */
-		 struct space *dest,
-		 Select * pSelect,	/* A SELECT statement to use as the data source */
-		 int onError)		/* How to handle constraint errors */
-{
-	ExprList *pEList;	/* The result set of the SELECT */
-	struct SrcList_item *pItem;	/* An element of pSelect->pSrc */
-
-	if (pSelect == NULL)
-		return 0;	/* Must be of the form  INSERT INTO ... SELECT ... */
-	assert(pSelect->pSrc);	/* allocated even if there is no FROM clause */
-	if (pSelect->pSrc->nSrc != 1) {
-		return 0;	/* FROM clause must have exactly one term */
-	}
-	if (pSelect->pSrc->a[0].pSelect) {
-		return 0;	/* FROM clause cannot contain a subquery */
-	}
-	if (pSelect->pWhere) {
-		return 0;	/* SELECT may not have a WHERE clause */
-	}
-	if (pSelect->pOrderBy) {
-		return 0;	/* SELECT may not have an ORDER BY clause */
-	}
-	/* Do not need to test for a HAVING clause.  If HAVING is present but
-	 * there is no ORDER BY, we will get an error.
-	 */
-	if (pSelect->pGroupBy) {
-		return 0;	/* SELECT may not have a GROUP BY clause */
-	}
-	if (pSelect->pLimit) {
-		return 0;	/* SELECT may not have a LIMIT clause */
-	}
-	assert(pSelect->pOffset == 0);	/* Must be so if pLimit==0 */
-	if (pSelect->pPrior) {
-		return 0;	/* SELECT may not be a compound query */
-	}
-	if (pSelect->selFlags & SF_Distinct) {
-		return 0;	/* SELECT may not be DISTINCT */
-	}
-	pEList = pSelect->pEList;
-	assert(pEList != 0);
-	if (pEList->nExpr != 1) {
-		return 0;	/* The result set must have exactly one column */
-	}
-	assert(pEList->a[0].pExpr);
-	if (pEList->a[0].pExpr->op != TK_ASTERISK) {
-		return 0;	/* The result set must be the special operator "*" */
-	}
-
-	/* At this point we have established that the statement is of the
-	 * correct syntactic form to participate in this optimization.  Now
-	 * we have to check the semantics.
-	 */
-	pItem = pSelect->pSrc->a;
-	const struct space *src = sql_space_by_src(pItem);
-	/* FROM clause does not contain a real table. */
-	if (src == NULL)
-		return 0;
-	return xfer_space(pParse, dest, src, onError);
 }
 
 static int

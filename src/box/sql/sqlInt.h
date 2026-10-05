@@ -1919,7 +1919,7 @@ struct Parse {
 	    opflag |= OPFLAG_OE_ROLLBACK; \
 } while (0)
 
-/* OP_RowData: xferOptimization started processing */
+/* OP_RowData: xfer_space() started processing */
 #ifdef SQL_TEST
 #define OPFLAG_XFER_OPT      0x01
 #endif
@@ -2586,9 +2586,6 @@ sql_create_view(struct Parse *parse_context, const char *sql,
 int
 sql_view_assign_cursors(struct Parse *parse, const char *view_stmt);
 
-void sqlInsert(Parse *, SrcList *, Select *, IdList *,
-	       enum on_conflict_action);
-
 /** Emit VDBE bytecode for the given resolved INSERT statement. */
 void
 sql_emit_insert(struct Parse *parser, struct rast_insert *insert);
@@ -2707,28 +2704,6 @@ sqlSelectNew(struct ExprList *pEList, struct SrcList *pSrc, struct Expr *pWhere,
 	     struct ExprList *pGroupBy, struct Expr *pHaving,
 	     struct ExprList *pOrderBy, uint32_t selFlags, struct Expr *pLimit,
 	     struct Expr *pOffset);
-
-/**
- * While a SrcList can in general represent multiple spaces and
- * subqueries (as in the FROM clause of a SELECT statement) in
- * this case it contains the name of a single table, as one might
- * find in an INSERT, DELETE, or UPDATE statement. Look up that
- * space in the cache.
- * Set an error message and return NULL if the table name is not
- * found or if space doesn't have format.
- *
- * The following fields are initialized appropriate in src_list:
- *
- *    src_list->a[0].space      Pointer to the space object.
- *    src_list->a[0].pIndex     Pointer to the INDEXED BY index,
- *                              if there is one.
- *
- * @param parse Parsing context.
- * @param space_name Space element.
- * @retval Space object if found, NULL otherwise.
- */
-struct space *
-sql_lookup_space(struct Parse *parse, struct SrcList_item *space_name);
 
 /** Generate the code for the given resolved DELETE statement. */
 void
@@ -2854,14 +2829,6 @@ const struct space *
 sql_space_by_token(const struct Token *name);
 
 /**
- * Return space with name defined by the element of struct SrcList. A second
- * lookup will be performed if the space is not found on the first try and field
- * legacy_name of the src is not NULL. Return NULL if the space was not found.
- */
-const struct space *
-sql_space_by_src(const struct SrcList_item *src);
-
-/**
  * Return the fieldno of the field with the given name. Return UINT32_MAX if the
  * field was not found.
  */
@@ -2891,15 +2858,6 @@ sql_index_id_by_src(const struct SrcList_item *src);
  */
 uint32_t
 sql_fieldno_by_token(const struct space *space, const struct Token *name);
-
-/**
- * Return the fieldno of the field with the name defined by the element of
- * IdList. A second lookup will be performed if the field is not found on the
- * first try and field legacy_name of the id is not NULL. Return UINT32_MAX if
- * the field was not found.
- */
-uint32_t
-sql_fieldno_by_id(const struct space *space, const struct IdList_item *id);
 
 /**
  * Return the fieldno of the field with the name defined by the expression. A

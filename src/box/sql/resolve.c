@@ -150,7 +150,7 @@ struct sql_resolve_context {
 	struct sql_resolve_checked *checked;
 	/**
 	 * Whether the SELECT resolved next is the single row of VALUES of an
-	 * INSERT, whose values sqlInsert() resolves without allowing aggregate
+	 * INSERT, whose values are resolved without allowing aggregate
 	 * functions.
 	 */
 	bool is_insert_row;
@@ -4045,9 +4045,9 @@ resolve_nested_select(struct sql_resolve_context *ctx,
 
 /**
  * Return the space whose tuples are copied as they are by the given INSERT
- * with the given resolved SELECT producing its rows, as sqlInsert() and
- * xferOptimization() check: SELECT * from a single space without any other
- * clauses, and no column list and no WITH clauses, or NULL.
+ * with the given resolved SELECT producing its rows: SELECT * from a single
+ * space without any other clauses, and no column list and no WITH clauses, or
+ * NULL.
  */
 static struct space *
 insert_xfer_source(const struct ast_insert *ast,
@@ -4075,9 +4075,9 @@ insert_xfer_source(const struct ast_insert *ast,
 }
 
 /**
- * Resolve the given AST INSERT statement into the given rast_insert. As
- * sqlInsert() does, the space and the column list are checked before the
- * rows, and the number of values in a row after them.
+ * Resolve the given AST INSERT statement into the given rast_insert. As in
+ * the legacy code, the space and the column list are checked before the rows,
+ * and the number of values in a row after them.
  *
  * Returns 0 on success and -1 on error.
  */

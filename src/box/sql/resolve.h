@@ -371,9 +371,9 @@ struct rast_insert {
 	/** SELECT producing the rows, or NULL for DEFAULT VALUES. */
 	struct rast_select *select;
 	/**
-	 * Space whose tuples are copied as they are, as xferOptimization()
-	 * does, if the rows are produced by SELECT * from a single space
-	 * without any other clauses, or NULL.
+	 * Space whose tuples are copied as they are, see xfer_space(), if the
+	 * rows are produced by SELECT * from a single space without any other
+	 * clauses, or NULL.
 	 */
 	struct space *xfer_source;
 	/** Action on conflict. */
