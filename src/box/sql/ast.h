@@ -882,6 +882,22 @@ int
 sql_ast_check_select(struct Parse *parser, struct ast_select *select);
 
 /**
+ * Return the names of the spaces the given AST SELECT of a view refers to: the
+ * sources of the SELECT, of its subqueries and of the subqueries of its
+ * expressions, except the subqueries of the operands of an always FALSE
+ * expression and the tables of WITH clauses.
+ */
+struct sql_view_refs *
+sql_ast_view_refs(struct ast_select *select);
+
+/**
+ * Return the number of the sources of the given AST SELECT, including the
+ * sources of its subquery sources.
+ */
+uint32_t
+sql_ast_source_count(struct ast_select *select);
+
+/**
  * Convert `struct ast_trigger` to `struct sql_trigger`.
  *
  * Return NULL on error.

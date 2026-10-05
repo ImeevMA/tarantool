@@ -907,12 +907,13 @@ int
 sql_view_assign_cursors(struct Parse *parse, const char *view_stmt)
 {
 	assert(view_stmt != NULL);
-	struct Select *select = sql_view_compile(view_stmt);
-	if (select == NULL)
-		return -1;
-	sqlSrcListAssignCursors(parse, select->pSrc);
-	sql_select_delete(select);
-	return 0;
+	struct Parse parser;
+	sql_parser_create(&parser, SQL_DEFAULT_FLAGS);
+	struct ast_select *ast = sql_parse_view(&parser, view_stmt);
+	if (ast != NULL)
+		parse->nTab += sql_ast_source_count(ast);
+	sql_parser_destroy(&parser);
+	return ast != NULL ? 0 : -1;
 }
 
 /**

@@ -1826,3 +1826,240 @@ sql_ast_new(struct region *region)
 	memset(res, 0, sizeof(*res));
 	return res;
 }
+
+/**
+ * Check if the given AST expression is always FALSE: it is FALSE, IN with an
+ * empty list, or AND with an always FALSE operand.
+ */
+static bool
+ast_is_false(struct ast_expr *expr)
+{
+	while (expr->op == TK_PARENTHESES)
+		expr = expr->left;
+	switch (expr->op) {
+	case TK_FALSE:
+		return true;
+	case TK_IN:
+		return expr->right->op == TK_VECTOR &&
+		       (expr->right->list == NULL ||
+			expr->right->list->len == 0);
+	case TK_AND:
+		return ast_is_false(expr->left) || ast_is_false(expr->right);
+	default:
+		return false;
+	}
+}
+
+/**
+ * Collect the names of the spaces the given AST SELECT refers to: for every
+ * part of a compound SELECT, starting from the rightmost one, the names of its
+ * sources, then the names from the subqueries of its expressions, then the
+ * names from its subquery sources. The WITH clauses and the ON clauses are
+ * skipped.
+ */
+static void
+ast_view_refs_select(struct sql_view_refs **refs, struct ast_select *select);
+
+/**
+ * Collect the space names of the subqueries of the given AST expression. The
+ * operands of an always FALSE expression are skipped.
+ */
+static void
+ast_view_refs_expr(struct sql_view_refs **refs, struct ast_expr *expr);
+
+/** Collect the space names of the given AST expression list. */
+static void
+ast_view_refs_list(struct sql_view_refs **refs, struct ast_expr_list *list)
+{
+	if (list == NULL)
+		return;
+	struct ast_expr_list_entry *entry;
+	stailq_foreach_entry(entry, &list->head, link)
+		ast_view_refs_expr(refs, entry->expr);
+}
+
+static void
+ast_view_refs_expr(struct sql_view_refs **refs, struct ast_expr *expr)
+{
+	if (expr == NULL)
+		return;
+	while (expr->op == TK_PARENTHESES)
+		expr = expr->left;
+	switch (expr->op) {
+	case TK_AND:
+		if (ast_is_false(expr))
+			return;
+		FALLTHROUGH;
+	case TK_OR:
+	case TK_LT:
+	case TK_LE:
+	case TK_GT:
+	case TK_GE:
+	case TK_EQ:
+	case TK_NE:
+	case TK_BITAND:
+	case TK_BITOR:
+	case TK_LSHIFT:
+	case TK_RSHIFT:
+	case TK_PLUS:
+	case TK_MINUS:
+	case TK_STAR:
+	case TK_SLASH:
+	case TK_REM:
+	case TK_CONCAT:
+		ast_view_refs_expr(refs, expr->left);
+		ast_view_refs_expr(refs, expr->right);
+		break;
+	case TK_COLLATE:
+	case TK_CAST:
+	case TK_NOT:
+	case TK_BITNOT:
+	case TK_NOTNULL:
+	case TK_ISNULL:
+	case TK_UPLUS:
+	case TK_UMINUS:
+		ast_view_refs_expr(refs, expr->left);
+		break;
+	case TK_ARRAY:
+	case TK_MAP:
+	case TK_VECTOR:
+		ast_view_refs_list(refs, expr->list);
+		break;
+	case TK_GETITEM:
+		ast_view_refs_list(refs, expr->list);
+		ast_view_refs_expr(refs, expr->left);
+		break;
+	case TK_FUNCTION:
+		if (expr->right != NULL)
+			ast_view_refs_list(refs, expr->right->list);
+		break;
+	case TK_BETWEEN:
+	case TK_CASE:
+		ast_view_refs_expr(refs, expr->left);
+		ast_view_refs_list(refs, expr->list);
+		break;
+	case TK_IN:
+		if (ast_is_false(expr))
+			return;
+		ast_view_refs_expr(refs, expr->left);
+		if (expr->right->op == TK_SELECT)
+			ast_view_refs_select(refs, expr->right->select);
+		else
+			ast_view_refs_list(refs, expr->right->list);
+		break;
+	case TK_EXISTS:
+	case TK_SELECT:
+		ast_view_refs_select(refs, expr->select);
+		break;
+	default:
+		break;
+	}
+}
+
+/** Add the given space name to the given names if it is not there. */
+static void
+ast_view_refs_add(struct sql_view_refs **refs, const struct Token *name)
+{
+	char *str = sql_name_new(name->z, name->n);
+	for (uint32_t i = 0; i < (*refs)->count; ++i) {
+		if (strcmp((*refs)->names[i], str) == 0) {
+			sql_xfree(str);
+			return;
+		}
+	}
+	uint32_t count = (*refs)->count + 1;
+	*refs = xrealloc(*refs, sizeof(**refs) + count * sizeof(char *));
+	(*refs)->names[(*refs)->count++] = str;
+}
+
+static void
+ast_view_refs_select(struct sql_view_refs **refs, struct ast_select *select)
+{
+	if (select == NULL)
+		return;
+	struct ast_select *part = select;
+	while (true) {
+		struct ast_source *src;
+		if (part->sources != NULL) {
+			stailq_foreach_entry(src, &part->sources->head, link) {
+				if (src->name.n > 0)
+					ast_view_refs_add(refs, &src->name);
+			}
+		}
+		ast_view_refs_list(refs, part->columns);
+		ast_view_refs_expr(refs, part->where);
+		ast_view_refs_list(refs, part->group_by);
+		ast_view_refs_expr(refs, part->having);
+		ast_view_refs_list(refs, part->order_by);
+		ast_view_refs_expr(refs, part->limit);
+		ast_view_refs_expr(refs, part->offset);
+		if (part->sources != NULL) {
+			stailq_foreach_entry(src, &part->sources->head, link)
+				ast_view_refs_select(refs, src->select);
+		}
+		part = rlist_prev_entry(part, link);
+		if (part == select)
+			break;
+	}
+}
+
+/**
+ * Check if the given name is a prefix of the name of a table of the WITH
+ * clause of the given AST SELECT or of the subquery sources of the SELECT,
+ * recursively. The WITH clauses of the tables of WITH clauses are skipped.
+ */
+static bool
+ast_has_cte(struct ast_select *select, const char *name)
+{
+	size_t len = strlen(name);
+	if (select->with != NULL) {
+		struct ast_with_entry *entry;
+		stailq_foreach_entry(entry, &select->with->head, link) {
+			char *cte = sql_name_new(entry->name.z, entry->name.n);
+			bool is_match = strncmp(name, cte, len) == 0;
+			sql_xfree(cte);
+			if (is_match)
+				return true;
+		}
+	}
+	if (select->sources == NULL)
+		return false;
+	struct ast_source *src;
+	stailq_foreach_entry(src, &select->sources->head, link) {
+		if (src->select != NULL && ast_has_cte(src->select, name))
+			return true;
+	}
+	return false;
+}
+
+struct sql_view_refs *
+sql_ast_view_refs(struct ast_select *select)
+{
+	struct sql_view_refs *refs = xmalloc(sizeof(*refs));
+	refs->count = 0;
+	ast_view_refs_select(&refs, select);
+	uint32_t count = 0;
+	for (uint32_t i = 0; i < refs->count; ++i) {
+		if (ast_has_cte(select, refs->names[i]))
+			sql_xfree(refs->names[i]);
+		else
+			refs->names[count++] = refs->names[i];
+	}
+	refs->count = count;
+	return refs;
+}
+
+uint32_t
+sql_ast_source_count(struct ast_select *select)
+{
+	uint32_t count = 0;
+	if (select->sources == NULL)
+		return 0;
+	struct ast_source *src;
+	stailq_foreach_entry(src, &select->sources->head, link) {
+		count++;
+		if (src->select != NULL)
+			count += sql_ast_source_count(src->select);
+	}
+	return count;
+}

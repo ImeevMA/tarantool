@@ -2271,10 +2271,11 @@ struct Expr *
 sql_parse_function(struct Parse *parser, const char *sql);
 
 /**
- * Run the parser on the given view definition.
- * Return the parsed SELECT on success, or NULL on error.
+ * Run the parser on the given view definition and check the AST as
+ * sql_ast_check_select() does. Return the AST of the SELECT on success, or NULL
+ * on error.
  */
-struct Select *
+struct ast_select *
 sql_parse_view(struct Parse *parser, const char *sql);
 
 /**
@@ -2594,9 +2595,8 @@ sql_create_view(struct Parse *parse_context, const char *sql,
 		struct Select *view_select, bool if_not_exists);
 
 /**
- * Compile view, i.e. create struct Select from
- * 'CREATE VIEW...' string, and assign cursors to each table from
- * 'FROM' clause.
+ * Parse the given view definition and assign cursors to each source of its
+ * SELECT and of its subquery sources.
  *
  * @param parse Parsing context.
  * @param view_stmt String containing 'CREATE VIEW' statement.

@@ -68,6 +68,7 @@ sql_built_in_functions_cache_free(void);
 struct Expr;
 struct Parse;
 struct Select;
+struct SrcList;
 struct Table;
 struct sql_trigger;
 struct space_def;
@@ -80,12 +81,24 @@ struct func;
 struct Expr *
 sql_expr_compile(const char *expr);
 
+/** Names of the spaces the SELECT of a view refers to. */
+struct sql_view_refs {
+	/** Number of the names. */
+	uint32_t count;
+	/** Names of the spaces. */
+	char *names[];
+};
+
 /**
- * Perform parsing of provided view definition.
- * Return the parsed SELECT on success, or NULL on error.
+ * Parse the given view definition and return the names of the spaces it refers
+ * to, or NULL on error.
  */
-struct Select *
-sql_view_compile(const char *view_stmt);
+struct sql_view_refs *
+sql_view_refs_new(const char *view_stmt);
+
+/** Delete the given names of the spaces a view refers to. */
+void
+sql_view_refs_delete(struct sql_view_refs *refs);
 
 /**
  * Perform parsing of provided trigger definition.
@@ -247,51 +260,6 @@ sql_parser_destroy(struct Parse *parser);
  */
 void
 sql_select_delete(struct Select *select);
-
-/**
- * Collect all table names within given select, including
- * ones from sub-queries, expressions, FROM clause etc.
- * Return those names as a list.
- *
- * @param select Select to be investigated.
- * @retval List containing all involved table names.
- */
-struct SrcList *
-sql_select_expand_from_tables(struct Select *select);
-
-/**
- * Check if @a name matches with at least one of CTE names typed
- * in <WITH> clauses within @a select except <WITH>s that are
- * nested within other <WITH>s.
- *
- * @param select Select which may contain CTE.
- * @param name The name of CTE, that may contained.
- * @retval true Has CTE with @a name.
- * @retval false Hasn't CTE with @a name.
-*/
-bool
-sql_select_constains_cte(struct Select *select, const char *name);
-
-/**
- * Temporary getter in order to avoid including sqlInt.h
- * in alter.cc.
- *
- * @param list List to be examined.
- * @retval Count of 'FROM' tables in given select.
- */
-int
-sql_src_list_entry_count(const struct SrcList *list);
-
-/**
- * Temporary getter in order to avoid including sqlInt.h
- * in alter.cc.
- *
- * @param list List to be examined.
- * @param i Ordinal number of entry.
- * @retval Name of i-th entry.
- */
-const char *
-sql_src_list_entry_name(const struct SrcList *list, int i);
 
 /** Delete an entire SrcList including all its substructure. */
 void

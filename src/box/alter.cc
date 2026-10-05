@@ -1900,117 +1900,94 @@ alter_space_move_indexes(struct alter_space *alter, uint32_t begin,
 }
 
 /**
- * Walk through all spaces from 'FROM' clause of given select,
- * and update their view reference counters.
+ * Update the view reference counters of the spaces with the given names, which
+ * a view refers to. The tables of the WITH clauses of the view are not in the
+ * names: they are not spaces.
  *
- * @param select Tables from this select to be updated.
+ * @param refs Names of the spaces.
  * @param update_value +1 on view creation, -1 on drop.
  * @retval 0 on success, -1 on error (diag is set).
  */
 static int
-update_view_references(struct Select *select, int update_value)
+update_view_references(const struct sql_view_refs *refs, int update_value)
 {
 	assert(update_value == 1 || update_value == -1);
-	struct SrcList *list = sql_select_expand_from_tables(select);
-	int from_tables_count = sql_src_list_entry_count(list);
 	/* Firstly check that everything is correct. */
-	for (int i = 0; i < from_tables_count; ++i) {
-		const char *space_name = sql_src_list_entry_name(list, i);
-		assert(space_name != NULL);
-		/*
-		 * Views are allowed to contain CTEs. CTE is a
-		 * temporary object, created and destroyed at SQL
-		 * runtime (it is represented by an ephemeral
-		 * table). So, it is absent in space cache and as
-		 * a consequence we can't increment its reference
-		 * counter. Skip iteration.
-		 */
-		if (sql_select_constains_cte(select, space_name))
-			continue;
+	for (uint32_t i = 0; i < refs->count; ++i) {
+		const char *space_name = refs->names[i];
 		struct space *space = space_by_name0(space_name);
 		if (space == NULL) {
 			diag_set(ClientError, ER_NO_SUCH_SPACE, space_name);
-			goto error;
+			return -1;
 		}
 		if (space_is_temporary(space)) {
 			diag_set(ClientError, ER_UNSUPPORTED,
 				 "CREATE VIEW", "temporary spaces");
-			goto error;
+			return -1;
 		}
 	}
 	/* Secondly do the job. */
-	for (int i = 0; i < from_tables_count; ++i) {
-		const char *space_name = sql_src_list_entry_name(list, i);
-		/* See comment before sql_select_constains_cte call above. */
-		if (sql_select_constains_cte(select, space_name))
-			continue;
-		struct space *space = space_by_name0(space_name);
+	for (uint32_t i = 0; i < refs->count; ++i) {
+		struct space *space = space_by_name0(refs->names[i]);
 		assert(space->def->view_ref_count > 0 || update_value > 0);
 		space->def->view_ref_count += update_value;
 	}
-	sqlSrcListDelete(list);
 	return 0;
-error:
-	sqlSrcListDelete(list);
-	return -1;
 }
 
 /**
  * Trigger which is fired to commit creation of new SQL view.
- * Its purpose is to release memory of SELECT.
+ * Its purpose is to release memory of the names of the spaces.
  */
 static int
 on_create_view_commit(struct trigger *trigger, void *event)
 {
 	(void) event;
-	struct Select *select = (struct Select *)trigger->data;
-	sql_select_delete(select);
+	sql_view_refs_delete((struct sql_view_refs *)trigger->data);
 	return 0;
 }
 
 /**
  * Trigger which is fired to rollback creation of new SQL view.
  * Decrements view reference counters of dependent spaces and
- * releases memory for SELECT.
+ * releases memory of their names.
  */
 static int
 on_create_view_rollback(struct trigger *trigger, void *event)
 {
 	(void) event;
-	struct Select *select = (struct Select *)trigger->data;
-	int rc = update_view_references(select, -1);
+	struct sql_view_refs *refs = (struct sql_view_refs *)trigger->data;
+	int rc = update_view_references(refs, -1);
 	assert(rc == 0); (void)rc;
-	sql_select_delete(select);
+	sql_view_refs_delete(refs);
 	return 0;
 }
 
 /**
  * Trigger which is fired to commit drop of SQL view.
- * Its purpose is to decrement view reference counters of
- * dependent spaces and release memory for SELECT.
+ * Its purpose is to release memory of the names of the spaces.
  */
 static int
 on_drop_view_commit(struct trigger *trigger, void *event)
 {
 	(void) event;
-	struct Select *select = (struct Select *)trigger->data;
-	sql_select_delete(select);
+	sql_view_refs_delete((struct sql_view_refs *)trigger->data);
 	return 0;
 }
 
 /**
  * This trigger is invoked to rollback drop of SQL view.
- * Release memory for struct SELECT compiled in
- * on_replace_dd_space trigger.
+ * Increments view reference counters of dependent spaces and
+ * releases memory of their names.
  */
 static int
 on_drop_view_rollback(struct trigger *trigger, void *event)
 {
 	(void) event;
-	struct Select *select = (struct Select *)trigger->data;
-	int rc = update_view_references(select, 1);
+	struct sql_view_refs *refs = (struct sql_view_refs *)trigger->data;
+	int rc = update_view_references(refs, 1);
 	assert(rc == 0); (void)rc;
-	sql_select_delete(select);
+	sql_view_refs_delete(refs);
 	return 0;
 }
 
@@ -2323,27 +2300,28 @@ on_replace_dd_space(struct trigger * /* trigger */, void *event)
 			return -1;
 		txn_stmt_on_rollback(stmt, on_rollback);
 		if (def->opts.is_view) {
-			struct Select *select = sql_view_compile(def->opts.sql);
-			if (select == NULL)
+			struct sql_view_refs *refs =
+				sql_view_refs_new(def->opts.sql);
+			if (refs == NULL)
 				return -1;
-			auto select_guard = make_scoped_guard([=] {
-				sql_select_delete(select);
+			auto refs_guard = make_scoped_guard([=] {
+				sql_view_refs_delete(refs);
 			});
-			if (update_view_references(select, 1) != 0)
+			if (update_view_references(refs, 1) != 0)
 				return -1;
 			struct trigger *on_commit_view =
 				txn_alter_trigger_new(on_create_view_commit,
-						      select);
+						      refs);
 			if (on_commit_view == NULL)
 				return -1;
 			txn_stmt_on_commit(stmt, on_commit_view);
 			struct trigger *on_rollback_view =
 				txn_alter_trigger_new(on_create_view_rollback,
-						      select);
+						      refs);
 			if (on_rollback_view == NULL)
 				return -1;
 			txn_stmt_on_rollback(stmt, on_rollback_view);
-			select_guard.is_active = false;
+			refs_guard.is_active = false;
 		}
 	} else if (new_tuple == NULL) { /* DELETE */
 		if (access_check_ddl(old_space->def->name, old_space->def->uid,
@@ -2422,28 +2400,28 @@ on_replace_dd_space(struct trigger * /* trigger */, void *event)
 			return -1;
 		txn_stmt_on_rollback(stmt, on_rollback);
 		if (old_space->def->opts.is_view) {
-			struct Select *select =
-				sql_view_compile(old_space->def->opts.sql);
-			if (select == NULL)
+			struct sql_view_refs *refs =
+				sql_view_refs_new(old_space->def->opts.sql);
+			if (refs == NULL)
 				return -1;
-			auto select_guard = make_scoped_guard([=] {
-				sql_select_delete(select);
+			auto refs_guard = make_scoped_guard([=] {
+				sql_view_refs_delete(refs);
 			});
 			struct trigger *on_commit_view =
 				txn_alter_trigger_new(on_drop_view_commit,
-						      select);
+						      refs);
 			if (on_commit_view == NULL)
 				return -1;
 			txn_stmt_on_commit(stmt, on_commit_view);
 			struct trigger *on_rollback_view =
 				txn_alter_trigger_new(on_drop_view_rollback,
-						      select);
+						      refs);
 			if (on_rollback_view == NULL)
 				return -1;
 			txn_stmt_on_rollback(stmt, on_rollback_view);
-			int rc = update_view_references(select, -1);
+			int rc = update_view_references(refs, -1);
 			assert(rc == 0); (void)rc;
-			select_guard.is_active = false;
+			refs_guard.is_active = false;
 		}
 	} else { /* UPDATE, REPLACE */
 		assert(old_space != NULL && new_tuple != NULL);

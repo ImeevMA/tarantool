@@ -142,16 +142,25 @@ sql_expr_compile(const char *sql)
 	return res;
 }
 
-struct Select *
-sql_view_compile(const char *sql)
+struct sql_view_refs *
+sql_view_refs_new(const char *sql)
 {
 	assert(sql != NULL && sql[0] != '\0');
 
 	struct Parse parser;
 	sql_parser_create(&parser, SQL_DEFAULT_FLAGS);
-	struct Select *res = sql_parse_view(&parser, sql);
+	struct ast_select *ast = sql_parse_view(&parser, sql);
+	struct sql_view_refs *res = ast != NULL ? sql_ast_view_refs(ast) : NULL;
 	sql_parser_destroy(&parser);
 	return res;
+}
+
+void
+sql_view_refs_delete(struct sql_view_refs *refs)
+{
+	for (uint32_t i = 0; i < refs->count; ++i)
+		sql_xfree(refs->names[i]);
+	free(refs);
 }
 
 struct sql_trigger *

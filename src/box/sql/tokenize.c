@@ -605,13 +605,13 @@ sql_parse_view_ast(struct region *region, const char *sql)
 	return ast->select;
 }
 
-struct Select *
+struct ast_select *
 sql_parse_view(struct Parse *parser, const char *sql)
 {
 	struct ast_select *ast = sql_parse_view_ast(&parser->region, sql);
-	if (ast == NULL)
+	if (ast == NULL || sql_ast_check_select(parser, ast) != 0)
 		return NULL;
-	return select_from_ast(parser, ast);
+	return ast;
 }
 
 struct ast_trigger *

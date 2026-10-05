@@ -422,21 +422,6 @@ sql_select_delete(struct Select *p)
 		clearSelect(p, 1);
 }
 
-int
-sql_src_list_entry_count(const struct SrcList *list)
-{
-	assert(list != NULL);
-	return list->nSrc;
-}
-
-const char *
-sql_src_list_entry_name(const struct SrcList *list, int i)
-{
-	assert(list != NULL);
-	assert(i >= 0 && i < list->nSrc);
-	return list->a[i].zName;
-}
-
 /*
  * Return a pointer to the right-most SELECT statement in a compound.
  */
@@ -448,106 +433,6 @@ findRightmost(Select * p)
 	return p;
 }
 
-
-/**
- * Work the same as sql_src_list_append(), but before adding to
- * list provide check on name duplicates: only values with unique
- * names are appended. Moreover, names of tables are not
- * normalized: it is parser's business and in struct Select they
- * are already in uppercased or unquoted form.
- *
- * @param list List of entries.
- * @param new_name Name of entity to be added.
- * @retval @list with new element on success, old one otherwise.
- */
-static struct SrcList *
-src_list_append_unique(struct SrcList *list, const char *new_name)
-{
-	assert(list != NULL);
-	assert(new_name != NULL);
-
-	for (int i = 0; i < list->nSrc; ++i) {
-		const char *name = list->a[i].zName;
-		if (strcmp(new_name, name) == 0)
-			return list;
-	}
-	list = sql_src_list_enlarge(list, 1, list->nSrc);
-	struct SrcList_item *pItem = &list->a[list->nSrc - 1];
-	pItem->zName = sql_xstrdup(new_name);
-	return list;
-}
-
-static int
-select_collect_table_names(struct Walker *walker, struct Select *select)
-{
-	assert(walker != NULL);
-	assert(select != NULL);
-	for (int i = 0; i < select->pSrc->nSrc; ++i) {
-		if (select->pSrc->a[i].zName == NULL)
-			continue;
-		walker->u.pSrcList =
-			src_list_append_unique(walker->u.pSrcList,
-					       select->pSrc->a[i].zName);
-		assert(walker->u.pSrcList != NULL);
-	}
-	return WRC_Continue;
-}
-
-struct SrcList *
-sql_select_expand_from_tables(struct Select *select)
-{
-	assert(select != NULL);
-	struct Walker walker;
-	struct SrcList *table_names = sql_src_list_new();
-	table_names->nSrc = 0;
-	memset(&walker, 0, sizeof(walker));
-	walker.xExprCallback = sqlExprWalkNoop;
-	walker.xSelectCallback = select_collect_table_names;
-	walker.u.pSrcList = table_names;
-	int rc = sqlWalkSelect(&walker, select);
-	assert(rc == WRC_Continue); (void)rc;
-	return walker.u.pSrcList;
-}
-
-bool
-sql_select_constains_cte(struct Select *select, const char *name)
-{
-	assert(select != NULL && name != NULL);
-	struct With *with = select->pWith;
-	if (with != NULL) {
-		for (int i = 0; i < with->nCte; i++) {
-			const struct Cte *cte = &with->a[i];
-			/*
-			 * Don't use recursive call for
-			 * cte->pSelect, because this function is
-			 * used during view creation. Consider
-			 * the nested <WITH>s query schema:
-			 * CREATE VIEW v AS
-			 *     WITH w AS (
-			 *         WITH w_nested AS
-			 *             (...)
-			 *         SELECT ...)
-			 *     SELECT ... FROM ...;
-			 * The use of CTE "w_nested" after the
-			 * external select's <FROM> is disallowed.
-			 * So, it is pointless to check <WITH>,
-			 * which is nested to other <WITH>.
-			 */
-			if (memcmp(name, cte->zName, strlen(name)) == 0)
-				return true;
-		}
-	}
-	struct SrcList *list = select->pSrc;
-	int item_count = sql_src_list_entry_count(list);
-	for (int i = 0; i < item_count; ++i) {
-		if (list->a[i].pSelect != NULL) {
-			if (sql_select_constains_cte(list->a[i].pSelect,
-							 name))
-				return true;
-		}
-	}
-	return false;
-}
 
 void
 sql_expr_set_join(struct Expr *expr, int cursor)
