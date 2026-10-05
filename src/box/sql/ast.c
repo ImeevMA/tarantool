@@ -1164,28 +1164,6 @@ ast_table_properties_append_constraint(struct ast_table_properties *properties,
 }
 
 /**
- * The properties of an AST expression that the checks of the expressions
- * containing it depend on, see ast_check_expr().
- */
-struct ast_check_result {
-	/**
-	 * Height of the expression: 1 for a leaf, or else the largest height
-	 * of its operands plus one. A unary plus or minus applied to a
-	 * numeric literal is a part of the literal, and an AND with a FALSE
-	 * operand is FALSE.
-	 */
-	int height;
-	/** Operation of the expression after such folding. */
-	int op;
-	/** Value of an INTEGER literal, in two's complement if negative. */
-	uint64_t u;
-	/** Whether an INTEGER literal is negative. */
-	bool is_neg;
-	/** Number of the elements of a vector. */
-	uint32_t len;
-};
-
-/**
  * Check the given AST expression and set the given result. The checks are the
  * ones not depending on the names: the literals, the collations, the number
  * of the arguments of the functions and of the parts of the compound SELECTs,
@@ -1208,15 +1186,17 @@ ast_check_name(struct Parse *parser, const struct Token *name)
 
 /**
  * Check the given AST expression list and set the largest height of its
- * expressions. The check stops at the first erroneous expression. There must
- * be at most one AUTOINCREMENT field, counting the one of the parser, and it
- * must be a column without COLLATE.
+ * expressions and whether they are all constant in the given result. The check
+ * stops at the first erroneous expression. There must be at most one
+ * AUTOINCREMENT field, counting the one of the parser, and it must be a column
+ * without COLLATE.
  */
 static void
 ast_check_expr_list(struct Parse *parser, struct ast_expr_list *list,
-		    int *height)
+		    struct ast_check_result *res)
 {
-	*height = 0;
+	memset(res, 0, sizeof(*res));
+	res->is_constant = true;
 	if (list == NULL)
 		return;
 	bool has_autoinc = parser->autoinc_fieldno != NULL;
@@ -1226,7 +1206,8 @@ ast_check_expr_list(struct Parse *parser, struct ast_expr_list *list,
 		ast_check_expr(parser, entry->expr, &expr);
 		if (parser->is_aborted)
 			break;
-		*height = MAX(*height, expr.height);
+		res->height = MAX(res->height, expr.height);
+		res->is_constant = res->is_constant && expr.is_constant;
 		if (entry->name.n > 0)
 			ast_check_name(parser, &entry->name);
 		if (!entry->autoinc)
@@ -1291,18 +1272,18 @@ static void
 ast_check_select_part(struct Parse *parser, struct ast_select *select,
 		      int *height)
 {
-	int h;
-	ast_check_expr_list(parser, select->columns, height);
-	ast_check_sources(parser, select->sources);
 	struct ast_check_result expr;
+	ast_check_expr_list(parser, select->columns, &expr);
+	*height = expr.height;
+	ast_check_sources(parser, select->sources);
 	ast_check_expr(parser, select->where, &expr);
 	*height = MAX(*height, expr.height);
-	ast_check_expr_list(parser, select->group_by, &h);
-	*height = MAX(*height, h);
+	ast_check_expr_list(parser, select->group_by, &expr);
+	*height = MAX(*height, expr.height);
 	ast_check_expr(parser, select->having, &expr);
 	*height = MAX(*height, expr.height);
-	ast_check_expr_list(parser, select->order_by, &h);
-	*height = MAX(*height, h);
+	ast_check_expr_list(parser, select->order_by, &expr);
+	*height = MAX(*height, expr.height);
 	ast_check_expr(parser, select->limit, &expr);
 	*height = MAX(*height, expr.height);
 	ast_check_expr(parser, select->offset, &expr);
@@ -1389,6 +1370,7 @@ ast_check_node(struct Parse *parser, int op, int left, int right,
 	       struct ast_check_result *res)
 {
 	res->op = op;
+	res->literal = NULL;
 	res->height = MAX(left, right) + 1;
 	sqlExprCheckHeight(parser, res->height);
 }
@@ -1429,8 +1411,10 @@ ast_check_uminus(struct Parse *parser, struct ast_expr *expr,
 	ast_check_expr(parser, expr->left, res);
 	if (parser->is_aborted)
 		return;
-	if (res->op == TK_DECIMAL || res->op == TK_FLOAT)
+	if (res->op == TK_DECIMAL || res->op == TK_FLOAT) {
+		res->is_neg = !res->is_neg;
 		return;
+	}
 	if (res->op != TK_INTEGER) {
 		ast_check_node(parser, TK_UMINUS, res->height, 0, res);
 		return;
@@ -1475,10 +1459,9 @@ ast_check_function(struct Parse *parser, struct ast_expr *expr,
 		parser->is_aborted = true;
 		return;
 	}
-	int height;
-	ast_check_expr_list(parser, expr->right->list, &height);
+	ast_check_expr_list(parser, expr->right->list, res);
 	if (!parser->is_aborted)
-		ast_check_node(parser, TK_FUNCTION, height, 0, res);
+		ast_check_node(parser, TK_FUNCTION, res->height, 0, res);
 }
 
 /**
@@ -1495,10 +1478,10 @@ ast_check_left_and_list(struct Parse *parser, int op, struct ast_expr *left,
 	if (parser->is_aborted)
 		return;
 	ast_check_node(parser, op, l.height, 0, res);
-	int height;
-	ast_check_expr_list(parser, list, &height);
+	ast_check_expr_list(parser, list, res);
+	res->is_constant = res->is_constant && l.is_constant;
 	if (!parser->is_aborted)
-		ast_check_node(parser, op, l.height, height, res);
+		ast_check_node(parser, op, l.height, res->height, res);
 }
 
 /** Check the given AST IN expression. */
@@ -1519,6 +1502,7 @@ ast_check_in(struct Parse *parser, struct ast_expr *expr,
 		if (!parser->is_aborted)
 			ast_check_node(parser, expr->op, left.height, height,
 				       res);
+		res->is_constant = false;
 		return;
 	}
 	assert(expr->right->op == TK_VECTOR);
@@ -1526,6 +1510,7 @@ ast_check_in(struct Parse *parser, struct ast_expr *expr,
 	if (list == NULL || list->len == 0) {
 		res->op = TK_FALSE;
 		res->height = 1;
+		res->is_constant = true;
 		return;
 	}
 	if (list->len > 1) {
@@ -1542,6 +1527,7 @@ ast_check_in(struct Parse *parser, struct ast_expr *expr,
 	ast_check_expr(parser, entry->expr, &right);
 	if (!parser->is_aborted)
 		ast_check_node(parser, TK_EQ, left.height, right.height, res);
+	res->is_constant = left.is_constant && right.is_constant;
 }
 
 /** Check the given AST binary operation. */
@@ -1561,9 +1547,11 @@ ast_check_binary(struct Parse *parser, struct ast_expr *expr,
 	    (left.op == TK_FALSE || right.op == TK_FALSE)) {
 		res->op = TK_FALSE;
 		res->height = 1;
+		res->is_constant = true;
 		return;
 	}
 	ast_check_node(parser, expr->op, left.height, right.height, res);
+	res->is_constant = left.is_constant && right.is_constant;
 }
 
 static void
@@ -1571,19 +1559,33 @@ ast_check_expr(struct Parse *parser, struct ast_expr *expr,
 	       struct ast_check_result *res)
 {
 	memset(res, 0, sizeof(*res));
+	res->is_constant = true;
 	if (expr == NULL)
 		return;
 	while (expr->op == TK_PARENTHESES)
 		expr = expr->left;
 	res->op = expr->op;
 	res->height = 1;
-	int height;
+	struct ast_check_result list;
 	switch (expr->op) {
 	case TK_INTEGER:
+		res->literal = expr;
 		ast_check_integer(parser, expr, res);
 		break;
 	case TK_DECIMAL:
+		res->literal = expr;
 		ast_check_decimal(parser, expr);
+		break;
+	case TK_STRING:
+	case TK_BLOB:
+	case TK_FLOAT:
+		res->literal = expr;
+		break;
+	case TK_ID:
+	case TK_VAR_ANON:
+	case TK_VAR_NUM:
+	case TK_VAR_NAME:
+		res->is_constant = false;
 		break;
 	case TK_AND:
 	case TK_OR:
@@ -1639,9 +1641,10 @@ ast_check_expr(struct Parse *parser, struct ast_expr *expr,
 	case TK_ARRAY:
 	case TK_MAP:
 	case TK_VECTOR:
-		ast_check_expr_list(parser, expr->list, &height);
+		ast_check_expr_list(parser, expr->list, &list);
+		res->is_constant = list.is_constant;
 		if (!parser->is_aborted)
-			ast_check_node(parser, expr->op, height, 0, res);
+			ast_check_node(parser, expr->op, list.height, 0, res);
 		res->len = expr->list != NULL ? expr->list->len : 0;
 		break;
 	case TK_GETITEM: {
@@ -1649,10 +1652,11 @@ ast_check_expr(struct Parse *parser, struct ast_expr *expr,
 		ast_check_expr(parser, expr->left, &left);
 		if (parser->is_aborted)
 			break;
-		ast_check_expr_list(parser, expr->list, &height);
+		ast_check_expr_list(parser, expr->list, &list);
+		res->is_constant = left.is_constant && list.is_constant;
 		if (!parser->is_aborted)
-			ast_check_node(parser, expr->op, left.height, height,
-				       res);
+			ast_check_node(parser, expr->op, left.height,
+				       list.height, res);
 		break;
 	}
 	case TK_FUNCTION:
@@ -1666,20 +1670,24 @@ ast_check_expr(struct Parse *parser, struct ast_expr *expr,
 		ast_check_in(parser, expr, res);
 		break;
 	case TK_EXISTS:
-	case TK_SELECT:
+	case TK_SELECT: {
+		int height;
 		ast_check_select_height(parser, expr->select, &height);
 		if (!parser->is_aborted)
 			ast_check_node(parser, expr->op, height, 0, res);
+		res->is_constant = false;
 		break;
+	}
 	case TK_CASE:
 		if (expr->left != NULL) {
 			ast_check_left_and_list(parser, expr->op, expr->left,
 						expr->list, res);
 			break;
 		}
-		ast_check_expr_list(parser, expr->list, &height);
+		ast_check_expr_list(parser, expr->list, &list);
+		res->is_constant = list.is_constant;
 		if (!parser->is_aborted)
-			ast_check_node(parser, expr->op, height, 0, res);
+			ast_check_node(parser, expr->op, list.height, 0, res);
 		break;
 	default:
 		break;
@@ -1687,18 +1695,18 @@ ast_check_expr(struct Parse *parser, struct ast_expr *expr,
 }
 
 int
-sql_ast_check_expr(struct Parse *parser, struct ast_expr *expr)
+sql_ast_check_expr(struct Parse *parser, struct ast_expr *expr,
+		   struct ast_check_result *res)
 {
-	struct ast_check_result res;
-	ast_check_expr(parser, expr, &res);
+	ast_check_expr(parser, expr, res);
 	return parser->is_aborted ? -1 : 0;
 }
 
 int
 sql_ast_check_index_columns(struct Parse *parser, struct ast_expr_list *list)
 {
-	int height;
-	ast_check_expr_list(parser, list, &height);
+	struct ast_check_result res;
+	ast_check_expr_list(parser, list, &res);
 	return parser->is_aborted ? -1 : 0;
 }
 
@@ -1744,6 +1752,7 @@ static void
 sql_trigger_action_check(struct Parse *parser,
 			 const struct ast_trigger_action *action)
 {
+	struct ast_check_result res;
 	switch (action->op) {
 	case TK_UPDATE:
 	case TK_DELETE: {
@@ -1761,9 +1770,10 @@ sql_trigger_action_check(struct Parse *parser,
 			struct ast_update *update = action->update;
 			ast_check_set_list(parser, update->set_list);
 			if (!parser->is_aborted)
-				sql_ast_check_expr(parser, update->where);
+				sql_ast_check_expr(parser, update->where,
+						   &res);
 		} else {
-			sql_ast_check_expr(parser, action->del->where);
+			sql_ast_check_expr(parser, action->del->where, &res);
 		}
 		break;
 	}
@@ -1794,7 +1804,8 @@ sql_trigger_from_ast(struct Parse *parser, struct ast_trigger *def)
 	 * The WHEN clause and the actions are resolved and coded every time
 	 * the trigger is coded, so here they are only checked.
 	 */
-	if (sql_ast_check_expr(parser, def->when) != 0)
+	struct ast_check_result when;
+	if (sql_ast_check_expr(parser, def->when, &when) != 0)
 		return NULL;
 	parser->initiateTTrans = true;
 	struct ast_trigger_action *action;

@@ -1884,15 +1884,9 @@ sqlExprListFlags(const ExprList * pList)
  *     sqlExprIsConstant()                  pWalker->eCode==1
  *     sqlExprIsConstantNotJoin()           pWalker->eCode==2
  *     sqlExprIsTableConstant()             pWalker->eCode==3
- *     sqlExprIsConstantOrFunction()        pWalker->eCode==4 or 5
  *
  * In all cases, the callbacks set Walker.eCode=0 and abort if the expression
  * is found to not be a constant.
- *
- * The sqlExprIsConstantOrFunction() is used for evaluating expressions
- * in a CREATE TABLE statement.  The Walker.eCode value is 4 when processing
- * a new statement.  A bound parameter raises an error for new statements,
- * but is silently converted to NULL for existing schemas.
  */
 static int
 exprNodeIsConstant(Walker * pWalker, Expr * pExpr)
@@ -1909,11 +1903,10 @@ exprNodeIsConstant(Walker * pWalker, Expr * pExpr)
 
 	switch (pExpr->op) {
 		/* Consider functions to be constant if all their arguments are constant
-		 * and either pWalker->eCode==4 or 5 or the function has the
-		 * SQL_FUNC_CONST flag.
+		 * and the function has the SQL_FUNC_CONST flag.
 		 */
 	case TK_FUNCTION:
-		if (pWalker->eCode >= 4 || ExprHasProperty(pExpr, EP_ConstFunc)) {
+		if (ExprHasProperty(pExpr, EP_ConstFunc)) {
 			return WRC_Continue;
 		} else {
 			pWalker->eCode = 0;
@@ -1929,17 +1922,6 @@ exprNodeIsConstant(Walker * pWalker, Expr * pExpr)
 			pWalker->eCode = 0;
 			return WRC_Abort;
 		}
-	case TK_VAR_NUM:
-	case TK_VAR_ANON:
-	case TK_VAR_NAME:
-		if (pWalker->eCode == 4) {
-			/* A bound parameter in a CREATE statement that originates from
-			 * sql_prepare() causes an error
-			 */
-			pWalker->eCode = 0;
-			return WRC_Abort;
-		}
-		/* Fall through */
 	default:
 		return WRC_Continue;
 	}
@@ -2002,12 +1984,6 @@ int
 sqlExprIsTableConstant(Expr * p, int iCur)
 {
 	return exprIsConst(p, 3, iCur);
-}
-
-int
-sqlExprIsConstantOrFunction(struct Expr *p)
-{
-	return exprIsConst(p, 4, 0);
 }
 
 int

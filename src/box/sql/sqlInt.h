@@ -2456,16 +2456,6 @@ struct ExprList *
 sqlExprListAppendVector(struct Parse *pParse, struct ExprList *pList,
 			struct IdList *pColumns, struct Expr *pExpr);
 
-/** Return TRUE if expression is term, FALSE otherwise. */
-static inline bool
-sql_expr_is_term(const struct Expr *expr)
-{
-	uint8_t op = expr->op;
-	return op == TK_STRING || op == TK_BLOB || op == TK_INTEGER ||
-	       op == TK_FLOAT || op == TK_DECIMAL || op == TK_TRUE ||
-	       op == TK_FALSE || op == TK_UNKNOWN || op == TK_NULL;
-}
-
 /**
  * Set the sort order for the last element on the given ExprList.
  *
@@ -2561,14 +2551,6 @@ ck_constraint_parse_new(struct Parse *parser, const char *name,
 struct fk_constraint_def *
 sql_fk_constraint_def_new(struct Parse *parser, const char *name,
 			  uint32_t link_count);
-
-/**
- * Encode the value of the given term expression into MsgPack on the given
- * region. Return NULL and set the size to 0 for NULL and UNKNOWN.
- */
-char *
-sql_expr_term_encode(struct region *region, struct Expr *expr,
-		     uint32_t *size);
 
 /**
  * Return collation of given column from table.
@@ -3036,17 +3018,6 @@ sqlGetVdbe(struct Parse *pParse);
 void sqlCloseSavepoints(Vdbe *);
 int sqlExprIsConstant(Expr *);
 int sqlExprIsConstantNotJoin(Expr *);
-
-/**
- * Return non-zero if the expression is constant or a function call with
- * constant arguments. Return 0 if there are any variables.
- *
- * For the purposes of this function, a double-quoted string (ex: "abc")
- * is considered a variable but a single-quoted string (ex: 'abc') is
- * a constant.
- */
-int
-sqlExprIsConstantOrFunction(struct Expr *expr);
 
 int sqlExprIsTableConstant(Expr *, int);
 int sqlExprIsInteger(Expr *, int *);

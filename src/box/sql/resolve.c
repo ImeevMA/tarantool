@@ -44,6 +44,7 @@
 #include "box/session.h"
 #include "box/coll_id_cache.h"
 #include "box/tuple_constraint_def.h"
+#include "mp_decimal.h"
 
 /**
  * Names visible at some point of the resolve phase. It mirrors the legacy
@@ -5311,10 +5312,90 @@ resolve_new_primary_key(struct sql_resolve_context *ctx,
 }
 
 /**
+ * Encode the value of the given checked term, which is a literal, into MsgPack
+ * on the given region and set the given size. Return NULL and set the size to
+ * 0 for NULL and UNKNOWN.
+ */
+static char *
+default_term_encode(struct region *region, const struct ast_check_result *term,
+		    uint32_t *size)
+{
+	char *buf = NULL;
+	*size = 0;
+	const struct ast_expr *lit = term->literal;
+	switch (term->op) {
+	case TK_TRUE:
+	case TK_FALSE:
+		*size = mp_sizeof_bool(term->op == TK_TRUE);
+		buf = xregion_alloc(region, *size);
+		mp_encode_bool(buf, term->op == TK_TRUE);
+		break;
+	case TK_BLOB: {
+		uint32_t len = (lit->len - 3) / 2;
+		*size = mp_sizeof_bin(len);
+		buf = xregion_alloc(region, *size);
+		char *data = mp_encode_binl(buf, len);
+		for (uint32_t i = 0; i < len; ++i) {
+			data[i] = sqlHexToInt(lit->str[2 + i * 2]) << 4 |
+				  sqlHexToInt(lit->str[3 + i * 2]);
+		}
+		break;
+	}
+	case TK_STRING: {
+		char *str = xregion_alloc(region, lit->len + 1);
+		memcpy(str, lit->str, lit->len);
+		uint32_t len = sql_dequote(str, lit->len);
+		*size = mp_sizeof_str(len);
+		buf = xregion_alloc(region, *size);
+		mp_encode_str(buf, str, len);
+		break;
+	}
+	case TK_FLOAT: {
+		double value;
+		sqlAtoF(lit->str, &value, lit->len);
+		if (term->is_neg)
+			value = -value;
+		*size = mp_sizeof_double(value);
+		buf = xregion_alloc(region, *size);
+		mp_encode_double(buf, value);
+		break;
+	}
+	case TK_DECIMAL: {
+		char *str = xregion_alloc(region, lit->len + 1);
+		memcpy(str, lit->str, lit->len);
+		str[lit->len] = '\0';
+		decimal_t value;
+		if (sql_dec_from_str(&value, str) != 0)
+			unreachable();
+		if (term->is_neg)
+			decimal_minus(&value, &value);
+		*size = mp_sizeof_decimal(&value);
+		buf = xregion_alloc(region, *size);
+		mp_encode_decimal(buf, &value);
+		break;
+	}
+	case TK_INTEGER:
+		if (term->is_neg) {
+			*size = mp_sizeof_int((int64_t)term->u);
+			buf = xregion_alloc(region, *size);
+			mp_encode_int(buf, (int64_t)term->u);
+			break;
+		}
+		*size = mp_sizeof_uint(term->u);
+		buf = xregion_alloc(region, *size);
+		mp_encode_uint(buf, term->u);
+		break;
+	default:
+		assert(term->op == TK_NULL || term->op == TK_UNKNOWN);
+	}
+	return buf;
+}
+
+/**
  * Resolve the given DEFAULT of the last field of the space of the given
  * statement. A literal is encoded into the definition of the field, any other
  * expression must be constant and becomes the body of a function. As in the
- * legacy code, the expression is converted to check it.
+ * legacy code, the expression is checked by sql_ast_check_expr().
  *
  * Returns 0 on success and -1 on error.
  */
@@ -5322,25 +5403,32 @@ static int
 resolve_default(struct sql_resolve_context *ctx, struct rast_create_table *res,
 		struct ast_expr *ast)
 {
-	struct Expr *expr = expr_from_ast(ctx->parser, ast);
-	if (ctx->parser->is_aborted) {
-		sql_expr_delete(expr);
+	struct ast_check_result term;
+	if (sql_ast_check_expr(ctx->parser, ast, &term) != 0)
 		return -1;
-	}
 	struct space_def *def = res->space->def;
 	uint32_t fieldno = def->field_count - 1;
 	struct field_def *field = &def->fields[fieldno];
-	if (sql_expr_is_term(expr)) {
+	switch (term.op) {
+	case TK_STRING:
+	case TK_BLOB:
+	case TK_INTEGER:
+	case TK_FLOAT:
+	case TK_DECIMAL:
+	case TK_TRUE:
+	case TK_FALSE:
+	case TK_UNKNOWN:
+	case TK_NULL: {
 		uint32_t size;
-		field->default_value = sql_expr_term_encode(ctx->region, expr,
-							    &size);
+		field->default_value = default_term_encode(ctx->region, &term,
+							   &size);
 		field->default_value_size = size;
-		sql_expr_delete(expr);
 		return 0;
 	}
-	bool is_constant = sqlExprIsConstantOrFunction(expr);
-	sql_expr_delete(expr);
-	if (!is_constant) {
+	default:
+		break;
+	}
+	if (!term.is_constant) {
 		diag_set(ClientError, ER_CREATE_SPACE, def->name,
 			 tt_sprintf("default value of column '%s' is not "
 				    "constant", field->name));
