@@ -5225,11 +5225,3 @@ sql_fieldno_by_expr(const struct space *space, const struct Expr *expr)
 
 }
 
-uint32_t
-sql_fieldno_by_item(const struct space *space, const struct ExprList_item *item)
-{
-	uint32_t res = sql_space_fieldno(space, item->zName);
-	if (res != UINT32_MAX || item->legacy_name == NULL)
-		return res;
-	return sql_space_fieldno(space, item->legacy_name);
-}

@@ -181,22 +181,10 @@ update_emit(struct Parse *pParse, struct SrcList *pTabList,
 		goto update_cleanup;
 	bool is_pk_modified = false;
 	for (i = 0; i < pChanges->nExpr; i++) {
-		uint32_t fieldno = sql_fieldno_by_item(space, &pChanges->a[i]);
-		if (fieldno == UINT32_MAX) {
-			diag_set(ClientError, ER_NO_SUCH_FIELD_NAME_IN_SPACE,
-				 pChanges->a[i].zName, def->name);
-			pParse->is_aborted = true;
-			goto update_cleanup;
-		}
+		uint32_t fieldno = rast->fieldnos[i];
 		if (pPk != NULL && sql_space_column_is_in_pk(space, fieldno))
 			is_pk_modified = true;
-		if (aXRef[fieldno] != -1) {
-			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-				 tt_sprintf("set id list: duplicate column "
-					    "name %s", pChanges->a[i].zName));
-			pParse->is_aborted = true;
-			goto update_cleanup;
-		}
+		assert(aXRef[fieldno] == -1);
 		aXRef[fieldno] = i;
 		upd_cols_cnt++;
 	}

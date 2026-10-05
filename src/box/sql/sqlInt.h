@@ -2868,15 +2868,6 @@ uint32_t
 sql_fieldno_by_expr(const struct space *space, const struct Expr *expr);
 
 /**
- * Return the fieldno of the field with the name defined by the name of
- * expression from exprList. A second lookup will be performed if the field is
- * not found on the first try and field legacy_name of element of ExprList is
- * not NULL. Return UINT32_MAX if the field was not found.
- */
-uint32_t
-sql_fieldno_by_item(const struct space *space, const struct ExprList_item *it);
-
-/**
  * Find collation by name. If no collation is found, return -1 and set the diag.
  */
 int

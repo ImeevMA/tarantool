@@ -398,6 +398,11 @@ struct rast_update {
 	struct rast_set_entry *set;
 	/** Number of the entries above. */
 	uint32_t set_len;
+	/**
+	 * Numbers of the fields assigned by the SET clause, one for each
+	 * column of the entries, in their order.
+	 */
+	uint32_t *fieldnos;
 	/** WHERE clause in the scope of the target, or NULL. */
 	struct rast_expr *where;
 	/**

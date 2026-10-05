@@ -6018,6 +6018,7 @@ resolve_update_in(struct sql_resolve_context *ctx, const struct ast_update *ast,
 			id = id != NULL ? stailq_next_entry(id, link) : NULL;
 		} while (id != NULL);
 	}
+	res->fieldnos = fieldnos;
 	if (def->opts.is_view) {
 		res->view_select = xregion_alloc_object(ctx->region,
 							struct rast_select);
