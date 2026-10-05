@@ -93,34 +93,6 @@ sqlTokenInit(struct Token *p, char *z);
 #define Token_nil ((struct Token) {NULL, 0, false})
 
 /**
- * Structure representing foreign keys constraints appeared
- * within CREATE TABLE statement. Used only during parsing.
- */
-struct fk_constraint_parse {
-	/**
-	 * Foreign keys constraint declared in <CREATE TABLE ...>
-	 * statement. They must be coded after space creation.
-	 */
-	struct fk_constraint_def *fk_def;
-	/**
-	 * If inside <CREATE TABLE> or <ALTER TABLE ADD COLUMN>
-	 * statement we want to declare self-referenced FK
-	 * constraint, we must delay their resolution until the
-	 * end of parsing of all columns.
-	 * E.g.: CREATE TABLE t1(id REFERENCES t1(b), b);
-	 */
-	struct ExprList *selfref_cols;
-	/**
-	 * Still, self-referenced columns might be NULL, if
-	 * we declare FK constraints referencing PK:
-	 * CREATE TABLE t1(id REFERENCES t1) - it is a valid case.
-	 */
-	bool is_self_referenced;
-	/** Organize these structs into linked list. */
-	struct rlist link;
-};
-
-/**
  * Structure representing check constraint appeared within
  * CREATE TABLE statement. Used only during parsing.
  * All allocations are performed on region, so no cleanups are
@@ -149,21 +121,6 @@ enum sql_index_type {
 	sql_index_type_MAX
 };
 
-struct create_ck_constraint_parse_def {
-	/** List of ck_constraint_parse_def objects. */
-	struct rlist checks;
-};
-
-struct create_fk_constraint_parse_def {
-	/** List of fk_constraint_parse_def objects. */
-	struct rlist fkeys;
-	/**
-	 * True if a list of foreign keys is used and should be cleaned up
-	 * properly.
-	 */
-	bool is_used;
-};
-
 /** Parsing context. */
 struct sql_parser_context {
 	/** The resulting AST. */
@@ -189,15 +146,6 @@ struct sql_parser_context {
 	int var_offset;
 };
 
-static inline void
-create_fk_constraint_parse_def_destroy(struct create_fk_constraint_parse_def *d)
-{
-	if (!d->is_used)
-		return;
-	struct fk_constraint_parse *fk;
-	rlist_foreach_entry(fk, &d->fkeys, link)
-		sql_expr_list_delete(fk->selfref_cols);
-}
 
 /** Create parsing context. */
 void

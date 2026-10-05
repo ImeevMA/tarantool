@@ -529,145 +529,6 @@ sql_code_ast_drop_constraint(struct Parse *parser, struct Token *name,
 	}
 }
 
-/** Code AST for table or column property. */
-static void
-sql_code_ast_property(struct Parse *parser, struct ast_property *property,
-		      bool is_column)
-{
-	switch (property->type) {
-	case SQL_AST_PROPERTY_CHECK:
-		sql_create_check_constraint(parser, &property->name,
-					    property->expr->str,
-					    property->expr->len, is_column);
-		break;
-	case SQL_AST_PROPERTY_FOREIGN_KEY: {
-		struct ast_foreign_key *fk = &property->foreign_key;
-		struct ExprList *columns =
-			expr_list_from_ids(parser, fk->columns);
-		if (parser->is_aborted)
-			break;
-		struct ExprList *foreign_columns =
-			expr_list_from_ids(parser, fk->foreign_columns);
-		if (parser->is_aborted) {
-			sql_expr_list_delete(columns);
-			break;
-		}
-		sql_create_foreign_key(parser, &property->name, columns,
-				       &fk->foreign_table, foreign_columns);
-		break;
-	}
-	case SQL_AST_PROPERTY_UNIQUE: {
-		struct ExprList *columns =
-			expr_list_from_ast(parser, property->columns);
-		sql_create_index(parser, &property->name, columns,
-				 SQL_INDEX_TYPE_CONSTRAINT_UNIQUE,
-				 SORT_ORDER_ASC);
-		break;
-	}
-	case SQL_AST_PROPERTY_PRIMARY_KEY: {
-		if (is_column) {
-			sqlAddPrimaryKey(parser, &property->name, NULL,
-					 property->order);
-			break;
-		}
-		struct ExprList *columns =
-			expr_list_from_ast(parser, property->columns);
-		if (parser->is_aborted)
-			break;
-		sqlAddPrimaryKey(parser, &property->name, columns,
-				 property->order);
-		break;
-	}
-	case SQL_AST_PROPERTY_DEFAULT: {
-		assert(is_column);
-		struct Expr *expr = expr_from_ast(parser, property->expr);
-		if (parser->is_aborted)
-			break;
-		sql_column_add_default(parser, expr, property->expr->str,
-				       property->expr->len);
-		break;
-	}
-	case SQL_AST_PROPERTY_COLLATE:
-		sqlAddCollateType(parser, &property->collate);
-		break;
-	case SQL_AST_PROPERTY_NOT_NULL:
-		sql_column_add_nullable_action(parser, property->action);
-		break;
-	case SQL_AST_PROPERTY_NULL:
-		sql_column_add_nullable_action(parser, ON_CONFLICT_ACTION_NONE);
-		break;
-	case SQL_AST_PROPERTY_ANY:
-		assert(false);
-	}
-}
-
-/** Code AST for column. */
-static void
-sql_code_ast_column(struct Parse *parser, struct Token *table,
-		    struct ast_column *col)
-{
-	sql_create_column_start(parser, table, &col->name,
-				sql_type_to_field_type(col->type));
-	if (parser->is_aborted)
-		return;
-	if (col->properties != NULL) {
-		struct ast_property *property;
-		stailq_foreach_entry(property, &col->properties->head, link) {
-			sql_code_ast_property(parser, property, true);
-			if (parser->is_aborted)
-				return;
-		}
-	}
-	if (!col->is_autoinc)
-		return;
-	sql_add_autoincrement(parser, parser->space->def->field_count - 1);
-}
-
-/** Code AST for CREATE TABLE. */
-static void
-sql_code_create_table(struct Parse *parser, struct ast_create_table *stmt)
-{
-	parser->disableLookaside++;
-	sql_get()->lookaside.bDisable++;
-	rlist_create(&parser->create_ck_constraint_parse_def.checks);
-	rlist_create(&parser->create_fk_constraint_parse_def.fkeys);
-	parser->create_fk_constraint_parse_def.is_used = true;
-	parser->new_space = sqlStartTable(parser, &stmt->name);
-	parser->initiateTTrans = true;
-	if (parser->is_aborted)
-		return;
-
-	struct Token tmp = Token_nil;
-	struct ast_column *column;
-	stailq_foreach_entry(column, &stmt->properties->columns, link) {
-		sql_code_ast_column(parser, &tmp, column);
-		if (parser->is_aborted)
-			return;
-	}
-
-	struct ast_property *constraint;
-	stailq_foreach_entry(constraint, &stmt->properties->constraints, link) {
-		sql_code_ast_property(parser, constraint, false);
-		if (parser->is_aborted)
-			return;
-	}
-
-	if (stmt->engine.n > 0) {
-		if (stmt->engine.n > ENGINE_NAME_MAX) {
-			diag_set(ClientError, ER_CREATE_SPACE,
-				 parser->new_space->def->name,
-				 "space engine name is too long");
-			parser->is_aborted = true;
-			return;
-		}
-		char *engine = sql_name_from_token(&stmt->engine);
-		memcpy(parser->new_space->def->engine_name, engine,
-		       strlen(engine) + 1);
-		sql_xfree(engine);
-	}
-	vdbe_emit_create_table(parser, stmt->if_not_exists);
-}
-
 /** Code AST for CREATE VIEW. */
 static void
 sql_code_create_view(struct Parse *parser, struct ast_create_view *stmt,
@@ -842,9 +703,6 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast, const char *sql)
 	case SQL_AST_DELETE:
 		sql_code_delete(parse, ast->del);
 		break;
-	case SQL_AST_CREATE_TABLE:
-		sql_code_create_table(parse, &ast->create_table);
-		break;
 	case SQL_AST_CREATE_VIEW:
 		sql_code_create_view(parse, &ast->create_view, sql);
 		break;
@@ -873,17 +731,6 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast, const char *sql)
 		parse->initiateTTrans = true;
 		sql_alter_table_rename(parse, &ast->alter_rename.old_name,
 				       &ast->alter_rename.new_name);
-		break;
-	case SQL_AST_ALTER_ADD_COLUMN:
-		parse->initiateTTrans = true;
-		rlist_create(&parse->create_ck_constraint_parse_def.checks);
-		rlist_create(&parse->create_fk_constraint_parse_def.fkeys);
-		parse->create_fk_constraint_parse_def.is_used = true;
-		sql_code_ast_column(parse, &ast->alter_add_column.table,
-				    ast->alter_add_column.col);
-		if (parse->is_aborted)
-			break;
-		sql_create_column_end(parse);
 		break;
 	case SQL_AST_ALTER_DROP_CONSTRAINT:
 		sql_code_ast_drop_constraint(parse,

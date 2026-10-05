@@ -1597,7 +1597,6 @@ struct NameContext {
 #define NC_AllowAgg  0x0001	/* Aggregate functions are allowed here */
 #define NC_InAggFunc 0x0008	/* True if analyzing arguments to an agg func */
 #define NC_HasAgg    0x0010	/* One or more aggregate functions seen */
-#define NC_IdxExpr   0x0020	/* True if resolving columns of CREATE INDEX */
 #define NC_VarSelect 0x0040	/* A correlated subquery has been seen */
 #define NC_MinMaxAgg 0x1000	/* min/max aggregates seen.  See note above */
 /** One or more identifiers are out of aggregate function. */
@@ -1807,14 +1806,6 @@ struct TriggerPrg {
 	uint64_t column_mask[2];
 };
 
-/** Information about the expressions that will be used as default values. */
-struct sql_default_func {
-	/** Fieldno of the field to which default value will be added. */
-	uint32_t fieldno;
-	/** Register that will contain the ID of the new SQL EXPR functions. */
-	int reg_func_id;
-};
-
 /*
  * An SQL parser context.  A copy of this structure is passed through
  * the parser and down into all the parser action routine in order to
@@ -1888,20 +1879,18 @@ struct Parse {
 	/** Space triggers are being coded for. */
 	struct space *triggered_space;
 	/**
-	 * Description of the new table created in the CREATE TABLE statement.
+	 * Description of the new table created in the CREATE TABLE statement,
+	 * set when the statement is resolved.
 	 */
 	struct space *new_space;
 	/**
-	 * The space into which the column is added in the CREATE TABLE and
-	 * ALTER TABLE ADD COLUMN statements. Note that in the CREATE TABLE
-	 * statement, after column creation begins, this space is the same as
-	 * the new_space created for CREATE TABLE.
+	 * The space into which the columns are added in the CREATE TABLE and
+	 * ALTER TABLE ADD COLUMN statements, set when the statement is
+	 * resolved. In the CREATE TABLE statement, it is the same as
+	 * new_space. The index definitions of the new constraints of the
+	 * space are freed with the parser.
 	 */
 	struct space *space;
-	/** Array of default function descriptions. */
-	struct sql_default_func *default_funcs;
-	/** Length of array of default function descriptions. */
-	uint32_t default_func_count;
 	/** AST of parsed SQL statement. */
 	struct sql_ast *ast;
 	/**
@@ -1911,12 +1900,9 @@ struct Parse {
 	 */
 	uint32_t alias_count;
 	/*
-	 * FK and CK constraints appeared in a <CREATE TABLE> or
-	 * an <ALTER TABLE ADD COLUMN> statement.
+	 * Id of field with <AUTOINCREMENT> while CREATE TABLE, ALTER TABLE
+	 * ADD COLUMN or ALTER TABLE ADD CONSTRAINT is resolved and coded.
 	 */
-	struct create_fk_constraint_parse_def create_fk_constraint_parse_def;
-	struct create_ck_constraint_parse_def create_ck_constraint_parse_def;
-	/* Id of field with <AUTOINCREMENT>. */
 	int *autoinc_fieldno;
 	bool initiateTTrans;	/* Initiate Tarantool transaction */
 	/** SQL options which were used to compile this VDBE. */
@@ -2609,69 +2595,28 @@ struct space *
 sqlStartTable(Parse *, Token *);
 
 /**
- * Add new field to the format of ephemeral space in parser.
- * If it is <ALTER TABLE> create shallow copy of the existing space
- * and add field to its format.
+ * Create a check constraint parse structure with the definition of a tuple
+ * check constraint with the given name and expression on the parser region.
  */
-void
-sql_create_column_start(struct Parse *parse, struct Token *table,
-			struct Token *name, enum field_type type);
+struct ck_constraint_parse *
+ck_constraint_parse_new(struct Parse *parser, const char *name,
+			const char *expr_str, uint32_t expr_str_len);
 
 /**
- * Emit code to update entry in _space and code to create
- * constraints (entries in _index, _ck_constraint, _fk_constraint)
- * described with this column.
+ * Create a definition of a FOREIGN KEY constraint with the given name and
+ * number of links on the parser region. The links are not filled.
  */
-void
-sql_create_column_end(struct Parse *parse);
+struct fk_constraint_def *
+sql_fk_constraint_def_new(struct Parse *parser, const char *name,
+			  uint32_t link_count);
 
 /**
- * This routine is called by the parser while in the middle of
- * parsing a <CREATE TABLE> or a <ALTER TABLE ADD COLUMN>
- * statement. A "NOT NULL" constraint has been seen on a column.
- * This routine sets the is_nullable flag on the column currently
- * under construction. If nullable_action has been already set,
- * this function raises an error.
- *
- * @param parser SQL Parser object.
- * @param nullable_action on_conflict_action value.
+ * Encode the value of the given term expression into MsgPack on the given
+ * region. Return NULL and set the size to 0 for NULL and UNKNOWN.
  */
-void
-sql_column_add_nullable_action(struct Parse *parser,
-			       enum on_conflict_action nullable_action);
-
-/*
- * Designate the PRIMARY KEY for the table.
- *
- * @param parse Parser context.
- * @param name Name of the index.
- * @param col_list Column list of the index.
- * @param sort_order Sort order in case of column PRIMARY KEY constraint.
- */
-void
-sqlAddPrimaryKey(struct Parse *parse, struct Token *name,
-		 struct ExprList *col_list, enum sort_order sort_order);
-
-/**
- * Add a new CHECK constraint to the table currently under
- * construction.
- * @param parser Parsing context.
- * @param name_token Name of constraint.
- * @param expr_str String representation of the expression.
- * @param expr_str_len Length of string representation of expression.
- * @param is_field_ck True if this is a field constraint, false otherwise.
- */
-void
-sql_create_check_constraint(struct Parse *parser, struct Token *name_token,
-			    const char *expr_str, uint32_t expr_str_len,
-			    bool is_field_ck);
-
-/** Add a DEFAULT clause to the last created column. */
-void
-sql_column_add_default(struct Parse *parser, struct Expr *expr, const char *str,
-		       uint32_t len);
-
-void sqlAddCollateType(Parse *, Token *);
+char *
+sql_expr_term_encode(struct region *region, struct Expr *expr,
+		     uint32_t *size);
 
 /**
  * Return collation of given column from table.
@@ -2683,18 +2628,6 @@ void sqlAddCollateType(Parse *, Token *);
  */
 struct coll *
 sql_column_collation(struct space_def *def, uint32_t column, uint32_t *coll_id);
-
-/*
- * This routine is called to report the termination of a CREATE TABLE statement.
- *
- * During this routine byte code for creation of new Tarantool
- * space and all necessary Tarantool indexes is emitted.
- *
- * @param parse Parse context.
- * @param if_not_exists If TRUE do not raise an error when the table exists.
- */
-void
-vdbe_emit_create_table(struct Parse *parse, bool if_not_exists);
 
 /**
  * Create cursor which will be positioned to the space/index.
@@ -2869,21 +2802,19 @@ void sqlSrcListAssignCursors(Parse *, SrcList *);
 void
 sqlIdListDelete(struct IdList *pList);
 
+struct rast_index_part;
+
 /**
- * Create an index for a UNIQUE or PRIMARY KEY constraint of the table
- * being constructed by a CREATE TABLE statement or altered by adding a
- * column.
- *
- * @param parse All information about this parse.
- * @param name Name of the constraint.
- * @param col_list Column list of the index.
- * @param idx_type UNIQUE or PRIMARY KEY constraint type of the index.
- * @param sort_order Sort order in case of column UNIQUE/PRIMARY KEY constraint.
+ * Create an index with the given name and resolved parts for the given space.
+ * If the given flag is set, the space is being built by CREATE TABLE or
+ * ALTER TABLE ADD COLUMN, and the index is added to it, otherwise the code
+ * inserting the index into the schema is generated.
  */
 void
-sql_create_index(struct Parse *parse, struct Token *name,
-		 struct ExprList *col_list, enum sql_index_type idx_type,
-		 enum sort_order sort_order);
+sql_index_create(struct Parse *parse, struct space *space,
+		 const char *index_name, const struct rast_index_part *parts,
+		 uint32_t part_count, enum sql_index_type idx_type,
+		 bool is_create_table_or_add_col);
 
 /**
  * This routine will drop an existing named index.  This routine
@@ -3617,21 +3548,6 @@ sql_trigger_colmask(Parse *parser, struct sql_trigger *trigger,
 		    struct space *space, int orconf);
 #define sqlParseToplevel(p) ((p)->pToplevel ? (p)->pToplevel : (p))
 #define sqlIsToplevel(p) ((p)->pToplevel==0)
-
-/**
- * Add a FOREIGN KEY constraint to the table being constructed by a
- * CREATE TABLE statement or altered by adding a column.
- *
- * @param parse_context Parsing context.
- * @param name Constraint name.
- * @param child_cols Local columns of FOREIGN KEY constraint.
- * @param parent Foreign table.
- * @param parent_cols Foreign columns of FOREIGN KEY constraint.
- */
-void
-sql_create_foreign_key(struct Parse *parse_context, struct Token *name,
-		       struct ExprList *child_cols, struct Token *parent,
-		       struct ExprList *parent_cols);
 
 /** Emit code to drop UNIQUE, tuple FOREIGN KEY or tuple CHECK constraint. */
 void
@@ -4424,19 +4340,6 @@ vdbe_emit_halt_with_presence_test(struct Parse *parser, int space_id,
 				  int tarantool_error_code,
 				  const char *error_src, bool no_error,
 				  int cond_opcode);
-
-/**
- * Add AUTOINCREMENT feature for one of INTEGER or UNSIGNED fields
- * of PRIMARY KEY.
- *
- * @param parse_context Parsing context.
- * @param fieldno Field number in space format under construction.
- *
- * @retval 0 on success.
- * @retval -1 if table already has declared AUTOINCREMENT feature.
- */
-int
-sql_add_autoincrement(struct Parse *parse_context, uint32_t fieldno);
 
 /**
  * Create VDBE instructions to set the new value of the session setting.

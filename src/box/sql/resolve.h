@@ -14,6 +14,7 @@ struct Expr;
 struct Select;
 struct SrcList;
 struct field_link;
+struct fk_constraint_def;
 
 /** Expression resolved into the form the build stage consumes. */
 struct rast_expr {
@@ -452,6 +453,53 @@ struct rast_create_index {
 	bool is_unique;
 };
 
+/** Resolved FOREIGN KEY constraint of a new table or column. */
+struct rast_fk {
+	/** Link in the list of the constraints. */
+	struct rlist link;
+	/**
+	 * Definition of the constraint. The IDs of the spaces of a
+	 * self-referenced constraint are set when the bytecode is emitted.
+	 */
+	struct fk_constraint_def *def;
+	/**
+	 * Referenced columns of a self-referenced constraint, resolved after
+	 * all the columns of the space are resolved, or NULL.
+	 */
+	const struct ast_id_list *selfref_cols;
+	/** Whether the constraint references the space itself. */
+	bool is_self_referenced;
+};
+
+/** DEFAULT of a column which is computed by a function. */
+struct rast_default_func {
+	/** Link in the list of the functions. */
+	struct stailq_entry link;
+	/** Number of the field. */
+	uint32_t fieldno;
+	/** Text of the expression, the body of the function. */
+	struct Token body;
+};
+
+/** Resolved CREATE TABLE or ALTER TABLE ADD COLUMN statement. */
+struct rast_create_table {
+	/**
+	 * Space being created, or a copy of the space being altered, with all
+	 * the new fields and indexes.
+	 */
+	struct space *space;
+	/** CHECK constraints, struct ck_constraint_parse, in reverse order. */
+	struct rlist checks;
+	/** FOREIGN KEY constraints, struct rast_fk, in reverse order. */
+	struct rlist fkeys;
+	/** DEFAULTs computed by functions, struct rast_default_func. */
+	struct stailq default_funcs;
+	/** Number of the AUTOINCREMENT field, UINT32_MAX if there is none. */
+	uint32_t autoinc_fieldno;
+	/** If set, it is not an error if the space already exists. */
+	bool if_not_exists;
+};
+
 /** Resolved ALTER TABLE ADD CONSTRAINT statement. */
 struct rast_add_constraint {
 	/** Space the constraint is added to. */
@@ -519,6 +567,8 @@ struct sql_rast {
 		struct rast_create_index create_index;
 		/** Resolved ALTER TABLE ADD CONSTRAINT statement. */
 		struct rast_add_constraint add_constraint;
+		/** Resolved CREATE TABLE or ALTER TABLE ADD COLUMN. */
+		struct rast_create_table create_table;
 		/** Resolved DELETE statement. */
 		struct rast_delete del;
 		/** Resolved UPDATE statement. */

@@ -223,21 +223,6 @@ struct ExprList *
 sql_expr_list_append(struct ExprList *expr_list, struct Expr *expr);
 
 /**
- * Resolve names in expressions that can only reference a single
- * table WHERE clauses on partial indices
- * The Expr.iTable value for Expr.op==TK_COLUMN nodes of the
- * expression is set to -1 and the Expr.iColumn value is set to
- * the column number. Any errors cause an error message to be set
- * in parser.
- * @param parser Parsing context.
- * @param def The definition of space being referenced.
- * @param expr Expression to resolve.  May be NULL.
- */
-void
-sql_resolve_self_reference(struct Parse *parser, struct space_def *def,
-			   struct Expr *expr);
-
-/**
  * Initialize a new parser object.
  * A number of service allocations are performed on the region,
  * which is also cleared in the destroy function.

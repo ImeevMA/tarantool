@@ -228,12 +228,8 @@ sql_parser_destroy(Parse *parser)
 	if (parser->pWithToFree)
 		sqlWithDelete(parser->pWithToFree);
 	sql_xfree(parser->pVList);
-	sql_xfree(parser->default_funcs);
 	sql_xfree(parser->aLabel);
 	sql_expr_list_delete(parser->pConstExpr);
-	struct create_fk_constraint_parse_def *create_fk_constraint_parse_def =
-		&parser->create_fk_constraint_parse_def;
-	create_fk_constraint_parse_def_destroy(create_fk_constraint_parse_def);
 	assert(sql_get()->lookaside.bDisable >= parser->disableLookaside);
 	sql_get()->lookaside.bDisable -= parser->disableLookaside;
 	parser->disableLookaside = 0;
