@@ -5916,6 +5916,35 @@ resolve_drop_constraint(const struct ast_alter_drop_constraint *ast,
 }
 
 /**
+ * Resolve the given AST PRAGMA statement into the given rast_pragma. The space
+ * and the index are not required to exist.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_pragma(struct sql_resolve_context *ctx, const struct ast_pragma *ast,
+	       struct rast_pragma *res)
+{
+	res->space = NULL;
+	res->index = NULL;
+	if (ast->table_name.n > 0)
+		res->space = sql_space_by_token(&ast->table_name);
+	if (res->space != NULL && ast->index_name.n > 0) {
+		uint32_t index_id = sql_index_id_by_token(res->space,
+							  &ast->index_name);
+		if (index_id <= res->space->index_id_max)
+			res->index = res->space->index_map[index_id];
+	}
+	const char *name = sql_name_temp(ctx->region, ast->name.z,
+					 ast->name.n);
+	res->pragma = sql_pragma_by_name(name);
+	if (res->pragma != NULL)
+		return 0;
+	diag_set(ClientError, ER_SQL_NO_SUCH_PRAGMA, name);
+	return -1;
+}
+
+/**
  * Find the field with the given name of a column of an index in the given
  * space definition, as lookupName() does. If the given unquoted identifier is
  * not NULL, the name is also looked up in the legacy form of the identifier.
@@ -7448,6 +7477,12 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 		rast->set_session.name = ast->set_session.name;
 		if (resolve_expr(&ctx, ast->set_session.value,
 				 &rast->set_session.value) != 0) {
+			parser->is_aborted = true;
+			return NULL;
+		}
+		break;
+	case SQL_AST_PRAGMA:
+		if (resolve_pragma(&ctx, &ast->pragma, &rast->pragma) != 0) {
 			parser->is_aborted = true;
 			return NULL;
 		}

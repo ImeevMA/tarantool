@@ -2525,22 +2525,22 @@ sqlExprListSetSpan(struct ExprList *pList, const char *str, uint32_t len);
 
 u32 sqlExprListFlags(const ExprList *);
 
-/*
- * Process a pragma statement.
- *
- * Pragmas are of this form:
+struct PragmaName;
+struct rast_pragma;
+
+/** Return the pragma with the given name, or NULL if there is none. */
+const struct PragmaName *
+sql_pragma_by_name(const char *name);
+
+/**
+ * Emit VDBE bytecode for the given resolved PRAGMA statement. Pragmas are of
+ * this form:
  * PRAGMA <pragma_name>;
  * PRAGMA <pragma_name>(<table_name>);
  * PRAGMA <pragma_name>(<table_name>.<index_name>);
- *
- * @param pParse Parse context.
- * @param pragma Name of the pragma.
- * @param table Name of the table.
- * @param index Name of the index.
  */
 void
-sqlPragma(struct Parse *pParse, struct Token *pragma, struct Token *table,
-	  struct Token *index);
+sql_emit_pragma(struct Parse *parser, const struct rast_pragma *stmt);
 
 /** Generate a CREATE TABLE statement for the space with the given ID. */
 void

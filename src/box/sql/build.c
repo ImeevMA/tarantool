@@ -2426,6 +2426,9 @@ void
 sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast, const char *sql)
 {
 	switch (rast->type) {
+	case SQL_AST_PRAGMA:
+		sql_emit_pragma(parser, &rast->pragma);
+		break;
 	case SQL_AST_SHOW_CREATE_TABLE:
 		if (rast->show_create_table == NULL)
 			sql_emit_show_create_table_all(parser);

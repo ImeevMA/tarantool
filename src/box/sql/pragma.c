@@ -43,6 +43,7 @@
 #include "box/schema.h"
 #include "box/session.h"
 #include "pragma.h"
+#include "resolve.h"
 
 /** Set result column names and types for a pragma. */
 static void
@@ -57,11 +58,8 @@ vdbe_set_pragma_result_columns(struct Vdbe *v, const struct PragmaName *pragma)
 	}
 }
 
-/*
- * Locate a pragma in the aPragmaName[] array.
- */
-static const struct PragmaName *
-pragmaLocate(const char *zName)
+const struct PragmaName *
+sql_pragma_by_name(const char *zName)
 {
 	int upr, lwr, mid, rc;
 	lwr = 0;
@@ -262,38 +260,20 @@ sql_pragma_foreign_key_list(struct Parse *parser, const struct space *space)
 }
 
 void
-sqlPragma(struct Parse *pParse, struct Token *pragma, struct Token *table_name,
-	  struct Token *index_name)
+sql_emit_pragma(struct Parse *pParse, const struct rast_pragma *stmt)
 {
-	assert(pragma != NULL && table_name != NULL && index_name != NULL);
-	const struct space *space = NULL;
-	const struct index *index = NULL;
+	const struct space *space = stmt->space;
+	const struct index *index = stmt->index;
 	struct Vdbe *v = sqlGetVdbe(pParse);
 
 	sqlVdbeRunOnlyOnce(v);
 	pParse->nMem = 2;
 
-	char *pragma_name = sql_name_from_token(pragma);
-	if (table_name->n > 0)
-		space = sql_space_by_token(table_name);
-	if (space != NULL && index_name->n > 0) {
-		uint32_t index_id = sql_index_id_by_token(space, index_name);
-		if (index_id <= space->index_id_max)
-			index = space->index_map[index_id];
-	}
-
-	/* Locate the pragma in the lookup table */
-	const struct PragmaName *pPragma = pragmaLocate(pragma_name);
-	if (pPragma == 0) {
-		diag_set(ClientError, ER_SQL_NO_SUCH_PRAGMA, pragma_name);
-		pParse->is_aborted = true;
-		goto pragma_out;
-	}
 	/* Register the result column names for pragmas that return results */
-	vdbe_set_pragma_result_columns(v, pPragma);
+	vdbe_set_pragma_result_columns(v, stmt->pragma);
 
 	/* Jump to the appropriate pragma handler */
-	switch (pPragma->ePragTyp) {
+	switch (stmt->pragma->ePragTyp) {
 	case PRAGMA_TABLE_INFO:
 		sql_pragma_table_info(pParse, space);
 		break;
@@ -315,7 +295,4 @@ sqlPragma(struct Parse *pParse, struct Token *pragma, struct Token *table_name,
 	default:
 		unreachable();
 	}
-
- pragma_out:
-	sql_xfree(pragma_name);
 }

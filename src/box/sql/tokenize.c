@@ -639,10 +639,6 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast, const char *sql)
 	case SQL_AST_CREATE_TRIGGER:
 		sql_code_create_trigger(parse, &ast->create_trigger, sql);
 		break;
-	case SQL_AST_PRAGMA:
-		sqlPragma(parse, &ast->pragma.name, &ast->pragma.table_name,
-			  &ast->pragma.index_name);
-		break;
 	default:
 		unreachable();
 	}

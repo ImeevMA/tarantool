@@ -482,6 +482,16 @@ struct rast_set_session {
 	struct rast_expr value;
 };
 
+/** Resolved PRAGMA statement. */
+struct rast_pragma {
+	/** Pragma to run. */
+	const struct PragmaName *pragma;
+	/** Space of the pragma, or NULL. */
+	const struct space *space;
+	/** Index of the pragma, or NULL. */
+	const struct index *index;
+};
+
 /** Resolved part of an index: a column and its collation. */
 struct rast_index_part {
 	/** Number of the field of the column. */
@@ -623,6 +633,8 @@ struct sql_rast {
 		struct rast_drop_index drop_index;
 		/** Resolved SET SESSION statement. */
 		struct rast_set_session set_session;
+		/** Resolved PRAGMA statement. */
+		struct rast_pragma pragma;
 		/**
 		 * Space of SHOW CREATE TABLE, or NULL to show all the spaces.
 		 */
