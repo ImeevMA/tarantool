@@ -591,8 +591,8 @@ expr_check_height(int height)
 /**
  * Return true if the given AST expression is a constant FALSE, matching the
  * folding done by sql_and_expr_new()/exprAlwaysFalse() at expression creation:
- * a FALSE literal, possibly parenthesized, or an AND with a constant-FALSE
- * operand.
+ * a FALSE literal, possibly parenthesized, IN with an empty list, or an AND
+ * with a constant-FALSE operand.
  */
 static bool
 ast_is_false(const struct ast_expr *ast)
@@ -601,6 +601,10 @@ ast_is_false(const struct ast_expr *ast)
 		ast = ast->left;
 	if (ast->op == TK_FALSE)
 		return true;
+	if (ast->op == TK_IN) {
+		return ast->right->op == TK_VECTOR &&
+		       (ast->right->list == NULL || ast->right->list->len == 0);
+	}
 	if (ast->op == TK_AND)
 		return ast_is_false(ast->left) || ast_is_false(ast->right);
 	return false;
