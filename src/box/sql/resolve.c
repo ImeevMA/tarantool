@@ -276,83 +276,6 @@ incrAggFunctionDepth(Expr * pExpr, int N)
 	}
 }
 
-/*
- * Turn the pExpr expression into an alias for the iCol-th column of the
- * result set in pEList.
- *
- * If the reference is followed by a COLLATE operator, then make sure
- * the COLLATE operator is preserved.  For example:
- *
- *     SELECT a+b, c+d FROM t1 ORDER BY 1 COLLATE nocase;
- *
- * Should be transformed into:
- *
- *     SELECT a+b, c+d FROM t1 ORDER BY (a+b) COLLATE nocase;
- *
- * The nSubquery parameter specifies how many levels of subquery the
- * alias is removed from the original expression.  The usual value is
- * zero but it might be more if the alias is contained within a subquery
- * of the original expression.  The Expr.op2 field of TK_AGG_FUNCTION
- * structures must be increased by the nSubquery amount.
- *
- * @param parser Parser context.
- * @param pEList A result set.
- * @param iCol A column in the result set.  0..pEList->nExpr-1.
- * @param pExpr Transform this into an alias to the result set.
- * @param zType "GROUP" or "ORDER" or "".
- * @param nSubquery Number of subqueries that the label is moving.
- */
-static void
-resolveAlias(struct Parse *parser, struct ExprList *pEList, int iCol,
-	     struct Expr *pExpr, const char *zType, int nSubquery)
-{
-	Expr *pOrig;		/* The iCol-th column of the result set */
-	Expr *pDup;		/* Copy of pOrig */
-
-	assert(iCol >= 0 && iCol < pEList->nExpr);
-	pOrig = pEList->a[iCol].pExpr;
-	assert(pOrig != 0);
-	pDup = sqlExprDup(pOrig, 0);
-	if (pDup == 0)
-		return;
-	if (zType[0] != 'G')
-		incrAggFunctionDepth(pDup, nSubquery);
-	if (pExpr->op == TK_COLLATE)
-		pDup = sql_expr_new_collate(parser, pDup, pExpr->v.id);
-	/*
-	 * The alias may be in the ON clause of a LEFT JOIN, so the copy must
-	 * be a part of the join restriction too.
-	 */
-	if (ExprHasProperty(pExpr, EP_FromJoin))
-		sql_expr_set_join(pDup, pExpr->iRightJoinTable);
-
-	/* Before calling sql_expr_delete(), set the EP_Static flag. This
-	 * prevents ExprDelete() from deleting the Expr structure itself,
-	 * allowing it to be repopulated by the memcpy() on the following line.
-	 * The pExpr->u.zToken might point into memory that will be freed by the
-	 * sql_xfree(pDup) on the last line of this block, so be sure to
-	 * make a copy of the token before doing the sql_xfree().
-	 */
-	ExprSetProperty(pExpr, EP_Static);
-	sql_expr_delete(pExpr);
-	memcpy(pExpr, pDup, sizeof(*pExpr));
-	if (pExpr->u.zToken != NULL) {
-		assert((pExpr->flags & (EP_Reduced | EP_TokenOnly)) == 0);
-		pExpr->u.zToken = sql_xstrdup(pExpr->u.zToken);
-		pExpr->flags |= EP_MemToken;
-	} else if (pExpr->op == TK_STRING) {
-		pExpr->v.s = sql_xstrdup(pExpr->v.s);
-		pExpr->flags |= EP_MemToken;
-	} else if (pExpr->op == TK_RAISE) {
-		pExpr->v.raise = sql_xstrdup(pExpr->v.raise);
-		pExpr->flags |= EP_MemToken;
-	} else if (pExpr->op == TK_BLOB) {
-		pExpr->v.z = sql_xstrndup(pExpr->v.z, pExpr->v.n);
-		pExpr->flags |= EP_MemToken;
-	}
-	sql_xfree(pDup);
-}
-
 struct Expr *
 sql_expr_new_column(struct SrcList *src_list, int src_idx, int column)
 {
@@ -364,73 +287,6 @@ sql_expr_new_column(struct SrcList *src_list, int src_idx, int column)
 	item->colUsed |= ((Bitmask) 1) << (column >= BMS ? BMS - 1 : column);
 	ExprSetProperty(expr, EP_Resolved);
 	return expr;
-}
-
-/*
- * Check every term in the ORDER BY or GROUP BY clause pOrderBy of
- * the SELECT statement pSelect.  If any term is reference to a
- * result set expression (as determined by the ExprList.a.u.x.iOrderByCol
- * field) then convert that term into a copy of the corresponding result set
- * column.
- *
- * @retval 0 On success, not 0 elsewhere.
- */
-int
-sqlResolveOrderGroupBy(Parse * pParse,	/* Parsing context.  Leave error messages here */
-			   Select * pSelect,	/* The SELECT statement containing the clause */
-			   ExprList * pOrderBy,	/* The ORDER BY or GROUP BY clause to be processed */
-			   const char *zType	/* "ORDER" or "GROUP" */
-    )
-{
-	int i;
-	ExprList *pEList;
-	struct ExprList_item *pItem;
-
-	if (pOrderBy == NULL)
-		return 0;
-	if (pOrderBy->nExpr > SQL_MAX_COLUMN) {
-		const char *err = tt_sprintf("The number of terms in %s BY "\
-					     "clause", zType);
-		diag_set(ClientError, ER_SQL_PARSER_LIMIT, err,
-			 pOrderBy->nExpr, SQL_MAX_COLUMN);
-		pParse->is_aborted = true;
-		return 1;
-	}
-	pEList = pSelect->pEList;
-	assert(pEList != 0);	/* sqlSelectNew() guarantees this */
-	for (i = 0, pItem = pOrderBy->a; i < pOrderBy->nExpr; i++, pItem++) {
-		if (pItem->u.x.iOrderByCol) {
-			if (pItem->u.x.iOrderByCol > pEList->nExpr) {
-				const char *err = "Error at %s BY in place "\
-						  "%d: term out of range - "\
-						  "should be between 1 and %d";
-				err = tt_sprintf(err, zType, i + 1,
-						 pEList->nExpr);
-				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-					 err);
-				pParse->is_aborted = true;
-				return 1;
-			}
-			resolveAlias(pParse, pEList, pItem->u.x.iOrderByCol - 1,
-				     pItem->pExpr, zType, 0);
-			if (pParse->is_aborted)
-				return 1;
-		}
-		/*
-		 * Currently, we cannot disallow ANY here, as values of ANY type
-		 * may be resolved later.
-		 */
-		enum field_type type = sql_expr_type(pItem->pExpr);
-		if (!field_type1_contains_type2(FIELD_TYPE_SCALAR, NULL,
-						type, NULL) &&
-		    type != FIELD_TYPE_ANY) {
-			diag_set(ClientError, ER_SQL_TYPE_MISMATCH,
-				 field_type_strs[type], "comparable type");
-			pParse->is_aborted = true;
-			return -1;
-		}
-	}
-	return 0;
 }
 
 int
@@ -3727,6 +3583,25 @@ resolve_compound_order_by(struct sql_resolve_context *ctx,
 		expr->u = item->order_by_col;
 		expr->type = SQL_TYPE_INTEGER;
 		expr->height = 1;
+	}
+	/*
+	 * The columns the terms refer to must be comparable in every part,
+	 * which are checked from right to left, as in the legacy code.
+	 */
+	for (uint32_t p = count; p > 0; --p) {
+		const struct rast_expr_list *columns = &parts[p - 1]->columns;
+		for (i = 0; i < res->len; ++i) {
+			uint32_t col = res->exprs[i].order_by_col - 1;
+			enum field_type type =
+				rast_expr_field_type(&columns->exprs[col].expr);
+			if (field_type1_contains_type2(FIELD_TYPE_SCALAR, NULL,
+						       type, NULL) ||
+			    type == FIELD_TYPE_ANY)
+				continue;
+			diag_set(ClientError, ER_SQL_TYPE_MISMATCH,
+				 field_type_strs[type], "comparable type");
+			return -1;
+		}
 	}
 	return 0;
 }

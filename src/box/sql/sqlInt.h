@@ -3582,7 +3582,6 @@ int sqlCodeSubselect(Parse *, Expr *, int);
 const char *
 sql_select_op_name(int id);
 
-int sqlResolveOrderGroupBy(Parse *, Select *, ExprList *, const char *);
 
 /**
  * This function is used to implement the ALTER TABLE command. The table name in

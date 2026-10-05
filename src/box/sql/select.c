@@ -2777,6 +2777,57 @@ generateOutputSubroutine(struct Parse *parse, struct Select *p,
 	return addr;
 }
 
+/**
+ * Replace each term of the given ORDER BY clause of the given part of a
+ * compound SELECT, which refers to a result column of the compound SELECT, by
+ * a copy of the corresponding result column of the part. A COLLATE of the
+ * term is kept.
+ */
+static void
+compound_order_by_from_columns(struct Parse *parser, struct Select *select,
+			       struct ExprList *order_by)
+{
+	if (order_by == NULL)
+		return;
+	struct ExprList *columns = select->pEList;
+	assert(order_by->nExpr <= SQL_MAX_COLUMN);
+	for (int i = 0; i < order_by->nExpr; ++i) {
+		struct ExprList_item *item = &order_by->a[i];
+		if (item->u.x.iOrderByCol == 0)
+			continue;
+		assert(item->u.x.iOrderByCol <= columns->nExpr);
+		struct Expr *expr = item->pExpr;
+		struct Expr *dup =
+			sqlExprDup(columns->a[item->u.x.iOrderByCol - 1].pExpr,
+				   0);
+		if (expr->op == TK_COLLATE)
+			dup = sql_expr_new_collate(parser, dup, expr->v.id);
+		/*
+		 * The term is replaced in place, since the list owns it: its
+		 * contents are freed, and the copy is moved into it.
+		 */
+		ExprSetProperty(expr, EP_Static);
+		sql_expr_delete(expr);
+		memcpy(expr, dup, sizeof(*expr));
+		if (expr->u.zToken != NULL) {
+			assert((expr->flags &
+				(EP_Reduced | EP_TokenOnly)) == 0);
+			expr->u.zToken = sql_xstrdup(expr->u.zToken);
+			expr->flags |= EP_MemToken;
+		} else if (expr->op == TK_STRING) {
+			expr->v.s = sql_xstrdup(expr->v.s);
+			expr->flags |= EP_MemToken;
+		} else if (expr->op == TK_RAISE) {
+			expr->v.raise = sql_xstrdup(expr->v.raise);
+			expr->flags |= EP_MemToken;
+		} else if (expr->op == TK_BLOB) {
+			expr->v.z = sql_xstrndup(expr->v.z, expr->v.n);
+			expr->flags |= EP_MemToken;
+		}
+		sql_xfree(dup);
+	}
+}
+
 /*
  * Alternative compound select code generator for cases when there
  * is an ORDER BY clause.
@@ -2989,10 +3040,10 @@ multiSelectOrderBy(Parse * pParse,	/* Parsing context */
 	 */
 	p->pPrior = 0;
 	pPrior->pNext = 0;
-	sqlResolveOrderGroupBy(pParse, p, p->pOrderBy, "ORDER");
+	compound_order_by_from_columns(pParse, p, p->pOrderBy);
 	if (pPrior->pPrior == 0) {
-		sqlResolveOrderGroupBy(pParse, pPrior, pPrior->pOrderBy,
-					   "ORDER");
+		compound_order_by_from_columns(pParse, pPrior,
+					       pPrior->pOrderBy);
 	}
 
 	/* Compute the limit registers */
