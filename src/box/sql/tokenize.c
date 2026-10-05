@@ -615,17 +615,6 @@ sql_code_delete(struct Parse *parser, struct ast_delete *del)
 	sql_table_delete_from(parser, src, where);
 }
 
-/** Code AST for SET SESSION statement. */
-static void
-sql_code_set_session(struct Parse *parser, struct Token *name,
-		     struct ast_expr *value)
-{
-	struct Expr *expr = expr_from_ast(parser, value);
-	if (parser->is_aborted)
-		return;
-	sql_setting_set(parser, name, expr);
-}
-
 void
 sql_code_ast(struct Parse *parse, struct sql_ast *ast, const char *sql)
 {
@@ -649,10 +638,6 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast, const char *sql)
 		break;
 	case SQL_AST_CREATE_TRIGGER:
 		sql_code_create_trigger(parse, &ast->create_trigger, sql);
-		break;
-	case SQL_AST_SET_SESSION:
-		sql_code_set_session(parse, &ast->set_session.name,
-				     ast->set_session.value);
 		break;
 	case SQL_AST_PRAGMA:
 		sqlPragma(parse, &ast->pragma.name, &ast->pragma.table_name,

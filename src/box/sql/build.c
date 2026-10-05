@@ -2163,17 +2163,19 @@ sql_session_settings_init(void)
 	}
 }
 
-void
-sql_setting_set(struct Parse *parse_context, struct Token *name,
-		struct Expr *expr)
+/** Emit VDBE bytecode for the given resolved SET SESSION statement. */
+static void
+sql_emit_set_session(struct Parse *parser,
+		     const struct rast_set_session *stmt)
 {
-	struct Vdbe *vdbe = sqlGetVdbe(parse_context);
-	sqlVdbeCountChanges(vdbe);
-	char *key = sql_name_from_token(name);
-	int target = ++parse_context->nMem;
-	sqlExprCode(parse_context, expr, target);
-	sqlVdbeAddOp4(vdbe, OP_SetSession, target, 0, 0, key, P4_DYNAMIC);
-	return;
+	struct Vdbe *v = sqlGetVdbe(parser);
+	sqlVdbeCountChanges(v);
+	char *key = sql_name_from_token(&stmt->name);
+	int target = ++parser->nMem;
+	struct Expr *expr = expr_from_rast_in(parser, NULL, &stmt->value);
+	sqlExprCode(parser, expr, target);
+	sql_expr_delete(expr);
+	sqlVdbeAddOp4(v, OP_SetSession, target, 0, 0, key, P4_DYNAMIC);
 }
 
 /** Emit VDBE instructions for "SHOW CREATE TABLE table_name;" statement. */
@@ -2431,6 +2433,9 @@ void
 sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast, const char *sql)
 {
 	switch (rast->type) {
+	case SQL_AST_SET_SESSION:
+		sql_emit_set_session(parser, &rast->set_session);
+		break;
 	case SQL_AST_TX_START:
 		sqlVdbeAddOp0(sqlGetVdbe(parser), OP_TransactionBegin);
 		break;

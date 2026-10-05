@@ -7444,6 +7444,14 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 			return NULL;
 		}
 		break;
+	case SQL_AST_SET_SESSION:
+		rast->set_session.name = ast->set_session.name;
+		if (resolve_expr(&ctx, ast->set_session.value,
+				 &rast->set_session.value) != 0) {
+			parser->is_aborted = true;
+			return NULL;
+		}
+		break;
 	case SQL_AST_TX_START:
 	case SQL_AST_TX_COMMIT:
 	case SQL_AST_TX_ROLLBACK:

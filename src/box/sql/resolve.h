@@ -474,6 +474,14 @@ struct rast_drop_constraint {
 	uint32_t index_id;
 };
 
+/** Resolved SET SESSION statement. */
+struct rast_set_session {
+	/** Name of the session setting. */
+	struct Token name;
+	/** New value of the session setting. */
+	struct rast_expr value;
+};
+
 /** Resolved part of an index: a column and its collation. */
 struct rast_index_part {
 	/** Number of the field of the column. */
@@ -613,6 +621,8 @@ struct sql_rast {
 		struct rast_drop_table drop_table;
 		/** Resolved DROP INDEX statement. */
 		struct rast_drop_index drop_index;
+		/** Resolved SET SESSION statement. */
+		struct rast_set_session set_session;
 		/** Name of the savepoint of a savepoint statement. */
 		struct Token savepoint;
 		/** Resolved DROP TRIGGER statement. */

@@ -4235,17 +4235,6 @@ vdbe_emit_halt_with_presence_test(struct Parse *parser, int space_id,
 				  int cond_opcode);
 
 /**
- * Create VDBE instructions to set the new value of the session setting.
- *
- * @param parse_context Parsing context.
- * @param name Name of the session setting.
- * @param value New value of the session setting.
- */
-void
-sql_setting_set(struct Parse *parse_context, struct Token *name,
-		struct Expr *value);
-
-/**
  * Return a string of the form "COLUMN_N", where N is @a number.
  *
  * We decided to name every auto generated column in output by
