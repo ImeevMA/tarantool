@@ -1882,57 +1882,28 @@ sqlSrcListIndexedBy(struct SrcList *p, struct Token *pIndexedBy)
 	}
 }
 
-void
-sql_transaction_begin(struct Parse *parse_context)
-{
-	assert(parse_context != NULL);
-	struct Vdbe *v = sqlGetVdbe(parse_context);
-	sqlVdbeAddOp0(v, OP_TransactionBegin);
-}
-
-void
-sql_transaction_commit(struct Parse *parse_context)
-{
-	assert(parse_context != NULL);
-	struct Vdbe *v = sqlGetVdbe(parse_context);
-	sqlVdbeAddOp0(v, OP_TransactionCommit);
-}
-
-void
-sql_transaction_rollback(Parse *pParse)
-{
-	assert(pParse != 0);
-	struct Vdbe *v = sqlGetVdbe(pParse);
-	sqlVdbeAddOp0(v, OP_TransactionRollback);
-}
-
-/*
- * This function is called by the parser when it parses a command to create,
- * release or rollback an SQL savepoint.
+/**
+ * Emit VDBE bytecode for the given resolved SAVEPOINT, RELEASE or ROLLBACK TO
+ * statement with the given OP_Savepoint operation.
  */
-void
-sqlSavepoint(Parse * pParse, int op, Token * pName)
+static void
+sql_emit_savepoint(struct Parse *parser, int op, const struct Token *name)
 {
-	char *zName = sql_name_from_token(pName);
-	Vdbe *v = sqlGetVdbe(pParse);
-	if (op == SAVEPOINT_BEGIN &&
-	    sqlCheckIdentifierName(pParse, zName) != 0) {
-		sql_xfree(zName);
-		return;
-	}
+	struct Vdbe *v = sqlGetVdbe(parser);
 	/*
 	 * Keep the uppercase version of the unquoted name for backwards
 	 * compatibility.
 	 */
 	int old_name_reg = 0;
-	assert(pName->n > 0);
-	if (op != SAVEPOINT_BEGIN && pName->z[0] != '"') {
-		old_name_reg = ++pParse->nMem;
-		char *old_name = sql_legacy_name_new(pName->z, pName->n);
+	assert(name->n > 0);
+	if (op != SAVEPOINT_BEGIN && name->z[0] != '"') {
+		old_name_reg = ++parser->nMem;
+		char *old_name = sql_legacy_name_new(name->z, name->n);
 		sqlVdbeAddOp4(v, OP_String8, 0, old_name_reg, 0, old_name,
 			      P4_DYNAMIC);
 	}
-	sqlVdbeAddOp4(v, OP_Savepoint, op, 0, old_name_reg, zName, P4_DYNAMIC);
+	sqlVdbeAddOp4(v, OP_Savepoint, op, 0, old_name_reg,
+		      sql_name_from_token(name), P4_DYNAMIC);
 }
 
 /*
@@ -2460,6 +2431,25 @@ void
 sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast, const char *sql)
 {
 	switch (rast->type) {
+	case SQL_AST_TX_START:
+		sqlVdbeAddOp0(sqlGetVdbe(parser), OP_TransactionBegin);
+		break;
+	case SQL_AST_TX_COMMIT:
+		sqlVdbeAddOp0(sqlGetVdbe(parser), OP_TransactionCommit);
+		break;
+	case SQL_AST_TX_ROLLBACK:
+		sqlVdbeAddOp0(sqlGetVdbe(parser), OP_TransactionRollback);
+		break;
+	case SQL_AST_TX_SAVEPOINT_NEW:
+		sql_emit_savepoint(parser, SAVEPOINT_BEGIN, &rast->savepoint);
+		break;
+	case SQL_AST_TX_SAVEPOINT_RELEASE:
+		sql_emit_savepoint(parser, SAVEPOINT_RELEASE, &rast->savepoint);
+		break;
+	case SQL_AST_TX_SAVEPOINT_ROLLBACK:
+		sql_emit_savepoint(parser, SAVEPOINT_ROLLBACK,
+				   &rast->savepoint);
+		break;
 	case SQL_AST_SELECT: {
 		sql_emit_select(parser, &rast->select);
 		break;

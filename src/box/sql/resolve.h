@@ -613,6 +613,8 @@ struct sql_rast {
 		struct rast_drop_table drop_table;
 		/** Resolved DROP INDEX statement. */
 		struct rast_drop_index drop_index;
+		/** Name of the savepoint of a savepoint statement. */
+		struct Token savepoint;
 		/** Resolved DROP TRIGGER statement. */
 		struct rast_drop_trigger drop_trigger;
 		/** Resolved ALTER TABLE RENAME statement. */

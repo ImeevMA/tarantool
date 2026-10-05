@@ -632,24 +632,6 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast, const char *sql)
 	if (parse->is_aborted)
 		return;
 	switch (ast->type) {
-	case SQL_AST_TX_START:
-		sql_transaction_begin(parse);
-		break;
-	case SQL_AST_TX_COMMIT:
-		sql_transaction_commit(parse);
-		break;
-	case SQL_AST_TX_ROLLBACK:
-		sql_transaction_rollback(parse);
-		break;
-	case SQL_AST_TX_SAVEPOINT_NEW:
-		sqlSavepoint(parse, SAVEPOINT_BEGIN, &ast->savepoint);
-		break;
-	case SQL_AST_TX_SAVEPOINT_RELEASE:
-		sqlSavepoint(parse, SAVEPOINT_RELEASE, &ast->savepoint);
-		break;
-	case SQL_AST_TX_SAVEPOINT_ROLLBACK:
-		sqlSavepoint(parse, SAVEPOINT_ROLLBACK, &ast->savepoint);
-		break;
 	case SQL_AST_SELECT:
 		sql_code_select(parse, ast->select);
 		break;

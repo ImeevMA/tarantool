@@ -941,8 +941,8 @@ enum trim_side_mask {
 };
 
 /*
- * The following are used as the second parameter to sqlSavepoint(),
- * and as the P1 argument to the OP_Savepoint instruction.
+ * The following are used as the P1 argument to the OP_Savepoint
+ * instruction.
  */
 #define SAVEPOINT_BEGIN      0
 #define SAVEPOINT_RELEASE    1
@@ -3100,34 +3100,6 @@ int sqlFunctionUsesThisSrc(Expr *, SrcList *);
 struct Vdbe *
 sqlGetVdbe(struct Parse *pParse);
 
-/**
- * Generate opcodes which start new Tarantool transaction.
- * Used from parser to process BEGIN statement.
- *
- * @param parse_context Current parsing context.
- */
-void
-sql_transaction_begin(struct Parse *parse_context);
-
-/**
- * Generate opcodes which commit Tarantool transaction.
- * Used from parser to process COMMIT statement.
- *
- * @param parse_context Current parsing context.
- */
-void
-sql_transaction_commit(struct Parse *parse_context);
-
-/**
- * Generate opcodes which rollback Tarantool transaction.
- * Used from parser to process ROLLBACK statement.
- *
- * @param parse_context Current parsing context.
- */
-void
-sql_transaction_rollback(struct Parse *parse_context);
-
-void sqlSavepoint(Parse *, int, Token *);
 void sqlCloseSavepoints(Vdbe *);
 int sqlExprIsConstant(Expr *);
 int sqlExprIsConstantNotJoin(Expr *);

@@ -7444,6 +7444,24 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 			return NULL;
 		}
 		break;
+	case SQL_AST_TX_START:
+	case SQL_AST_TX_COMMIT:
+	case SQL_AST_TX_ROLLBACK:
+		break;
+	case SQL_AST_TX_SAVEPOINT_NEW: {
+		const char *name = sql_name_temp(ctx.region, ast->savepoint.z,
+						 ast->savepoint.n);
+		if (sql_check_identifier_name(name, strlen(name)) != 0) {
+			parser->is_aborted = true;
+			return NULL;
+		}
+		rast->savepoint = ast->savepoint;
+		break;
+	}
+	case SQL_AST_TX_SAVEPOINT_RELEASE:
+	case SQL_AST_TX_SAVEPOINT_ROLLBACK:
+		rast->savepoint = ast->savepoint;
+		break;
 	case SQL_AST_DROP_TRIGGER:
 		rast->drop_trigger.name = ast->drop_trigger.name;
 		rast->drop_trigger.if_exists = ast->drop_trigger.if_exists;
