@@ -776,43 +776,16 @@ struct ast_table_properties *
 ast_table_properties_append_constraint(struct ast_table_properties *properties,
 				       struct ast_property *constraint);
 
-/** The properties of an AST expression checked by sql_ast_check_expr(). */
-struct ast_check_result {
-	/**
-	 * Height of the expression: 1 for a leaf, or else the largest height
-	 * of its operands plus one. A unary plus or minus applied to a
-	 * numeric literal is a part of the literal, an AND with a FALSE
-	 * operand and IN with an empty list are FALSE.
-	 */
-	int height;
-	/** Operation of the expression after such folding. */
-	int op;
-	/** Literal of a numeric, string or VARBINARY expression, or NULL. */
-	struct ast_expr *literal;
-	/** Value of an INTEGER literal, in two's complement if negative. */
-	uint64_t u;
-	/** Whether a numeric literal is negated. */
-	bool is_neg;
-	/** Number of the elements of a vector. */
-	uint32_t len;
-	/**
-	 * Whether the expression is constant: it has no names, bound
-	 * variables and subqueries.
-	 */
-	bool is_constant;
-};
-
 /**
  * Check the given AST expression: the literals, the collations, the number of
  * the arguments of the functions and of the parts of the compound SELECTs, the
  * types of the joins and the heights of the expressions. The names are not
- * resolved. The properties of the expression are set in the given result.
+ * resolved.
  *
  * Returns 0 on success and -1 on error.
  */
 int
-sql_ast_check_expr(struct Parse *parser, struct ast_expr *expr,
-		   struct ast_check_result *res);
+sql_ast_check_expr(struct Parse *parser, struct ast_expr *expr);
 
 /**
  * Check the given AST SELECT as sql_ast_check_expr() does, including its WITH

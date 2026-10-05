@@ -160,6 +160,16 @@ struct sql_resolve_context {
 	 * see sql_func_expr_from_ast().
 	 */
 	bool is_row_expr;
+	/**
+	 * Whether the expression being resolved is a DEFAULT of a field, see
+	 * resolve_default().
+	 */
+	bool is_default;
+	/**
+	 * Whether the DEFAULT being resolved has no names, bound variables
+	 * and subqueries.
+	 */
+	bool is_constant;
 };
 
 /**
@@ -756,6 +766,12 @@ resolve_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	   struct rast_expr *res)
 {
 	const struct ast_expr *rhs = ast->right;
+	if (rhs->op == TK_SELECT && ctx->is_default) {
+		ctx->is_constant = false;
+		res->type = SQL_TYPE_BOOLEAN;
+		res->height = 1;
+		return 0;
+	}
 	if (rhs->op == TK_SELECT) {
 		res->in.value =
 			xregion_alloc_object(ctx->region, struct rast_expr);
@@ -1303,6 +1319,13 @@ static int
 resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		   struct rast_expr *res)
 {
+	if (ctx->is_default) {
+		ctx->is_constant = false;
+		res->op = TK_ID;
+		res->type = SQL_TYPE_ANY;
+		res->height = 1;
+		return 0;
+	}
 	if (ctx->is_row_expr) {
 		/*
 		 * As in the legacy code, a name is looked up when the
@@ -1428,6 +1451,12 @@ static int
 resolve_subquery(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		 struct rast_expr *res)
 {
+	if (ctx->is_default) {
+		ctx->is_constant = false;
+		res->type = SQL_TYPE_ANY;
+		res->height = 1;
+		return 0;
+	}
 	/*
 	 * As in the legacy code, a scalar subquery and EXISTS are not allowed
 	 * in the body of an SQL_EXPR function, unlike an IN subquery.
@@ -1787,6 +1816,8 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	case TK_VAR_ANON:
 	case TK_VAR_NUM:
 	case TK_VAR_NAME:
+		if (ctx->is_default)
+			ctx->is_constant = false;
 		res->var.name = ast->str;
 		res->var.len = ast->len;
 		res->var.num = ast->var.num;
@@ -5375,68 +5406,43 @@ resolve_new_primary_key(struct sql_resolve_context *ctx,
 }
 
 /**
- * Encode the value of the given checked term, which is a literal, into MsgPack
- * on the given region and set the given size. Return NULL and set the size to
- * 0 for NULL and UNKNOWN.
+ * Encode the value of the given resolved literal into MsgPack on the given
+ * region and set the given size. Return NULL and set the size to 0 for NULL
+ * and UNKNOWN.
  */
 static char *
-default_term_encode(struct region *region, const struct ast_check_result *term,
+default_term_encode(struct region *region, const struct rast_expr *term,
 		    uint32_t *size)
 {
 	char *buf = NULL;
 	*size = 0;
-	const struct ast_expr *lit = term->literal;
 	switch (term->op) {
 	case TK_TRUE:
 	case TK_FALSE:
-		*size = mp_sizeof_bool(term->op == TK_TRUE);
+		*size = mp_sizeof_bool(term->b);
 		buf = xregion_alloc(region, *size);
-		mp_encode_bool(buf, term->op == TK_TRUE);
+		mp_encode_bool(buf, term->b);
 		break;
-	case TK_BLOB: {
-		uint32_t len = (lit->len - 3) / 2;
-		*size = mp_sizeof_bin(len);
+	case TK_BLOB:
+		*size = mp_sizeof_bin(term->n);
 		buf = xregion_alloc(region, *size);
-		char *data = mp_encode_binl(buf, len);
-		for (uint32_t i = 0; i < len; ++i) {
-			data[i] = sqlHexToInt(lit->str[2 + i * 2]) << 4 |
-				  sqlHexToInt(lit->str[3 + i * 2]);
-		}
+		mp_encode_bin(buf, term->z, term->n);
 		break;
-	}
-	case TK_STRING: {
-		char *str = xregion_alloc(region, lit->len + 1);
-		memcpy(str, lit->str, lit->len);
-		uint32_t len = sql_dequote(str, lit->len);
-		*size = mp_sizeof_str(len);
+	case TK_STRING:
+		*size = mp_sizeof_str(term->n);
 		buf = xregion_alloc(region, *size);
-		mp_encode_str(buf, str, len);
+		mp_encode_str(buf, term->z, term->n);
 		break;
-	}
-	case TK_FLOAT: {
-		double value;
-		sqlAtoF(lit->str, &value, lit->len);
-		if (term->is_neg)
-			value = -value;
-		*size = mp_sizeof_double(value);
+	case TK_FLOAT:
+		*size = mp_sizeof_double(term->f);
 		buf = xregion_alloc(region, *size);
-		mp_encode_double(buf, value);
+		mp_encode_double(buf, term->f);
 		break;
-	}
-	case TK_DECIMAL: {
-		char *str = xregion_alloc(region, lit->len + 1);
-		memcpy(str, lit->str, lit->len);
-		str[lit->len] = '\0';
-		decimal_t value;
-		if (sql_dec_from_str(&value, str) != 0)
-			unreachable();
-		if (term->is_neg)
-			decimal_minus(&value, &value);
-		*size = mp_sizeof_decimal(&value);
+	case TK_DECIMAL:
+		*size = mp_sizeof_decimal(term->dec);
 		buf = xregion_alloc(region, *size);
-		mp_encode_decimal(buf, &value);
+		mp_encode_decimal(buf, term->dec);
 		break;
-	}
 	case TK_INTEGER:
 		if (term->is_neg) {
 			*size = mp_sizeof_int((int64_t)term->u);
@@ -5457,8 +5463,10 @@ default_term_encode(struct region *region, const struct ast_check_result *term,
 /**
  * Resolve the given DEFAULT of the last field of the space of the given
  * statement. A literal is encoded into the definition of the field, any other
- * expression must be constant and becomes the body of a function. As in the
- * legacy code, the expression is checked by sql_ast_check_expr().
+ * expression must be constant and becomes the body of a function. The
+ * expression is resolved as the body of an SQL_EXPR function, except that a
+ * name, a bound variable or a subquery makes it not constant instead of being
+ * resolved.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -5466,8 +5474,19 @@ static int
 resolve_default(struct sql_resolve_context *ctx, struct rast_create_table *res,
 		struct ast_expr *ast)
 {
-	struct ast_check_result term;
-	if (sql_ast_check_expr(ctx->parser, ast, &term) != 0)
+	struct sql_resolve_scope scope;
+	memset(&scope, 0, sizeof(scope));
+	struct sql_resolve_scope *outer = ctx->scope;
+	ctx->scope = &scope;
+	ctx->is_row_expr = true;
+	ctx->is_default = true;
+	ctx->is_constant = true;
+	struct rast_expr term;
+	int rc = resolve_expr(ctx, ast, &term);
+	ctx->scope = outer;
+	ctx->is_row_expr = false;
+	ctx->is_default = false;
+	if (rc != 0)
 		return -1;
 	struct space_def *def = res->space->def;
 	uint32_t fieldno = def->field_count - 1;
@@ -5491,7 +5510,7 @@ resolve_default(struct sql_resolve_context *ctx, struct rast_create_table *res,
 	default:
 		break;
 	}
-	if (!term.is_constant) {
+	if (!ctx->is_constant) {
 		diag_set(ClientError, ER_CREATE_SPACE, def->name,
 			 tt_sprintf("default value of column '%s' is not "
 				    "constant", field->name));

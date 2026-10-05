@@ -1,6 +1,6 @@
 #!/usr/bin/env tarantool
 local test = require("sqltester")
-test:plan(15)
+test:plan(16)
 
 --!./tcltestrunner.lua
 -- 2005 August 18
@@ -66,8 +66,22 @@ test:do_catchsql_test(
 	);
 	]], {
 	-- <default-1.3>
-    1, "Failed to create space 't3': default value of column 'y' is not constant"
+    1, "Wrong number of arguments is passed to max(): expected 1, got 2"
 	-- </default-1.3>
+})
+
+test:do_catchsql_test(
+    "default-1.4",
+    [[
+    CREATE TABLE t3(
+    rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+    x INTEGER,
+    y INTEGER DEFAULT (abs(x))
+    );
+    ]], {
+    -- <default-1.4>
+    1, "Failed to create space 't3': default value of column 'y' is not constant"
+    -- </default-1.4>
 })
 
 test:do_execsql_test(

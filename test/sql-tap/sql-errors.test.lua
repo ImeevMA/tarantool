@@ -40,7 +40,7 @@ test:do_catchsql_test(
 test:do_catchsql_test(
 	"sql-errors-1.3",
 	[[
-		CREATE TABLE t3 (i INT PRIMARY KEY, a INT DEFAULT(MAX(i, 1)));
+        CREATE TABLE t3 (i INT PRIMARY KEY, a INT DEFAULT(ABS(i)));
 	]], {
 		-- <sql-errors-1.3>
         1,"Failed to create space 't3': default value of column 'a' is not constant"
