@@ -1657,16 +1657,6 @@ sql_index_id_by_token(const struct space *space, const struct Token *name)
 }
 
 uint32_t
-sql_index_id_by_src(const struct SrcList_item *src)
-{
-	assert(src->space != NULL && src->fg.isIndexedBy != 0);
-	uint32_t res = sql_space_index_id(src->space, src->indexed_by);
-	if (res != UINT32_MAX || src->legacy_index_name == NULL)
-		return res;
-	return sql_space_index_id(src->space, src->legacy_index_name);
-}
-
-uint32_t
 sql_space_fieldno(const struct space *space, const char *name)
 {
 	for (uint32_t i = 0; i < space->def->field_count; ++i) {

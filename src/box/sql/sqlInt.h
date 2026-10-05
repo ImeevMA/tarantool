@@ -1494,10 +1494,6 @@ struct SrcList {
 		Expr *pOn;	/* The ON clause of a join */
 		IdList *pUsing;	/* The USING clause of a join */
 		Bitmask colUsed;	/* Bit N (1<<N) set if column N of space is used */
-		/** Identifier from "INDEXED BY <index>" clause. */
-		char *indexed_by;
-		/** Normalized index name for the second lookup. */
-		char *legacy_index_name;
 		struct index_def *pIBIndex;
 	} a[1];			/* One entry for each identifier on the list */
 };
@@ -2662,14 +2658,6 @@ sql_src_list_new(void);
 struct SrcList *
 sql_src_list_append(struct SrcList *list, struct Token *name_token);
 
-/**
- * Add an INDEXED BY or NOT INDEXED clause to the most recently added element of
- * the source-list passed as the second argument.
- */
-void
-sqlSrcListIndexedBy(struct SrcList *p, struct Token *pIndexedBy);
-
-int sqlIndexedByLookup(Parse *, struct SrcList_item *);
 void sqlSrcListAssignCursors(Parse *, SrcList *);
 
 /** Delete an IdList. */
@@ -2836,15 +2824,6 @@ sql_space_fieldno(const struct space *space, const char *name);
  */
 uint32_t
 sql_index_id_by_token(const struct space *space, const struct Token *name);
-
-/**
- * Return index with name defined by the element of struct SrcList. A second
- * lookup will be performed if the index is not found on the first try and field
- * legacy_index_name of the src is not NULL. Return NULL if the index was not
- * found.
- */
-uint32_t
-sql_index_id_by_src(const struct SrcList_item *src);
 
 /**
  * Return the fieldno of the field with the name defined by the token. Return

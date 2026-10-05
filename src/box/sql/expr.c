@@ -1587,12 +1587,6 @@ sqlSrcListDup(struct SrcList *p, int flags)
 		pNewItem->iCursor = pOldItem->iCursor;
 		pNewItem->addrFillSub = pOldItem->addrFillSub;
 		pNewItem->regReturn = pOldItem->regReturn;
-		if (pNewItem->fg.isIndexedBy) {
-			pNewItem->indexed_by =
-				sql_xstrdup(pOldItem->indexed_by);
-			pNewItem->legacy_index_name =
-				sql_xstrdup(pOldItem->legacy_index_name);
-		}
 		pNewItem->pIBIndex = pOldItem->pIBIndex;
 		pNewItem->space = pOldItem->space;
 		pNewItem->pSelect = sqlSelectDup(pOldItem->pSelect, flags);

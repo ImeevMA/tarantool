@@ -6624,7 +6624,6 @@ src_list_from_rast(struct Parse *parser, const struct rast_build_scope *parent,
 		item->fg.notIndexed = src->is_not_indexed;
 		if (src->index_id != UINT32_MAX) {
 			item->pIBIndex = space_index(space, src->index_id)->def;
-			item->indexed_by = sql_xstrdup(item->pIBIndex->name);
 			item->fg.isIndexedBy = true;
 		}
 	}

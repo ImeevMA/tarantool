@@ -3969,30 +3969,6 @@ is_simple_count(struct Select *select, struct AggInfo *agg_info)
 }
 
 /*
- * If the source-list item passed as an argument was augmented with an
- * INDEXED BY clause, then try to locate the specified index. If there
- * was such a clause and the named index cannot be found, return
- * -1 and set an error. Otherwise, populate
- * pFrom->pIndex and return 0.
- */
-int
-sqlIndexedByLookup(Parse * pParse, struct SrcList_item *pFrom)
-{
-	if (pFrom->space == NULL || pFrom->fg.isIndexedBy == 0)
-		return 0;
-	uint32_t index_id = sql_index_id_by_src(pFrom);
-	if (index_id == UINT32_MAX) {
-		diag_set(ClientError, ER_NO_SUCH_INDEX_NAME,
-			 pFrom->indexed_by, pFrom->space->def->name);
-		pParse->is_aborted = true;
-		return -1;
-	}
-	assert(index_id <= pFrom->space->index_id_max);
-	pFrom->pIBIndex = pFrom->space->index_map[index_id]->def;
-	return 0;
-}
-
-/*
  * No-op routine for the parse-tree walker.
  *
  * When this routine is the Walker.xExprCallback then expression trees
@@ -5076,7 +5052,6 @@ sqlSelect(Parse * pParse,		/* The parser context */
 				struct SrcList_item *src = &p->pSrc->a[0];
 				assert(src);
 				assert(pParse);
-				sqlIndexedByLookup(pParse, src);
 				if (src->pIBIndex != NULL)
 					index_id = src->pIBIndex->iid;
 

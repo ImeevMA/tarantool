@@ -1727,10 +1727,6 @@ sqlSrcListDelete(struct SrcList *pList)
 	for (pItem = pList->a, i = 0; i < pList->nSrc; i++, pItem++) {
 		sql_xfree(pItem->zName);
 		sql_xfree(pItem->zAlias);
-		if (pItem->fg.isIndexedBy) {
-			sql_xfree(pItem->indexed_by);
-			sql_xfree(pItem->legacy_index_name);
-		}
 		/*
 		* Space is either not ephemeral which means that
 		* it came from space cache; or space is ephemeral
@@ -1746,35 +1742,6 @@ sqlSrcListDelete(struct SrcList *pList)
 		sqlIdListDelete(pItem->pUsing);
 	}
 	sql_xfree(pList);
-}
-
-/*
- * Add an INDEXED BY or NOT INDEXED clause to the most recently added
- * element of the source-list passed as the second argument.
- */
-void
-sqlSrcListIndexedBy(struct SrcList *p, struct Token *pIndexedBy)
-{
-	assert(pIndexedBy != 0);
-	if (p && ALWAYS(p->nSrc > 0)) {
-		struct SrcList_item *pItem = &p->a[p->nSrc - 1];
-		assert(pItem->fg.notIndexed == 0);
-		assert(pItem->fg.isIndexedBy == 0);
-		if (pIndexedBy->n == 1 && !pIndexedBy->z) {
-			/* A "NOT INDEXED" clause was supplied. See parse.y
-			 * construct "indexed_opt" for details.
-			 */
-			pItem->fg.notIndexed = 1;
-		} else if (pIndexedBy->z != NULL) {
-			pItem->indexed_by = sql_name_from_token(pIndexedBy);
-			pItem->fg.isIndexedBy = true;
-			if (pIndexedBy->z[0] != '"') {
-				pItem->legacy_index_name =
-					sql_legacy_name_new(pIndexedBy->z,
-							    pIndexedBy->n);
-			}
-		}
-	}
 }
 
 /**
