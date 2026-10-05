@@ -806,13 +806,6 @@ struct sql_view_refs *
 sql_ast_view_refs(struct ast_select *select);
 
 /**
- * Return the number of the sources of the given AST SELECT, including the
- * sources of its subquery sources.
- */
-uint32_t
-sql_ast_source_count(struct ast_select *select);
-
-/**
  * Convert `struct ast_trigger` to `struct sql_trigger`.
  *
  * Return NULL on error.

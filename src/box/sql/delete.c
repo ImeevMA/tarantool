@@ -70,9 +70,6 @@ sql_emit_delete(struct Parse *parse, struct rast_delete *del)
 		sql_triggers_exist(space->def, TK_DELETE, NULL,
 				   parse->sql_flags, NULL);
 	bool is_view = space->def->opts.is_view;
-	if (is_view &&
-	    sql_view_assign_cursors(parse, space->def->opts.sql) != 0)
-		return;
 	target->cursor = parse->nTab++;
 	parse->nTab += space->index_count;
 	struct SrcList *tab_list = src_list_from_rast_target(parse,

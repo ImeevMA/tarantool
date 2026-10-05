@@ -2560,17 +2560,6 @@ sql_create_view(struct Parse *parse_context, const char *sql,
 		struct Token *name, struct ExprList *aliases,
 		struct Select *view_select, bool if_not_exists);
 
-/**
- * Parse the given view definition and assign cursors to each source of its
- * SELECT and of its subquery sources.
- *
- * @param parse Parsing context.
- * @param view_stmt String containing 'CREATE VIEW' statement.
- * @retval 0 if success, -1 in case of error.
- */
-int
-sql_view_assign_cursors(struct Parse *parse, const char *view_stmt);
-
 /** Emit VDBE bytecode for the given resolved INSERT statement. */
 void
 sql_emit_insert(struct Parse *parser, struct rast_insert *insert);

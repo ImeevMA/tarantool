@@ -96,8 +96,6 @@ sql_pragma_table_info(struct Parse *parse, const struct space *space)
 	if (space == NULL)
 		return;
 	parse->nMem = 6;
-	if (space->def->opts.is_view)
-		sql_view_assign_cursors(parse, space->def->opts.sql);
 	struct Vdbe *v = sqlGetVdbe(parse);
 	struct field_def *field = space->def->fields;
 	for (uint32_t i = 0, k; i < space->def->field_count; ++i, ++field) {

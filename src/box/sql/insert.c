@@ -300,11 +300,6 @@ insert_emit(struct Parse *pParse, struct space *space, struct Select *pSelect,
 	assert((trigger != NULL && tmask != 0) ||
 	       (trigger == NULL && tmask == 0));
 
-	/* If pTab is really a view, make sure it has been initialized.
-	 * ViewGetColumnNames() is a no-op if pTab is not a view.
-	 */
-	if (is_view && sql_view_assign_cursors(pParse, space_def->opts.sql) != 0)
-		goto insert_cleanup;
 	assert(!is_view || tmask != 0);
 
 	/* Allocate a VDBE. */

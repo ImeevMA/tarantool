@@ -903,19 +903,6 @@ sql_create_view(struct Parse *parse_context, const char *sql,
 	return;
 }
 
-int
-sql_view_assign_cursors(struct Parse *parse, const char *view_stmt)
-{
-	assert(view_stmt != NULL);
-	struct Parse parser;
-	sql_parser_create(&parser, SQL_DEFAULT_FLAGS);
-	struct ast_select *ast = sql_parse_view(&parser, view_stmt);
-	if (ast != NULL)
-		parse->nTab += sql_ast_source_count(ast);
-	sql_parser_destroy(&parser);
-	return ast != NULL ? 0 : -1;
-}
-
 /**
  * Generate VDBE program to revoke all
  * privileges associated with the given object.

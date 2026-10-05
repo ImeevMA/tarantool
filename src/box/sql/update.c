@@ -151,10 +151,6 @@ update_emit(struct Parse *pParse, struct SrcList *pTabList,
 	is_view = space->def->opts.is_view;
 	assert(trigger != NULL || tmask == 0);
 
-	if (is_view &&
-	    sql_view_assign_cursors(pParse, space->def->opts.sql) != 0) {
-		goto update_cleanup;
-	}
 	if (is_view && tmask == 0) {
 		diag_set(ClientError, ER_ALTER_SPACE, space->def->name,
 			 "space is a view");

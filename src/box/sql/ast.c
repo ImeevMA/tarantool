@@ -1230,17 +1230,3 @@ sql_ast_view_refs(struct ast_select *select)
 	return refs;
 }
 
-uint32_t
-sql_ast_source_count(struct ast_select *select)
-{
-	uint32_t count = 0;
-	if (select->sources == NULL)
-		return 0;
-	struct ast_source *src;
-	stailq_foreach_entry(src, &select->sources->head, link) {
-		count++;
-		if (src->select != NULL)
-			count += sql_ast_source_count(src->select);
-	}
-	return count;
-}
