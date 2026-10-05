@@ -13,6 +13,7 @@ struct space;
 struct Expr;
 struct Select;
 struct SrcList;
+struct field_link;
 
 /** Expression resolved into the form the build stage consumes. */
 struct rast_expr {
@@ -451,6 +452,41 @@ struct rast_create_index {
 	bool is_unique;
 };
 
+/** Resolved ALTER TABLE ADD CONSTRAINT statement. */
+struct rast_add_constraint {
+	/** Space the constraint is added to. */
+	struct space *space;
+	/** Name of the constraint. */
+	struct Token name;
+	/** Type of the constraint. */
+	enum ast_property_type type;
+	union {
+		/** Resolved UNIQUE or PRIMARY KEY constraint. */
+		struct {
+			/** Parts of the index of the constraint. */
+			struct rast_index_part *parts;
+			/** Number of the parts of the index. */
+			uint32_t part_count;
+			/**
+			 * Number of the AUTOINCREMENT field, or UINT32_MAX if
+			 * there is none.
+			 */
+			uint32_t autoinc_fieldno;
+		} index;
+		/** Resolved FOREIGN KEY constraint. */
+		struct {
+			/** Referenced space. */
+			struct space *parent;
+			/** Mapping of the child fields to the parent ones. */
+			struct field_link *links;
+			/** Number of the links. */
+			uint32_t link_count;
+		} fk;
+		/** Text of the expression of CHECK constraint. */
+		struct Token check;
+	};
+};
+
 /** Resolved CREATE VIEW statement. */
 struct rast_create_view {
 	/** Name of the view. */
@@ -481,6 +517,8 @@ struct sql_rast {
 		struct rast_truncate truncate;
 		/** Resolved CREATE INDEX statement. */
 		struct rast_create_index create_index;
+		/** Resolved ALTER TABLE ADD CONSTRAINT statement. */
+		struct rast_add_constraint add_constraint;
 		/** Resolved DELETE statement. */
 		struct rast_delete del;
 		/** Resolved UPDATE statement. */

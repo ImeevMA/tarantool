@@ -110,3 +110,95 @@ g.test_alter_table_reserved_keyword_error = function(cg)
         box.space.t:drop()
     end)
 end
+
+--
+-- Make sure ALTER TABLE ADD CONSTRAINT reports errors in the same order as
+-- before the resolving of the statement was separated from the code
+-- generation.
+--
+g.test_add_constraint_check_order = function(cg)
+    cg.server:exec(function()
+        local function check(sql, exp)
+            local _, err = box.execute(sql)
+            t.assert_equals(err.message, exp, sql)
+        end
+        box.execute([[CREATE TABLE p (a INT PRIMARY KEY, "B" INT);]])
+        box.execute([[CREATE TABLE t (a INT PRIMARY KEY, "B" INT, c INT);]])
+        box.execute([[CREATE VIEW v AS SELECT * FROM t;]])
+        box.schema.space.create('nopk', {format = {{'a', 'integer'}}})
+
+        -- UNIQUE and PRIMARY KEY are checked as CREATE INDEX is.
+        check([[ALTER TABLE nosuch ADD CONSTRAINT u UNIQUE (a COLLATE x);]],
+              "Collation 'x' does not exist")
+        check([[ALTER TABLE nosuch ADD CONSTRAINT u PRIMARY KEY
+                (a AUTOINCREMENT, b AUTOINCREMENT);]],
+              "Table must feature at most one AUTOINCREMENT field")
+        check([[ALTER TABLE nosuch ADD CONSTRAINT u UNIQUE (nosuch);]],
+              "Space 'nosuch' does not exist")
+        check([[ALTER TABLE v ADD CONSTRAINT u UNIQUE (nosuch);]],
+              "Views can not be indexed")
+        check([[ALTER TABLE t ADD CONSTRAINT "" UNIQUE (nosuch);]],
+              "Invalid identifier '' (expected printable symbols only " ..
+              "or it is too long)")
+        check([[ALTER TABLE t ADD CONSTRAINT u UNIQUE (a, nosuch);]],
+              "Can't resolve field 'nosuch'")
+
+        -- FOREIGN KEY.
+        local inv = "Invalid identifier '' (expected printable symbols " ..
+                    "only or it is too long)"
+        check([[ALTER TABLE nosuch ADD CONSTRAINT f FOREIGN KEY ("")
+                REFERENCES nosuch;]], inv)
+        check([[ALTER TABLE nosuch ADD CONSTRAINT f FOREIGN KEY (a)
+                REFERENCES nosuch ("");]], inv)
+        check([[ALTER TABLE nosuch ADD CONSTRAINT f FOREIGN KEY (a)
+                REFERENCES nosuch2;]], "Space 'nosuch' does not exist")
+        check([[ALTER TABLE t ADD CONSTRAINT f FOREIGN KEY (a)
+                REFERENCES nosuch;]], "Space 'nosuch' does not exist")
+        local err = "Failed to create foreign key constraint 'f': "
+        check([[ALTER TABLE t ADD CONSTRAINT f FOREIGN KEY (nosuch)
+                REFERENCES v;]], err .. "referenced space can't be VIEW")
+        check([[ALTER TABLE t ADD CONSTRAINT f FOREIGN KEY (nosuch)
+                REFERENCES nopk;]],
+              err .. "referenced space doesn't feature PRIMARY KEY")
+        local mismatch = err .. "number of columns in foreign key does " ..
+                         "not match the number of columns in the primary " ..
+                         "index of referenced table"
+        check([[ALTER TABLE t ADD CONSTRAINT f FOREIGN KEY (a, nosuch)
+                REFERENCES p;]], mismatch)
+        check([[ALTER TABLE t ADD CONSTRAINT f FOREIGN KEY (nosuch)
+                REFERENCES p (a, nosuch);]], mismatch)
+        local nofield = err .. "foreign key refers to nonexistent field "
+        check([[ALTER TABLE t ADD CONSTRAINT f FOREIGN KEY (a, nosuch)
+                REFERENCES p (nosuch2, a);]], nofield .. "nosuch2")
+        check([[ALTER TABLE t ADD CONSTRAINT f FOREIGN KEY (a, nosuch)
+                REFERENCES p (a, b);]], nofield .. "nosuch")
+
+        -- CHECK: only the space is resolved.
+        check([[ALTER TABLE nosuch ADD CONSTRAINT c CHECK (nosuch);]],
+              "Space 'nosuch' does not exist")
+
+        -- Unquoted names have legacy form.
+        box.execute([[ALTER TABLE t ADD CONSTRAINT u UNIQUE (b, a);]])
+        local parts = box.space.t.index.u.parts
+        t.assert_equals({parts[1].fieldno, parts[2].fieldno}, {2, 1})
+        box.execute([[ALTER TABLE t ADD CONSTRAINT f FOREIGN KEY (c, b)
+                      REFERENCES p (b, a);]])
+        t.assert_equals(box.space.t.foreign_key.f,
+                        {space = box.space.p.id, field = {[3] = 2, [2] = 1}})
+        box.execute([[ALTER TABLE t ADD CONSTRAINT f2 FOREIGN KEY (c)
+                      REFERENCES p;]])
+        t.assert_equals(box.space.t.foreign_key.f2,
+                        {space = box.space.p.id, field = {[3] = 1}})
+        box.execute([[ALTER TABLE t ADD CONSTRAINT c CHECK (a > 0);]])
+        t.assert_equals(box.space.t.constraint.c, box.func.check_t_c.id)
+        box.execute([[ALTER TABLE nopk ADD CONSTRAINT pk PRIMARY KEY
+                      (a AUTOINCREMENT);]])
+        t.assert_equals(box.space.nopk:insert({box.NULL}), {1})
+
+        box.space.nopk:drop()
+        box.execute([[DROP VIEW v;]])
+        box.execute([[DROP TABLE t;]])
+        box.execute([[DROP TABLE p;]])
+        box.func.check_t_c:drop()
+    end)
+end

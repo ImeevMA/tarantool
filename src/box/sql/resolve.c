@@ -37,6 +37,7 @@
  */
 #include "sqlInt.h"
 #include "resolve.h"
+#include "tarantoolInt.h"
 #include <stdlib.h>
 #include <string.h>
 #include "box/schema.h"
@@ -5782,30 +5783,30 @@ resolve_index_part(struct sql_resolve_context *ctx,
 }
 
 /**
- * Resolve the given AST CREATE INDEX statement into the given
- * rast_create_index. As in the legacy code, the columns are converted first,
- * so the same errors are reported, and are resolved after the space and the
- * name of the index are checked.
+ * Resolve the index with the given name and columns of the space with the given
+ * name into the given rast_create_index, as sql_create_index() does. As in the
+ * legacy code, the columns are converted first, so the same errors are
+ * reported, and are resolved after the space and the name of the index are
+ * checked. If the given flag is set, a missing space or an existing index is
+ * not an error, and the space of the result is left NULL.
  *
  * Returns 0 on success and -1 on error.
  */
 static int
-resolve_create_index(struct sql_resolve_context *ctx,
-		     const struct ast_create_index *ast,
-		     struct rast_create_index *res)
+resolve_index(struct sql_resolve_context *ctx, const struct Token *table,
+	      const struct Token *name, struct ast_expr_list *columns,
+	      bool if_not_exists, struct rast_create_index *res)
 {
-	memset(res, 0, sizeof(*res));
-	res->name = ast->name;
-	res->is_unique = ast->is_unique;
-	struct ExprList *columns = expr_list_from_ast(ctx->parser,
-						      ast->columns);
-	if (columns == NULL)
+	res->name = *name;
+	struct ExprList *list = expr_list_from_ast(ctx->parser, columns);
+	ctx->parser->autoinc_fieldno = NULL;
+	if (list == NULL)
 		return -1;
-	sql_expr_list_delete(columns);
+	sql_expr_list_delete(list);
 
-	struct space *space = find_space(ctx, &ast->table, false);
+	struct space *space = find_space(ctx, table, false);
 	if (space == NULL) {
-		if (!ast->if_not_exists)
+		if (!if_not_exists)
 			return -1;
 		diag_clear(diag_get());
 		return 0;
@@ -5818,27 +5819,26 @@ resolve_create_index(struct sql_resolve_context *ctx,
 	}
 	if (sql_space_def_check_format(def) != 0)
 		return -1;
-	const char *name = sql_name_temp(ctx->region, ast->name.z,
-					 ast->name.n);
-	if (space_index_by_name0(space, name) != NULL) {
-		if (ast->if_not_exists)
+	const char *index_name = sql_name_temp(ctx->region, name->z, name->n);
+	if (space_index_by_name0(space, index_name) != NULL) {
+		if (if_not_exists)
 			return 0;
-		diag_set(ClientError, ER_INDEX_EXISTS_IN_SPACE, name,
+		diag_set(ClientError, ER_INDEX_EXISTS_IN_SPACE, index_name,
 			 def->name);
 		return -1;
 	}
-	if (sql_check_identifier_name(name, strlen(name)) != 0)
+	if (sql_check_identifier_name(index_name, strlen(index_name)) != 0)
 		return -1;
 	if (space_is_system(space)) {
-		diag_set(ClientError, ER_MODIFY_INDEX, name, def->name,
+		diag_set(ClientError, ER_MODIFY_INDEX, index_name, def->name,
 			 "can't create index on system space");
 		return -1;
 	}
-	res->part_count = ast->columns->len;
+	res->part_count = columns->len;
 	res->parts = xregion_alloc_array(ctx->region, struct rast_index_part,
 					 res->part_count);
 	uint32_t i = 0;
-	for (const struct stailq_entry *node = ast->columns->head.first.value;
+	for (const struct stailq_entry *node = columns->head.first.value;
 	     node != NULL; node = node->next.value, ++i) {
 		const struct ast_expr_list_entry *entry =
 			stailq_entry(node, struct ast_expr_list_entry, link);
@@ -5858,6 +5858,218 @@ resolve_create_index(struct sql_resolve_context *ctx,
 	}
 	res->space = space;
 	return 0;
+}
+
+/**
+ * Resolve the given AST CREATE INDEX statement into the given
+ * rast_create_index.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_create_index(struct sql_resolve_context *ctx,
+		     const struct ast_create_index *ast,
+		     struct rast_create_index *res)
+{
+	memset(res, 0, sizeof(*res));
+	res->is_unique = ast->is_unique;
+	return resolve_index(ctx, &ast->table, &ast->name, ast->columns,
+			     ast->if_not_exists, res);
+}
+
+/**
+ * Resolve the given UNIQUE or PRIMARY KEY constraint added to the space with
+ * the given name into the given rast_add_constraint.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_index_constraint(struct sql_resolve_context *ctx,
+			 const struct Token *table,
+			 const struct ast_property *ast,
+			 struct rast_add_constraint *res)
+{
+	struct rast_create_index index;
+	memset(&index, 0, sizeof(index));
+	if (resolve_index(ctx, table, &ast->name, ast->columns, false,
+			  &index) != 0)
+		return -1;
+	res->space = index.space;
+	res->index.parts = index.parts;
+	res->index.part_count = index.part_count;
+	res->index.autoinc_fieldno = UINT32_MAX;
+	uint32_t i = 0;
+	for (const struct stailq_entry *node = ast->columns->head.first.value;
+	     node != NULL; node = node->next.value, ++i) {
+		if (stailq_entry(node, struct ast_expr_list_entry,
+				 link)->autoinc)
+			res->index.autoinc_fieldno = index.parts[i].fieldno;
+	}
+	return 0;
+}
+
+/**
+ * Check the given names of the columns of a FOREIGN KEY constraint as
+ * expr_list_from_ids() does: all the names are checked, so the error is
+ * reported for the last invalid one.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+check_fk_column_names(struct sql_resolve_context *ctx,
+		      const struct ast_id_list *list)
+{
+	if (list == NULL)
+		return 0;
+	int rc = 0;
+	for (const struct stailq_entry *node = list->head.first.value;
+	     node != NULL; node = node->next.value) {
+		const struct Token *id =
+			&stailq_entry(node, struct ast_id_entry, link)->id;
+		const char *name = sql_name_temp(ctx->region, id->z, id->n);
+		if (sql_check_identifier_name(name, strlen(name)) != 0)
+			rc = -1;
+	}
+	return rc;
+}
+
+/**
+ * Find the field with the given name of a column of the FOREIGN KEY constraint
+ * with the given name in the given space definition, as columnno_by_name()
+ * does. An unquoted name is also looked up in its legacy form.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_fk_field(struct sql_resolve_context *ctx, const struct space_def *def,
+		 const struct Token *id, const char *fk_name,
+		 uint32_t *fieldno)
+{
+	const char *name = sql_name_temp(ctx->region, id->z, id->n);
+	*fieldno = space_def_fieldno(def, name);
+	if (*fieldno == UINT32_MAX && id->z[0] != '"') {
+		const char *legacy = sql_legacy_name_temp(ctx->region, id->z,
+							  id->n);
+		*fieldno = space_def_fieldno(def, legacy);
+	}
+	if (*fieldno != UINT32_MAX)
+		return 0;
+	diag_set(ClientError, ER_CREATE_FK_CONSTRAINT, fk_name,
+		 tt_sprintf("foreign key refers to nonexistent field %s",
+			    name));
+	return -1;
+}
+
+/**
+ * Resolve the given FOREIGN KEY constraint added to the space with the given
+ * name into the given rast_add_constraint, in the order of the checks of
+ * sql_create_foreign_key(). Without the referenced columns, the columns of
+ * the primary key of the referenced space are used.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_foreign_key(struct sql_resolve_context *ctx, const struct Token *table,
+		    const struct ast_property *ast,
+		    struct rast_add_constraint *res)
+{
+	const struct ast_foreign_key *fk = &ast->foreign_key;
+	if (check_fk_column_names(ctx, fk->columns) != 0 ||
+	    check_fk_column_names(ctx, fk->foreign_columns) != 0)
+		return -1;
+	struct space *space = find_space(ctx, table, false);
+	if (space == NULL)
+		return -1;
+	struct space *parent = find_space(ctx, &fk->foreign_table, false);
+	if (parent == NULL)
+		return -1;
+	const char *name = sql_name_temp(ctx->region, ast->name.z,
+					 ast->name.n);
+	if (parent->def->opts.is_view) {
+		diag_set(ClientError, ER_CREATE_FK_CONSTRAINT, name,
+			 "referenced space can't be VIEW");
+		return -1;
+	}
+	uint32_t count = fk->columns->len;
+	const struct key_def *pk_def = NULL;
+	if (fk->foreign_columns == NULL) {
+		if (parent->index_count == 0) {
+			diag_set(ClientError, ER_CREATE_FK_CONSTRAINT, name,
+				 "referenced space doesn't feature PRIMARY "
+				 "KEY");
+			return -1;
+		}
+		pk_def = parent->index[0]->def->key_def;
+	}
+	if ((pk_def != NULL && pk_def->part_count != count) ||
+	    (pk_def == NULL && fk->foreign_columns->len != count)) {
+		diag_set(ClientError, ER_CREATE_FK_CONSTRAINT, name,
+			 "number of columns in foreign key does not match the "
+			 "number of columns in the primary index of "
+			 "referenced table");
+		return -1;
+	}
+	res->fk.link_count = count;
+	res->fk.links = xregion_alloc_array(ctx->region, struct field_link,
+					    count);
+	const struct stailq_entry *child = fk->columns->head.first.value;
+	const struct stailq_entry *foreign = NULL;
+	if (pk_def == NULL)
+		foreign = fk->foreign_columns->head.first.value;
+	for (uint32_t i = 0; i < count; ++i) {
+		struct field_link *link = &res->fk.links[i];
+		if (pk_def != NULL) {
+			link->parent_field = pk_def->parts[i].fieldno;
+		} else {
+			const struct Token *id =
+				&stailq_entry(foreign, struct ast_id_entry,
+					      link)->id;
+			if (resolve_fk_field(ctx, parent->def, id, name,
+					     &link->parent_field) != 0)
+				return -1;
+			foreign = foreign->next.value;
+		}
+		const struct Token *id =
+			&stailq_entry(child, struct ast_id_entry, link)->id;
+		if (resolve_fk_field(ctx, space->def, id, name,
+				     &link->child_field) != 0)
+			return -1;
+		child = child->next.value;
+	}
+	res->space = space;
+	res->fk.parent = parent;
+	return 0;
+}
+
+/**
+ * Resolve the given AST ALTER TABLE ADD CONSTRAINT statement into the given
+ * rast_add_constraint. The expression of CHECK constraint is not resolved
+ * here: it becomes the body of a function, which is resolved when created.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_add_constraint(struct sql_resolve_context *ctx,
+		       const struct ast_alter_add_constraint *ast,
+		       struct rast_add_constraint *res)
+{
+	const struct ast_property *con = ast->con;
+	memset(res, 0, sizeof(*res));
+	res->name = con->name;
+	res->type = con->type;
+	switch (con->type) {
+	case SQL_AST_PROPERTY_CHECK:
+		res->check.z = con->expr->str;
+		res->check.n = con->expr->len;
+		res->space = find_space(ctx, &ast->table, false);
+		return res->space != NULL ? 0 : -1;
+	case SQL_AST_PROPERTY_FOREIGN_KEY:
+		return resolve_foreign_key(ctx, &ast->table, con, res);
+	default:
+		assert(con->type == SQL_AST_PROPERTY_UNIQUE ||
+		       con->type == SQL_AST_PROPERTY_PRIMARY_KEY);
+		return resolve_index_constraint(ctx, &ast->table, con, res);
+	}
 }
 
 /**
@@ -6243,6 +6455,13 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 	case SQL_AST_CREATE_INDEX:
 		if (resolve_create_index(&ctx, &ast->create_index,
 					 &rast->create_index) != 0) {
+			parser->is_aborted = true;
+			return NULL;
+		}
+		break;
+	case SQL_AST_ALTER_ADD_CONSTRAINT:
+		if (resolve_add_constraint(&ctx, &ast->alter_add_constraint,
+					   &rast->add_constraint) != 0) {
 			parser->is_aborted = true;
 			return NULL;
 		}

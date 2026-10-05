@@ -531,12 +531,12 @@ sql_code_ast_drop_constraint(struct Parse *parser, struct Token *name,
 
 /** Code AST for table or column property. */
 static void
-sql_code_ast_property(struct Parse *parser, struct Token *table,
-		      struct ast_property *property, bool is_column)
+sql_code_ast_property(struct Parse *parser, struct ast_property *property,
+		      bool is_column)
 {
 	switch (property->type) {
 	case SQL_AST_PROPERTY_CHECK:
-		sql_create_check_constraint(parser, table, &property->name,
+		sql_create_check_constraint(parser, &property->name,
 					    property->expr->str,
 					    property->expr->len, is_column);
 		break;
@@ -552,14 +552,14 @@ sql_code_ast_property(struct Parse *parser, struct Token *table,
 			sql_expr_list_delete(columns);
 			break;
 		}
-		sql_create_foreign_key(parser, table, &property->name, columns,
+		sql_create_foreign_key(parser, &property->name, columns,
 				       &fk->foreign_table, foreign_columns);
 		break;
 	}
 	case SQL_AST_PROPERTY_UNIQUE: {
 		struct ExprList *columns =
 			expr_list_from_ast(parser, property->columns);
-		sql_create_index(parser, table, &property->name, columns,
+		sql_create_index(parser, &property->name, columns,
 				 SQL_INDEX_TYPE_CONSTRAINT_UNIQUE,
 				 SORT_ORDER_ASC);
 		break;
@@ -574,14 +574,8 @@ sql_code_ast_property(struct Parse *parser, struct Token *table,
 			expr_list_from_ast(parser, property->columns);
 		if (parser->is_aborted)
 			break;
-		if (table->n == 0) {
-			sqlAddPrimaryKey(parser, &property->name, columns,
-					 property->order);
-			break;
-		}
-		sql_create_index(parser, table, &property->name, columns,
-				 SQL_INDEX_TYPE_CONSTRAINT_PK,
-				 SORT_ORDER_ASC);
+		sqlAddPrimaryKey(parser, &property->name, columns,
+				 property->order);
 		break;
 	}
 	case SQL_AST_PROPERTY_DEFAULT: {
@@ -619,7 +613,7 @@ sql_code_ast_column(struct Parse *parser, struct Token *table,
 	if (col->properties != NULL) {
 		struct ast_property *property;
 		stailq_foreach_entry(property, &col->properties->head, link) {
-			sql_code_ast_property(parser, table, property, true);
+			sql_code_ast_property(parser, property, true);
 			if (parser->is_aborted)
 				return;
 		}
@@ -653,7 +647,7 @@ sql_code_create_table(struct Parse *parser, struct ast_create_table *stmt)
 
 	struct ast_property *constraint;
 	stailq_foreach_entry(constraint, &stmt->properties->constraints, link) {
-		sql_code_ast_property(parser, &tmp, constraint, false);
+		sql_code_ast_property(parser, constraint, false);
 		if (parser->is_aborted)
 			return;
 	}
@@ -897,11 +891,6 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast, const char *sql)
 					     &ast->alter_drop_constraint.column,
 					     &ast->alter_drop_constraint.table,
 					     ast->alter_drop_constraint.type);
-		break;
-	case SQL_AST_ALTER_ADD_CONSTRAINT:
-		parse->initiateTTrans = true;
-		sql_code_ast_property(parse, &ast->alter_add_constraint.table,
-				      ast->alter_add_constraint.con, false);
 		break;
 	case SQL_AST_SET_SESSION:
 		sql_code_set_session(parse, &ast->set_session.name,

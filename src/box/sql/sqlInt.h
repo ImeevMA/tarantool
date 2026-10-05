@@ -2656,16 +2656,15 @@ sqlAddPrimaryKey(struct Parse *parse, struct Token *name,
  * Add a new CHECK constraint to the table currently under
  * construction.
  * @param parser Parsing context.
- * @param table Name of table where constraint is created.
  * @param name_token Name of constraint.
  * @param expr_str String representation of the expression.
  * @param expr_str_len Length of string representation of expression.
  * @param is_field_ck True if this is a field constraint, false otherwise.
  */
 void
-sql_create_check_constraint(struct Parse *parser, struct Token *table,
-			    struct Token *name_token, const char *expr_str,
-			    uint32_t expr_str_len, bool is_field_ck);
+sql_create_check_constraint(struct Parse *parser, struct Token *name_token,
+			    const char *expr_str, uint32_t expr_str_len,
+			    bool is_field_ck);
 
 /** Add a DEFAULT clause to the last created column. */
 void
@@ -2871,21 +2870,18 @@ void
 sqlIdListDelete(struct IdList *pList);
 
 /**
- * Create an index for a UNIQUE or PRIMARY KEY constraint. If
- * parse->new_space or parse->space is set, it is the table to be
- * indexed: the one being constructed by a CREATE TABLE statement or
- * altered by adding a column. Otherwise the table is looked up by
- * name.
+ * Create an index for a UNIQUE or PRIMARY KEY constraint of the table
+ * being constructed by a CREATE TABLE statement or altered by adding a
+ * column.
  *
  * @param parse All information about this parse.
- * @param table Name of the table on which the index will be created.
  * @param name Name of the constraint.
  * @param col_list Column list of the index.
  * @param idx_type UNIQUE or PRIMARY KEY constraint type of the index.
  * @param sort_order Sort order in case of column UNIQUE/PRIMARY KEY constraint.
  */
 void
-sql_create_index(struct Parse *parse, struct Token *table, struct Token *name,
+sql_create_index(struct Parse *parse, struct Token *name,
 		 struct ExprList *col_list, enum sql_index_type idx_type,
 		 enum sort_order sort_order);
 
@@ -3623,22 +3619,19 @@ sql_trigger_colmask(Parse *parser, struct sql_trigger *trigger,
 #define sqlIsToplevel(p) ((p)->pToplevel==0)
 
 /**
- * Function called from parser to handle
- * <ALTER TABLE child ADD CONSTRAINT constraint
- *     FOREIGN KEY (child_cols) REFERENCES parent (parent_cols)>
- * OR to handle <CREATE TABLE ...>
+ * Add a FOREIGN KEY constraint to the table being constructed by a
+ * CREATE TABLE statement or altered by adding a column.
  *
  * @param parse_context Parsing context.
- * @param table Name of table where constraint is created.
  * @param name Constraint name.
  * @param child_cols Local columns of FOREIGN KEY constraint.
  * @param parent Foreign table.
  * @param parent_cols Foreign columns of FOREIGN KEY constraint.
  */
 void
-sql_create_foreign_key(struct Parse *parse_context, struct Token *table,
-		       struct Token *name, struct ExprList *child_cols,
-		       struct Token *parent, struct ExprList *parent_cols);
+sql_create_foreign_key(struct Parse *parse_context, struct Token *name,
+		       struct ExprList *child_cols, struct Token *parent,
+		       struct ExprList *parent_cols);
 
 /** Emit code to drop UNIQUE, tuple FOREIGN KEY or tuple CHECK constraint. */
 void

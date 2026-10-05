@@ -561,8 +561,8 @@ sqlAddPrimaryKey(struct Parse *pParse, struct Token *name,
 		sql_expr_list_delete(col_list);
 		return;
 	}
-	sql_create_index(pParse, &Token_nil, name, col_list,
-			 SQL_INDEX_TYPE_CONSTRAINT_PK, sort_order);
+	sql_create_index(pParse, name, col_list, SQL_INDEX_TYPE_CONSTRAINT_PK,
+			 sort_order);
 	if (pParse->is_aborted)
 		return;
 
@@ -679,25 +679,15 @@ ck_constraint_def_sizeof(uint32_t name_len, uint32_t expr_str_len,
 	return *expr_str_offset + expr_str_len + 1;
 }
 
-void
-sql_create_check_constraint(struct Parse *parser, struct Token *table,
-			    struct Token *name_token, const char *expr_str,
-			    uint32_t expr_str_len, bool is_field_ck)
+/**
+ * Create a check constraint parse structure with the definition of a tuple
+ * check constraint with the given name and expression on the parser region.
+ */
+static struct ck_constraint_parse *
+ck_constraint_parse_new(struct Parse *parser, const char *name,
+			const char *expr_str, uint32_t expr_str_len)
 {
-	struct space *space = parser->space;
-	if (space == NULL)
-		space = parser->new_space;
-	bool is_alter_add_constr = space == NULL;
-
-	/* Prepare payload for ck constraint definition. */
-	char *name;
-	if (name_token->n != 0)
-		name = sql_name_from_token(name_token);
-	else
-		name = sql_ck_unique_name_new(parser, is_field_ck);
-	assert(name != NULL);
 	size_t name_len = strlen(name);
-
 	/*
 	 * Allocate memory for ck constraint parse structure and
 	 * ck constraint definition as a single memory chunk on
@@ -721,40 +711,40 @@ sql_create_check_constraint(struct Parse *parser, struct Token *table,
 		      "alignment");
 	ck_parse->ck_def = ck_def;
 	rlist_create(&ck_parse->link);
-
-	if (is_field_ck) {
-		assert(space != NULL);
-		ck_def->is_field_ck = true;
-		ck_def->fieldno = space->def->field_count - 1;
-	} else {
-		ck_def->is_field_ck = false;
-		ck_def->fieldno = 0;
-	}
+	ck_def->is_field_ck = false;
+	ck_def->fieldno = 0;
 	ck_def->expr_str = (char *)ck_def + expr_str_offset;
 	ck_def->space_id = BOX_ID_NIL;
 	trim_space_snprintf(ck_def->expr_str, expr_str, expr_str_len);
 	memcpy(ck_def->name, name, name_len);
-	sql_xfree(name);
 	ck_def->name[name_len] = '\0';
-	if (is_alter_add_constr) {
-		assert(table != NULL);
-		const struct space *space = sql_space_by_token(table);
-		if (space == NULL) {
-			diag_set(ClientError, ER_NO_SUCH_SPACE,
-				 sql_tt_name_from_token(table));
-			parser->is_aborted = true;
-			return;
-		}
-		int space_id_reg = ++parser->nMem;
-		struct Vdbe *v = sqlGetVdbe(parser);
-		sqlVdbeAddOp2(v, OP_Integer, space->def->id,
-			      space_id_reg);
-		vdbe_emit_ck_constraint_create(parser, ck_def, space_id_reg,
-					       space->def->name);
-	} else {
-		rlist_add_entry(&parser->create_ck_constraint_parse_def.checks,
-				ck_parse, link);
+	return ck_parse;
+}
+
+void
+sql_create_check_constraint(struct Parse *parser, struct Token *name_token,
+			    const char *expr_str, uint32_t expr_str_len,
+			    bool is_field_ck)
+{
+	struct space *space = parser->space;
+	if (space == NULL)
+		space = parser->new_space;
+	assert(space != NULL);
+	char *name;
+	if (name_token->n != 0)
+		name = sql_name_from_token(name_token);
+	else
+		name = sql_ck_unique_name_new(parser, is_field_ck);
+	assert(name != NULL);
+	struct ck_constraint_parse *ck_parse =
+		ck_constraint_parse_new(parser, name, expr_str, expr_str_len);
+	sql_xfree(name);
+	if (is_field_ck) {
+		ck_parse->ck_def->is_field_ck = true;
+		ck_parse->ck_def->fieldno = space->def->field_count - 1;
 	}
+	rlist_add_entry(&parser->create_ck_constraint_parse_def.checks,
+			ck_parse, link);
 }
 
 /*
@@ -1753,9 +1743,9 @@ fk_constraint_def_sizeof(uint32_t link_count, uint32_t name_len,
 }
 
 void
-sql_create_foreign_key(struct Parse *parse_context, struct Token *table,
-		       struct Token *name, struct ExprList *child_cols,
-		       struct Token *parent, struct ExprList *parent_cols)
+sql_create_foreign_key(struct Parse *parse_context, struct Token *name,
+		       struct ExprList *child_cols, struct Token *parent,
+		       struct ExprList *parent_cols)
 {
 	/*
 	 * Beforehand initialization for correct clean-up
@@ -1764,23 +1754,16 @@ sql_create_foreign_key(struct Parse *parse_context, struct Token *table,
 	char *parent_name = NULL;
 	char *constraint_name = NULL;
 	bool is_self_referenced = false;
-	struct space *space = parse_context->space;
-	if (space == NULL)
-		space = parse_context->new_space;
 	/*
 	 * Space under construction during <CREATE TABLE>
 	 * processing or shallow copy of space during <ALTER TABLE
-	 * ... ADD COLUMN>. NULL for <ALTER TABLE ... ADD
-	 * CONSTRAINT> statement handling.
+	 * ... ADD COLUMN>.
 	 */
-	bool is_alter_add_constr = space == NULL;
-	uint32_t child_cols_count;
-	if (child_cols == NULL) {
-		assert(!is_alter_add_constr);
-		child_cols_count = 1;
-	} else {
-		child_cols_count = child_cols->nExpr;
-	}
+	struct space *space = parse_context->space;
+	if (space == NULL)
+		space = parse_context->new_space;
+	assert(space != NULL);
+	uint32_t child_cols_count = child_cols == NULL ? 1 : child_cols->nExpr;
 	struct space *child_space = NULL;
 	if (name->n != 0) {
 		constraint_name = sql_name_from_token(name);
@@ -1789,45 +1772,22 @@ sql_create_foreign_key(struct Parse *parse_context, struct Token *table,
 							 child_cols);
 	}
 	assert(constraint_name != NULL);
-	if (is_alter_add_constr) {
-		const struct space *origin = sql_space_by_token(table);
-		if (origin == NULL) {
-			diag_set(ClientError, ER_NO_SUCH_SPACE,
-				 sql_tt_name_from_token(table));
-			goto tnt_error;
-		}
-		child_space = space_by_id(origin->def->id);
-	} else {
-		struct fk_constraint_parse *fk_parse =
-			xregion_alloc_object(&parse_context->region,
-					     typeof(*fk_parse));
-		memset(fk_parse, 0, sizeof(*fk_parse));
-		/*
-		 * Child space already exists if it is
-		 * <ALTER TABLE ADD COLUMN>.
-		 */
-		if (parse_context->new_space == NULL)
-			child_space = space;
-		struct rlist *fkeys =
-			&parse_context->create_fk_constraint_parse_def.fkeys;
-		rlist_add_entry(fkeys, fk_parse, link);
-	}
+	struct fk_constraint_parse *fk_parse =
+		xregion_alloc_object(&parse_context->region, typeof(*fk_parse));
+	memset(fk_parse, 0, sizeof(*fk_parse));
+	/* Child space already exists if it is <ALTER TABLE ADD COLUMN>. */
+	if (parse_context->new_space == NULL)
+		child_space = space;
+	rlist_add_entry(&parse_context->create_fk_constraint_parse_def.fkeys,
+			fk_parse, link);
 	assert(parent != NULL);
 	parent_name = sql_name_from_token(parent);
-	/*
-	 * Within ALTER TABLE ADD CONSTRAINT FK also can be
-	 * self-referenced, but in this case parent (which is
-	 * also child) table will definitely exist.
-	 */
-	if (!is_alter_add_constr) {
-		const char *space_name = space->def->name;
-		is_self_referenced = strcmp(parent_name, space_name) == 0;
-		if (!is_self_referenced && parent->z[0] != '"') {
-			char *old_name = sql_legacy_name_new(parent->z,
-							     parent->n);
-			is_self_referenced = strcmp(old_name, space_name) == 0;
-			sql_xfree(old_name);
-		}
+	const char *space_name = space->def->name;
+	is_self_referenced = strcmp(parent_name, space_name) == 0;
+	if (!is_self_referenced && parent->z[0] != '"') {
+		char *old_name = sql_legacy_name_new(parent->z, parent->n);
+		is_self_referenced = strcmp(old_name, space_name) == 0;
+		sql_xfree(old_name);
 	}
 	const struct space *parent_space = sql_space_by_token(parent);
 	if (parent_space == NULL && !is_self_referenced) {
@@ -1835,13 +1795,8 @@ sql_create_foreign_key(struct Parse *parse_context, struct Token *table,
 		goto tnt_error;
 	}
 	if (is_self_referenced) {
-		struct rlist *fkeys =
-			&parse_context->create_fk_constraint_parse_def.fkeys;
-		struct fk_constraint_parse *fk =
-			rlist_first_entry(fkeys, struct fk_constraint_parse,
-					  link);
-		fk->selfref_cols = parent_cols;
-		fk->is_self_referenced = true;
+		fk_parse->selfref_cols = parent_cols;
+		fk_parse->is_self_referenced = true;
 	}
 	if (!is_self_referenced && parent_space->def->opts.is_view) {
 		diag_set(ClientError, ER_CREATE_FK_CONSTRAINT, constraint_name,
@@ -1900,31 +1855,20 @@ sql_create_foreign_key(struct Parse *parse_context, struct Token *table,
 					    constraint_name) != 0) {
 			goto exit_create_fk;
 		}
-		if (!is_alter_add_constr) {
-			if (child_cols == NULL) {
-				assert(i == 0);
-				/*
-				 * In this case there must be only
-				 * one link (the last column
-				 * added), so we can break
-				 * immediately.
-				 */
-				fk_def->links[0].child_field =
-					space->def->field_count - 1;
-				break;
-			}
-			if (resolve_link(parse_context, space,
-					 &child_cols->a[i],
-					 &fk_def->links[i].child_field,
-					 constraint_name) != 0)
-				goto exit_create_fk;
-		/* In case of ALTER parent table must exist. */
-		} else if (columnno_by_name(parse_context, child_space,
-					    &child_cols->a[i],
-					    &fk_def->links[i].child_field,
-					    constraint_name) != 0) {
-			goto exit_create_fk;
+		if (child_cols == NULL) {
+			assert(i == 0);
+			/*
+			 * In this case there must be only one link (the last
+			 * column added), so we can break immediately.
+			 */
+			fk_def->links[0].child_field =
+				space->def->field_count - 1;
+			break;
 		}
+		if (resolve_link(parse_context, space, &child_cols->a[i],
+				 &fk_def->links[i].child_field,
+				 constraint_name) != 0)
+			goto exit_create_fk;
 	}
 	memcpy(fk_def->name, constraint_name, name_len);
 	fk_def->name[name_len] = '\0';
@@ -1936,16 +1880,7 @@ sql_create_foreign_key(struct Parse *parse_context, struct Token *table,
 	 * simply maintain list of all FK constraints inside
 	 * parser.
 	 */
-	if (!is_alter_add_constr) {
-		struct rlist *fkeys =
-			&parse_context->create_fk_constraint_parse_def.fkeys;
-		struct fk_constraint_parse *fk_parse =
-			rlist_first_entry(fkeys, struct fk_constraint_parse,
-					  link);
-		fk_parse->fk_def = fk_def;
-	} else {
-		vdbe_emit_fk_constraint_create(parse_context, fk_def);
-	}
+	fk_parse->fk_def = fk_def;
 
 exit_create_fk:
 	sql_expr_list_delete(child_cols);
@@ -2503,7 +2438,7 @@ sql_index_create(struct Parse *parse, struct space *space,
 		 bool is_create_table_or_add_col);
 
 void
-sql_create_index(struct Parse *parse, struct Token *table, struct Token *name,
+sql_create_index(struct Parse *parse, struct Token *name,
 		 struct ExprList *col_list, enum sql_index_type idx_type,
 		 enum sort_order sort_order)
 {
@@ -2513,25 +2448,10 @@ sql_create_index(struct Parse *parse, struct Token *table, struct Token *name,
 	if (parse->is_aborted)
 		goto exit_create_index;
 
-	/*
-	 * Find the table that is to be indexed.
-	 * Return early if not found.
-	 */
 	struct space *space = parse->new_space;
 	if (space == NULL)
 		space = parse->space;
-	bool is_create_table_or_add_col = space != NULL;
-	if (!is_create_table_or_add_col) {
-		assert(table != NULL && table->n > 0);
-		const struct space *origin = sql_space_by_token(table);
-		if (origin == NULL) {
-			diag_set(ClientError, ER_NO_SUCH_SPACE,
-				 sql_tt_name_from_token(table));
-			parse->is_aborted = true;
-			goto exit_create_index;
-		}
-		space = space_by_id(origin->def->id);
-	}
+	assert(space != NULL);
 	struct space_def *def = space->def;
 
 	if (def->opts.is_view) {
@@ -2545,76 +2465,30 @@ sql_create_index(struct Parse *parse, struct Token *table, struct Token *name,
 		goto exit_create_index;
 	}
 	/*
-	 * Find the name of the index.  Make sure there is not
-	 * already another index with the same name.
-	 *
-	 * Exception:  If we are reading the names of permanent
-	 * indices from the Tarantool schema (because some other
-	 * process changed the schema) and one of the index names
-	 * collides with the name of index, then we will continue
-	 * to process this index.
-	 *
-	 * If token == NULL it means that we are dealing with a
-	 * primary key or UNIQUE constraint.  We have to invent
-	 * our own name.
-	 *
 	 * In case of UNIQUE constraint we have two options:
 	 * 1) UNIQUE constraint is named and this name will
 	 *    be a part of index name.
 	 * 2) UNIQUE constraint is non-named and standard
 	 *    auto-index name will be generated.
+	 *
+	 * This naming is temporary. Now it's not possible (since
+	 * we implement UNIQUE and PK constraints with indexes and
+	 * indexes can not have same names), but in future we would
+	 * use names exactly as they are set by user.
 	 */
-	if (!is_create_table_or_add_col) {
-		assert(name->z != NULL);
+	assert(idx_type == SQL_INDEX_TYPE_CONSTRAINT_UNIQUE ||
+	       idx_type == SQL_INDEX_TYPE_CONSTRAINT_PK);
+	if (name->n > 0) {
 		index_name = sql_name_from_token(name);
-		if (space_index_by_name0(space, index_name) != NULL) {
-			diag_set(ClientError, ER_INDEX_EXISTS_IN_SPACE,
-				 index_name, def->name);
-			parse->is_aborted = true;
-			goto exit_create_index;
-		}
+	} else if (idx_type == SQL_INDEX_TYPE_CONSTRAINT_UNIQUE) {
+		index_name = sqlMPrintf("unique_unnamed_%s_%d", def->name,
+					space->index_count + 1);
 	} else {
-		char *constraint_name = NULL;
-		if (name->n > 0)
-			constraint_name = sql_name_from_token(name);
-
-	       /*
-		* This naming is temporary. Now it's not
-		* possible (since we implement UNIQUE
-		* and PK constraints with indexes and
-		* indexes can not have same names), but
-		* in future we would use names exactly
-		* as they are set by user.
-		*/
-		assert(idx_type == SQL_INDEX_TYPE_CONSTRAINT_UNIQUE ||
-		       idx_type == SQL_INDEX_TYPE_CONSTRAINT_PK);
-		uint32_t idx_count = space->index_count;
-		if (constraint_name == NULL) {
-			if (idx_type == SQL_INDEX_TYPE_CONSTRAINT_UNIQUE) {
-				index_name = sqlMPrintf("unique_unnamed_%s_%d",
-							def->name,
-							idx_count + 1);
-			} else {
-				index_name = sqlMPrintf("pk_unnamed_%s_%d",
-							def->name,
-							idx_count + 1);
-			}
-		} else {
-			index_name = sql_xstrdup(constraint_name);
-		}
-		sql_xfree(constraint_name);
+		index_name = sqlMPrintf("pk_unnamed_%s_%d", def->name,
+					space->index_count + 1);
 	}
-
-	assert(index_name != NULL);
 	if (sqlCheckIdentifierName(parse, index_name) != 0)
 		goto exit_create_index;
-
-	if (!is_create_table_or_add_col && space_is_system(space)) {
-		diag_set(ClientError, ER_MODIFY_INDEX, index_name, def->name,
-			 "can't create index on system space");
-		parse->is_aborted = true;
-		goto exit_create_index;
-	}
 
 	/*
 	 * If col_list == NULL, it means this routine was called
@@ -2661,7 +2535,7 @@ sql_create_index(struct Parse *parse, struct Token *table, struct Token *name,
 			sql_column_collation(def, fieldno, &parts[i].coll_id);
 	}
 	sql_index_create(parse, space, index_name, parts, col_list->nExpr,
-			 idx_type, is_create_table_or_add_col);
+			 idx_type, true);
 exit_create_index:
 	sql_expr_list_delete(col_list);
 	sql_xfree(index_name);
@@ -3550,6 +3424,78 @@ sql_emit_create_index(struct Parse *parser,
 	sql_xfree(name);
 }
 
+/**
+ * Emit VDBE bytecode for the given resolved FOREIGN KEY constraint added by
+ * ALTER TABLE ADD CONSTRAINT.
+ */
+static void
+sql_emit_add_foreign_key(struct Parse *parser,
+			 const struct rast_add_constraint *stmt,
+			 const char *name)
+{
+	uint32_t name_len = strlen(name);
+	uint32_t links_offset;
+	size_t size = fk_constraint_def_sizeof(stmt->fk.link_count, name_len,
+					       &links_offset);
+	struct fk_constraint_def *fk_def =
+		xregion_aligned_alloc(&parser->region, size, alignof(*fk_def));
+	fk_def->is_field_fk = false;
+	fk_def->field_count = stmt->fk.link_count;
+	fk_def->child_id = stmt->space->def->id;
+	fk_def->parent_id = stmt->fk.parent->def->id;
+	fk_def->links = (struct field_link *)((char *)fk_def + links_offset);
+	memcpy(fk_def->links, stmt->fk.links,
+	       stmt->fk.link_count * sizeof(*fk_def->links));
+	memcpy(fk_def->name, name, name_len + 1);
+	vdbe_emit_fk_constraint_create(parser, fk_def);
+}
+
+/**
+ * Emit VDBE bytecode for the given resolved ALTER TABLE ADD CONSTRAINT
+ * statement.
+ */
+static void
+sql_emit_add_constraint(struct Parse *parser,
+			const struct rast_add_constraint *stmt)
+{
+	parser->initiateTTrans = true;
+	char *name = sql_name_from_token(&stmt->name);
+	switch (stmt->type) {
+	case SQL_AST_PROPERTY_CHECK: {
+		struct ck_constraint_parse *ck =
+			ck_constraint_parse_new(parser, name, stmt->check.z,
+						stmt->check.n);
+		int reg_space_id = ++parser->nMem;
+		sqlVdbeAddOp2(sqlGetVdbe(parser), OP_Integer,
+			      stmt->space->def->id, reg_space_id);
+		vdbe_emit_ck_constraint_create(parser, ck->ck_def,
+					       reg_space_id,
+					       stmt->space->def->name);
+		break;
+	}
+	case SQL_AST_PROPERTY_FOREIGN_KEY:
+		sql_emit_add_foreign_key(parser, stmt, name);
+		break;
+	default: {
+		assert(stmt->type == SQL_AST_PROPERTY_UNIQUE ||
+		       stmt->type == SQL_AST_PROPERTY_PRIMARY_KEY);
+		if (stmt->index.autoinc_fieldno != UINT32_MAX) {
+			parser->autoinc_fieldno =
+				xregion_alloc_object(&parser->region, int);
+			*parser->autoinc_fieldno = stmt->index.autoinc_fieldno;
+		}
+		enum sql_index_type type =
+			stmt->type == SQL_AST_PROPERTY_UNIQUE ?
+			SQL_INDEX_TYPE_CONSTRAINT_UNIQUE :
+			SQL_INDEX_TYPE_CONSTRAINT_PK;
+		sql_index_create(parser, stmt->space, name, stmt->index.parts,
+				 stmt->index.part_count, type, false);
+		break;
+	}
+	}
+	sql_xfree(name);
+}
+
 /** Emit VDBE bytecode for the given resolved CREATE VIEW statement. */
 static void
 sql_emit_create_view(struct Parse *parser, struct rast_create_view *stmt,
@@ -3584,6 +3530,9 @@ sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast, const char *sql)
 		break;
 	case SQL_AST_CREATE_INDEX:
 		sql_emit_create_index(parser, &rast->create_index);
+		break;
+	case SQL_AST_ALTER_ADD_CONSTRAINT:
+		sql_emit_add_constraint(parser, &rast->add_constraint);
 		break;
 	case SQL_AST_UPDATE:
 		sqlSubProgramsRemaining = SQL_MAX_COMPILING_TRIGGERS;
