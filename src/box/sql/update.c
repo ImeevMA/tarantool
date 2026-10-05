@@ -96,15 +96,16 @@ set_list_names_from_rast(struct Parse *parse,
  *          \_______/ \________/     \______/       \________________/
 *            on_error   pTabList      pChanges             pWhere
  *
- * If the given resolved UPDATE is not NULL, the space is the only source of
- * the list, pChanges are only the names of its columns, and pWhere is NULL:
- * the values and the WHERE clause are built from the resolved UPDATE.
+ * The space is the only source of the list, and pChanges are only the names of
+ * its columns: the values and the WHERE clause are built from the given
+ * resolved UPDATE.
  */
 static void
 update_emit(struct Parse *pParse, struct SrcList *pTabList,
-	    struct ExprList *pChanges, struct Expr *pWhere,
-	    enum on_conflict_action on_error, const struct rast_update *rast)
+	    struct ExprList *pChanges, enum on_conflict_action on_error,
+	    const struct rast_update *rast)
 {
+	struct Expr *pWhere = NULL;
 	int i, j;		/* Loop counters */
 	int addrTop = 0;	/* VDBE instruction address of the start of the loop */
 	WhereInfo *pWInfo;	/* Information about the WHERE clause */
@@ -113,7 +114,6 @@ update_emit(struct Parse *pParse, struct SrcList *pTabList,
 				 * an expression for the i-th column of the table.
 				 * aXRef[i]==-1 if the i-th column is not changed.
 				 */
-	NameContext sNC;	/* The name-context to resolve expressions in */
 	int okOnePass;		/* True for one-pass algorithm without the FIFO */
 	int labelBreak;		/* Jump here to break out of UPDATE loop */
 	int labelContinue;	/* Jump here to continue next step of UPDATE loop */
@@ -141,10 +141,7 @@ update_emit(struct Parse *pParse, struct SrcList *pTabList,
 
 	/* Locate the table which we want to update.
 	 */
-	struct space *space = rast != NULL ? pTabList->a[0].space :
-			      sql_lookup_space(pParse, pTabList->a);
-	if (space == NULL)
-		goto update_cleanup;
+	struct space *space = pTabList->a[0].space;
 
 	/* Figure out if we have any triggers and if the table being
 	 * updated is a view.
@@ -174,26 +171,16 @@ update_emit(struct Parse *pParse, struct SrcList *pTabList,
 				    def->field_count);
 	memset(aXRef, -1, sizeof(aXRef[0]) * def->field_count);
 
-	/* Initialize the name-context */
-	memset(&sNC, 0, sizeof(sNC));
-	sNC.pParse = pParse;
-	sNC.pSrcList = pTabList;
-
-	/* Resolve the column names in all the expressions of the
-	 * of the UPDATE statement.  Also find the column index
+	/*
+	 * Build the values of the UPDATE statement and find the column index
 	 * for each column to be updated in the pChanges array.
 	 */
-	if (rast != NULL) {
-		sql_expr_list_delete(pChanges);
-		pChanges = set_list_from_rast(pParse, pTabList, rast);
-		if (pParse->is_aborted)
-			goto update_cleanup;
-	}
+	sql_expr_list_delete(pChanges);
+	pChanges = set_list_from_rast(pParse, pTabList, rast);
+	if (pParse->is_aborted)
+		goto update_cleanup;
 	bool is_pk_modified = false;
 	for (i = 0; i < pChanges->nExpr; i++) {
-		if (sqlResolveExprNames(&sNC, pChanges->a[i].pExpr)) {
-			goto update_cleanup;
-		}
 		uint32_t fieldno = sql_fieldno_by_item(space, &pChanges->a[i]);
 		if (fieldno == UINT32_MAX) {
 			diag_set(ClientError, ER_NO_SUCH_FIELD_NAME_IN_SPACE,
@@ -240,7 +227,7 @@ update_emit(struct Parse *pParse, struct SrcList *pTabList,
 	 * an ephemeral table.
 	 */
 	uint32_t pk_part_count;
-	if (is_view && rast != NULL) {
+	if (is_view) {
 		struct Select *select = select_from_rast(pParse,
 							 rast->view_select);
 		if (pParse->is_aborted)
@@ -249,23 +236,14 @@ update_emit(struct Parse *pParse, struct SrcList *pTabList,
 		/* Number of columns from SELECT plus ID.*/
 		pk_part_count = def->field_count + 1;
 		nKey = pk_part_count;
-	} else if (is_view) {
-		sql_materialize_view(pParse, def->name, pWhere, pk_cursor);
-		/* Number of columns from SELECT plus ID.*/
-		pk_part_count = nKey = def->field_count + 1;
 	} else {
 		assert(space != NULL);
 		vdbe_emit_open_cursor(pParse, pk_cursor, 0, space);
 		pk_part_count = pPk->def->key_def->part_count;
 	}
 
-	/* Resolve the column names in all the expressions in the
-	 * WHERE clause.
-	 */
-	if (rast != NULL && rast->where != NULL)
+	if (rast->where != NULL)
 		pWhere = expr_from_rast_in(pParse, pTabList, rast->where);
-	else if (sqlResolveExprNames(&sNC, pWhere) != 0)
-		goto update_cleanup;
 	if (pParse->is_aborted)
 		goto update_cleanup;
 	/* First of nPk memory cells holding PRIMARY KEY value. */
@@ -523,5 +501,5 @@ sql_emit_update(struct Parse *parse, struct rast_update *update)
 {
 	struct SrcList *src = src_list_from_rast_target(parse, &update->target);
 	struct ExprList *names = set_list_names_from_rast(parse, update);
-	update_emit(parse, src, names, NULL, update->action, update);
+	update_emit(parse, src, names, update->action, update);
 }

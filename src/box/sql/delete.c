@@ -74,21 +74,6 @@ sql_materialize_select(struct Parse *parse, struct Select *select, int cursor)
 }
 
 void
-sql_materialize_view(struct Parse *parse, const char *name, struct Expr *where,
-		     int cursor)
-{
-	struct SrcList *from = sql_src_list_append(NULL, NULL);
-	where = sqlExprDup(where, 0);
-	assert(from->nSrc == 1);
-	from->a[0].zName = sql_xstrdup(name);
-	assert(from->a[0].pOn == NULL);
-	assert(from->a[0].pUsing == NULL);
-	struct Select *select = sqlSelectNew(NULL, from, where, NULL,
-					     NULL, NULL, 0, NULL, NULL);
-	sql_materialize_select(parse, select, cursor);
-}
-
-void
 sql_table_truncate(struct Parse *parse, const struct space *space)
 {
 	struct Vdbe *v = sqlGetVdbe(parse);

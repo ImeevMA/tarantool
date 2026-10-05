@@ -3264,21 +3264,6 @@ void sqlSelectSetName(Select *, const char *);
 void
 sql_materialize_select(struct Parse *parse, struct Select *select, int cursor);
 
-/**
- * Evaluate a view and store its result in an ephemeral table.
- * The where argument is an optional WHERE clause that restricts
- * the set of rows in the view that are to be added to the
- * ephemeral table.
- *
- * @param parse Parsing context.
- * @param name View name.
- * @param where Option WHERE clause to be added.
- * @param cursor Cursor number for ephemeral table.
- */
-void
-sql_materialize_view(struct Parse *parse, const char *name, struct Expr *where,
-		     int cursor);
-
 /** Create a new `struct sql_trigger` object. */
 struct sql_trigger *
 sql_trigger_new(struct Parse *parser, struct Token *name, struct Token *table,
