@@ -44,14 +44,8 @@
 /* See comment in sqlInt.h */
 int sqlSubProgramsRemaining;
 
-/**
- * Return the space ID by name.
- *
- * Note that this function uses the exported API rather than getting
- * the space ID directly from BOX.
- */
-static uint32_t
-sql_space_id_by_token(struct Token *table)
+uint32_t
+sql_space_id_by_token(const struct Token *table)
 {
 	char *name = sql_name_from_token(table);
 	uint32_t space_id = box_space_id_by_name(name, strlen(name));
@@ -104,27 +98,11 @@ error:
 
 void
 vdbe_emit_create_trigger(struct Parse *parser, const char *sql,
-			 struct Token *name, struct Token *table,
-			 bool if_not_exists)
+			 const struct rast_create_trigger *stmt)
 {
-	uint32_t space_id = sql_space_id_by_token(table);
-	if (space_id == BOX_ID_NIL) {
-		diag_set(ClientError, ER_NO_SUCH_SPACE,
-			 sql_tt_name_from_token(table));
-		parser->is_aborted = true;
-		return;
-	}
-
-	/*
-	 * Generate byte code to insert a new trigger into Tarantool
-	 * for non-parsing mode or export trigger.
-	 */
+	uint32_t space_id = stmt->space_id;
 	struct Vdbe *v = sqlGetVdbe(parser);
-	char *trigger_name = sql_name_from_token(name);
-	if (sqlCheckIdentifierName(parser, trigger_name) != 0) {
-		sql_xfree(trigger_name);
-		return;
-	}
+	char *trigger_name = sql_name_from_token(&stmt->name);
 
 	/* Check that there is no trigger with the same name. */
 	sqlVdbeCountChanges(v);
@@ -133,7 +111,7 @@ vdbe_emit_create_trigger(struct Parse *parser, const char *sql,
 		      P4_DYNAMIC);
 	vdbe_emit_halt_with_presence_test(parser, BOX_TRIGGER_ID, 0, name_reg,
 					  1, ER_TRIGGER_EXISTS, trigger_name,
-					  if_not_exists, OP_NoConflict);
+					  stmt->if_not_exists, OP_NoConflict);
 
 	int first_col = parser->nMem + 1;
 	parser->nMem += 3;

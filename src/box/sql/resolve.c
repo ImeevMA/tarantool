@@ -5945,6 +5945,49 @@ resolve_pragma(struct sql_resolve_context *ctx, const struct ast_pragma *ast,
 }
 
 /**
+ * Resolve the given AST CREATE TRIGGER statement into the given
+ * rast_create_trigger. The body of the trigger is resolved when the trigger
+ * fires.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_create_trigger(struct sql_resolve_context *ctx,
+		       const struct ast_create_trigger *ast,
+		       struct rast_create_trigger *res)
+{
+	if (!ast->is_for_each_row) {
+		diag_set(ClientError, ER_UNSUPPORTED, "Tarantool SQL",
+			 "FOR EACH STATEMENT triggers, please supply "
+			 "FOR EACH ROW clause");
+		return -1;
+	}
+	struct ast_trigger_action *act;
+	stailq_foreach_entry(act, &ast->actions->head, link) {
+		if ((act->op == TK_UPDATE && act->update->indexed_by.n > 0) ||
+		    (act->op == TK_DELETE && act->del->indexed_by.n > 0)) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 "The INDEXED BY clause is not allowed on "
+				 "UPDATE or DELETE statements within triggers");
+			return -1;
+		}
+	}
+	res->space_id = sql_space_id_by_token(&ast->table);
+	if (res->space_id == BOX_ID_NIL) {
+		diag_set(ClientError, ER_NO_SUCH_SPACE,
+			 sql_tt_name_from_token(&ast->table));
+		return -1;
+	}
+	const char *name = sql_name_temp(ctx->region, ast->name.z,
+					 ast->name.n);
+	if (sql_check_identifier_name(name, strlen(name)) != 0)
+		return -1;
+	res->name = ast->name;
+	res->if_not_exists = ast->if_not_exists;
+	return 0;
+}
+
+/**
  * Find the field with the given name of a column of an index in the given
  * space definition, as lookupName() does. If the given unquoted identifier is
  * not NULL, the name is also looked up in the legacy form of the identifier.
@@ -7517,6 +7560,13 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 	case SQL_AST_TX_SAVEPOINT_RELEASE:
 	case SQL_AST_TX_SAVEPOINT_ROLLBACK:
 		rast->savepoint = ast->savepoint;
+		break;
+	case SQL_AST_CREATE_TRIGGER:
+		if (resolve_create_trigger(&ctx, &ast->create_trigger,
+					   &rast->create_trigger) != 0) {
+			parser->is_aborted = true;
+			return NULL;
+		}
 		break;
 	case SQL_AST_DROP_TRIGGER:
 		rast->drop_trigger.name = ast->drop_trigger.name;

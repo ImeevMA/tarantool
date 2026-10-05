@@ -3307,19 +3307,22 @@ struct sql_trigger *
 sql_trigger_new(struct Parse *parser, struct Token *name, struct Token *table,
 		uint8_t time, uint8_t event, struct IdList *columns);
 
+struct rast_create_trigger;
+
 /**
- * Emit code to write SQL trigger definition to `_trigger`.
- *
- * @param parser Parsing context.
- * @param sql The SQL statement that creates the trigger.
- * @param name Name of the trigger.
- * @param table Name of table where trigger is created.
- * @param if_not_exists If TRUE do not raise an error when the trigger exists.
+ * Return the ID of the space with the given name, or BOX_ID_NIL if there is
+ * none. An unquoted name is also looked up in its legacy form.
+ */
+uint32_t
+sql_space_id_by_token(const struct Token *table);
+
+/**
+ * Emit code to write the trigger definition of the given resolved CREATE
+ * TRIGGER statement with the given SQL text to `_trigger`.
  */
 void
 vdbe_emit_create_trigger(struct Parse *parser, const char *sql,
-			 struct Token *name, struct Token *table,
-			 bool if_not_exists);
+			 const struct rast_create_trigger *stmt);
 
 /**
  * This function is called from parser to generate drop trigger

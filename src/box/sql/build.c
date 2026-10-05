@@ -2516,6 +2516,12 @@ sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast, const char *sql)
 			      sql_xstrdup(rast->alter_rename.new_name),
 			      P4_DYNAMIC);
 		break;
+	case SQL_AST_CREATE_TRIGGER:
+		parser->disableLookaside++;
+		sql_get()->lookaside.bDisable++;
+		parser->initiateTTrans = true;
+		vdbe_emit_create_trigger(parser, sql, &rast->create_trigger);
+		break;
 	case SQL_AST_DROP_TRIGGER:
 		parser->initiateTTrans = true;
 		sql_drop_trigger(parser, &rast->drop_trigger.name,

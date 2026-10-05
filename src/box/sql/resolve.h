@@ -492,6 +492,16 @@ struct rast_pragma {
 	const struct index *index;
 };
 
+/** Resolved CREATE TRIGGER statement. */
+struct rast_create_trigger {
+	/** Name of the trigger. */
+	struct Token name;
+	/** ID of the space of the trigger. */
+	uint32_t space_id;
+	/** Whether it is not an error if the trigger already exists. */
+	bool if_not_exists;
+};
+
 /** Resolved part of an index: a column and its collation. */
 struct rast_index_part {
 	/** Number of the field of the column. */
@@ -641,6 +651,8 @@ struct sql_rast {
 		const struct space *show_create_table;
 		/** Name of the savepoint of a savepoint statement. */
 		struct Token savepoint;
+		/** Resolved CREATE TRIGGER statement. */
+		struct rast_create_trigger create_trigger;
 		/** Resolved DROP TRIGGER statement. */
 		struct rast_drop_trigger drop_trigger;
 		/** Resolved ALTER TABLE RENAME statement. */
