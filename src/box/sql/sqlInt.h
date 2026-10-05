@@ -1851,11 +1851,6 @@ struct Parse {
 	struct space *space;
 	/** AST of parsed SQL statement. */
 	struct sql_ast *ast;
-	/*
-	 * Id of field with <AUTOINCREMENT> while CREATE TABLE, ALTER TABLE
-	 * ADD COLUMN or ALTER TABLE ADD CONSTRAINT is resolved and coded.
-	 */
-	int *autoinc_fieldno;
 	bool initiateTTrans;	/* Initiate Tarantool transaction */
 	/** SQL options which were used to compile this VDBE. */
 	uint32_t sql_flags;

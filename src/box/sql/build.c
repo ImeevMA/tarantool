@@ -1502,22 +1502,6 @@ sql_index_create(struct Parse *parse, struct space *space,
 		goto exit;
 	}
 
-	if (parse->autoinc_fieldno != NULL) {
-		struct Vdbe *v = sqlGetVdbe(parse);
-		assert(v != NULL);
-		int reg_space_id = ++parse->nMem;
-		sqlVdbeAddOp2(v, OP_Integer, def->id, reg_space_id);
-		int reg_seq_id = ++parse->nMem;
-		sqlVdbeAddOp2(v, OP_NextSequenceId, 0, reg_seq_id);
-		int reg_seq_rec = emitNewSysSequenceRecord(parse, reg_seq_id,
-							   def->name);
-		sqlVdbeAddOp2(v, OP_SInsert, BOX_SEQUENCE_ID, reg_seq_rec);
-		int fieldno = *parse->autoinc_fieldno;
-		int reg = emitNewSysSpaceSequenceRecord(parse, reg_space_id,
-							reg_seq_id, fieldno);
-		sqlVdbeAddOp2(v, OP_SInsert, BOX_SPACE_SEQUENCE_ID, reg);
-	}
-
 exit:
 	if (index != NULL && index->def != NULL)
 		index_def_delete(index->def);
@@ -2103,17 +2087,28 @@ sql_emit_add_constraint(struct Parse *parser,
 	default: {
 		assert(stmt->type == SQL_AST_PROPERTY_UNIQUE ||
 		       stmt->type == SQL_AST_PROPERTY_PRIMARY_KEY);
-		if (stmt->index.autoinc_fieldno != UINT32_MAX) {
-			parser->autoinc_fieldno =
-				xregion_alloc_object(&parser->region, int);
-			*parser->autoinc_fieldno = stmt->index.autoinc_fieldno;
-		}
 		enum sql_index_type type =
 			stmt->type == SQL_AST_PROPERTY_UNIQUE ?
 			SQL_INDEX_TYPE_CONSTRAINT_UNIQUE :
 			SQL_INDEX_TYPE_CONSTRAINT_PK;
 		sql_index_create(parser, stmt->space, name, stmt->index.parts,
 				 stmt->index.part_count, type, false);
+		if (parser->is_aborted ||
+		    stmt->index.autoinc_fieldno == UINT32_MAX)
+			break;
+		struct space_def *def = stmt->space->def;
+		struct Vdbe *v = sqlGetVdbe(parser);
+		int reg_space_id = ++parser->nMem;
+		sqlVdbeAddOp2(v, OP_Integer, def->id, reg_space_id);
+		int reg_seq_id = ++parser->nMem;
+		sqlVdbeAddOp2(v, OP_NextSequenceId, 0, reg_seq_id);
+		int reg_seq_rec = emitNewSysSequenceRecord(parser, reg_seq_id,
+							   def->name);
+		sqlVdbeAddOp2(v, OP_SInsert, BOX_SEQUENCE_ID, reg_seq_rec);
+		int reg = emitNewSysSpaceSequenceRecord(
+			parser, reg_space_id, reg_seq_id,
+			stmt->index.autoinc_fieldno);
+		sqlVdbeAddOp2(v, OP_SInsert, BOX_SPACE_SEQUENCE_ID, reg);
 		break;
 	}
 	}

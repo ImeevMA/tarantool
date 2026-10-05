@@ -161,6 +161,11 @@ struct sql_resolve_context {
 	 */
 	bool is_row_expr;
 	/**
+	 * Number of the AUTOINCREMENT field of the space being created or
+	 * altered by adding a column, or UINT32_MAX if there is none.
+	 */
+	uint32_t autoinc_fieldno;
+	/**
 	 * Whether the expression being resolved is a DEFAULT of a field, see
 	 * resolve_default().
 	 */
@@ -4601,7 +4606,7 @@ resolve_index_field(struct sql_resolve_context *ctx,
  * looked up: the collations of a column must exist, from the outermost one,
  * the number of the collations must not exceed the expression height limit,
  * there must be at most one AUTOINCREMENT field, counting the one of the
- * parser, and it must be a column without COLLATE. The columns which are not
+ * space, and it must be a column without COLLATE. The columns which are not
  * names of fields are rejected later, when they are resolved.
  *
  * Returns 0 on success and -1 on error.
@@ -4610,7 +4615,7 @@ static int
 check_index_columns(struct sql_resolve_context *ctx,
 		    const struct ast_expr_list *columns)
 {
-	bool has_autoinc = ctx->parser->autoinc_fieldno != NULL;
+	bool has_autoinc = ctx->autoinc_fieldno != UINT32_MAX;
 	for (const struct stailq_entry *node = columns->head.first.value;
 	     node != NULL; node = node->next.value) {
 		const struct ast_expr_list_entry *entry =
@@ -5076,22 +5081,20 @@ space_shallow_copy(struct sql_resolve_context *ctx, const struct space *space)
 }
 
 /**
- * Make the field with the given number the AUTOINCREMENT field. The field is
- * kept by the parser, since the conversion of the columns of a PRIMARY KEY
- * checks it.
+ * Make the field with the given number the AUTOINCREMENT field of the space
+ * being created or altered.
  *
  * Returns 0 on success and -1 on error.
  */
 static int
 resolve_autoinc(struct sql_resolve_context *ctx, uint32_t fieldno)
 {
-	if (ctx->parser->autoinc_fieldno != NULL) {
+	if (ctx->autoinc_fieldno != UINT32_MAX) {
 		diag_set(ClientError, ER_SQL_PARSER_GENERIC,
 			 "Table must feature at most one AUTOINCREMENT field");
 		return -1;
 	}
-	ctx->parser->autoinc_fieldno = xregion_alloc_object(ctx->region, int);
-	*ctx->parser->autoinc_fieldno = fieldno;
+	ctx->autoinc_fieldno = fieldno;
 	return 0;
 }
 
@@ -5354,12 +5357,8 @@ resolve_new_index(struct sql_resolve_context *ctx,
 		const struct stailq_entry *node = columns->head.first.value;
 		for (; node != NULL; node = node->next.value, ++i) {
 			if (stailq_entry(node, struct ast_expr_list_entry,
-					 link)->autoinc) {
-				int *fieldno =
-					xregion_alloc_object(ctx->region, int);
-				*fieldno = parts[i].fieldno;
-				ctx->parser->autoinc_fieldno = fieldno;
-			}
+					 link)->autoinc)
+				ctx->autoinc_fieldno = parts[i].fieldno;
 		}
 	}
 	sql_index_create(ctx->parser, space, index_name, parts, part_count,
@@ -5709,7 +5708,7 @@ rast_create_table_create(struct rast_create_table *res)
  * Finish the resolving of the given CREATE TABLE or ADD COLUMN statement: the
  * fields starting with the given one, which have no NULL or NOT NULL, become
  * nullable, the self-referenced FOREIGN KEY constraints are resolved, and the
- * AUTOINCREMENT field is moved from the parser to the statement.
+ * AUTOINCREMENT field is moved from the context to the statement.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -5727,9 +5726,8 @@ resolve_table_finish(struct sql_resolve_context *ctx,
 	}
 	if (resolve_self_fkeys(ctx, res) != 0)
 		return -1;
-	if (ctx->parser->autoinc_fieldno != NULL)
-		res->autoinc_fieldno = *ctx->parser->autoinc_fieldno;
-	ctx->parser->autoinc_fieldno = NULL;
+	res->autoinc_fieldno = ctx->autoinc_fieldno;
+	ctx->autoinc_fieldno = UINT32_MAX;
 	return 0;
 }
 
@@ -6148,6 +6146,7 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.parser = parser;
 	ctx.region = &parser->region;
+	ctx.autoinc_fieldno = UINT32_MAX;
 
 	struct sql_rast *rast = xregion_alloc_object(ctx.region, typeof(*rast));
 	memset(rast, 0, sizeof(*rast));
