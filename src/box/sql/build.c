@@ -2179,17 +2179,10 @@ sql_emit_set_session(struct Parse *parser,
 }
 
 /** Emit VDBE instructions for "SHOW CREATE TABLE table_name;" statement. */
-void
-sql_emit_show_create_table_one(struct Parse *parse, struct Token *name)
+static void
+sql_emit_show_create_table_one(struct Parse *parse,
+			       const struct space *space)
 {
-	const struct space *space = sql_space_by_token(name);
-	if (space == NULL) {
-		const char *name_str = sql_tt_name_from_token(name);
-		diag_set(ClientError, ER_NO_SUCH_SPACE, name_str);
-		parse->is_aborted = true;
-		return;
-	}
-
 	struct Vdbe *v = sqlGetVdbe(parse);
 	sqlVdbeSetNumCols(v, 2);
 	vdbe_metadata_set_col_name(v, 0, "STATEMENTS");
@@ -2205,7 +2198,7 @@ sql_emit_show_create_table_one(struct Parse *parse, struct Token *name)
 }
 
 /** Emit VDBE instructions for "SHOW CREATE TABLE;" statement. */
-void
+static void
 sql_emit_show_create_table_all(struct Parse *parse)
 {
 	struct Vdbe *v = sqlGetVdbe(parse);
@@ -2433,6 +2426,13 @@ void
 sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast, const char *sql)
 {
 	switch (rast->type) {
+	case SQL_AST_SHOW_CREATE_TABLE:
+		if (rast->show_create_table == NULL)
+			sql_emit_show_create_table_all(parser);
+		else
+			sql_emit_show_create_table_one(parser,
+						       rast->show_create_table);
+		break;
 	case SQL_AST_SET_SESSION:
 		sql_emit_set_session(parser, &rast->set_session);
 		break;

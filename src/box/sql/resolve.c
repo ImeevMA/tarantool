@@ -7452,6 +7452,19 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 			return NULL;
 		}
 		break;
+	case SQL_AST_SHOW_CREATE_TABLE: {
+		const struct Token *name = &ast->show_create_table;
+		if (name->n == 0)
+			break;
+		rast->show_create_table = sql_space_by_token(name);
+		if (rast->show_create_table == NULL) {
+			diag_set(ClientError, ER_NO_SUCH_SPACE,
+				 sql_tt_name_from_token(name));
+			parser->is_aborted = true;
+			return NULL;
+		}
+		break;
+	}
 	case SQL_AST_TX_START:
 	case SQL_AST_TX_COMMIT:
 	case SQL_AST_TX_ROLLBACK:

@@ -2542,14 +2542,6 @@ void
 sqlPragma(struct Parse *pParse, struct Token *pragma, struct Token *table,
 	  struct Token *index);
 
-/** Emit VDBE instructions for "SHOW CREATE TABLE table_name;" statement. */
-void
-sql_emit_show_create_table_one(struct Parse *parse, struct Token *name);
-
-/** Emit VDBE instructions for "SHOW CREATE TABLE;" statement. */
-void
-sql_emit_show_create_table_all(struct Parse *parse);
-
 /** Generate a CREATE TABLE statement for the space with the given ID. */
 void
 sql_show_create_table(uint32_t space_id, struct Mem *ret, struct Mem *err);

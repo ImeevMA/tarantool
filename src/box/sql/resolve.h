@@ -623,6 +623,10 @@ struct sql_rast {
 		struct rast_drop_index drop_index;
 		/** Resolved SET SESSION statement. */
 		struct rast_set_session set_session;
+		/**
+		 * Space of SHOW CREATE TABLE, or NULL to show all the spaces.
+		 */
+		const struct space *show_create_table;
 		/** Name of the savepoint of a savepoint statement. */
 		struct Token savepoint;
 		/** Resolved DROP TRIGGER statement. */
