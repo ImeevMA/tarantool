@@ -1505,26 +1505,6 @@ sql_expr_dup(struct Expr *p, int flags, char **buffer)
 	return pNew;
 }
 
-/*
- * Create and return a deep copy of the object passed as the second
- * argument.
- */
-static struct With *
-withDup(struct With *p)
-{
-	if (p == NULL)
-		return NULL;
-	int nByte = sizeof(*p) + sizeof(p->a[0]) * (p->nCte - 1);
-	With *pRet = sql_xmalloc0(nByte);
-	pRet->nCte = p->nCte;
-	for (int i = 0; i < p->nCte; i++) {
-		pRet->a[i].pSelect = sqlSelectDup(p->a[i].pSelect, 0);
-		pRet->a[i].pCols = sql_expr_list_dup(p->a[i].pCols, 0);
-		pRet->a[i].zName = sql_xstrdup(p->a[i].zName);
-	}
-	return pRet;
-}
-
 struct Expr *
 sqlExprDup(struct Expr *p, int flags)
 {
@@ -1678,7 +1658,6 @@ sqlSelectDup(struct Select *p, int flags)
 	pNew->addrOpenEphm[0] = -1;
 	pNew->addrOpenEphm[1] = -1;
 	pNew->nSelectRow = p->nSelectRow;
-	pNew->pWith = withDup(p->pWith);
 	sqlSelectSetName(pNew, p->zSelName);
 	return pNew;
 }

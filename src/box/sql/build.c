@@ -1812,22 +1812,6 @@ sql_emit_savepoint(struct Parse *parser, int op, const struct Token *name)
 		      sql_name_from_token(name), P4_DYNAMIC);
 }
 
-/** Free the contents of the With object and remove the object. */
-void
-sqlWithDelete(struct With *pWith)
-{
-	if (pWith) {
-		int i;
-		for (i = 0; i < pWith->nCte; i++) {
-			struct Cte *pCte = &pWith->a[i];
-			sql_expr_list_delete(pCte->pCols);
-			sql_select_delete(pCte->pSelect);
-			sql_xfree(pCte->zName);
-		}
-		sql_xfree(pWith);
-	}
-}
-
 void
 vdbe_emit_halt_with_presence_test(struct Parse *parser, int space_id,
 				  int index_id, int key_reg, uint32_t key_len,

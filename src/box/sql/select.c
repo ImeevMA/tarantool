@@ -326,8 +326,6 @@ clearSelect(struct Select *p, int bFree)
 		sql_expr_list_delete(p->pOrderBy);
 		sql_expr_delete(p->pLimit);
 		sql_expr_delete(p->pOffset);
-		if (p->pWith)
-			sqlWithDelete(p->pWith);
 		if (bFree)
 			sql_xfree(p);
 		p = pPrior;
@@ -396,7 +394,6 @@ sqlSelectNew(struct ExprList *pEList, struct SrcList *pSrc, struct Expr *pWhere,
 	standin.pNext = 0;
 	standin.pLimit = pLimit;
 	standin.pOffset = pOffset;
-	standin.pWith = 0;
 	Select *pNew = sql_xmalloc(sizeof(*pNew));
 	memcpy(pNew, &standin, sizeof(standin));
 	return pNew;

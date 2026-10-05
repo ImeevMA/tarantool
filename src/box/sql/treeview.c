@@ -117,51 +117,6 @@ sqlTreeViewItem(TreeView * p, const char *zLabel, u8 moreFollows)
 }
 
 /*
- * Generate a human-readable description of a WITH clause.
- */
-void
-sqlTreeViewWith(TreeView * pView, const With * pWith)
-{
-	int i;
-	if (pWith == 0)
-		return;
-	if (pWith->nCte == 0)
-		return;
-	if (pWith->pOuter) {
-		sqlTreeViewLine(pView, "WITH (0x%p, pOuter=0x%p)", pWith,
-				    pWith->pOuter);
-	} else {
-		sqlTreeViewLine(pView, "WITH (0x%p)", pWith);
-	}
-	if (pWith->nCte > 0) {
-		pView = sqlTreeViewPush(pView, 1);
-		for (i = 0; i < pWith->nCte; i++) {
-			StrAccum x;
-			char zLine[1000];
-			const struct Cte *pCte = &pWith->a[i];
-			sqlStrAccumInit(&x, zLine, sizeof(zLine), 0);
-			sqlXPrintf(&x, "%s", pCte->zName);
-			if (pCte->pCols && pCte->pCols->nExpr > 0) {
-				char cSep = '(';
-				int j;
-				for (j = 0; j < pCte->pCols->nExpr; j++) {
-					sqlXPrintf(&x, "%c%s", cSep,
-						       pCte->pCols->a[j].zName);
-					cSep = ',';
-				}
-				sqlXPrintf(&x, ")");
-			}
-			sqlXPrintf(&x, " AS");
-			sqlStrAccumFinish(&x);
-			sqlTreeViewItem(pView, zLine, i < pWith->nCte - 1);
-			sqlTreeViewSelect(pView, pCte->pSelect, 0);
-			sqlTreeViewPop(pView);
-		}
-		sqlTreeViewPop(pView);
-	}
-}
-
-/*
  * Generate a human-readable description of a Select object.
  */
 void
@@ -170,11 +125,6 @@ sqlTreeViewSelect(TreeView * pView, const Select * p, u8 moreToFollow)
 	int n = 0;
 	int cnt = 0;
 	pView = sqlTreeViewPush(pView, moreToFollow);
-	if (p->pWith) {
-		sqlTreeViewWith(pView, p->pWith);
-		cnt = 1;
-		sqlTreeViewPush(pView, 1);
-	}
 	do {
 		sqlTreeViewLine(pView,
 				    "SELECT%s%s (0x%p) selFlags=0x%x nSelectRow=%d",

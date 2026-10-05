@@ -758,7 +758,6 @@ typedef struct TriggerPrg TriggerPrg;
 typedef struct UnpackedRecord UnpackedRecord;
 typedef struct Walker Walker;
 typedef struct WhereInfo WhereInfo;
-typedef struct With With;
 
 /* A VList object records a mapping between parameters/variables/wildcards
  * in the SQL statement (such as $abc, @pqr, or :xyz) and the integer
@@ -1614,7 +1613,6 @@ struct Select {
 	Select *pNext;		/* Next select to the left in a compound */
 	Expr *pLimit;		/* LIMIT expression. NULL means not used. */
 	Expr *pOffset;		/* OFFSET expression. NULL means not used. */
-	With *pWith;		/* WITH clause attached to this select. Or NULL. */
 };
 
 /*
@@ -2042,21 +2040,6 @@ int sqlExprWalkNoop(Walker *, Expr *);
 #define WRC_Prune       1	/* Omit children but continue walking siblings */
 #define WRC_Abort       2	/* Abandon the tree walk */
 
-/*
- * An instance of this structure represents a set of one or more CTEs
- * (common table expressions) created by a single WITH clause.
- */
-struct With {
-	int nCte;		/* Number of CTEs in the WITH clause */
-	With *pOuter;		/* Containing WITH clause, or NULL */
-	struct Cte {		/* For each CTE in the WITH clause.... */
-		char *zName;	/* Name of this CTE */
-		ExprList *pCols;	/* List of explicit column names, or NULL */
-		Select *pSelect;	/* The definition of this CTE */
-		const char *zCteErr;	/* Error message for circular references */
-	} a[1];
-};
-
 #ifdef SQL_DEBUG
 /*
  * An instance of the TreeView object is used for printing the content of
@@ -2165,7 +2148,6 @@ void sqlTreeViewExpr(TreeView *, const Expr *, u8);
 void sqlTreeViewBareExprList(TreeView *, const ExprList *, const char *);
 void sqlTreeViewExprList(TreeView *, const ExprList *, u8, const char *);
 void sqlTreeViewSelect(TreeView *, const Select *, u8);
-void sqlTreeViewWith(TreeView *, const With *);
 #endif
 
 /*
@@ -3925,10 +3907,6 @@ collations_check_compatibility(uint32_t lhs_id, bool is_lhs_forced,
 int
 sql_binary_compare_coll_seq(Parse *parser, Expr *left, Expr *right,
 			    uint32_t *id);
-
-/** Free the contents of the With object and remove the object. */
-void
-sqlWithDelete(struct With *pWith);
 
 /*
  * Allowed return values from sqlFindInIndex()
