@@ -6565,10 +6565,8 @@ expr_list_from_rast(struct Parse *parser, const struct rast_build_scope *scope,
 			break;
 		res = sql_expr_list_append(res, expr);
 		struct ExprList_item *item = &res->a[res->nExpr - 1];
-		if (entry->name != NULL) {
+		if (entry->name != NULL)
 			item->zName = sql_xstrdup(entry->name);
-			item->legacy_name = sql_xstrdup(entry->legacy_name);
-		}
 		if (entry->span != NULL)
 			sqlExprListSetSpan(res, entry->span, entry->span_len);
 		if (entry->order != SORT_ORDER_ASC)

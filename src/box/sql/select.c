@@ -3650,10 +3650,8 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 	 */
 	sql_xfree(pSubitem->zName);
 	sql_xfree(pSubitem->zAlias);
-	sql_xfree(pSubitem->legacy_name);
 	pSubitem->zName = 0;
 	pSubitem->zAlias = 0;
-	pSubitem->legacy_name = NULL;
 	pSubitem->pSelect = 0;
 
 	/* Deletion of the pSubitem->space will be done when a corresponding
@@ -3741,10 +3739,6 @@ flattenSubquery(Parse * pParse,		/* Parsing context */
 				size_t len = strlen(str);
 				char *name = sql_name_new(str, len);
 				pList->a[i].zName = name;
-				if (pList->a[i].zSpan[0] != '"') {
-					pList->a[i].legacy_name =
-						sql_legacy_name_new(str, len);
-				}
 			}
 		}
 		if (pSub->pOrderBy) {

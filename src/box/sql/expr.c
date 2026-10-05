@@ -1552,7 +1552,6 @@ sql_expr_list_dup(struct ExprList *p, int flags)
 		}
 		pItem->zName = sql_xstrdup(pOldItem->zName);
 		pItem->zSpan = sql_xstrdup(pOldItem->zSpan);
-		pItem->legacy_name = sql_xstrdup(pOldItem->legacy_name);
 		pItem->sort_order = pOldItem->sort_order;
 		pItem->done = 0;
 		pItem->bSpanIsTab = pOldItem->bSpanIsTab;
@@ -1584,7 +1583,6 @@ sqlSrcListDup(struct SrcList *p, int flags)
 		struct SrcList_item *pOldItem = &p->a[i];
 		pNewItem->zName = sql_xstrdup(pOldItem->zName);
 		pNewItem->zAlias = sql_xstrdup(pOldItem->zAlias);
-		pNewItem->legacy_name = sql_xstrdup(pOldItem->legacy_name);
 		pNewItem->fg = pOldItem->fg;
 		pNewItem->iCursor = pOldItem->iCursor;
 		pNewItem->addrFillSub = pOldItem->addrFillSub;
@@ -1625,7 +1623,6 @@ sqlIdListDup(struct IdList *p)
 		struct IdList_item *pNewItem = &pNew->a[i];
 		struct IdList_item *pOldItem = &p->a[i];
 		pNewItem->zName = sql_xstrdup(pOldItem->zName);
-		pNewItem->legacy_name = sql_xstrdup(pOldItem->legacy_name);
 		pNewItem->idx = pOldItem->idx;
 	}
 	return pNew;
@@ -1712,10 +1709,7 @@ sqlExprListAppendVector(struct Parse *pParse, struct ExprList *pList,
 		pList = sql_expr_list_append(pList, pSubExpr);
 		assert(pList->nExpr == iFirst + i + 1);
 		pList->a[pList->nExpr - 1].zName = pColumns->a[i].zName;
-		pList->a[pList->nExpr - 1].legacy_name =
-			pColumns->a[i].legacy_name;
 		pColumns->a[i].zName = 0;
-		pColumns->a[i].legacy_name = NULL;
 	}
 
 	if (pExpr->op == TK_SELECT) {
@@ -1775,12 +1769,10 @@ sqlExprListSetName(Parse * pParse,	/* Parsing context */
 	assert(pList->nExpr > 0);
 	struct ExprList_item *item = &pList->a[pList->nExpr - 1];
 	assert(item->zName == NULL);
-	if (dequote) {
+	if (dequote)
 		item->zName = sql_name_new(pName->z, pName->n);
-		item->legacy_name = sql_legacy_name_new(pName->z, pName->n);
-	} else {
+	else
 		item->zName = sql_xstrndup(pName->z, pName->n);
-	}
 	sqlCheckIdentifierName(pParse, item->zName);
 }
 
@@ -1807,7 +1799,6 @@ exprListDeleteNN(struct ExprList *pList)
 		sql_expr_delete(pItem->pExpr);
 		sql_xfree(pItem->zName);
 		sql_xfree(pItem->zSpan);
-		sql_xfree(pItem->legacy_name);
 	}
 	sql_xfree(pList->a);
 	sql_xfree(pList);

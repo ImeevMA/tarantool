@@ -1372,8 +1372,6 @@ struct ExprList {
 		Expr *pExpr;	/* The list of expressions */
 		char *zName;	/* Token associated with this expression */
 		char *zSpan;	/* Original text of the expression */
-		/** Normalized name for the second lookup. */
-		char *legacy_name;
 		enum sort_order sort_order;
 		unsigned done:1;	/* A flag to indicate when processing is finished */
 		unsigned bSpanIsTab:1;	/* zSpan holds DB.TABLE.COLUMN */
@@ -1417,8 +1415,6 @@ struct ExprSpan {
 struct IdList {
 	struct IdList_item {
 		char *zName;	/* Name of the identifier */
-		/** Normalized name for the second lookup. */
-		char *legacy_name;
 		int idx;	/* Index in some Table.aCol[] of a column named zName */
 	} *a;
 	int nId;		/* Number of identifiers on the list */
@@ -1472,8 +1468,6 @@ struct SrcList {
 	struct SrcList_item {
 		char *zName;	/* Name of the table */
 		char *zAlias;	/* The "B" part of a "A AS B" phrase.  zName is the "A" */
-		/** Normalized name for the second lookup. */
-		char *legacy_name;
 		/** A space corresponding to zName */
 		struct space *space;
 		Select *pSelect;	/* A SELECT statement used in place of a table name */
