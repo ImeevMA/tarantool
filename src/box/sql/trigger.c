@@ -387,7 +387,6 @@ codeTriggerProgram(struct Parse *pParse, const struct ast_trigger *ast,
 		struct sql_rast *rast = sql_resolve_ast(pParse, &stmt);
 		if (rast == NULL)
 			break;
-		assert(rast->is_resolved);
 		switch (rast->type) {
 		case SQL_AST_UPDATE:
 			rast->update.action = pParse->eOrconf;

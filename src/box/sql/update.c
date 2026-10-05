@@ -519,13 +519,6 @@ update_emit(struct Parse *pParse, struct SrcList *pTabList,
 }
 
 void
-sqlUpdate(struct Parse *parse, struct SrcList *src, struct ExprList *changes,
-	  struct Expr *where, enum on_conflict_action on_error)
-{
-	update_emit(parse, src, changes, where, on_error, NULL);
-}
-
-void
 sql_emit_update(struct Parse *parse, struct rast_update *update)
 {
 	struct SrcList *src = src_list_from_rast_target(parse, &update->target);

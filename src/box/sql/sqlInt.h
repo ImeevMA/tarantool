@@ -2336,10 +2336,6 @@ sql_parse_trigger(struct Parse *parser, const char *sql);
 struct ast_trigger *
 sql_parse_trigger_ast(struct region *region, const char *sql);
 
-/** Code given AST. */
-void
-sql_code_ast(struct Parse *parse, struct sql_ast *ast, const char *sql);
-
 /**
  * This routine is called after a single SQL statement has been
  * parsed and a VDBE program to execute that statement has been
@@ -2826,22 +2822,6 @@ sqlSelectNew(struct ExprList *pEList, struct SrcList *pSrc, struct Expr *pWhere,
 struct space *
 sql_lookup_space(struct Parse *parse, struct SrcList_item *space_name);
 
-/**
- * Generate code for a DELETE FROM statement.
- *
- *     DELETE FROM table_wxyz WHERE a<5 AND b NOT NULL;
- *                 \________/       \________________/
- *                  tab_list              where
- *
- * @param parse Parsing context.
- * @param tab_list List of single element which table from which
- * deletetion if performed.
- * @param where The WHERE clause.  May be NULL.
- */
-void
-sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
-		      struct Expr *where);
-
 /** Generate the code for the given resolved DELETE statement. */
 void
 sql_emit_delete(struct Parse *parse, struct rast_delete *del);
@@ -2853,9 +2833,6 @@ sql_table_truncate(struct Parse *parse, const struct space *space);
 /** Free a WhereInfo structure. */
 void
 whereInfoFree(struct WhereInfo *pWInfo);
-
-void sqlUpdate(Parse *, SrcList *, ExprList *, Expr *,
-		   enum on_conflict_action);
 
 /** Generate the code for the given resolved UPDATE statement. */
 void

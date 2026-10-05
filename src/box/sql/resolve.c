@@ -127,8 +127,6 @@ struct sql_resolve_context {
 	uint32_t autoname_count;
 	/** Number of the SELECTs enclosing the one being resolved. */
 	uint32_t select_depth;
-	/** Whether the statement being resolved has a resolved form yet. */
-	bool can_resolve;
 	/** Innermost visible WITH clause, or NULL. */
 	struct sql_resolve_with *with;
 	/**
@@ -2010,13 +2008,9 @@ resolve_binary(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	res->left = xregion_alloc_object(ctx->region, struct rast_expr);
 	if (resolve_expr(ctx, ast->left, res->left) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	res->right = xregion_alloc_object(ctx->region, struct rast_expr);
 	if (resolve_expr(ctx, ast->right, res->right) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	res->height = MAX(res->left->height, res->right->height) + 1;
 	return expr_check_height(res->height);
 }
@@ -2034,8 +2028,6 @@ resolve_between(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		xregion_alloc_object(ctx->region, struct rast_expr);
 	if (resolve_expr(ctx, ast->left, res->between.value) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	assert(ast->list->len == 2);
 	const struct stailq_entry *node = ast->list->head.first.value;
 	const struct stailq_entry *next = node->next.value;
@@ -2047,14 +2039,10 @@ resolve_between(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		xregion_alloc_object(ctx->region, struct rast_expr);
 	if (resolve_expr(ctx, lower->expr, res->between.lower) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	res->between.upper =
 		xregion_alloc_object(ctx->region, struct rast_expr);
 	if (resolve_expr(ctx, upper->expr, res->between.upper) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	uint32_t n_left = rast_vector_size(res->between.value);
 	uint32_t n_right = rast_vector_size(res->between.lower);
 	if (n_right == n_left)
@@ -2089,8 +2077,6 @@ resolve_operand_list(struct sql_resolve_context *ctx,
 			stailq_entry(node, struct ast_expr_list_entry, link);
 		if (resolve_expr(ctx, entry->expr, &exprs[i]) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 		max = MAX(max, exprs[i].height);
 		i++;
 	}
@@ -2118,15 +2104,11 @@ resolve_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 			xregion_alloc_object(ctx->region, struct rast_expr);
 		if (resolve_expr(ctx, ast->left, res->in.value) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 		res->in.select =
 			xregion_alloc_object(ctx->region, struct rast_select);
 		if (resolve_nested_select(ctx, rhs->select,
 					  res->in.select) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 		res->type = SQL_TYPE_BOOLEAN;
 		res->height = MAX(res->in.value->height,
 				  rast_select_height(res->in.select)) + 1;
@@ -2146,8 +2128,6 @@ resolve_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		res->left = xregion_alloc_object(ctx->region, struct rast_expr);
 		if (resolve_expr(ctx, ast->left, res->left) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 		const struct stailq_entry *node = rhs->list->head.first.value;
 		const struct ast_expr_list_entry *entry =
 			stailq_entry(node, struct ast_expr_list_entry, link);
@@ -2155,8 +2135,6 @@ resolve_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 			xregion_alloc_object(ctx->region, struct rast_expr);
 		if (resolve_expr(ctx, entry->expr, res->right) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 		res->type = SQL_TYPE_BOOLEAN;
 		res->height = MAX(res->left->height, res->right->height) + 1;
 		return expr_check_height(res->height);
@@ -2164,16 +2142,12 @@ resolve_in(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	res->in.value = xregion_alloc_object(ctx->region, struct rast_expr);
 	if (resolve_expr(ctx, ast->left, res->in.value) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	res->in.len = rhs->list->len;
 	res->in.exprs = xregion_alloc_array(ctx->region, struct rast_expr,
 					    res->in.len);
 	uint32_t height;
 	if (resolve_operand_list(ctx, rhs->list, res->in.exprs, &height) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	res->type = SQL_TYPE_BOOLEAN;
 	res->height = MAX(res->in.value->height, height) + 1;
 	return expr_check_height(res->height);
@@ -2197,8 +2171,6 @@ resolve_case(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 			xregion_alloc_object(ctx->region, struct rast_expr);
 		if (resolve_expr(ctx, ast->left, res->cs.value) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 		value_height = res->cs.value->height;
 	}
 	res->cs.len = ast->list->len;
@@ -2207,8 +2179,6 @@ resolve_case(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	uint32_t height;
 	if (resolve_operand_list(ctx, ast->list, res->cs.exprs, &height) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	if (res->cs.value != NULL) {
 		uint32_t n_value = rast_vector_size(res->cs.value);
 		for (uint32_t i = 0; i + 1 < res->cs.len; i += 2) {
@@ -2246,8 +2216,6 @@ resolve_constructor(struct sql_resolve_context *ctx,
 	uint32_t height;
 	if (resolve_operand_list(ctx, ast->list, res->list.exprs, &height) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	res->height = height + 1;
 	return expr_check_height(res->height);
 }
@@ -2270,8 +2238,6 @@ resolve_getitem(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		xregion_alloc_object(ctx->region, struct rast_expr);
 	if (resolve_expr(ctx, ast->left, res->getitem.value) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	res->getitem.len = ast->list->len;
 	res->getitem.exprs = xregion_alloc_array(ctx->region, struct rast_expr,
 						 res->getitem.len);
@@ -2279,8 +2245,6 @@ resolve_getitem(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	if (resolve_operand_list(ctx, ast->list, res->getitem.exprs,
 				 &height) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	res->type = SQL_TYPE_ANY;
 	res->height = MAX(res->getitem.value->height, height) + 1;
 	return expr_check_height(res->height);
@@ -2798,10 +2762,9 @@ resolve_column_ref(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 
 /**
  * Resolve an AST scalar subquery or EXISTS expression into the given rast_expr
- * and set its height. The subquery is resolvable only when it is itself a
- * resolvable FROM-less SELECT; otherwise the whole expression falls back. The
- * result type is left unknown and is computed from the subquery when needed, as
- * the legacy code does. The result type is left to the caller.
+ * and set its height. The result type is left unknown and is computed from the
+ * subquery when needed, as the legacy code does. The result type is left to
+ * the caller.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -2818,13 +2781,9 @@ resolve_subquery(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 			 "subselects");
 		return -1;
 	}
-	bool outer = ctx->can_resolve;
 	res->select = xregion_alloc_object(ctx->region, struct rast_select);
 	if (resolve_nested_select(ctx, ast->select, res->select) != 0)
 		return -1;
-	ctx->can_resolve = ctx->can_resolve && outer;
-	if (!ctx->can_resolve)
-		return 0;
 	res->height = rast_select_height(res->select) + 1;
 	return expr_check_height(res->height);
 }
@@ -3020,8 +2979,6 @@ resolve_function(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		ctx->scope->ref_depth = MIN(ctx->scope->ref_depth, ref_depth);
 		if (rc != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 	}
 	if ((flags & SQL_FUNC_UNLIKELY) != 0) {
 		res->func.is_unlikely = true;
@@ -3188,8 +3145,6 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		res->expr = xregion_alloc_object(ctx->region, struct rast_expr);
 		if (resolve_expr(ctx, ast->left, res->expr) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			break;
 		res->type = ast->op == TK_BITNOT ? res->expr->type :
 			    SQL_TYPE_BOOLEAN;
 		res->height = res->expr->height + 1;
@@ -3200,8 +3155,6 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		res->expr = xregion_alloc_object(ctx->region, struct rast_expr);
 		if (resolve_expr(ctx, ast->left, res->expr) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			break;
 		res->type = ast->type;
 		res->height = res->expr->height + 1;
 		if (expr_check_height(res->height) != 0)
@@ -3215,8 +3168,6 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	case TK_NE: {
 		if (resolve_binary(ctx, ast, res) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			break;
 		uint32_t size_left = rast_vector_size(res->left);
 		uint32_t size_right = rast_vector_size(res->right);
 		if (size_left != size_right) {
@@ -3265,8 +3216,6 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	case TK_UPLUS:
 		if (resolve_expr(ctx, ast->left, res) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			break;
 		if (res->op != TK_INTEGER && res->op != TK_FLOAT &&
 		    res->op != TK_DECIMAL)
 			return resolve_unary_arith(res, ast->op, ctx->region);
@@ -3274,8 +3223,6 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 	case TK_UMINUS:
 		if (resolve_expr(ctx, ast->left, res) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			break;
 		switch (res->op) {
 		case TK_INTEGER:
 			if (resolve_integer_uminus(res) != 0)
@@ -3331,8 +3278,6 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 			xregion_alloc_object(ctx->region, struct rast_expr);
 		if (resolve_expr(ctx, ast->left, res->coll.expr) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			break;
 		res->type = SQL_TYPE_SCALAR;
 		res->height = res->coll.expr->height + 1;
 		if (expr_check_height(res->height) != 0)
@@ -3361,8 +3306,7 @@ resolve_expr(struct sql_resolve_context *ctx, const struct ast_expr *ast,
 		res->height = 1;
 		break;
 	default:
-		ctx->can_resolve = false;
-		break;
+		unreachable();
 	}
 	return 0;
 }
@@ -3740,8 +3684,6 @@ resolve_column_list(struct sql_resolve_context *ctx,
 		ctx->scope->ref_depth = UINT32_MAX;
 		if (resolve_expr(ctx, entry->expr, &expr->expr) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 		expr->has_agg = ctx->scope->agg_flags != 0;
 		ctx->scope->agg_flags |= agg_flags;
 		expr->ref_depth = ctx->scope->ref_depth;
@@ -3905,8 +3847,6 @@ resolve_order_by(struct sql_resolve_context *ctx, const char *clause,
 		ctx->scope->agg_flags = 0;
 		if (resolve_expr(ctx, entry->expr, &item->expr) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 		item->has_agg = ctx->scope->agg_flags != 0;
 		ctx->scope->agg_flags |= agg_flags;
 		const struct rast_expr *value = &item->expr;
@@ -4180,8 +4120,6 @@ resolve_space_source(struct sql_resolve_context *ctx,
 	if (space->def->opts.is_view) {
 		if (resolve_view(ctx, space, res) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 	}
 	res->space_id = space->def->id;
 	return resolve_indexed_by(ctx, space, &ast->indexed_by, res);
@@ -4276,8 +4214,6 @@ resolve_subquery_source(struct sql_resolve_context *ctx,
 	res->select = xregion_alloc_object(ctx->region, struct rast_select);
 	if (resolve_source_select(ctx, ast, res->select) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	const struct rast_select *select = res->select;
 	while (select->prior != NULL)
 		select = select->prior;
@@ -4430,7 +4366,7 @@ resolve_cte_source(struct sql_resolve_context *ctx,
 	int rc = resolve_source_select(ctx, body, res->select);
 	ctx->with = saved;
 	with->errors[pos] = NULL;
-	if (rc != 0 || !ctx->can_resolve)
+	if (rc != 0)
 		return rc;
 	const struct rast_select *select = res->select;
 	while (select->prior != NULL)
@@ -4486,7 +4422,7 @@ resolve_source(struct sql_resolve_context *ctx, const struct ast_source *ast,
 		 ast->select != NULL ?
 		 resolve_subquery_source(ctx, ast->select, res) :
 		 resolve_space_source(ctx, ast, res);
-	if (rc != 0 || !ctx->can_resolve)
+	if (rc != 0)
 		return rc;
 	if (ast->alias.n > 0) {
 		res->alias = sql_name_temp(ctx->region, ast->alias.z,
@@ -4682,8 +4618,6 @@ resolve_sources(struct sql_resolve_context *ctx,
 		} else if (resolve_source(ctx, src, &res->sources[i]) != 0) {
 			return -1;
 		}
-		if (!ctx->can_resolve)
-			return 0;
 		res->sources[i++].join_type = src->join_type;
 	}
 	return resolve_joins(ctx, ast, res);
@@ -4735,8 +4669,6 @@ resolve_select_names(struct sql_resolve_context *ctx,
 	res->op = ast->op;
 	if (resolve_sources(ctx, ast->sources, &res->sources) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	bool is_nested = (ast->flags & SF_NestedFrom) != 0;
 	return resolve_column_names(ctx, ast->columns, &res->sources,
 				    is_nested, &res->columns);
@@ -4786,8 +4718,6 @@ resolve_where(struct sql_resolve_context *ctx, const struct ast_select *ast,
 						  struct rast_expr);
 		if (resolve_expr(ctx, ast->where, res->where) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 		height = res->where->height;
 	}
 	uint32_t i = 0;
@@ -4806,8 +4736,6 @@ resolve_where(struct sql_resolve_context *ctx, const struct ast_select *ast,
 		res->sources.sources[i].on = on;
 		if (resolve_expr(ctx, src->join_on, on) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 		height = height == 0 ? on->height :
 			 MAX(height, on->height) + 1;
 	}
@@ -4834,12 +4762,8 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 	ctx->scope = &limit_scope;
 	if (resolve_limit(ctx, ast->limit, &res->limit) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	if (resolve_limit(ctx, ast->offset, &res->offset) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	struct sql_resolve_scope scope = {
 		.sources = &res->sources,
 		.parent = outer,
@@ -4847,12 +4771,8 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 	};
 	ctx->is_insert_row = false;
 	ctx->scope = &scope;
-	/*
-	 * A clause may turn out to be not resolvable, in which case the whole
-	 * SELECT falls back to the legacy path, which does its own checks.
-	 */
 	int rc = resolve_column_list(ctx, ast->columns, &res->columns);
-	if (rc != 0 || !ctx->can_resolve)
+	if (rc != 0)
 		return rc;
 	/* Mirrors the legacy aggregate detection in resolveSelectStep(). */
 	res->flags |= scope.agg_flags;
@@ -4869,7 +4789,7 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 		res->having = xregion_alloc_object(ctx->region,
 						   struct rast_expr);
 		rc = resolve_expr(ctx, ast->having, res->having);
-		if (rc != 0 || !ctx->can_resolve)
+		if (rc != 0)
 			return rc;
 		/*
 		 * Without GROUP BY, the SELECT must be an aggregate one, and
@@ -4899,7 +4819,7 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 	};
 	ctx->scope = &where_scope;
 	rc = resolve_where(ctx, ast, res);
-	if (rc != 0 || !ctx->can_resolve)
+	if (rc != 0)
 		return rc;
 	/*
 	 * The ORDER BY and GROUP BY terms can refer to the columns of the
@@ -4915,7 +4835,7 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 	if (!is_compound_head) {
 		rc = resolve_order_by(ctx, "ORDER", ast->order_by,
 				      &res->columns, &res->order_by);
-		if (rc != 0 || !ctx->can_resolve)
+		if (rc != 0)
 			return rc;
 	}
 	struct sql_resolve_scope group_by_scope = {
@@ -4926,7 +4846,7 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 	ctx->scope = &group_by_scope;
 	rc = resolve_order_by(ctx, "GROUP", ast->group_by, &res->columns,
 			      &res->group_by);
-	if (rc != 0 || !ctx->can_resolve)
+	if (rc != 0)
 		return rc;
 	for (uint32_t i = 0; i < res->group_by.len; ++i) {
 		if (res->group_by.exprs[i].has_agg) {
@@ -5010,8 +4930,6 @@ find_compound_order_by_col(struct sql_resolve_context *ctx,
 		*is_failed = true;
 		return 0;
 	}
-	if (!ctx->can_resolve)
-		return 0;
 	/*
 	 * As in the legacy code, once a term is not resolved, no term matches
 	 * a column as an expression.
@@ -5080,8 +4998,6 @@ resolve_compound_order_by(struct sql_resolve_context *ctx,
 							     &is_failed);
 			if (col < 0)
 				return -1;
-			if (!ctx->can_resolve)
-				return 0;
 			if (col == 0)
 				continue;
 			item->order_by_col = col;
@@ -5285,8 +5201,6 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 	}
 	if (!is_rightmost_last && resolve_select_names(ctx, ast, res) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	struct rast_select *prior = NULL;
 	struct rast_select **tail = &prior;
 	for (const struct rlist *l = head->prev; l != head; l = l->prev) {
@@ -5295,8 +5209,6 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 		*tail = xregion_alloc_object(ctx->region, struct rast_select);
 		if (resolve_select_names(ctx, part, *tail) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 		tail = &(*tail)->prior;
 	}
 	if (is_rightmost_last) {
@@ -5319,8 +5231,6 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 		ctx->recursive_cte = NULL;
 		if (rc != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 		if (is_recursive)
 			res->flags |= SF_Recursive;
 	}
@@ -5338,8 +5248,6 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 	struct sql_resolve_scope *outer = ctx->scope;
 	if (resolve_select_clauses(ctx, ast, res, is_compound) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	if (is_rightmost_last)
 		cte_with->errors[cte_pos] = "circular reference: %s";
 	next = res;
@@ -5350,8 +5258,6 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 		ctx->scope = outer;
 		if (resolve_select_clauses(ctx, part, cur, false) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 		if (cur->columns.len == next->columns.len) {
 			next = cur;
 			continue;
@@ -5376,8 +5282,6 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 	ctx->scope = outer;
 	if (resolve_compound_order_by(ctx, ast->order_by, res) != 0)
 		return -1;
-	if (!ctx->can_resolve)
-		return 0;
 	if (check_compound_parts(res) != 0)
 		return -1;
 	if (is_recursive || !ast_is_converted_compound(ast))
@@ -5478,7 +5382,7 @@ resolve_select(struct sql_resolve_context *ctx, const struct ast_select *ast,
 		rc = push_with(ctx, ast->with, &with);
 	if (rc == 0)
 		rc = resolve_compound_select(ctx, ast, res);
-	if (rc == 0 && ctx->can_resolve && ast->with != NULL)
+	if (rc == 0 && ast->with != NULL)
 		rc = check_unused_ctes(ctx, &with);
 	ctx->scope = outer;
 	ctx->with = outer_with;
@@ -5613,10 +5517,10 @@ resolve_insert(struct sql_resolve_context *ctx, const struct ast_insert *ast,
 		ctx->is_insert_row = (ast->select->flags & SF_Values) != 0 &&
 				     head->next == head;
 		int rc = resolve_select(ctx, ast->select, res->select);
-		if (rc == 0 && ctx->can_resolve && ast->with != NULL)
+		if (rc == 0 && ast->with != NULL)
 			rc = check_unused_ctes(ctx, &with);
 		ctx->with = outer_with;
-		if (rc != 0 || !ctx->can_resolve)
+		if (rc != 0)
 			return rc;
 		value_count = res->select->columns.len;
 		res->xfer_source = insert_xfer_source(ast, res->select);
@@ -7223,8 +7127,6 @@ resolve_delete_in(struct sql_resolve_context *ctx, const struct ast_delete *ast,
 		if (resolve_view_select(ctx, &ast->table, ast->where,
 					res->view_select) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 	}
 	if (ast->where == NULL)
 		return 0;
@@ -7250,7 +7152,7 @@ resolve_delete(struct sql_resolve_context *ctx, const struct ast_delete *ast,
 	if (ast->with != NULL && push_with(ctx, ast->with, &with) != 0)
 		return -1;
 	int rc = resolve_delete_in(ctx, ast, res);
-	if (rc == 0 && ctx->can_resolve && ast->with != NULL)
+	if (rc == 0 && ast->with != NULL)
 		rc = check_unused_ctes(ctx, &with);
 	ctx->with = outer_with;
 	return rc;
@@ -7378,8 +7280,6 @@ resolve_update_in(struct sql_resolve_context *ctx, const struct ast_update *ast,
 		if (resolve_target_expr(ctx, &res->target, entry->expr,
 					&set->expr) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 		struct ast_id_entry *id = NULL;
 		if (entry->ids != NULL)
 			id = stailq_first_entry(&entry->ids->head,
@@ -7420,8 +7320,6 @@ resolve_update_in(struct sql_resolve_context *ctx, const struct ast_update *ast,
 		if (resolve_view_select(ctx, &ast->table, ast->where,
 					res->view_select) != 0)
 			return -1;
-		if (!ctx->can_resolve)
-			return 0;
 	}
 	if (ast->where == NULL)
 		return 0;
@@ -7449,7 +7347,7 @@ resolve_update(struct sql_resolve_context *ctx, const struct ast_update *ast,
 	if (ast->with != NULL && push_with(ctx, ast->with, &with) != 0)
 		return -1;
 	int rc = resolve_update_in(ctx, ast, res);
-	if (rc == 0 && ctx->can_resolve && ast->with != NULL)
+	if (rc == 0 && ast->with != NULL)
 		rc = check_unused_ctes(ctx, &with);
 	ctx->with = outer_with;
 	return rc;
@@ -7463,7 +7361,6 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.parser = parser;
 	ctx.region = &parser->region;
-	ctx.can_resolve = true;
 
 	struct sql_rast *rast = xregion_alloc_object(ctx.region, typeof(*rast));
 	memset(rast, 0, sizeof(*rast));
@@ -7622,10 +7519,8 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 		}
 		break;
 	default:
-		ctx.can_resolve = false;
-		break;
+		unreachable();
 	}
-	rast->is_resolved = ctx.can_resolve;
 	return rast;
 }
 
@@ -8408,7 +8303,6 @@ sql_func_expr_from_ast(struct Parse *parser, const struct ast_expr *ast)
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.parser = parser;
 	ctx.region = &parser->region;
-	ctx.can_resolve = true;
 	ctx.is_row_expr = true;
 	struct sql_resolve_scope scope;
 	memset(&scope, 0, sizeof(scope));
@@ -8418,7 +8312,6 @@ sql_func_expr_from_ast(struct Parse *parser, const struct ast_expr *ast)
 		parser->is_aborted = true;
 		return NULL;
 	}
-	assert(ctx.can_resolve);
 	return expr_from_rast_in(parser, NULL, &res);
 }
 
@@ -8429,7 +8322,6 @@ sql_trigger_when_from_ast(struct Parse *parser, const struct ast_expr *when)
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.parser = parser;
 	ctx.region = &parser->region;
-	ctx.can_resolve = true;
 	struct sql_resolve_scope scope;
 	memset(&scope, 0, sizeof(scope));
 	ctx.scope = &scope;
@@ -8438,7 +8330,6 @@ sql_trigger_when_from_ast(struct Parse *parser, const struct ast_expr *when)
 		parser->is_aborted = true;
 		return NULL;
 	}
-	assert(ctx.can_resolve);
 	return expr_from_rast_in(parser, NULL, &res);
 }
 

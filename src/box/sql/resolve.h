@@ -621,10 +621,7 @@ struct rast_create_view {
 	bool if_not_exists;
 };
 
-/**
- * Resolved AST. During resolve separation it is a thin overlay over the parsed
- * AST: the resolve phase gradually moves work here from bytecode generation.
- */
+/** Resolved AST of a statement. */
 struct sql_rast {
 	/** Type of the resolved statement, mirrors struct sql_ast.type. */
 	enum sql_ast_type type;
@@ -670,8 +667,6 @@ struct sql_rast {
 		/** Resolved UPDATE statement. */
 		struct rast_update update;
 	};
-	/** Whether the statement is resolved. */
-	bool is_resolved;
 };
 
 /** Build the resolved AST for the given parsed statement. */
@@ -679,8 +674,7 @@ struct sql_rast *
 sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast);
 
 /**
- * Build a SELECT statement from the given resolved SELECT. A statement that is
- * not resolved is built from the AST.
+ * Build a SELECT statement from the given resolved SELECT.
  *
  * Returns NULL on error.
  */
