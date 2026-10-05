@@ -421,19 +421,9 @@ sqlInsert(Parse * pParse,	/* Parser context */
 		/* This is the case if the data for the INSERT is coming from a
 		 * single-row VALUES clause
 		 */
-		NameContext sNC;
-		memset(&sNC, 0, sizeof(sNC));
-		sNC.pParse = pParse;
 		srcTab = -1;
 		assert(useTempTable == 0);
-		if (pList) {
-			nColumn = pList->nExpr;
-			if (sqlResolveExprListNames(&sNC, pList)) {
-				goto insert_cleanup;
-			}
-		} else {
-			nColumn = 0;
-		}
+		nColumn = pList != NULL ? pList->nExpr : 0;
 	}
 
 	if (pColumn == NULL && nColumn != 0 &&
