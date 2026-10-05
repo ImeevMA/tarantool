@@ -404,9 +404,7 @@ ast_check_name(struct Parse *parser, const struct Token *name)
 /**
  * Check the given AST expression list and set the largest height of its
  * expressions and whether they are all constant in the given result. The check
- * stops at the first erroneous expression. There must be at most one
- * AUTOINCREMENT field, counting the one of the parser, and it must be a column
- * without COLLATE.
+ * stops at the first erroneous expression.
  */
 static void
 ast_check_expr_list(struct Parse *parser, struct ast_expr_list *list,
@@ -416,7 +414,6 @@ ast_check_expr_list(struct Parse *parser, struct ast_expr_list *list,
 	res->is_constant = true;
 	if (list == NULL)
 		return;
-	bool has_autoinc = parser->autoinc_fieldno != NULL;
 	struct ast_expr_list_entry *entry;
 	stailq_foreach_entry(entry, &list->head, link) {
 		struct ast_check_result expr;
@@ -427,23 +424,6 @@ ast_check_expr_list(struct Parse *parser, struct ast_expr_list *list,
 		res->is_constant = res->is_constant && expr.is_constant;
 		if (entry->name.n > 0)
 			ast_check_name(parser, &entry->name);
-		if (!entry->autoinc)
-			continue;
-		if (has_autoinc) {
-			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-				 "Table must feature at most one "
-				 "AUTOINCREMENT field");
-			parser->is_aborted = true;
-			break;
-		}
-		if (expr.op == TK_COLLATE) {
-			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-				 "AUTOINCREMENT cannot be used with "
-				 "a non-integer column");
-			parser->is_aborted = true;
-			break;
-		}
-		has_autoinc = true;
 	}
 }
 
@@ -916,14 +896,6 @@ sql_ast_check_expr(struct Parse *parser, struct ast_expr *expr,
 		   struct ast_check_result *res)
 {
 	ast_check_expr(parser, expr, res);
-	return parser->is_aborted ? -1 : 0;
-}
-
-int
-sql_ast_check_index_columns(struct Parse *parser, struct ast_expr_list *list)
-{
-	struct ast_check_result res;
-	ast_check_expr_list(parser, list, &res);
 	return parser->is_aborted ? -1 : 0;
 }
 

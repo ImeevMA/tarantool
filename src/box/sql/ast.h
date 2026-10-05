@@ -815,16 +815,6 @@ sql_ast_check_expr(struct Parse *parser, struct ast_expr *expr,
 		   struct ast_check_result *res);
 
 /**
- * Check the given AST columns of an index as sql_ast_check_expr() does, and
- * check their AUTOINCREMENT: there must be at most one AUTOINCREMENT field,
- * counting the one of the parser, and it must be a column without COLLATE.
- *
- * Returns 0 on success and -1 on error.
- */
-int
-sql_ast_check_index_columns(struct Parse *parser, struct ast_expr_list *list);
-
-/**
  * Check the given AST SELECT as sql_ast_check_expr() does, including its WITH
  * clauses, whose names must be unique, and the names of its columns.
  *

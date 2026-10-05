@@ -156,8 +156,9 @@ g.test_on_conflict = function(cg)
 end
 
 --
--- Make sure the columns of CREATE INDEX are converted before the space and
--- the name of the index are checked, and are resolved after them.
+-- Make sure the collations and the AUTOINCREMENT of the columns of CREATE
+-- INDEX are checked before the space and the name of the index, and the
+-- columns are resolved after them.
 --
 g.test_create_index_check_order = function(cg)
     cg.server:exec(function()
@@ -172,9 +173,16 @@ g.test_create_index_check_order = function(cg)
 
         check([[CREATE INDEX i ON nosuch(a COLLATE nosuch);]],
               "Collation 'nosuch' does not exist")
+        check([[CREATE INDEX i ON nosuch(a COLLATE nosuch COLLATE "binary");]],
+              "Collation 'nosuch' does not exist")
+        check("CREATE INDEX i ON nosuch(a" ..
+              string.rep(' COLLATE "binary"', 200) .. ");",
+              "Number of nodes in expression tree 201 exceeds the limit (200)")
+        -- Columns which are not names of fields are checked after the space.
         check([[CREATE INDEX i ON nosuch(a + 99999999999999999999);]],
-              "Integer literal 99999999999999999999 exceeds the " ..
-              "supported range [-9223372036854775808, 18446744073709551615]")
+              "Space 'nosuch' does not exist")
+        check([[CREATE INDEX i1 ON t(a + 99999999999999999999);]],
+              "Expressions are prohibited in an index definition")
         check([[CREATE INDEX i ON nosuch(nosuch);]],
               "Space 'nosuch' does not exist")
         check([[CREATE INDEX i ON v(nosuch);]], "Views can not be indexed")
@@ -195,6 +203,9 @@ g.test_create_index_check_order = function(cg)
 
         local res = box.execute([[CREATE INDEX IF NOT EXISTS i ON
                                   nosuch(nosuch);]])
+        t.assert_equals(res, {row_count = 0})
+        res = box.execute([[CREATE INDEX IF NOT EXISTS i ON
+                            nosuch(a + 99999999999999999999);]])
         t.assert_equals(res, {row_count = 0})
         res = box.execute([[CREATE INDEX IF NOT EXISTS i ON t(nosuch);]])
         t.assert_equals(res, {row_count = 0})

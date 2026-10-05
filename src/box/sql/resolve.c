@@ -4562,6 +4562,65 @@ resolve_index_field(struct sql_resolve_context *ctx,
 }
 
 /**
+ * Check the given AST columns of an index before the space of the index is
+ * looked up: the collations of a column must exist, from the outermost one,
+ * the number of the collations must not exceed the expression height limit,
+ * there must be at most one AUTOINCREMENT field, counting the one of the
+ * parser, and it must be a column without COLLATE. The columns which are not
+ * names of fields are rejected later, when they are resolved.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+check_index_columns(struct sql_resolve_context *ctx,
+		    const struct ast_expr_list *columns)
+{
+	bool has_autoinc = ctx->parser->autoinc_fieldno != NULL;
+	for (const struct stailq_entry *node = columns->head.first.value;
+	     node != NULL; node = node->next.value) {
+		const struct ast_expr_list_entry *entry =
+			stailq_entry(node, struct ast_expr_list_entry, link);
+		const struct ast_expr *top = entry->expr;
+		while (top->op == TK_PARENTHESES)
+			top = top->left;
+		const struct ast_expr *ast = top;
+		int height = 1;
+		while (ast->op == TK_PARENTHESES || ast->op == TK_COLLATE) {
+			if (ast->op == TK_COLLATE) {
+				uint32_t id;
+				if (sql_coll_id(&id, ast->right->str,
+						ast->right->len) != 0)
+					return -1;
+				++height;
+			}
+			ast = ast->left;
+		}
+		if (ast->op == TK_ID && height > SQL_MAX_EXPR_DEPTH) {
+			diag_set(ClientError, ER_SQL_PARSER_LIMIT,
+				 "Number of nodes in expression tree",
+				 SQL_MAX_EXPR_DEPTH + 1, SQL_MAX_EXPR_DEPTH);
+			return -1;
+		}
+		if (!entry->autoinc)
+			continue;
+		if (has_autoinc) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 "Table must feature at most one AUTOINCREMENT "
+				 "field");
+			return -1;
+		}
+		if (top->op == TK_COLLATE) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 "AUTOINCREMENT cannot be used with a "
+				 "non-integer column");
+			return -1;
+		}
+		has_autoinc = true;
+	}
+	return 0;
+}
+
+/**
  * Resolve the given AST column of an index of the space with the given
  * definition into the given rast_index_part, as index_fill_def() does. The
  * column must be a name of a field, possibly with collations, of which the
@@ -4635,9 +4694,9 @@ resolve_index_parts(struct sql_resolve_context *ctx,
 
 /**
  * Resolve the index with the given name and columns of the space with the given
- * name into the given rast_create_index, as sql_create_index() does. As in the
- * legacy code, the columns are checked first by sql_ast_check_index_columns(),
- * and are resolved after the space and the name of the index are checked. If
+ * name into the given rast_create_index, as sql_create_index() does. The
+ * columns are checked first by check_index_columns(), and are resolved after
+ * the space and the name of the index are checked. If
  * the given flag is set, a missing space or an existing index is not an error,
  * and the space of the result is left NULL.
  *
@@ -4649,7 +4708,7 @@ resolve_index(struct sql_resolve_context *ctx, const struct Token *table,
 	      bool if_not_exists, struct rast_create_index *res)
 {
 	res->name = *name;
-	if (sql_ast_check_index_columns(ctx->parser, columns) != 0)
+	if (check_index_columns(ctx, columns) != 0)
 		return -1;
 
 	struct space *space = find_space(ctx, table, false);
@@ -5582,8 +5641,8 @@ resolve_column(struct sql_resolve_context *ctx, struct rast_create_table *res,
 
 /**
  * Resolve the given table constraint of the space of the given CREATE TABLE
- * statement. As in the legacy code, the columns of a UNIQUE or PRIMARY KEY
- * constraint are checked first by sql_ast_check_index_columns().
+ * statement. The columns of a UNIQUE or PRIMARY KEY constraint are checked
+ * first by check_index_columns().
  *
  * Returns 0 on success and -1 on error.
  */
@@ -5599,13 +5658,13 @@ resolve_table_constraint(struct sql_resolve_context *ctx,
 	case SQL_AST_PROPERTY_FOREIGN_KEY:
 		return resolve_new_fk(ctx, res, &ast->name, &ast->foreign_key);
 	case SQL_AST_PROPERTY_UNIQUE:
-		if (sql_ast_check_index_columns(ctx->parser, ast->columns) != 0)
+		if (check_index_columns(ctx, ast->columns) != 0)
 			return -1;
 		return resolve_new_index(ctx, res, &ast->name, ast->columns,
 					 SQL_INDEX_TYPE_CONSTRAINT_UNIQUE);
 	default:
 		assert(ast->type == SQL_AST_PROPERTY_PRIMARY_KEY);
-		if (sql_ast_check_index_columns(ctx->parser, ast->columns) != 0)
+		if (check_index_columns(ctx, ast->columns) != 0)
 			return -1;
 		return resolve_new_primary_key(ctx, res, &ast->name,
 					       ast->columns);
