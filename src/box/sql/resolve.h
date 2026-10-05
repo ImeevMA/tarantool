@@ -460,6 +460,20 @@ struct rast_alter_rename {
 	const char *new_name;
 };
 
+/** Resolved ALTER TABLE DROP CONSTRAINT statement. */
+struct rast_drop_constraint {
+	/** Space of the constraint. */
+	const struct space *space;
+	/** Field of a field constraint, or UINT32_MAX for a tuple one. */
+	uint32_t fieldno;
+	/** FOREIGN KEY constraint to drop, or NULL. */
+	const struct tuple_constraint_def *fk;
+	/** CHECK constraint to drop, or NULL. */
+	const struct tuple_constraint_def *ck;
+	/** ID of the index of the constraint to drop, or UINT32_MAX. */
+	uint32_t index_id;
+};
+
 /** Resolved part of an index: a column and its collation. */
 struct rast_index_part {
 	/** Number of the field of the column. */
@@ -603,6 +617,8 @@ struct sql_rast {
 		struct rast_drop_trigger drop_trigger;
 		/** Resolved ALTER TABLE RENAME statement. */
 		struct rast_alter_rename alter_rename;
+		/** Resolved ALTER TABLE DROP CONSTRAINT statement. */
+		struct rast_drop_constraint drop_constraint;
 		/** Resolved CREATE INDEX statement. */
 		struct rast_create_index create_index;
 		/** Resolved ALTER TABLE ADD CONSTRAINT statement. */

@@ -1194,327 +1194,6 @@ sql_fk_constraint_def_new(struct Parse *parser, const char *name,
 	return def;
 }
 
-void
-sql_drop_table_constraint(struct Parse *parser, const struct Token *table_name,
-			  const struct Token *name)
-{
-	const struct space *space = sql_space_by_token(table_name);
-	if (space == NULL) {
-		const char *table_name_str = sql_tt_name_from_token(table_name);
-		diag_set(ClientError, ER_NO_SUCH_SPACE, table_name_str);
-		parser->is_aborted = true;
-		return;
-	}
-	struct Vdbe *v = sqlGetVdbe(parser);
-
-	const struct tuple_constraint_def *fk =
-		sql_tuple_fk_by_token(space, name);
-	if (fk != NULL) {
-		sqlVdbeCountChanges(v);
-		sqlVdbeAddOp4(v, OP_DropTupleForeignKey, space->def->id, 0, 0,
-			      sql_xstrdup(fk->name), P4_DYNAMIC);
-	}
-
-	const struct tuple_constraint_def *ck =
-		sql_tuple_ck_by_token(space, name);
-	if (ck != NULL) {
-		if (fk != NULL) {
-			diag_set(ClientError, ER_SQL_EXECUTE,
-				 tt_sprintf("ambiguous constraint name: '%s'",
-					    fk->name));
-			parser->is_aborted = true;
-			return;
-		}
-		sqlVdbeCountChanges(v);
-		sqlVdbeAddOp4(v, OP_DropTupleCheck, space->def->id, 0, 0,
-			      sql_xstrdup(ck->name), P4_DYNAMIC);
-	}
-
-	uint32_t index_id = sql_index_id_by_token(space, name);
-	if (index_id != UINT32_MAX) {
-		if (fk != NULL || ck != NULL) {
-			const char *str = fk != NULL ? fk->name : ck->name;
-			diag_set(ClientError, ER_SQL_EXECUTE,
-				 tt_sprintf("ambiguous constraint name: '%s'",
-					    str));
-			parser->is_aborted = true;
-			return;
-		}
-		int regs = sqlGetTempRange(parser, 3);
-		sqlVdbeCountChanges(v);
-		sqlVdbeAddOp2(v, OP_Integer, space->def->id, regs);
-		sqlVdbeAddOp2(v, OP_Integer, index_id, regs + 1);
-		sqlVdbeAddOp3(v, OP_MakeRecord, regs, 2, regs + 2);
-		sqlVdbeAddOp3(v, OP_SDelete, BOX_INDEX_ID, regs + 2, 0);
-		sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
-		sqlReleaseTempRange(parser, regs, 3);
-		return;
-	}
-
-	if (fk != NULL || ck != NULL)
-		return;
-
-	diag_set(ClientError, ER_NO_SUCH_CONSTRAINT,
-		 sql_tt_name_from_token(name), space->def->name);
-	parser->is_aborted = true;
-}
-
-void
-sql_drop_tuple_foreign_key(struct Parse *parser, const struct Token *table_name,
-			   const struct Token *name)
-{
-	const struct space *space = sql_space_by_token(table_name);
-	if (space == NULL) {
-		const char *table_name_str = sql_tt_name_from_token(table_name);
-		diag_set(ClientError, ER_NO_SUCH_SPACE, table_name_str);
-		parser->is_aborted = true;
-		return;
-	}
-
-	const struct tuple_constraint_def *fk =
-		sql_tuple_fk_by_token(space, name);
-	if (fk != NULL) {
-		struct Vdbe *v = sqlGetVdbe(parser);
-		sqlVdbeCountChanges(v);
-		sqlVdbeAddOp4(v, OP_DropTupleForeignKey, space->def->id, 0, 0,
-			      sql_xstrdup(fk->name), P4_DYNAMIC);
-		return;
-	}
-
-	diag_set(ClientError, ER_NO_SUCH_CONSTRAINT,
-		 sql_tt_name_from_token(name), space->def->name);
-	parser->is_aborted = true;
-}
-
-void
-sql_drop_tuple_check(struct Parse *parser, const struct Token *table_name,
-		     const struct Token *name)
-{
-	const struct space *space = sql_space_by_token(table_name);
-	if (space == NULL) {
-		const char *table_name_str = sql_tt_name_from_token(table_name);
-		diag_set(ClientError, ER_NO_SUCH_SPACE, table_name_str);
-		parser->is_aborted = true;
-		return;
-	}
-
-	const struct tuple_constraint_def *ck =
-		sql_tuple_ck_by_token(space, name);
-	if (ck != NULL) {
-		struct Vdbe *v = sqlGetVdbe(parser);
-		sqlVdbeCountChanges(v);
-		sqlVdbeAddOp4(v, OP_DropTupleCheck, space->def->id, 0, 0,
-			      sql_xstrdup(ck->name), P4_DYNAMIC);
-		return;
-	}
-
-	diag_set(ClientError, ER_NO_SUCH_CONSTRAINT,
-		 sql_tt_name_from_token(name), space->def->name);
-	parser->is_aborted = true;
-}
-
-void
-sql_drop_primary_key(struct Parse *parser, const struct Token *table_name,
-		     const struct Token *name)
-{
-	const struct space *space = sql_space_by_token(table_name);
-	if (space == NULL) {
-		const char *table_name_str = sql_tt_name_from_token(table_name);
-		diag_set(ClientError, ER_NO_SUCH_SPACE, table_name_str);
-		parser->is_aborted = true;
-		return;
-	}
-
-	uint32_t index_id = sql_index_id_by_token(space, name);
-	if (index_id == 0) {
-		int regs = sqlGetTempRange(parser, 3);
-		struct Vdbe *v = sqlGetVdbe(parser);
-		sqlVdbeCountChanges(v);
-		sqlVdbeAddOp2(v, OP_Integer, space->def->id, regs);
-		sqlVdbeAddOp2(v, OP_Integer, 0, regs + 1);
-		sqlVdbeAddOp3(v, OP_MakeRecord, regs, 2, regs + 2);
-		sqlVdbeAddOp3(v, OP_SDelete, BOX_INDEX_ID, regs + 2, 0);
-		sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
-		sqlReleaseTempRange(parser, regs, 3);
-		return;
-	}
-
-	diag_set(ClientError, ER_NO_SUCH_CONSTRAINT,
-		 sql_tt_name_from_token(name), space->def->name);
-	parser->is_aborted = true;
-}
-
-void
-sql_drop_unique(struct Parse *parser, const struct Token *table_name,
-		const struct Token *name)
-{
-	const struct space *space = sql_space_by_token(table_name);
-	if (space == NULL) {
-		const char *table_name_str = sql_tt_name_from_token(table_name);
-		diag_set(ClientError, ER_NO_SUCH_SPACE, table_name_str);
-		parser->is_aborted = true;
-		return;
-	}
-
-	uint32_t index_id = sql_index_id_by_token(space, name);
-	if (index_id != 0 && index_id != UINT32_MAX) {
-		int regs = sqlGetTempRange(parser, 3);
-		struct Vdbe *v = sqlGetVdbe(parser);
-		sqlVdbeCountChanges(v);
-		sqlVdbeAddOp2(v, OP_Integer, space->def->id, regs);
-		sqlVdbeAddOp2(v, OP_Integer, index_id, regs + 1);
-		sqlVdbeAddOp3(v, OP_MakeRecord, regs, 2, regs + 2);
-		sqlVdbeAddOp3(v, OP_SDelete, BOX_INDEX_ID, regs + 2, 0);
-		sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
-		sqlReleaseTempRange(parser, regs, 3);
-		return;
-	}
-
-	diag_set(ClientError, ER_NO_SUCH_CONSTRAINT,
-		 sql_tt_name_from_token(name), space->def->name);
-	parser->is_aborted = true;
-}
-
-void
-sql_drop_field_constraint(struct Parse *parser, const struct Token *table_name,
-			  const struct Token *column_name,
-			  const struct Token *name)
-{
-	const struct space *space = sql_space_by_token(table_name);
-	if (space == NULL) {
-		const char *table_name_str = sql_tt_name_from_token(table_name);
-		diag_set(ClientError, ER_NO_SUCH_SPACE, table_name_str);
-		parser->is_aborted = true;
-		return;
-	}
-	uint32_t fieldno = sql_fieldno_by_token(space, column_name);
-	if (fieldno == UINT32_MAX) {
-		const char *column_name_str =
-			sql_tt_name_from_token(column_name);
-		diag_set(ClientError, ER_NO_SUCH_FIELD_NAME_IN_SPACE,
-			 space->def->name, column_name_str);
-		parser->is_aborted = true;
-		return;
-	}
-	struct Vdbe *v = sqlGetVdbe(parser);
-	const char *field_name = space->def->fields[fieldno].name;
-
-	const struct tuple_constraint_def *fk =
-		sql_field_fk_by_token(space, fieldno, name);
-	if (fk != NULL) {
-		sqlVdbeCountChanges(v);
-		sqlVdbeAddOp4(v, OP_DropFieldForeignKey, space->def->id, 0,
-			      fieldno, sql_xstrdup(fk->name), P4_DYNAMIC);
-	}
-
-	const struct tuple_constraint_def *ck =
-		sql_field_ck_by_token(space, fieldno, name);
-	if (ck != NULL) {
-		if (fk != NULL) {
-			const char *err =
-				tt_sprintf("ambiguous constraint name: '%s.%s'",
-					   field_name, fk->name);
-			diag_set(ClientError, ER_SQL_EXECUTE, err);
-			parser->is_aborted = true;
-			return;
-		}
-		sqlVdbeCountChanges(v);
-		sqlVdbeAddOp4(v, OP_DropFieldCheck, space->def->id, 0, fieldno,
-			      sql_xstrdup(ck->name), P4_DYNAMIC);
-		return;
-	}
-
-	if (fk != NULL)
-		return;
-
-	char *name_str = sql_name_from_token(name);
-	diag_set(ClientError, ER_NO_SUCH_CONSTRAINT,
-		 tt_sprintf("%s.%s", field_name, name_str), space->def->name);
-	sql_xfree(name_str);
-	parser->is_aborted = true;
-}
-
-void
-sql_drop_field_foreign_key(struct Parse *parser, const struct Token *table_name,
-			   const struct Token *column_name,
-			   const struct Token *name)
-{
-	const struct space *space = sql_space_by_token(table_name);
-	if (space == NULL) {
-		const char *table_name_str = sql_tt_name_from_token(table_name);
-		diag_set(ClientError, ER_NO_SUCH_SPACE, table_name_str);
-		parser->is_aborted = true;
-		return;
-	}
-
-	uint32_t fieldno = sql_fieldno_by_token(space, column_name);
-	if (fieldno == UINT32_MAX) {
-		const char *column_name_str =
-			sql_tt_name_from_token(column_name);
-		diag_set(ClientError, ER_NO_SUCH_FIELD_NAME_IN_SPACE,
-			 space->def->name, column_name_str);
-		parser->is_aborted = true;
-		return;
-	}
-
-	const struct tuple_constraint_def *fk =
-		sql_field_fk_by_token(space, fieldno, name);
-	if (fk != NULL) {
-		struct Vdbe *v = sqlGetVdbe(parser);
-		sqlVdbeCountChanges(v);
-		sqlVdbeAddOp4(v, OP_DropFieldForeignKey, space->def->id, 0,
-			      fieldno, sql_xstrdup(fk->name), P4_DYNAMIC);
-		return;
-	}
-
-	char *name_str = sql_name_from_token(name);
-	const char *field_name = space->def->fields[fieldno].name;
-	diag_set(ClientError, ER_NO_SUCH_CONSTRAINT,
-		 tt_sprintf("%s.%s", field_name, name_str), space->def->name);
-	sql_xfree(name_str);
-	parser->is_aborted = true;
-}
-
-void
-sql_drop_field_check(struct Parse *parser, const struct Token *table_name,
-		     const struct Token *column_name, const struct Token *name)
-{
-	const struct space *space = sql_space_by_token(table_name);
-	if (space == NULL) {
-		const char *table_name_str = sql_tt_name_from_token(table_name);
-		diag_set(ClientError, ER_NO_SUCH_SPACE, table_name_str);
-		parser->is_aborted = true;
-		return;
-	}
-
-	uint32_t fieldno = sql_fieldno_by_token(space, column_name);
-	if (fieldno == UINT32_MAX) {
-		const char *column_name_str =
-			sql_tt_name_from_token(column_name);
-		diag_set(ClientError, ER_NO_SUCH_FIELD_NAME_IN_SPACE,
-			 space->def->name, column_name_str);
-		parser->is_aborted = true;
-		return;
-	}
-
-	const struct tuple_constraint_def *ck =
-		sql_field_ck_by_token(space, fieldno, name);
-	if (ck != NULL) {
-		struct Vdbe *v = sqlGetVdbe(parser);
-		sqlVdbeCountChanges(v);
-		sqlVdbeAddOp4(v, OP_DropFieldCheck, space->def->id, 0, fieldno,
-			      sql_xstrdup(ck->name), P4_DYNAMIC);
-		return;
-	}
-
-	char *name_str = sql_name_from_token(name);
-	const char *field_name = space->def->fields[fieldno].name;
-	diag_set(ClientError, ER_NO_SUCH_CONSTRAINT,
-		 tt_sprintf("%s.%s", field_name, name_str), space->def->name);
-	sql_xfree(name_str);
-	parser->is_aborted = true;
-}
-
 /**
  * Position @a _index_cursor onto a last record in _index space
  * with a specified @a space_id. It corresponds to the latest
@@ -1916,21 +1595,59 @@ exit:
 		index_def_delete(index->def);
 }
 
+/** Emit VDBE bytecode to drop the index with the given ID of the space. */
+static void
+vdbe_emit_drop_index(struct Parse *parser, uint32_t space_id,
+		     uint32_t index_id)
+{
+	struct Vdbe *v = sqlGetVdbe(parser);
+	int regs = sqlGetTempRange(parser, 3);
+	sqlVdbeCountChanges(v);
+	sqlVdbeAddOp2(v, OP_Integer, space_id, regs);
+	sqlVdbeAddOp2(v, OP_Integer, index_id, regs + 1);
+	sqlVdbeAddOp3(v, OP_MakeRecord, regs, 2, regs + 2);
+	sqlVdbeAddOp3(v, OP_SDelete, BOX_INDEX_ID, regs + 2, 0);
+	sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
+	sqlReleaseTempRange(parser, regs, 3);
+}
+
 /** Emit VDBE bytecode for the given resolved DROP INDEX statement. */
 static void
 sql_emit_drop_index(struct Parse *parser, const struct rast_drop_index *stmt)
 {
 	struct Vdbe *v = sqlGetVdbe(parser);
 	sqlVdbeCountChanges(v);
-	if (stmt->index_id == UINT32_MAX)
-		return;
-	int regs = sqlGetTempRange(parser, 3);
-	sqlVdbeAddOp2(v, OP_Integer, stmt->space->def->id, regs);
-	sqlVdbeAddOp2(v, OP_Integer, stmt->index_id, regs + 1);
-	sqlVdbeAddOp3(v, OP_MakeRecord, regs, 2, regs + 2);
-	sqlVdbeAddOp3(v, OP_SDelete, BOX_INDEX_ID, regs + 2, 0);
-	sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
-	sqlReleaseTempRange(parser, regs, 3);
+	if (stmt->index_id != UINT32_MAX)
+		vdbe_emit_drop_index(parser, stmt->space->def->id,
+				     stmt->index_id);
+}
+
+/**
+ * Emit VDBE bytecode for the given resolved ALTER TABLE DROP CONSTRAINT
+ * statement.
+ */
+static void
+sql_emit_drop_constraint(struct Parse *parser,
+			 const struct rast_drop_constraint *stmt)
+{
+	struct Vdbe *v = sqlGetVdbe(parser);
+	uint32_t space_id = stmt->space->def->id;
+	bool is_field = stmt->fieldno != UINT32_MAX;
+	uint32_t fieldno = is_field ? stmt->fieldno : 0;
+	if (stmt->fk != NULL) {
+		sqlVdbeCountChanges(v);
+		sqlVdbeAddOp4(v, is_field ? OP_DropFieldForeignKey :
+			      OP_DropTupleForeignKey, space_id, 0, fieldno,
+			      sql_xstrdup(stmt->fk->name), P4_DYNAMIC);
+	}
+	if (stmt->ck != NULL) {
+		sqlVdbeCountChanges(v);
+		sqlVdbeAddOp4(v, is_field ? OP_DropFieldCheck :
+			      OP_DropTupleCheck, space_id, 0, fieldno,
+			      sql_xstrdup(stmt->ck->name), P4_DYNAMIC);
+	}
+	if (stmt->index_id != UINT32_MAX)
+		vdbe_emit_drop_index(parser, space_id, stmt->index_id);
 }
 
 void *
@@ -2789,6 +2506,10 @@ sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast, const char *sql)
 	case SQL_AST_DROP_INDEX:
 		parser->initiateTTrans = true;
 		sql_emit_drop_index(parser, &rast->drop_index);
+		break;
+	case SQL_AST_ALTER_DROP_CONSTRAINT:
+		parser->initiateTTrans = true;
+		sql_emit_drop_constraint(parser, &rast->drop_constraint);
 		break;
 	case SQL_AST_ALTER_RENAME:
 		parser->initiateTTrans = true;

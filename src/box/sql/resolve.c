@@ -43,6 +43,7 @@
 #include "box/schema.h"
 #include "box/session.h"
 #include "box/coll_id_cache.h"
+#include "box/tuple_constraint_def.h"
 
 /**
  * Names visible at some point of the resolve phase. It mirrors the legacy
@@ -5788,6 +5789,133 @@ resolve_alter_rename(struct sql_resolve_context *ctx,
 }
 
 /**
+ * Resolve the tuple constraint with the given name and type of the space of
+ * the given rast_drop_constraint. A constraint of any type is looked up among
+ * the FOREIGN KEY and CHECK constraints and the indexes, and must be found in
+ * only one of them.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_drop_tuple_constraint(const struct Token *name,
+			      enum ast_property_type type,
+			      struct rast_drop_constraint *res)
+{
+	const struct space *space = res->space;
+	switch (type) {
+	case SQL_AST_PROPERTY_CHECK:
+		res->ck = sql_tuple_ck_by_token(space, name);
+		break;
+	case SQL_AST_PROPERTY_FOREIGN_KEY:
+		res->fk = sql_tuple_fk_by_token(space, name);
+		break;
+	case SQL_AST_PROPERTY_PRIMARY_KEY:
+		if (sql_index_id_by_token(space, name) == 0)
+			res->index_id = 0;
+		break;
+	case SQL_AST_PROPERTY_UNIQUE:
+		res->index_id = sql_index_id_by_token(space, name);
+		if (res->index_id == 0)
+			res->index_id = UINT32_MAX;
+		break;
+	default: {
+		assert(type == SQL_AST_PROPERTY_ANY);
+		res->fk = sql_tuple_fk_by_token(space, name);
+		res->ck = sql_tuple_ck_by_token(space, name);
+		if (res->fk != NULL && res->ck != NULL) {
+			diag_set(ClientError, ER_SQL_EXECUTE,
+				 tt_sprintf("ambiguous constraint name: '%s'",
+					    res->fk->name));
+			return -1;
+		}
+		res->index_id = sql_index_id_by_token(space, name);
+		const struct tuple_constraint_def *def =
+			res->fk != NULL ? res->fk : res->ck;
+		if (res->index_id != UINT32_MAX && def != NULL) {
+			diag_set(ClientError, ER_SQL_EXECUTE,
+				 tt_sprintf("ambiguous constraint name: '%s'",
+					    def->name));
+			return -1;
+		}
+		break;
+	}
+	}
+	if (res->fk != NULL || res->ck != NULL || res->index_id != UINT32_MAX)
+		return 0;
+	diag_set(ClientError, ER_NO_SUCH_CONSTRAINT,
+		 sql_tt_name_from_token(name), space->def->name);
+	return -1;
+}
+
+/**
+ * Resolve the field constraint with the given name and type of the field of
+ * the given rast_drop_constraint. A constraint of any type is looked up among
+ * the FOREIGN KEY and CHECK constraints of the field, and must be found in
+ * only one of them.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_drop_field_constraint(const struct Token *name,
+			      enum ast_property_type type,
+			      struct rast_drop_constraint *res)
+{
+	const struct space *space = res->space;
+	const char *field_name = space->def->fields[res->fieldno].name;
+	if (type != SQL_AST_PROPERTY_CHECK)
+		res->fk = sql_field_fk_by_token(space, res->fieldno, name);
+	if (type != SQL_AST_PROPERTY_FOREIGN_KEY)
+		res->ck = sql_field_ck_by_token(space, res->fieldno, name);
+	if (res->fk != NULL && res->ck != NULL) {
+		const char *err = tt_sprintf("ambiguous constraint name: "
+					     "'%s.%s'", field_name,
+					     res->fk->name);
+		diag_set(ClientError, ER_SQL_EXECUTE, err);
+		return -1;
+	}
+	if (res->fk != NULL || res->ck != NULL)
+		return 0;
+	diag_set(ClientError, ER_NO_SUCH_CONSTRAINT,
+		 tt_sprintf("%s.%s", field_name, sql_tt_name_from_token(name)),
+		 space->def->name);
+	return -1;
+}
+
+/**
+ * Resolve the given AST ALTER TABLE DROP CONSTRAINT statement into the given
+ * rast_drop_constraint.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_drop_constraint(const struct ast_alter_drop_constraint *ast,
+			struct rast_drop_constraint *res)
+{
+	res->fieldno = UINT32_MAX;
+	res->fk = NULL;
+	res->ck = NULL;
+	res->index_id = UINT32_MAX;
+	res->space = sql_space_by_token(&ast->table);
+	if (res->space == NULL) {
+		diag_set(ClientError, ER_NO_SUCH_SPACE,
+			 sql_tt_name_from_token(&ast->table));
+		return -1;
+	}
+	if (ast->column.n == 0) {
+		return resolve_drop_tuple_constraint(&ast->name, ast->type,
+						     res);
+	}
+	res->fieldno = sql_fieldno_by_token(res->space, &ast->column);
+	if (res->fieldno == UINT32_MAX) {
+		diag_set(ClientError, ER_NO_SUCH_FIELD_NAME_IN_SPACE,
+			 res->space->def->name,
+			 sql_tt_name_from_token(&ast->column));
+		return -1;
+	}
+	return resolve_drop_field_constraint(&ast->name, ast->type, res);
+}
+
+/**
  * Find the field with the given name of a column of an index in the given
  * space definition, as lookupName() does. If the given unquoted identifier is
  * not NULL, the name is also looked up in the legacy form of the identifier.
@@ -7323,6 +7451,13 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 	case SQL_AST_ALTER_RENAME:
 		if (resolve_alter_rename(&ctx, &ast->alter_rename,
 					 &rast->alter_rename) != 0) {
+			parser->is_aborted = true;
+			return NULL;
+		}
+		break;
+	case SQL_AST_ALTER_DROP_CONSTRAINT:
+		if (resolve_drop_constraint(&ast->alter_drop_constraint,
+					    &rast->drop_constraint) != 0) {
 			parser->is_aborted = true;
 			return NULL;
 		}

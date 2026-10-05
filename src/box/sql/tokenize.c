@@ -488,47 +488,6 @@ sql_code_select(struct Parse *parser, struct ast_select *select)
 	sql_select_delete(res);
 }
 
-/** Code AST for DROP CONSTRAINT statements. */
-static void
-sql_code_ast_drop_constraint(struct Parse *parser, struct Token *name,
-			     struct Token *column, struct Token *table,
-			     enum ast_property_type type)
-{
-	parser->initiateTTrans = true;
-	if (column->n == 0) {
-		/* Table constraint. */
-		switch (type) {
-		case SQL_AST_PROPERTY_CHECK:
-			sql_drop_tuple_check(parser, table, name);
-			break;
-		case SQL_AST_PROPERTY_UNIQUE:
-			sql_drop_unique(parser, table, name);
-			break;
-		case SQL_AST_PROPERTY_PRIMARY_KEY:
-			sql_drop_primary_key(parser, table, name);
-			break;
-		case SQL_AST_PROPERTY_FOREIGN_KEY:
-			sql_drop_tuple_foreign_key(parser, table, name);
-			break;
-		default:
-			assert(type == SQL_AST_PROPERTY_ANY);
-			sql_drop_table_constraint(parser, table, name);
-		}
-		return;
-	}
-	switch (type) {
-	case SQL_AST_PROPERTY_CHECK:
-		sql_drop_field_check(parser, table, column, name);
-		break;
-	case SQL_AST_PROPERTY_FOREIGN_KEY:
-		sql_drop_field_foreign_key(parser, table, column, name);
-		break;
-	default:
-		assert(type == SQL_AST_PROPERTY_ANY);
-		sql_drop_field_constraint(parser, table, column, name);
-	}
-}
-
 /** Code AST for CREATE VIEW. */
 static void
 sql_code_create_view(struct Parse *parser, struct ast_create_view *stmt,
@@ -708,13 +667,6 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast, const char *sql)
 		break;
 	case SQL_AST_CREATE_TRIGGER:
 		sql_code_create_trigger(parse, &ast->create_trigger, sql);
-		break;
-	case SQL_AST_ALTER_DROP_CONSTRAINT:
-		sql_code_ast_drop_constraint(parse,
-					     &ast->alter_drop_constraint.name,
-					     &ast->alter_drop_constraint.column,
-					     &ast->alter_drop_constraint.table,
-					     ast->alter_drop_constraint.type);
 		break;
 	case SQL_AST_SET_SESSION:
 		sql_code_set_session(parse, &ast->set_session.name,

@@ -3524,48 +3524,6 @@ sql_trigger_colmask(Parse *parser, struct sql_trigger *trigger,
 #define sqlParseToplevel(p) ((p)->pToplevel ? (p)->pToplevel : (p))
 #define sqlIsToplevel(p) ((p)->pToplevel==0)
 
-/** Emit code to drop UNIQUE, tuple FOREIGN KEY or tuple CHECK constraint. */
-void
-sql_drop_table_constraint(struct Parse *parser, const struct Token *table_name,
-			  const struct Token *constraint_name);
-
-/** Emit code to drop tuple FOREIGN KEY constraint. */
-void
-sql_drop_tuple_foreign_key(struct Parse *parser, const struct Token *table_name,
-			   const struct Token *name);
-
-/** Emit code to drop tuple CHECK constraint. */
-void
-sql_drop_tuple_check(struct Parse *parser, const struct Token *table_name,
-		     const struct Token *name);
-
-/** Emit code to drop PRIMARY KEY constraint. */
-void
-sql_drop_primary_key(struct Parse *parser, const struct Token *table_name,
-		     const struct Token *name);
-
-/** Emit code to drop UNIQUE constraint. */
-void
-sql_drop_unique(struct Parse *parser, const struct Token *table_name,
-		const struct Token *name);
-
-/** Emit code to field FOREIGN KEY or field CHECK constraint. */
-void
-sql_drop_field_constraint(struct Parse *parser, const struct Token *table_name,
-			  const struct Token *column_name,
-			  const struct Token *name);
-
-/** Emit code to drop field FOREIGN KEY constraint. */
-void
-sql_drop_field_foreign_key(struct Parse *parser, const struct Token *table_name,
-			   const struct Token *column_name,
-			   const struct Token *name);
-
-/** Emit code to drop field CHECK constraint. */
-void
-sql_drop_field_check(struct Parse *parser, const struct Token *table_name,
-		     const struct Token *column_name, const struct Token *name);
-
 /**
  * Now our SQL implementation can't operate on spaces which
  * lack format: it is reasonable since for instance we can't
