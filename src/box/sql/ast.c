@@ -1164,16 +1164,586 @@ ast_table_properties_append_constraint(struct ast_table_properties *properties,
 }
 
 /**
- * Check the given action of a trigger by converting it as the legacy code
- * does, to report the same errors when the trigger is created.
+ * The properties of an AST expression that the checks of the expressions
+ * containing it depend on, see ast_check_expr().
  */
+struct ast_check_result {
+	/**
+	 * Height of the expression: 1 for a leaf, or else the largest height
+	 * of its operands plus one. A unary plus or minus applied to a
+	 * numeric literal is a part of the literal, and an AND with a FALSE
+	 * operand is FALSE.
+	 */
+	int height;
+	/** Operation of the expression after such folding. */
+	int op;
+	/** Value of an INTEGER literal, in two's complement if negative. */
+	uint64_t u;
+	/** Whether an INTEGER literal is negative. */
+	bool is_neg;
+	/** Number of the elements of a vector. */
+	uint32_t len;
+};
+
+/**
+ * Check the given AST expression and set the given result. The checks are the
+ * ones not depending on the names: the literals, the collations, the number
+ * of the arguments of the functions and of the parts of the compound SELECTs,
+ * the types of the joins and the heights of the expressions.
+ */
+static void
+ast_check_expr(struct Parse *parser, struct ast_expr *expr,
+	       struct ast_check_result *res);
+
+/** Check the given name, which is an identifier, dequoted. */
+static void
+ast_check_name(struct Parse *parser, const struct Token *name)
+{
+	size_t used = region_used(&parser->region);
+	const char *str = sql_name_temp(&parser->region, name->z, name->n);
+	if (sql_check_identifier_name(str, strlen(str)) != 0)
+		parser->is_aborted = true;
+	region_truncate(&parser->region, used);
+}
+
+/**
+ * Check the given AST expression list and set the largest height of its
+ * expressions. The check stops at the first erroneous expression. There must
+ * be at most one AUTOINCREMENT field, counting the one of the parser, and it
+ * must be a column without COLLATE.
+ */
+static void
+ast_check_expr_list(struct Parse *parser, struct ast_expr_list *list,
+		    int *height)
+{
+	*height = 0;
+	if (list == NULL)
+		return;
+	bool has_autoinc = parser->autoinc_fieldno != NULL;
+	struct ast_expr_list_entry *entry;
+	stailq_foreach_entry(entry, &list->head, link) {
+		struct ast_check_result expr;
+		ast_check_expr(parser, entry->expr, &expr);
+		if (parser->is_aborted)
+			break;
+		*height = MAX(*height, expr.height);
+		if (entry->name.n > 0)
+			ast_check_name(parser, &entry->name);
+		if (!entry->autoinc)
+			continue;
+		if (has_autoinc) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 "Table must feature at most one "
+				 "AUTOINCREMENT field");
+			parser->is_aborted = true;
+			break;
+		}
+		if (expr.op == TK_COLLATE) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 "AUTOINCREMENT cannot be used with "
+				 "a non-integer column");
+			parser->is_aborted = true;
+			break;
+		}
+		has_autoinc = true;
+	}
+}
+
+/** Check the given AST SELECT and set the largest height of its expressions. */
+static void
+ast_check_select_height(struct Parse *parser, struct ast_select *select,
+			int *height);
+
+/** Check the given AST sources. */
+static void
+ast_check_sources(struct Parse *parser, struct ast_source_list *list)
+{
+	if (list == NULL)
+		return;
+	struct ast_source *src;
+	stailq_foreach_entry(src, &list->head, link) {
+		int height;
+		ast_check_select_height(parser, src->select, &height);
+		struct ast_check_result on;
+		ast_check_expr(parser, src->join_on, &on);
+		if ((src->join_type & JT_INNER) != 0 &&
+		    (src->join_type & JT_OUTER) != 0) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 "JOIN cannot be both OUTER and INNER");
+			parser->is_aborted = true;
+			break;
+		}
+		if ((src->join_type & JT_OUTER) != 0 &&
+		    (src->join_type & (JT_LEFT | JT_RIGHT)) != JT_LEFT) {
+			diag_set(ClientError, ER_UNSUPPORTED, "Tarantool",
+				 "RIGHT and FULL OUTER JOINs");
+			parser->is_aborted = true;
+			break;
+		}
+	}
+}
+
+/**
+ * Check the given part of an AST SELECT, without its WITH clause, and set the
+ * largest height of its expressions.
+ */
+static void
+ast_check_select_part(struct Parse *parser, struct ast_select *select,
+		      int *height)
+{
+	int h;
+	ast_check_expr_list(parser, select->columns, height);
+	ast_check_sources(parser, select->sources);
+	struct ast_check_result expr;
+	ast_check_expr(parser, select->where, &expr);
+	*height = MAX(*height, expr.height);
+	ast_check_expr_list(parser, select->group_by, &h);
+	*height = MAX(*height, h);
+	ast_check_expr(parser, select->having, &expr);
+	*height = MAX(*height, expr.height);
+	ast_check_expr_list(parser, select->order_by, &h);
+	*height = MAX(*height, h);
+	ast_check_expr(parser, select->limit, &expr);
+	*height = MAX(*height, expr.height);
+	ast_check_expr(parser, select->offset, &expr);
+	*height = MAX(*height, expr.height);
+}
+
+/** Check the given AST WITH clause. */
+static void
+ast_check_with(struct Parse *parser, struct ast_with_list *list)
+{
+	if (list == NULL)
+		return;
+	struct ast_with_entry *entry;
+	stailq_foreach_entry(entry, &list->head, link) {
+		if (entry->columns != NULL) {
+			struct ast_id_entry *id;
+			stailq_foreach_entry(id, &entry->columns->head, link)
+				ast_check_name(parser, &id->id);
+		}
+		int height;
+		ast_check_select_height(parser, entry->select, &height);
+		size_t used = region_used(&parser->region);
+		const char *name = sql_name_temp(&parser->region,
+						 entry->name.z, entry->name.n);
+		struct ast_with_entry *prev;
+		stailq_foreach_entry(prev, &list->head, link) {
+			if (prev == entry)
+				break;
+			const char *prev_name =
+				sql_name_temp(&parser->region, prev->name.z,
+					      prev->name.n);
+			if (strcmp(name, prev_name) != 0)
+				continue;
+			const char *err = "Ambiguous table name in WITH "
+					  "query: %s";
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
+				 tt_sprintf(err, name));
+			parser->is_aborted = true;
+		}
+		region_truncate(&parser->region, used);
+	}
+}
+
+static void
+ast_check_select_height(struct Parse *parser, struct ast_select *select,
+			int *height)
+{
+	*height = 0;
+	if (select == NULL)
+		return;
+	ast_check_with(parser, select->with);
+	if (parser->is_aborted)
+		return;
+	int count = 1;
+	struct ast_select *part;
+	rlist_foreach_entry(part, &select->link, link) {
+		int h;
+		ast_check_select_part(parser, part, &h);
+		if (parser->is_aborted)
+			return;
+		*height = MAX(*height, h);
+		count++;
+	}
+	int h;
+	ast_check_select_part(parser, select, &h);
+	if (parser->is_aborted)
+		return;
+	*height = MAX(*height, h);
+	if ((select->flags & SF_MultiValue) == 0 &&
+	    count > SQL_MAX_COMPOUND_SELECT) {
+		diag_set(ClientError, ER_SQL_PARSER_LIMIT, "The number of "
+			 "UNION or EXCEPT or INTERSECT operations", count,
+			 SQL_MAX_COMPOUND_SELECT);
+		parser->is_aborted = true;
+	}
+}
+
+/**
+ * Set the given result of an operation with the given operands, whose
+ * heights are the given ones, and check its height.
+ */
+static void
+ast_check_node(struct Parse *parser, int op, int left, int right,
+	       struct ast_check_result *res)
+{
+	res->op = op;
+	res->height = MAX(left, right) + 1;
+	sqlExprCheckHeight(parser, res->height);
+}
+
+/** Check the given AST INTEGER literal. */
+static void
+ast_check_integer(struct Parse *parser, struct ast_expr *expr,
+		  struct ast_check_result *res)
+{
+	size_t used = region_used(&parser->region);
+	char *str = xregion_alloc(&parser->region, expr->len + 1);
+	memcpy(str, expr->str, expr->len);
+	str[expr->len] = '\0';
+	if (sql_uint_from_str(&res->u, str) != 0)
+		parser->is_aborted = true;
+	region_truncate(&parser->region, used);
+}
+
+/** Check the given AST DECIMAL literal. */
+static void
+ast_check_decimal(struct Parse *parser, struct ast_expr *expr)
+{
+	size_t used = region_used(&parser->region);
+	char *str = xregion_alloc(&parser->region, expr->len + 1);
+	memcpy(str, expr->str, expr->len);
+	str[expr->len] = '\0';
+	decimal_t dec;
+	if (sql_dec_from_str(&dec, str) != 0)
+		parser->is_aborted = true;
+	region_truncate(&parser->region, used);
+}
+
+/** Check the given AST unary minus. */
+static void
+ast_check_uminus(struct Parse *parser, struct ast_expr *expr,
+		 struct ast_check_result *res)
+{
+	ast_check_expr(parser, expr->left, res);
+	if (parser->is_aborted)
+		return;
+	if (res->op == TK_DECIMAL || res->op == TK_FLOAT)
+		return;
+	if (res->op != TK_INTEGER) {
+		ast_check_node(parser, TK_UMINUS, res->height, 0, res);
+		return;
+	}
+	if (res->is_neg) {
+		res->u = ~res->u + 1;
+		res->is_neg = false;
+		return;
+	}
+	if (res->u == 0)
+		return;
+	int64_t value;
+	if (sql_neg_uint(&value, res->u) != 0) {
+		parser->is_aborted = true;
+		return;
+	}
+	res->u = (uint64_t)value;
+	res->is_neg = true;
+}
+
+/** Check the given AST function call. */
+static void
+ast_check_function(struct Parse *parser, struct ast_expr *expr,
+		   struct ast_check_result *res)
+{
+	res->op = TK_FUNCTION;
+	res->height = 1;
+	if (expr->right == NULL || expr->right->list == NULL)
+		return;
+	if (expr->right->list->len > SQL_MAX_FUNCTION_ARG) {
+		size_t used = region_used(&parser->region);
+		char *name = xregion_alloc(&parser->region,
+					   expr->left->len + 1);
+		memcpy(name, expr->left->str, expr->left->len);
+		name[expr->left->len] = '\0';
+		sqlDequote(name);
+		const char *err = tt_sprintf("Number of arguments to "
+					     "function %s", name);
+		region_truncate(&parser->region, used);
+		diag_set(ClientError, ER_SQL_PARSER_LIMIT, err,
+			 expr->right->list->len, SQL_MAX_FUNCTION_ARG);
+		parser->is_aborted = true;
+		return;
+	}
+	int height;
+	ast_check_expr_list(parser, expr->right->list, &height);
+	if (!parser->is_aborted)
+		ast_check_node(parser, TK_FUNCTION, height, 0, res);
+}
+
+/**
+ * Check the given AST expression with a left operand and a list of operands
+ * of the given operation.
+ */
+static void
+ast_check_left_and_list(struct Parse *parser, int op, struct ast_expr *left,
+			struct ast_expr_list *list,
+			struct ast_check_result *res)
+{
+	struct ast_check_result l;
+	ast_check_expr(parser, left, &l);
+	if (parser->is_aborted)
+		return;
+	ast_check_node(parser, op, l.height, 0, res);
+	int height;
+	ast_check_expr_list(parser, list, &height);
+	if (!parser->is_aborted)
+		ast_check_node(parser, op, l.height, height, res);
+}
+
+/** Check the given AST IN expression. */
+static void
+ast_check_in(struct Parse *parser, struct ast_expr *expr,
+	     struct ast_check_result *res)
+{
+	struct ast_check_result left;
+	if (expr->right->op == TK_SELECT) {
+		ast_check_expr(parser, expr->left, &left);
+		if (parser->is_aborted)
+			return;
+		int height;
+		ast_check_select_height(parser, expr->right->select, &height);
+		if (parser->is_aborted)
+			return;
+		ast_check_node(parser, expr->op, left.height, 0, res);
+		if (!parser->is_aborted)
+			ast_check_node(parser, expr->op, left.height, height,
+				       res);
+		return;
+	}
+	assert(expr->right->op == TK_VECTOR);
+	struct ast_expr_list *list = expr->right->list;
+	if (list == NULL || list->len == 0) {
+		res->op = TK_FALSE;
+		res->height = 1;
+		return;
+	}
+	if (list->len > 1) {
+		ast_check_left_and_list(parser, expr->op, expr->left, list,
+					res);
+		return;
+	}
+	ast_check_expr(parser, expr->left, &left);
+	if (parser->is_aborted)
+		return;
+	struct ast_check_result right;
+	struct ast_expr_list_entry *entry =
+		stailq_first_entry(&list->head, typeof(*entry), link);
+	ast_check_expr(parser, entry->expr, &right);
+	if (!parser->is_aborted)
+		ast_check_node(parser, TK_EQ, left.height, right.height, res);
+}
+
+/** Check the given AST binary operation. */
+static void
+ast_check_binary(struct Parse *parser, struct ast_expr *expr,
+		 struct ast_check_result *res)
+{
+	struct ast_check_result left;
+	ast_check_expr(parser, expr->left, &left);
+	if (parser->is_aborted)
+		return;
+	struct ast_check_result right;
+	ast_check_expr(parser, expr->right, &right);
+	if (parser->is_aborted)
+		return;
+	if (expr->op == TK_AND &&
+	    (left.op == TK_FALSE || right.op == TK_FALSE)) {
+		res->op = TK_FALSE;
+		res->height = 1;
+		return;
+	}
+	ast_check_node(parser, expr->op, left.height, right.height, res);
+}
+
+static void
+ast_check_expr(struct Parse *parser, struct ast_expr *expr,
+	       struct ast_check_result *res)
+{
+	memset(res, 0, sizeof(*res));
+	if (expr == NULL)
+		return;
+	while (expr->op == TK_PARENTHESES)
+		expr = expr->left;
+	res->op = expr->op;
+	res->height = 1;
+	int height;
+	switch (expr->op) {
+	case TK_INTEGER:
+		ast_check_integer(parser, expr, res);
+		break;
+	case TK_DECIMAL:
+		ast_check_decimal(parser, expr);
+		break;
+	case TK_AND:
+	case TK_OR:
+	case TK_LT:
+	case TK_LE:
+	case TK_GT:
+	case TK_GE:
+	case TK_EQ:
+	case TK_NE:
+	case TK_BITAND:
+	case TK_BITOR:
+	case TK_LSHIFT:
+	case TK_RSHIFT:
+	case TK_PLUS:
+	case TK_MINUS:
+	case TK_STAR:
+	case TK_SLASH:
+	case TK_REM:
+	case TK_CONCAT:
+	case TK_DOT:
+		ast_check_binary(parser, expr, res);
+		break;
+	case TK_COLLATE: {
+		uint32_t id;
+		if (sql_coll_id(&id, expr->right->str, expr->right->len) != 0) {
+			parser->is_aborted = true;
+			break;
+		}
+		ast_check_expr(parser, expr->left, res);
+		if (!parser->is_aborted)
+			ast_check_node(parser, TK_COLLATE, res->height, 0, res);
+		break;
+	}
+	case TK_CAST:
+	case TK_NOT:
+	case TK_BITNOT:
+	case TK_NOTNULL:
+	case TK_ISNULL:
+		ast_check_expr(parser, expr->left, res);
+		if (!parser->is_aborted)
+			ast_check_node(parser, expr->op, res->height, 0, res);
+		break;
+	case TK_UPLUS:
+		ast_check_expr(parser, expr->left, res);
+		if (parser->is_aborted || res->op == TK_DECIMAL ||
+		    res->op == TK_FLOAT || res->op == TK_INTEGER)
+			break;
+		ast_check_node(parser, TK_UPLUS, res->height, 0, res);
+		break;
+	case TK_UMINUS:
+		ast_check_uminus(parser, expr, res);
+		break;
+	case TK_ARRAY:
+	case TK_MAP:
+	case TK_VECTOR:
+		ast_check_expr_list(parser, expr->list, &height);
+		if (!parser->is_aborted)
+			ast_check_node(parser, expr->op, height, 0, res);
+		res->len = expr->list != NULL ? expr->list->len : 0;
+		break;
+	case TK_GETITEM: {
+		struct ast_check_result left;
+		ast_check_expr(parser, expr->left, &left);
+		if (parser->is_aborted)
+			break;
+		ast_check_expr_list(parser, expr->list, &height);
+		if (!parser->is_aborted)
+			ast_check_node(parser, expr->op, left.height, height,
+				       res);
+		break;
+	}
+	case TK_FUNCTION:
+		ast_check_function(parser, expr, res);
+		break;
+	case TK_BETWEEN:
+		ast_check_left_and_list(parser, expr->op, expr->left,
+					expr->list, res);
+		break;
+	case TK_IN:
+		ast_check_in(parser, expr, res);
+		break;
+	case TK_EXISTS:
+	case TK_SELECT:
+		ast_check_select_height(parser, expr->select, &height);
+		if (!parser->is_aborted)
+			ast_check_node(parser, expr->op, height, 0, res);
+		break;
+	case TK_CASE:
+		if (expr->left != NULL) {
+			ast_check_left_and_list(parser, expr->op, expr->left,
+						expr->list, res);
+			break;
+		}
+		ast_check_expr_list(parser, expr->list, &height);
+		if (!parser->is_aborted)
+			ast_check_node(parser, expr->op, height, 0, res);
+		break;
+	default:
+		break;
+	}
+}
+
+int
+sql_ast_check_expr(struct Parse *parser, struct ast_expr *expr)
+{
+	struct ast_check_result res;
+	ast_check_expr(parser, expr, &res);
+	return parser->is_aborted ? -1 : 0;
+}
+
+int
+sql_ast_check_index_columns(struct Parse *parser, struct ast_expr_list *list)
+{
+	int height;
+	ast_check_expr_list(parser, list, &height);
+	return parser->is_aborted ? -1 : 0;
+}
+
+int
+sql_ast_check_select(struct Parse *parser, struct ast_select *select)
+{
+	int height;
+	ast_check_select_height(parser, select, &height);
+	return parser->is_aborted ? -1 : 0;
+}
+
+/**
+ * Check the given AST SET clause of UPDATE: the values, the names of the
+ * columns and the number of the values assigned to a list of columns.
+ */
+static void
+ast_check_set_list(struct Parse *parser, struct ast_set_list *list)
+{
+	struct ast_set_list_entry *entry;
+	stailq_foreach_entry(entry, &list->head, link) {
+		struct ast_check_result expr;
+		ast_check_expr(parser, entry->expr, &expr);
+		if (parser->is_aborted)
+			break;
+		if (entry->ids == NULL) {
+			ast_check_name(parser, &entry->name);
+			continue;
+		}
+		if (expr.op == TK_SELECT)
+			continue;
+		uint32_t len = expr.op == TK_VECTOR ? expr.len : 1;
+		if (entry->ids->len == len)
+			continue;
+		const char *err = tt_sprintf("%d columns assigned %d values",
+					     entry->ids->len, len);
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC, err);
+		parser->is_aborted = true;
+	}
+}
+
+/** Check the given action of a trigger when the trigger is created. */
 static void
 sql_trigger_action_check(struct Parse *parser,
 			 const struct ast_trigger_action *action)
 {
-	struct ExprList *list = NULL;
-	struct Expr *where = NULL;
-	struct Select *select = NULL;
 	switch (action->op) {
 	case TK_UPDATE:
 	case TK_DELETE: {
@@ -1189,27 +1759,23 @@ sql_trigger_action_check(struct Parse *parser,
 		}
 		if (action->op == TK_UPDATE) {
 			struct ast_update *update = action->update;
-			list = expr_list_from_set_list(parser,
-						       update->set_list);
+			ast_check_set_list(parser, update->set_list);
 			if (!parser->is_aborted)
-				where = expr_from_ast(parser, update->where);
+				sql_ast_check_expr(parser, update->where);
 		} else {
-			where = expr_from_ast(parser, action->del->where);
+			sql_ast_check_expr(parser, action->del->where);
 		}
 		break;
 	}
 	case TK_INSERT:
-		select = select_from_ast(parser, action->insert->select);
+		sql_ast_check_select(parser, action->insert->select);
 		break;
 	case TK_SELECT:
-		select = select_from_ast(parser, action->select);
+		sql_ast_check_select(parser, action->select);
 		break;
 	default:
 		unreachable();
 	}
-	sql_expr_list_delete(list);
-	sql_expr_delete(where);
-	sql_select_delete(select);
 }
 
 struct sql_trigger *
@@ -1228,8 +1794,7 @@ sql_trigger_from_ast(struct Parse *parser, struct ast_trigger *def)
 	 * The WHEN clause and the actions are resolved and coded every time
 	 * the trigger is coded, so here they are only checked.
 	 */
-	sql_expr_delete(expr_from_ast(parser, def->when));
-	if (parser->is_aborted)
+	if (sql_ast_check_expr(parser, def->when) != 0)
 		return NULL;
 	parser->initiateTTrans = true;
 	struct ast_trigger_action *action;

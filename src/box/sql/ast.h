@@ -825,6 +825,36 @@ ast_table_properties_append_constraint(struct ast_table_properties *properties,
 				       struct ast_property *constraint);
 
 /**
+ * Check the given AST expression: the literals, the collations, the number of
+ * the arguments of the functions and of the parts of the compound SELECTs, the
+ * types of the joins and the heights of the expressions. The names are not
+ * resolved.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+int
+sql_ast_check_expr(struct Parse *parser, struct ast_expr *expr);
+
+/**
+ * Check the given AST columns of an index as sql_ast_check_expr() does, and
+ * check their AUTOINCREMENT: there must be at most one AUTOINCREMENT field,
+ * counting the one of the parser, and it must be a column without COLLATE.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+int
+sql_ast_check_index_columns(struct Parse *parser, struct ast_expr_list *list);
+
+/**
+ * Check the given AST SELECT as sql_ast_check_expr() does, including its WITH
+ * clauses, whose names must be unique, and the names of its columns.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+int
+sql_ast_check_select(struct Parse *parser, struct ast_select *select);
+
+/**
  * Convert `struct ast_trigger` to `struct sql_trigger`.
  *
  * Return NULL on error.

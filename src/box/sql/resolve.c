@@ -107,12 +107,12 @@ struct sql_resolve_with {
 	struct sql_resolve_with *parent;
 };
 
-/** List of the tables of WITH clauses converted by the legacy code. */
-struct sql_resolve_converted {
+/** List of the unused tables of WITH clauses checked by check_unused_ctes(). */
+struct sql_resolve_checked {
 	/** The table of a WITH clause. */
 	const struct ast_with_entry *entry;
 	/** Next table in the list, or NULL. */
-	struct sql_resolve_converted *next;
+	struct sql_resolve_checked *next;
 };
 
 /** State threaded through the AST resolve phase. */
@@ -145,8 +145,8 @@ struct sql_resolve_context {
 	 * next are of the rightmost part of its SELECT, see resolve_sources().
 	 */
 	const struct rast_source *recursive_cte;
-	/** Unused tables of WITH clauses converted by the legacy code. */
-	struct sql_resolve_converted *converted;
+	/** Unused tables of WITH clauses checked by check_unused_ctes(). */
+	struct sql_resolve_checked *checked;
 	/**
 	 * Whether the SELECT resolved next is the single row of VALUES of an
 	 * INSERT, whose values sqlInsert() resolves without allowing aggregate
@@ -2619,8 +2619,7 @@ ast_expr_has_collate(const struct ast_expr *ast)
 }
 
 /**
- * Check the join types of the given AST FROM clause, as the legacy code does
- * when converting the FROM clause.
+ * Check the join types of the given AST FROM clause.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -3975,9 +3974,8 @@ push_with(struct sql_resolve_context *ctx, const struct ast_with_list *ast,
 
 /**
  * Check the SELECTs of the tables of the given WITH clause which have not been
- * used. The legacy code converts them, though it never resolves them, so they
- * are converted the same way to report the same errors. A table of a SELECT
- * resolved several times is converted once.
+ * used, as sql_ast_check_select() does: they are never resolved. A table of a
+ * SELECT resolved several times is checked once.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -3992,23 +3990,20 @@ check_unused_ctes(struct sql_resolve_context *ctx,
 			continue;
 		const struct ast_with_entry *entry =
 			stailq_entry(node, struct ast_with_entry, link);
-		const struct sql_resolve_converted *c = ctx->converted;
+		const struct sql_resolve_checked *c = ctx->checked;
 		while (c != NULL && c->entry != entry)
 			c = c->next;
 		if (c != NULL)
 			continue;
-		struct sql_resolve_converted *converted =
+		struct sql_resolve_checked *checked =
 			xregion_alloc_object(ctx->region,
-					     struct sql_resolve_converted);
-		converted->entry = entry;
-		converted->next = ctx->converted;
-		ctx->converted = converted;
-		struct Select *select =
-			select_from_ast(ctx->parser,
-					(struct ast_select *)entry->select);
-		if (select == NULL)
+					     struct sql_resolve_checked);
+		checked->entry = entry;
+		checked->next = ctx->checked;
+		ctx->checked = checked;
+		struct ast_select *select = (struct ast_select *)entry->select;
+		if (sql_ast_check_select(ctx->parser, select) != 0)
 			return -1;
-		sql_select_delete(select);
 	}
 	return 0;
 }
@@ -4601,26 +4596,6 @@ resolve_index_part(struct sql_resolve_context *ctx,
 }
 
 /**
- * Convert the given AST columns of an index and discard the result: the legacy
- * code converts them first, so the same errors are reported. The AUTOINCREMENT
- * field of the parser, which the conversion checks, is kept.
- *
- * Returns 0 on success and -1 on error.
- */
-static int
-convert_index_columns(struct sql_resolve_context *ctx,
-		      struct ast_expr_list *columns)
-{
-	int *autoinc_fieldno = ctx->parser->autoinc_fieldno;
-	struct ExprList *list = expr_list_from_ast(ctx->parser, columns);
-	ctx->parser->autoinc_fieldno = autoinc_fieldno;
-	if (list == NULL)
-		return -1;
-	sql_expr_list_delete(list);
-	return 0;
-}
-
-/**
  * Resolve the given AST columns of an index of the space with the given
  * definition into an array of rast_index_part, returned via the given
  * pointer.
@@ -4660,10 +4635,10 @@ resolve_index_parts(struct sql_resolve_context *ctx,
 /**
  * Resolve the index with the given name and columns of the space with the given
  * name into the given rast_create_index, as sql_create_index() does. As in the
- * legacy code, the columns are converted first, so the same errors are
- * reported, and are resolved after the space and the name of the index are
- * checked. If the given flag is set, a missing space or an existing index is
- * not an error, and the space of the result is left NULL.
+ * legacy code, the columns are checked first by sql_ast_check_index_columns(),
+ * and are resolved after the space and the name of the index are checked. If
+ * the given flag is set, a missing space or an existing index is not an error,
+ * and the space of the result is left NULL.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -4673,7 +4648,7 @@ resolve_index(struct sql_resolve_context *ctx, const struct Token *table,
 	      bool if_not_exists, struct rast_create_index *res)
 {
 	res->name = *name;
-	if (convert_index_columns(ctx, columns) != 0)
+	if (sql_ast_check_index_columns(ctx->parser, columns) != 0)
 		return -1;
 
 	struct space *space = find_space(ctx, table, false);
@@ -5520,7 +5495,7 @@ resolve_column(struct sql_resolve_context *ctx, struct rast_create_table *res,
 /**
  * Resolve the given table constraint of the space of the given CREATE TABLE
  * statement. As in the legacy code, the columns of a UNIQUE or PRIMARY KEY
- * constraint are converted first.
+ * constraint are checked first by sql_ast_check_index_columns().
  *
  * Returns 0 on success and -1 on error.
  */
@@ -5536,13 +5511,13 @@ resolve_table_constraint(struct sql_resolve_context *ctx,
 	case SQL_AST_PROPERTY_FOREIGN_KEY:
 		return resolve_new_fk(ctx, res, &ast->name, &ast->foreign_key);
 	case SQL_AST_PROPERTY_UNIQUE:
-		if (convert_index_columns(ctx, ast->columns) != 0)
+		if (sql_ast_check_index_columns(ctx->parser, ast->columns) != 0)
 			return -1;
 		return resolve_new_index(ctx, res, &ast->name, ast->columns,
 					 SQL_INDEX_TYPE_CONSTRAINT_UNIQUE);
 	default:
 		assert(ast->type == SQL_AST_PROPERTY_PRIMARY_KEY);
-		if (convert_index_columns(ctx, ast->columns) != 0)
+		if (sql_ast_check_index_columns(ctx->parser, ast->columns) != 0)
 			return -1;
 		return resolve_new_primary_key(ctx, res, &ast->name,
 					       ast->columns);
@@ -5801,11 +5776,10 @@ resolve_delete(struct sql_resolve_context *ctx, const struct ast_delete *ast,
 }
 
 /**
- * Check the names of the columns of the given AST SET clause of an UPDATE as
- * sql_code_update() does while converting it: the name of a column assigned a
- * value is checked to be a valid identifier, the number of the columns
- * assigned a vector to match its size, unless it is a SELECT, and the number
- * of the columns not to exceed the limit.
+ * Check the names of the columns of the given AST SET clause of an UPDATE: the
+ * name of a column assigned a value is checked to be a valid identifier, the
+ * number of the columns assigned a vector to match its size, unless it is a
+ * SELECT, and the number of the columns not to exceed the limit.
  *
  * Returns 0 on success and -1 on error.
  */
