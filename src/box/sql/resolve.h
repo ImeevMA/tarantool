@@ -428,6 +428,30 @@ struct rast_truncate {
 	struct space *space;
 };
 
+/** Resolved DROP TABLE or DROP VIEW statement. */
+struct rast_drop_table {
+	/** Space to drop, or NULL if it does not exist. */
+	const struct space *space;
+	/** Whether it is DROP VIEW. */
+	bool is_view;
+};
+
+/** Resolved DROP INDEX statement. */
+struct rast_drop_index {
+	/** Space of the index, or NULL if it does not exist. */
+	const struct space *space;
+	/** ID of the index, or UINT32_MAX if it does not exist. */
+	uint32_t index_id;
+};
+
+/** Resolved DROP TRIGGER statement. */
+struct rast_drop_trigger {
+	/** Name of the trigger. */
+	struct Token name;
+	/** Whether it is not an error if the trigger does not exist. */
+	bool if_exists;
+};
+
 /** Resolved part of an index: a column and its collation. */
 struct rast_index_part {
 	/** Number of the field of the column. */
@@ -563,6 +587,12 @@ struct sql_rast {
 		struct rast_create_view create_view;
 		/** Resolved TRUNCATE statement. */
 		struct rast_truncate truncate;
+		/** Resolved DROP TABLE or DROP VIEW statement. */
+		struct rast_drop_table drop_table;
+		/** Resolved DROP INDEX statement. */
+		struct rast_drop_index drop_index;
+		/** Resolved DROP TRIGGER statement. */
+		struct rast_drop_trigger drop_trigger;
 		/** Resolved CREATE INDEX statement. */
 		struct rast_create_index create_index;
 		/** Resolved ALTER TABLE ADD CONSTRAINT statement. */

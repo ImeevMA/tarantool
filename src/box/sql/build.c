@@ -1145,39 +1145,14 @@ sql_code_drop_table(struct Parse *parse_context, const struct space *space,
 	VdbeComment((v, "Delete entry from _space"));
 }
 
-void
-sql_drop_table(struct Parse *parse_context, struct Token *table, bool if_exists,
-	       bool is_view)
+/** Emit VDBE bytecode for the given resolved DROP TABLE or DROP VIEW. */
+static void
+sql_emit_drop_table(struct Parse *parser, const struct rast_drop_table *stmt)
 {
-	struct Vdbe *v = sqlGetVdbe(parse_context);
+	struct Vdbe *v = sqlGetVdbe(parser);
 	sqlVdbeCountChanges(v);
-	assert(!parse_context->is_aborted);
-	const struct space *space = sql_space_by_token(table);
-	if (space == NULL) {
-		if (!if_exists) {
-			diag_set(ClientError, ER_NO_SUCH_SPACE,
-				 sql_tt_name_from_token(table));
-			parse_context->is_aborted = true;
-		}
-		return;
-	}
-	/*
-	 * Ensure DROP TABLE is not used on a view,
-	 * and DROP VIEW is not used on a table.
-	 */
-	if (is_view && !space->def->opts.is_view) {
-		diag_set(ClientError, ER_DROP_SPACE,
-			 sql_tt_name_from_token(table), "use DROP TABLE");
-		parse_context->is_aborted = true;
-		return;
-	}
-	if (!is_view && space->def->opts.is_view) {
-		diag_set(ClientError, ER_DROP_SPACE,
-			 sql_tt_name_from_token(table), "use DROP VIEW");
-		parse_context->is_aborted = true;
-		return;
-	}
-	sql_code_drop_table(parse_context, space, is_view);
+	if (stmt->space != NULL)
+		sql_code_drop_table(parser, stmt->space, stmt->is_view);
 }
 
 /**
@@ -1941,42 +1916,21 @@ exit:
 		index_def_delete(index->def);
 }
 
-void
-sql_drop_index(struct Parse *parse_context, struct Token *name,
-	       struct Token *table, bool if_exists)
+/** Emit VDBE bytecode for the given resolved DROP INDEX statement. */
+static void
+sql_emit_drop_index(struct Parse *parser, const struct rast_drop_index *stmt)
 {
-	struct Vdbe *v = sqlGetVdbe(parse_context);
-	assert(v != NULL);
-	/* Never called with prior errors. */
-	assert(!parse_context->is_aborted);
+	struct Vdbe *v = sqlGetVdbe(parser);
 	sqlVdbeCountChanges(v);
-	const struct space *space = sql_space_by_token(table);
-	if (space == NULL) {
-		if (!if_exists) {
-			diag_set(ClientError, ER_NO_SUCH_SPACE,
-				 sql_tt_name_from_token(table));
-			parse_context->is_aborted = true;
-		}
+	if (stmt->index_id == UINT32_MAX)
 		return;
-	}
-	uint32_t index_id = sql_index_id_by_token(space, name);
-	if (index_id == UINT32_MAX) {
-		if (if_exists)
-			return;
-		diag_set(ClientError, ER_NO_SUCH_INDEX_NAME,
-			 sql_tt_name_from_token(name), space->def->name);
-		parse_context->is_aborted = true;
-		return;
-	}
-
-	int regs = sqlGetTempRange(parse_context, 3);
-	sqlVdbeCountChanges(v);
-	sqlVdbeAddOp2(v, OP_Integer, space->def->id, regs);
-	sqlVdbeAddOp2(v, OP_Integer, index_id, regs + 1);
+	int regs = sqlGetTempRange(parser, 3);
+	sqlVdbeAddOp2(v, OP_Integer, stmt->space->def->id, regs);
+	sqlVdbeAddOp2(v, OP_Integer, stmt->index_id, regs + 1);
 	sqlVdbeAddOp3(v, OP_MakeRecord, regs, 2, regs + 2);
 	sqlVdbeAddOp3(v, OP_SDelete, BOX_INDEX_ID, regs + 2, 0);
 	sqlVdbeChangeP5(v, OPFLAG_NCHANGE);
-	sqlReleaseTempRange(parse_context, regs, 3);
+	sqlReleaseTempRange(parser, regs, 3);
 }
 
 void *
@@ -2826,6 +2780,20 @@ sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast, const char *sql)
 	case SQL_AST_TRUNCATE:
 		parser->initiateTTrans = true;
 		sql_table_truncate(parser, rast->truncate.space);
+		break;
+	case SQL_AST_DROP_TABLE:
+	case SQL_AST_DROP_VIEW:
+		parser->initiateTTrans = true;
+		sql_emit_drop_table(parser, &rast->drop_table);
+		break;
+	case SQL_AST_DROP_INDEX:
+		parser->initiateTTrans = true;
+		sql_emit_drop_index(parser, &rast->drop_index);
+		break;
+	case SQL_AST_DROP_TRIGGER:
+		parser->initiateTTrans = true;
+		sql_drop_trigger(parser, &rast->drop_trigger.name,
+				 rast->drop_trigger.if_exists);
 		break;
 	default:
 		unreachable();

@@ -2671,19 +2671,6 @@ sql_create_view(struct Parse *parse_context, const char *sql,
 int
 sql_view_assign_cursors(struct Parse *parse, const char *view_stmt);
 
-/**
- * This routine is called to do the work of a DROP TABLE and
- * DROP VIEW statements.
- *
- * @param parse_context Current parsing context.
- * @param table Name of the table.
- * @param if_exists If TRUE do not raise an error when the table is missing.
- * @param is_view Flag that shows if space is table or view.
- */
-void
-sql_drop_table(struct Parse *parse_context, struct Token *table, bool if_exists,
-	       bool is_view);
-
 void sqlInsert(Parse *, SrcList *, Select *, IdList *,
 	       enum on_conflict_action);
 
@@ -2815,19 +2802,6 @@ sql_index_create(struct Parse *parse, struct space *space,
 		 const char *index_name, const struct rast_index_part *parts,
 		 uint32_t part_count, enum sql_index_type idx_type,
 		 bool is_create_table_or_add_col);
-
-/**
- * This routine will drop an existing named index.  This routine
- * implements the DROP INDEX statement.
- *
- * @param parse_context Current parsing context.
- * @param name Index name.
- * @param table Name of index table.
- * @param if_exists If TRUE do not raise an error when the index is missing.
- */
-void
-sql_drop_index(struct Parse *parse_context, struct Token *name,
-	       struct Token *table, bool if_exists);
 
 int sqlSelect(Parse *, Select *, SelectDest *);
 
@@ -3392,7 +3366,8 @@ vdbe_emit_create_trigger(struct Parse *parser, const char *sql,
  * @param if_exists If TRUE do not raise an error when the trigger is missing.
  */
 void
-sql_drop_trigger(struct Parse *parser, struct Token *name, bool if_exists);
+sql_drop_trigger(struct Parse *parser, const struct Token *name,
+		 bool if_exists);
 
 /**
  * Drop a trigger given a pointer to that trigger.

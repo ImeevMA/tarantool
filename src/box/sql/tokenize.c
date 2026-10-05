@@ -709,24 +709,6 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast, const char *sql)
 	case SQL_AST_CREATE_TRIGGER:
 		sql_code_create_trigger(parse, &ast->create_trigger, sql);
 		break;
-	case SQL_AST_DROP_VIEW:
-	case SQL_AST_DROP_TABLE:
-		parse->initiateTTrans = true;
-		sql_drop_table(parse, &ast->drop_table.name,
-			       ast->drop_table.if_exists,
-			       ast->type == SQL_AST_DROP_VIEW);
-		break;
-	case SQL_AST_DROP_TRIGGER:
-		parse->initiateTTrans = true;
-		sql_drop_trigger(parse, &ast->drop_trigger.name,
-				 ast->drop_trigger.if_exists);
-		break;
-	case SQL_AST_DROP_INDEX:
-		parse->initiateTTrans = true;
-		sql_drop_index(parse, &ast->drop_index.name,
-			       &ast->drop_index.table,
-			       ast->drop_index.if_exists);
-		break;
 	case SQL_AST_ALTER_RENAME:
 		parse->initiateTTrans = true;
 		sql_alter_table_rename(parse, &ast->alter_rename.old_name,

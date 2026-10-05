@@ -5711,6 +5711,58 @@ resolve_truncate(struct sql_resolve_context *ctx,
 }
 
 /**
+ * Resolve the given AST DROP TABLE or DROP VIEW statement into the given
+ * rast_drop_table.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_drop_table(const struct ast_drop_table *ast, bool is_view,
+		   struct rast_drop_table *res)
+{
+	res->is_view = is_view;
+	res->space = sql_space_by_token(&ast->name);
+	if (res->space == NULL) {
+		if (ast->if_exists)
+			return 0;
+		diag_set(ClientError, ER_NO_SUCH_SPACE,
+			 sql_tt_name_from_token(&ast->name));
+		return -1;
+	}
+	if (is_view == res->space->def->opts.is_view)
+		return 0;
+	diag_set(ClientError, ER_DROP_SPACE, sql_tt_name_from_token(&ast->name),
+		 is_view ? "use DROP TABLE" : "use DROP VIEW");
+	return -1;
+}
+
+/**
+ * Resolve the given AST DROP INDEX statement into the given rast_drop_index.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_drop_index(const struct ast_drop_index *ast,
+		   struct rast_drop_index *res)
+{
+	res->index_id = UINT32_MAX;
+	res->space = sql_space_by_token(&ast->table);
+	if (res->space == NULL) {
+		if (ast->if_exists)
+			return 0;
+		diag_set(ClientError, ER_NO_SUCH_SPACE,
+			 sql_tt_name_from_token(&ast->table));
+		return -1;
+	}
+	res->index_id = sql_index_id_by_token(res->space, &ast->name);
+	if (res->index_id != UINT32_MAX || ast->if_exists)
+		return 0;
+	diag_set(ClientError, ER_NO_SUCH_INDEX_NAME,
+		 sql_tt_name_from_token(&ast->name), res->space->def->name);
+	return -1;
+}
+
+/**
  * Find the field with the given name of a column of an index in the given
  * space definition, as lookupName() does. If the given unquoted identifier is
  * not NULL, the name is also looked up in the legacy form of the identifier.
@@ -7222,6 +7274,26 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 			parser->is_aborted = true;
 			return NULL;
 		}
+		break;
+	case SQL_AST_DROP_TABLE:
+	case SQL_AST_DROP_VIEW:
+		if (resolve_drop_table(&ast->drop_table,
+				       ast->type == SQL_AST_DROP_VIEW,
+				       &rast->drop_table) != 0) {
+			parser->is_aborted = true;
+			return NULL;
+		}
+		break;
+	case SQL_AST_DROP_INDEX:
+		if (resolve_drop_index(&ast->drop_index,
+				       &rast->drop_index) != 0) {
+			parser->is_aborted = true;
+			return NULL;
+		}
+		break;
+	case SQL_AST_DROP_TRIGGER:
+		rast->drop_trigger.name = ast->drop_trigger.name;
+		rast->drop_trigger.if_exists = ast->drop_trigger.if_exists;
 		break;
 	case SQL_AST_CREATE_INDEX:
 		if (resolve_create_index(&ctx, &ast->create_index,

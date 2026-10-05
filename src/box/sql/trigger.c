@@ -204,7 +204,8 @@ vdbe_code_drop_trigger(struct Parse *parser, const char *trigger_name,
 }
 
 void
-sql_drop_trigger(struct Parse *parser, struct Token *name, bool if_exists)
+sql_drop_trigger(struct Parse *parser, const struct Token *name,
+		 bool if_exists)
 {
 	struct Vdbe *v = sqlGetVdbe(parser);
 	sqlVdbeCountChanges(v);
