@@ -3848,18 +3848,6 @@ extern SQL_WSD struct sqlConfig sqlConfig;
 extern int sqlPendingByte;
 
 /**
- * Generate code to implement the "ALTER TABLE xxx RENAME TO yyy"
- * command.
- *
- * @param parse Current parsing context.
- * @param old_name Name of table to rename.
- * @param new_name New name of the table.
- */
-void
-sql_alter_table_rename(struct Parse *parse, struct Token *old_name,
-		       struct Token *new_name);
-
-/**
  * Return the length (in bytes) of the token that begins at z[0].
  * Store the token type in *type before returning.
  *

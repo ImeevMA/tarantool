@@ -5763,6 +5763,31 @@ resolve_drop_index(const struct ast_drop_index *ast,
 }
 
 /**
+ * Resolve the given AST ALTER TABLE RENAME statement into the given
+ * rast_alter_rename.
+ *
+ * Returns 0 on success and -1 on error.
+ */
+static int
+resolve_alter_rename(struct sql_resolve_context *ctx,
+		     const struct ast_alter_rename *ast,
+		     struct rast_alter_rename *res)
+{
+	res->new_name = sql_name_temp(ctx->region, ast->new_name.z,
+				      ast->new_name.n);
+	if (space_by_name0(res->new_name) != NULL) {
+		diag_set(ClientError, ER_SPACE_EXISTS, res->new_name);
+		return -1;
+	}
+	res->space = sql_space_by_token(&ast->old_name);
+	if (res->space != NULL)
+		return 0;
+	diag_set(ClientError, ER_NO_SUCH_SPACE,
+		 sql_tt_name_from_token(&ast->old_name));
+	return -1;
+}
+
+/**
  * Find the field with the given name of a column of an index in the given
  * space definition, as lookupName() does. If the given unquoted identifier is
  * not NULL, the name is also looked up in the legacy form of the identifier.
@@ -7294,6 +7319,13 @@ sql_resolve_ast(struct Parse *parser, const struct sql_ast *ast)
 	case SQL_AST_DROP_TRIGGER:
 		rast->drop_trigger.name = ast->drop_trigger.name;
 		rast->drop_trigger.if_exists = ast->drop_trigger.if_exists;
+		break;
+	case SQL_AST_ALTER_RENAME:
+		if (resolve_alter_rename(&ctx, &ast->alter_rename,
+					 &rast->alter_rename) != 0) {
+			parser->is_aborted = true;
+			return NULL;
+		}
 		break;
 	case SQL_AST_CREATE_INDEX:
 		if (resolve_create_index(&ctx, &ast->create_index,

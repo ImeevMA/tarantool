@@ -709,11 +709,6 @@ sql_code_ast(struct Parse *parse, struct sql_ast *ast, const char *sql)
 	case SQL_AST_CREATE_TRIGGER:
 		sql_code_create_trigger(parse, &ast->create_trigger, sql);
 		break;
-	case SQL_AST_ALTER_RENAME:
-		parse->initiateTTrans = true;
-		sql_alter_table_rename(parse, &ast->alter_rename.old_name,
-				       &ast->alter_rename.new_name);
-		break;
 	case SQL_AST_ALTER_DROP_CONSTRAINT:
 		sql_code_ast_drop_constraint(parse,
 					     &ast->alter_drop_constraint.name,

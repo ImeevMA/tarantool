@@ -34,34 +34,6 @@
  * that implements the ALTER TABLE command.
  */
 #include "sqlInt.h"
-#include "box/box.h"
-#include "box/schema.h"
-
-void
-sql_alter_table_rename(struct Parse *parse, struct Token *old_name,
-		       struct Token *new_name)
-{
-	char *new_name_str = sql_name_from_token(new_name);
-	/* Check that new name isn't occupied by another table. */
-	if (space_by_name0(new_name_str) != NULL) {
-		diag_set(ClientError, ER_SPACE_EXISTS, new_name_str);
-		goto tnt_error;
-	}
-	const struct space *space = sql_space_by_token(old_name);
-	if (space == NULL) {
-		diag_set(ClientError, ER_NO_SUCH_SPACE,
-			 sql_tt_name_from_token(old_name));
-		goto tnt_error;
-	}
-	/* Drop and reload the internal table schema. */
-	struct Vdbe *v = sqlGetVdbe(parse);
-	sqlVdbeAddOp4(v, OP_RenameTable, space->def->id, 0, 0, new_name_str,
-		      P4_DYNAMIC);
-	return;
-tnt_error:
-	sql_xfree(new_name_str);
-	parse->is_aborted = true;
-}
 
 char *
 rename_trigger(char const *sql_stmt, char const *table_name, bool *is_quoted)

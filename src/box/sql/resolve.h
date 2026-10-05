@@ -452,6 +452,14 @@ struct rast_drop_trigger {
 	bool if_exists;
 };
 
+/** Resolved ALTER TABLE RENAME statement. */
+struct rast_alter_rename {
+	/** Space to rename. */
+	const struct space *space;
+	/** New name of the space. */
+	const char *new_name;
+};
+
 /** Resolved part of an index: a column and its collation. */
 struct rast_index_part {
 	/** Number of the field of the column. */
@@ -593,6 +601,8 @@ struct sql_rast {
 		struct rast_drop_index drop_index;
 		/** Resolved DROP TRIGGER statement. */
 		struct rast_drop_trigger drop_trigger;
+		/** Resolved ALTER TABLE RENAME statement. */
+		struct rast_alter_rename alter_rename;
 		/** Resolved CREATE INDEX statement. */
 		struct rast_create_index create_index;
 		/** Resolved ALTER TABLE ADD CONSTRAINT statement. */

@@ -2790,6 +2790,13 @@ sql_emit_vdbe(struct Parse *parser, struct sql_rast *rast, const char *sql)
 		parser->initiateTTrans = true;
 		sql_emit_drop_index(parser, &rast->drop_index);
 		break;
+	case SQL_AST_ALTER_RENAME:
+		parser->initiateTTrans = true;
+		sqlVdbeAddOp4(sqlGetVdbe(parser), OP_RenameTable,
+			      rast->alter_rename.space->def->id, 0, 0,
+			      sql_xstrdup(rast->alter_rename.new_name),
+			      P4_DYNAMIC);
+		break;
 	case SQL_AST_DROP_TRIGGER:
 		parser->initiateTTrans = true;
 		sql_drop_trigger(parser, &rast->drop_trigger.name,
