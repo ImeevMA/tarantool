@@ -2388,7 +2388,6 @@ sqlExprAttachSubtrees(struct Expr *pRoot, struct Expr *pLeft,
 		      struct Expr *pRight);
 
 Expr *sqlPExpr(Parse *, int, Expr *, Expr *);
-void sqlPExprAddSelect(Parse *, Expr *, Select *);
 
 /**
  * Join two expressions using an AND operator. If either
@@ -2689,25 +2688,6 @@ sql_src_list_new(void);
  */
 struct SrcList *
 sql_src_list_append(struct SrcList *list, struct Token *name_token);
-
-/**
- * This routine is called by the parser to add a new term to the end of a
- * growing FROM clause. The "p" parameter is the part of the FROM clause that
- * has already been constructed. "p" is NULL if this is the first term of the
- * FROM clause. "pTable" is the name of the table in the FROM clause term. If
- * the term has an alias, then "pAlias" points to the alias token. If the term
- * is a subquery, then "pSubquery" is the SELECT statement that the subquery
- * encodes. The "pTable" is NULL for subqueries. The "pOn" and "join_using"
- * parameters are the content of the ON and USING clauses. Flag disallow_scan
- * shows if scannig SELECT can be executed for this source.
- *
- * Return a new SrcList that encodes FROM with the new term added.
- */
-struct SrcList *
-sqlSrcListAppendFromTerm(struct SrcList *p, struct Token *pTable,
-			 struct Token *pAlias, struct Select *pSubquery,
-			 struct Expr *pOn, struct ast_id_list *join_using,
-			 int disallow_scan);
 
 /**
  * Add an INDEXED BY or NOT INDEXED clause to the most recently added element of
@@ -3945,7 +3925,6 @@ collations_check_compatibility(uint32_t lhs_id, bool is_lhs_forced,
 int
 sql_binary_compare_coll_seq(Parse *parser, Expr *left, Expr *right,
 			    uint32_t *id);
-With *sqlWithAdd(Parse *, With *, Token *, ExprList *, Select *);
 
 /** Free the contents of the With object and remove the object. */
 void

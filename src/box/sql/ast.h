@@ -657,14 +657,6 @@ struct ast_source_list *
 ast_source_list_append(struct region *region, struct ast_source_list *list,
 		       struct ast_source *src);
 
-/**
- * Convert `struct ast_source_list` to `struct SrcList`.
- *
- * Return NULL on error or if `list == NULL`.
- */
-struct SrcList *
-src_list_from_ast(struct Parse *parser, struct ast_source_list *list);
-
 /** Create new empty SELECT structure. */
 struct ast_select *
 ast_select_new(struct region *region);
@@ -675,28 +667,12 @@ ast_select_new_asterisk(struct region *region,
 			struct ast_source_list *sources);
 
 /**
- * Build `struct Select` object from `struct ast_select` object.
- *
- * Return NULL on error or if `select == NULL`.
- */
-struct Select *
-select_from_ast(struct Parse *parser, struct ast_select *select);
-
-/**
  * Append a WITH clause to the WITH clause list, creating the list if needed.
  */
 struct ast_with_list *
 ast_with_list_append(struct region *region, struct ast_with_list *list,
 		     const struct Token *name, struct ast_id_list *columns,
 		     struct ast_select *select);
-
-/**
- * Convert `struct ast_with_list` to `struct With`.
- *
- * Return NULL on error or if `list == NULL`.
- */
-struct With *
-with_from_ast(struct Parse *parser, struct ast_with_list *list);
 
 /** Allocate a new expression node from a token's text. */
 struct ast_expr *
@@ -729,36 +705,12 @@ void
 ast_expr_list_set_autoinc(struct ast_expr_list *list, bool autoinc);
 
 /**
- * Convert `struct ast_expr` to `struct Expr`.
- *
- * Return NULL on error or if `expr == NULL`.
- */
-struct Expr *
-expr_from_ast(struct Parse *parser, struct ast_expr *expr);
-
-/**
- * Convert `struct ast_expr_list` to `struct ExprList`.
- *
- * Return NULL on error or if `list == NULL`.
- */
-struct ExprList *
-expr_list_from_ast(struct Parse *parser, struct ast_expr_list *list);
-
-/**
  * Convert `struct ast_id_list` to `struct ExprList` of column names.
  *
  * Return NULL on error or if `list == NULL`.
  */
 struct ExprList *
 expr_list_from_ids(struct Parse *parser, struct ast_id_list *list);
-
-/**
- * Convert `struct ast_set_list` to `struct ExprList`.
- *
- * Return NULL on error.
- */
-struct ExprList *
-expr_list_from_set_list(struct Parse *parser, struct ast_set_list *list);
 
 /** Create new empty INSERT structure. */
 struct ast_insert *

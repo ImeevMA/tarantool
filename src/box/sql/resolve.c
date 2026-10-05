@@ -3934,7 +3934,7 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 
 /**
  * Make the given AST WITH clause the innermost visible one, using the given
- * memory for it. As sqlWithAdd() does, the names of the tables of the clause
+ * memory for it. As in the legacy code, the names of the tables of the clause
  * are checked to be unique.
  *
  * Returns 0 on success and -1 on error.

@@ -1759,28 +1759,6 @@ sqlSrcListDelete(struct SrcList *pList)
 	sql_xfree(pList);
 }
 
-struct SrcList *
-sqlSrcListAppendFromTerm(struct SrcList *p, struct Token *pTable,
-			 struct Token *pAlias, struct Select *pSubquery,
-			 struct Expr *pOn, struct ast_id_list *join_using,
-			 int disallow_scan)
-{
-	struct SrcList_item *pItem;
-	assert((pOn == NULL && join_using == NULL) || p != NULL);
-	p = sql_src_list_append(p, pTable);
-	assert(p->nSrc != 0);
-	pItem = &p->a[p->nSrc - 1];
-	assert(pAlias != 0);
-	if (pAlias->n != 0) {
-		pItem->zAlias = sql_name_from_token(pAlias);
-	}
-	pItem->pSelect = pSubquery;
-	pItem->pOn = pOn;
-	pItem->pUsing = id_list_from_ast(join_using);
-	pItem->fg.disallow_scan = disallow_scan;
-	return p;
-}
-
 /*
  * Add an INDEXED BY or NOT INDEXED clause to the most recently added
  * element of the source-list passed as the second argument.
@@ -1832,53 +1810,6 @@ sql_emit_savepoint(struct Parse *parser, int op, const struct Token *name)
 	}
 	sqlVdbeAddOp4(v, OP_Savepoint, op, 0, old_name_reg,
 		      sql_name_from_token(name), P4_DYNAMIC);
-}
-
-/*
- * This routine is invoked once per CTE by the parser while parsing a
- * WITH clause.
- */
-With *
-sqlWithAdd(Parse * pParse,	/* Parsing context */
-	       With * pWith,	/* Existing WITH clause, or NULL */
-	       Token * pName,	/* Name of the common-table */
-	       ExprList * pArglist,	/* Optional column name list for the table */
-	       Select * pQuery	/* Query used to initialize the table */
-    )
-{
-	With *pNew;
-
-	/*
-	 * Check that the CTE name is unique within this WITH
-	 * clause. If not, store an error in the Parse structure.
-	 */
-	char *name = sql_name_from_token(pName);
-	if (pWith != NULL) {
-		int i;
-		const char *err = "Ambiguous table name in WITH query: %s";
-		for (i = 0; i < pWith->nCte; i++) {
-			if (strcmp(name, pWith->a[i].zName) == 0) {
-				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-					 tt_sprintf(err, name));
-				pParse->is_aborted = true;
-			}
-		}
-	}
-
-	if (pWith) {
-		int nByte =
-		    sizeof(*pWith) + (sizeof(pWith->a[1]) * pWith->nCte);
-		pNew = sql_xrealloc(pWith, nByte);
-	} else {
-		pNew = sql_xmalloc0(sizeof(*pWith));
-	}
-
-	pNew->a[pNew->nCte].pSelect = pQuery;
-	pNew->a[pNew->nCte].pCols = pArglist;
-	pNew->a[pNew->nCte].zName = name;
-	pNew->a[pNew->nCte].zCteErr = 0;
-	pNew->nCte++;
-	return pNew;
 }
 
 /** Free the contents of the With object and remove the object. */

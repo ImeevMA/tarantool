@@ -1154,19 +1154,6 @@ sqlPExpr(Parse * pParse,	/* Parsing context */
 	return p;
 }
 
-/*
- * Add pSelect to the Expr.x.pSelect field.  Or, if pExpr is NULL (due
- * do a memory allocation failure) then delete the pSelect object.
- */
-void
-sqlPExprAddSelect(Parse * pParse, Expr * pExpr, Select * pSelect)
-{
-	assert(pExpr != NULL);
-	pExpr->x.pSelect = pSelect;
-	ExprSetProperty(pExpr, EP_xIsSelect | EP_Subquery);
-	sqlExprSetHeightAndFlags(pParse, pExpr);
-}
-
 /**
  * If the expression is always either TRUE or FALSE (respectively),
  * then return 1. If one cannot determine the truth value of the
