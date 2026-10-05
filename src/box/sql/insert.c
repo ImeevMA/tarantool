@@ -1006,7 +1006,7 @@ xferOptimization(Parse * pParse,	/* Parser context */
 
 	if (pSelect == NULL)
 		return 0;	/* Must be of the form  INSERT INTO ... SELECT ... */
-	if (pParse->pWith || pSelect->pWith) {
+	if (pSelect->pWith != NULL) {
 		/* Do not attempt to process this query if there are an WITH clauses
 		 * attached to it. Proceeding may generate a false "no such table: xxx"
 		 * error if pSelect reads from a CTE named "xxx".

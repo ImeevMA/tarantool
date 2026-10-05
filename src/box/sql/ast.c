@@ -126,8 +126,6 @@ ast_select_new_asterisk(struct region *region, struct ast_source_list *sources)
 static struct Select *
 select_from_ast_single(struct Parse *parser, struct ast_select *select)
 {
-	if (select->op != TK_SELECT && select->op != TK_ALL)
-		parser->hasCompound = 1;
 	struct ExprList *columns = expr_list_from_ast(parser, select->columns);
 	struct SrcList *list = src_list_from_ast(parser, select->sources);
 	struct Expr *where = expr_from_ast(parser, select->where);

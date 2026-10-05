@@ -1554,36 +1554,16 @@ struct SrcList {
 #define WHERE_DISTINCT_ORDERED   2	/* All duplicates are adjacent */
 #define WHERE_DISTINCT_UNORDERED 3	/* Duplicates are scattered */
 
-/*
- * A NameContext defines a context in which to resolve table and column
- * names.  The context consists of a list of tables (the pSrcList) field and
- * a list of named expression (pEList).  The named expression list may
- * be NULL.  The pSrc corresponds to the FROM clause of a SELECT or
- * to the table being operated on by INSERT, UPDATE, or DELETE.  The
- * pEList corresponds to the result set of a SELECT and is NULL for
- * other statements.
- *
- * NameContexts can be nested.  When resolving names, the inner-most
- * context is searched first.  If no match is found, the next outer
- * context is checked.  If there is still no match, the next context
- * is checked.  This process continues until either a match is found
- * or all contexts are check.  When a match is found, the nRef member of
- * the context containing the match is incremented.
- *
- * Each subquery gets a new NameContext.  The pNext field points to the
- * NameContext in the parent query.  Thus the process of scanning the
- * NameContext list corresponds to searching through successively outer
- * subqueries looking for a match.
- */
+/** A context of the analysis of the aggregate functions of an expression. */
 struct NameContext {
-	Parse *pParse;		/* The parser */
-	SrcList *pSrcList;	/* One or more tables used to resolve names */
-	ExprList *pEList;	/* Optional list of result-set columns */
-	AggInfo *pAggInfo;	/* Information about aggregates at this level */
-	NameContext *pNext;	/* Next outer name context.  NULL for outermost */
-	int nRef;		/* Number of names resolved by this context */
-	int nErr;		/* Number of errors encountered while resolving names */
-	u16 ncFlags;		/* Zero or more NC_* flags defined below */
+	/** The parser. */
+	Parse *pParse;
+	/** Sources of the SELECT the expression belongs to. */
+	SrcList *pSrcList;
+	/** Information about aggregates at this level. */
+	AggInfo *pAggInfo;
+	/** Zero or more NC_* flags defined below. */
+	u16 ncFlags;
 };
 
 /*
@@ -1594,13 +1574,9 @@ struct NameContext {
  *    NC_MinMaxAgg == SF_MinMaxAgg
  *
  */
-#define NC_AllowAgg  0x0001	/* Aggregate functions are allowed here */
 #define NC_InAggFunc 0x0008	/* True if analyzing arguments to an agg func */
 #define NC_HasAgg    0x0010	/* One or more aggregate functions seen */
-#define NC_VarSelect 0x0040	/* A correlated subquery has been seen */
 #define NC_MinMaxAgg 0x1000	/* min/max aggregates seen.  See note above */
-/** One or more identifiers are out of aggregate function. */
-#define NC_HasUnaggregatedId     0x2000
 /*
  * An instance of the following structure contains all information
  * needed to generate code for a single SELECT statement.
@@ -1656,8 +1632,6 @@ struct Select {
 #define SF_Aggregate      0x00008	/* Contains agg functions or a GROUP BY */
 #define SF_HasAgg         0x00010	/* Contains aggregate functions */
 #define SF_UsesEphemeral  0x00020	/* Uses the OpenEphemeral opcode */
-#define SF_Expanded       0x00040	/* sqlSelectExpand() called on this */
-#define SF_HasTypeInfo    0x00080	/* FROM subqueries have Table metadata */
 #define SF_Compound       0x00100	/* Part of a compound query */
 #define SF_Values         0x00200	/* Synthesized from VALUES clause */
 #define SF_MultiValue     0x00400	/* Single VALUES term with multiple rows */
@@ -1665,8 +1639,7 @@ struct Select {
 #define SF_MinMaxAgg      0x01000	/* Aggregate containing min() or max() */
 #define SF_Recursive      0x02000	/* The recursive part of a recursive CTE */
 #define SF_FixedLimit     0x04000	/* nSelectRow set by a constant LIMIT */
-#define SF_MaybeConvert   0x08000	/* Need convertCompoundSelectToSubquery() */
-#define SF_Converted      0x10000	/* By convertCompoundSelectToSubquery() */
+#define SF_Converted      0x10000	/* Became a SELECT from a subquery */
 /** Abort subquery if its output contains more than one row. */
 #define SF_SingleRow      0x20000
 
@@ -1820,7 +1793,6 @@ struct Parse {
 	Vdbe *pVdbe;		/* An engine for executing database bytecode */
 	u8 colNamesSet;		/* TRUE after OP_ColumnName has been issued to pVdbe */
 	u8 nTempReg;		/* Number of temporary registers in aTempReg[] */
-	u8 hasCompound;		/* Need to invoke convertCompoundSelectToSubquery() */
 	u8 okConstFactor;	/* OK to factor out constants */
 	u8 disableLookaside;	/* Number of times lookaside has been disabled */
 	u8 nColCache;		/* Number of entries in aColCache[] */
@@ -1872,8 +1844,6 @@ struct Parse {
 	int iNextSelectId;	/* Next available select ID for EXPLAIN output */
 	VList *pVList;		/* Mapping between variable names and numbers */
 	TriggerPrg *pTriggerPrg;	/* Linked list of coded triggers */
-	With *pWith;		/* Current WITH clause, or NULL */
-	With *pWithToFree;	/* Free this WITH object at the end of the parse */
 	/** Index of previous auto generated name. */
 	uint32_t autoname_i;
 	/** Space triggers are being coded for. */
@@ -1893,12 +1863,6 @@ struct Parse {
 	struct space *space;
 	/** AST of parsed SQL statement. */
 	struct sql_ast *ast;
-	/**
-	 * Number of result column aliases replaced with copies of the result
-	 * column expressions. The heights of the expressions containing them
-	 * have to be recomputed after such a replacement.
-	 */
-	uint32_t alias_count;
 	/*
 	 * Id of field with <AUTOINCREMENT> while CREATE TABLE, ALTER TABLE
 	 * ADD COLUMN or ALTER TABLE ADD CONSTRAINT is resolved and coded.
@@ -3758,7 +3722,6 @@ void
 sqlExpirePreparedStatements(void);
 
 int sqlCodeSubselect(Parse *, Expr *, int);
-void sqlSelectPrep(Parse *, Select *, NameContext *);
 
 /**
  * Returns name of the connection operator.
@@ -3769,20 +3732,6 @@ void sqlSelectPrep(Parse *, Select *, NameContext *);
 const char *
 sql_select_op_name(int id);
 
-/**
- * A parenthesized list of sources stores the original table and column names
- * of its columns in ExprList.a[].zSpan, in the form "TABLE.COLUMN". Check if
- * the given span matches the given column name, if it is not NULL, qualified
- * with the given table name, if it is not NULL. The names also match their
- * legacy forms, if they are not NULL.
- */
-bool
-sqlMatchSpanName(const char *span, const char *col, const char *tab,
-		 const char *old_col, const char *old_tab);
-
-int sqlResolveExprNames(NameContext *, Expr *);
-int sqlResolveExprListNames(NameContext *, ExprList *);
-void sqlResolveSelectNames(Parse *, Select *, NameContext *);
 int sqlResolveOrderGroupBy(Parse *, Select *, ExprList *, const char *);
 
 /**
@@ -4030,8 +3979,6 @@ With *sqlWithAdd(Parse *, With *, Token *, ExprList *, Select *);
 /** Free the contents of the With object and remove the object. */
 void
 sqlWithDelete(struct With *pWith);
-
-void sqlWithPush(Parse *, With *, u8);
 
 /*
  * Allowed return values from sqlFindInIndex()

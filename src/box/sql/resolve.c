@@ -337,436 +337,6 @@ resolveAlias(struct Parse *parser, struct ExprList *pEList, int iCol,
 	sql_xfree(pDup);
 }
 
-/**
- * Return TRUE if the name occurs anywhere in the USING clause.
- * Return FALSE if the USING clause is NULL or if it does not contain the name.
- */
-static bool
-nameInUsingClause(struct IdList *pUsing, const char *zCol, const char *old_col)
-{
-	if (pUsing == NULL)
-		return false;
-	for (int k = 0; k < pUsing->nId; k++) {
-		if (strcmp(pUsing->a[k].zName, zCol) == 0)
-			return true;
-	}
-	if (old_col == NULL)
-		return false;
-	for (int i = 0; i < pUsing->nId; i++) {
-		if (strcmp(pUsing->a[i].zName, old_col) == 0)
-			return true;
-	}
-	return false;
-}
-
-/**
- * Check if the given part of a span, with the given length, is the given name
- * or, if it is not NULL, the given legacy name.
- */
-static bool
-span_part_matches(const char *part, size_t len, const char *name,
-		  const char *old_name)
-{
-	if (strlen(name) == len && strncmp(part, name, len) == 0)
-		return true;
-	return old_name != NULL && strlen(old_name) == len &&
-	       strncmp(part, old_name, len) == 0;
-}
-
-bool
-sqlMatchSpanName(const char *span, const char *col, const char *tab,
-		 const char *old_col, const char *old_tab)
-{
-	const char *dot = strchr(span, '.');
-	assert(dot != NULL);
-	if (tab != NULL && !span_part_matches(span, dot - span, tab, old_tab))
-		return false;
-	return col == NULL ||
-	       span_part_matches(dot + 1, strlen(dot + 1), col, old_col);
-}
-
-/**
- * Count the expressions of the given list whose spans match the given column
- * name, qualified with the given table name if it is not NULL, and set the
- * position of the last one. As for the fields of a space, the legacy names
- * are used only if the names match no span.
- */
-static int
-sql_count_span_matches(const struct ExprList *list, const char *tab_name,
-		       const char *col_name, const char *old_tab,
-		       const char *old_col, int *pos)
-{
-	int count = 0;
-	for (int j = 0; j < list->nExpr; j++) {
-		if (sqlMatchSpanName(list->a[j].zSpan, col_name, tab_name,
-				     NULL, NULL)) {
-			++count;
-			*pos = j;
-		}
-	}
-	if (count > 0 || (old_tab == NULL && old_col == NULL))
-		return count;
-	for (int j = 0; j < list->nExpr; j++) {
-		if (sqlMatchSpanName(list->a[j].zSpan, col_name, tab_name,
-				     old_col, old_tab)) {
-			++count;
-			*pos = j;
-		}
-	}
-	return count;
-}
-
-/**
- * This function counts the number of occurrences of name in space.
- */
-static int
-sql_count_column_in_space_def(const struct space_def *space_def,
-			      const char *name, const char *old_name)
-{
-	int count = 0;
-	for (uint32_t i = 0; i < space_def->field_count; ++i) {
-		if (strcmp(space_def->fields[i].name, name) == 0)
-			count++;
-	}
-	if (count == 0 && old_name != NULL) {
-		for (uint32_t i = 0; i < space_def->field_count; ++i) {
-			if (strcmp(space_def->fields[i].name, old_name) == 0)
-				count++;
-		}
-	}
-	return count;
-}
-
-/*
- * Given the name of a column of the form X.Y.Z or Y.Z or just Z, look up
- * that name in the set of source tables in pSrcList and make the pExpr
- * expression node refer back to that source column.  The following changes
- * are made to pExpr:
- *
- *    pExpr->iTable        Set to the cursor number for the table obtained
- *                         from pSrcList.
- *    pExpr->space_def     Points to the space_def structure of X.Y
- *                         (even if X and/or Y are implied.)
- *    pExpr->iColumn       Set to the column number within the table.
- *    pExpr->op            Set to TK_COLUMN_REF.
- *    pExpr->pLeft         Any expression this points to is deleted
- *    pExpr->pRight        Any expression this points to is deleted.
- *
- * Name is of the form Y.Z or Z.
- * The zTable variable is the name of the table (the "Y").  This
- * value can be NULL.  If zTable is NULL it
- * means that the form of the name is Z and that columns from any table
- * can be used.
- *
- * If the name cannot be resolved unambiguously, leave an error message
- * in pParse and return WRC_Abort.  Return WRC_Prune on success.
- */
-static int
-lookupName(struct Parse *pParse, struct Expr *pExpr, struct NameContext *pNC)
-{
-	const char *zTab = NULL;
-	const char *zCol = NULL;
-	char *old_tab = NULL;
-	char *old_col = NULL;
-	const struct Expr *col = NULL;
-	if (pExpr->op == TK_DOT) {
-		assert(pExpr->pLeft->op == TK_ID && pExpr->pRight->op == TK_ID);
-		zTab = pExpr->pLeft->u.zToken;
-		if ((pExpr->pLeft->flags & EP_Lookup2) != 0)
-			old_tab = sql_legacy_name_new0(zTab);
-		zCol = pExpr->pRight->u.zToken;
-		if ((pExpr->pRight->flags & EP_Lookup2) != 0)
-			old_col = sql_legacy_name_new0(zCol);
-		col = pExpr->pRight;
-	} else {
-		assert(pExpr->op == TK_ID);
-		zCol = pExpr->u.zToken;
-		if ((pExpr->flags & EP_Lookup2) != 0)
-			old_col = sql_legacy_name_new0(zCol);
-		col = pExpr;
-	}
-
-	int i, j;		/* Loop counters */
-	int cnt = 0;		/* Number of matching column names */
-	int cntTab = 0;		/* Number of matching table names */
-	int nSubquery = 0;	/* How many levels of subquery */
-	struct SrcList_item *pItem;	/* Use for looping over pSrcList items */
-	struct SrcList_item *pMatch = 0;	/* The matching pSrcList item */
-	NameContext *pTopNC = pNC;	/* First namecontext in the list */
-	int isTrigger = 0;	/* True if resolved to a trigger column */
-
-	assert(pNC);		/* the name context cannot be NULL. */
-	assert(zCol);		/* The Z in X.Y.Z cannot be NULL */
-	assert(!ExprHasProperty(pExpr, EP_TokenOnly | EP_Reduced));
-
-	/* Initialize the node to no-match */
-	pExpr->iTable = -1;
-	pExpr->space_def = NULL;
-	ExprSetVVAProperty(pExpr, EP_NoReduce);
-
-	/* Start at the inner-most context and move outward until a match is found */
-	while (pNC && cnt == 0) {
-		ExprList *pEList;
-		SrcList *pSrcList = pNC->pSrcList;
-
-		if (pSrcList) {
-			for (i = 0, pItem = pSrcList->a; i < pSrcList->nSrc;
-			     i++, pItem++) {
-				assert(pItem->space != NULL &&
-				       pItem->space->def->name != NULL);
-				struct space_def *space_def = pItem->space->def;
-				assert(space_def->field_count > 0);
-				/*
-				 * A column of a parenthesized list of sources
-				 * is looked up by its span, and if it is not
-				 * found, a qualified name is looked up among
-				 * the fields of the list as usual.
-				 */
-				if (pItem->pSelect
-				    && (pItem->pSelect->
-					selFlags & SF_NestedFrom) != 0) {
-					pEList = pItem->pSelect->pEList;
-					int hit = sql_count_span_matches(
-						pEList, zTab, zCol, old_tab,
-						old_col, &j);
-					if (hit > 0) {
-						cnt += hit;
-						cntTab = 2;
-						pMatch = pItem;
-						pExpr->iColumn = j;
-					}
-					if (hit > 0 || zTab == 0)
-						continue;
-				}
-				if (zTab) {
-					const char *zTabName =
-					    pItem->zAlias ? pItem->
-					    zAlias : space_def->name;
-					assert(zTabName != 0);
-					if (strcmp(zTabName, zTab) != 0 &&
-					    (old_tab == NULL ||
-					     strcmp(zTabName, old_tab) != 0))
-						continue;
-				}
-				if (0 == (cntTab++)) {
-					pMatch = pItem;
-				}
-				uint32_t fieldno =
-					sql_fieldno_by_expr(pItem->space, col);
-				if (fieldno == UINT32_MAX)
-					continue;
-				j = fieldno;
-				/*
-				 * If there has been exactly one prior match and
-				 * this match is for the right-hand table of a
-				 * NATURAL JOIN or is in a USING clause, then
-				 * skip this match.
-				 */
-				if (cnt == 1 &&
-				    ((pItem->fg.jointype & JT_NATURAL) != 0 ||
-				     nameInUsingClause(pItem->pUsing, zCol,
-						       old_col)))
-					continue;
-				int count =
-					sql_count_column_in_space_def(space_def,
-								      zCol,
-								      old_col);
-				cnt = cnt + count;
-				pMatch = pItem;
-				pExpr->iColumn = (i16) j;
-			}
-			if (pMatch) {
-				pExpr->iTable = pMatch->iCursor;
-				pExpr->space_def = pMatch->space->def;
-				/* RIGHT JOIN not (yet) supported */
-				assert((pMatch->fg.jointype & JT_RIGHT) == 0);
-				if ((pMatch->fg.jointype & JT_LEFT) != 0) {
-					ExprSetProperty(pExpr, EP_CanBeNull);
-				}
-			}
-		}
-		/* if( pSrcList ) */
-		/* If we have not already resolved the name, then maybe
-		 * it is a new.* or old.* trigger argument reference
-		 */
-		if (zTab != NULL && cntTab == 0 &&
-		    pParse->triggered_space != NULL) {
-			int op = pParse->eTriggerOp;
-			assert(op == TK_DELETE || op == TK_UPDATE
-			       || op == TK_INSERT);
-			struct space_def *space_def = NULL;
-			if (op != TK_DELETE && sqlStrICmp("new", zTab) == 0) {
-				pExpr->iTable = 1;
-				space_def = pParse->triggered_space->def;
-			} else if (op != TK_INSERT
-				   && sqlStrICmp("old", zTab) == 0) {
-				pExpr->iTable = 0;
-				space_def = pParse->triggered_space->def;
-			}
-
-			if (space_def != NULL) {
-				int iCol;
-				cntTab++;
-				for (iCol = 0; iCol <
-				     (int)space_def->field_count; iCol++) {
-					const char *name =
-						space_def->fields[iCol].name;
-					if (strcmp(name, zCol) == 0 ||
-					    (old_col != NULL &&
-					     strcmp(name, old_col) == 0))
-						break;
-				}
-				if (iCol < (int)space_def->field_count) {
-					cnt++;
-					uint64_t *mask = pExpr->iTable == 0 ?
-							 &pParse->oldmask :
-							 &pParse->newmask;
-					column_mask_set_fieldno(mask, iCol);
-					pExpr->iColumn = iCol;
-					pExpr->space_def = space_def;
-					isTrigger = 1;
-				}
-			}
-		}
-
-		/*
-		 * If the input is of the form Z (not Y.Z or X.Y.Z) then the name Z
-		 * might refer to an result-set alias.  This happens, for example, when
-		 * we are resolving names in the WHERE clause of the following command:
-		 *
-		 *     SELECT a+b AS x FROM table WHERE x<10;
-		 *
-		 * In cases like this, replace pExpr with a copy of the expression that
-		 * forms the result set entry ("a+b" in the example) and return immediately.
-		 * Note that the expression in the result set should have already been
-		 * resolved by the time the WHERE clause is resolved.
-		 *
-		 * The ability to use an output result-set column in the WHERE, GROUP BY,
-		 * or HAVING clauses, or as part of a larger expression in the ORDER BY
-		 * clause is not standard SQL.  This is a (goofy) sql extension, that
-		 * is supported for backwards compatibility only.
-		 */
-		if ((pEList = pNC->pEList) != 0 && zTab == 0 && cnt == 0) {
-			for (j = 0; j < pEList->nExpr; j++) {
-				char *zAs = pEList->a[j].zName;
-				if (zAs != 0 && (strcmp(zAs, zCol) == 0 ||
-						 (old_col != NULL &&
-						  strcmp(zAs, old_col) == 0))) {
-					Expr *pOrig;
-					assert(pExpr->pLeft == 0
-					       && pExpr->pRight == 0);
-					assert(pExpr->x.pList == 0);
-					assert(pExpr->x.pSelect == 0);
-					pOrig = pEList->a[j].pExpr;
-					const char *err = "misuse of aliased "\
-							  "aggregate %s";
-					if ((pNC->ncFlags & NC_AllowAgg) == 0
-					    && ExprHasProperty(pOrig, EP_Agg)) {
-						diag_set(ClientError,
-							 ER_SQL_PARSER_GENERIC,
-							 tt_sprintf(err, zAs));
-						pParse->is_aborted = true;
-						goto lookupname_end;
-					}
-					if (sqlExprVectorSize(pOrig) != 1) {
-						diag_set(ClientError,
-							 ER_SQL_PARSER_GENERIC,
-							 "row value misused");
-						pParse->is_aborted = true;
-						goto lookupname_end;
-					}
-					resolveAlias(pParse, pEList, j, pExpr,
-						     "", nSubquery);
-					pParse->alias_count++;
-					if (pParse->is_aborted)
-						goto lookupname_end;
-					cnt = 1;
-					pMatch = 0;
-					assert(zTab == 0);
-					goto lookupname_end;
-				}
-			}
-		}
-
-		/* Advance to the next name context.  The loop will exit when either
-		 * we have a match (cnt>0) or when we run out of name contexts.
-		 */
-		if (cnt == 0) {
-			pNC = pNC->pNext;
-			nSubquery++;
-		}
-	}
-
-	/*
-	 * cnt==0 means there was not match.  cnt>1 means there were two or
-	 * more matches.  Either way, we have an error.
-	 */
-	if (cnt > 1) {
-		const char *err;
-		if (zTab) {
-			err = tt_sprintf("ambiguous column name: %s.%s", zTab,
-					 zCol);
-		} else {
-			err = tt_sprintf("ambiguous column name: %s", zCol);
-		}
-		diag_set(ClientError, ER_SQL_PARSER_GENERIC, err);
-		pParse->is_aborted = true;
-		pTopNC->nErr++;
-	}
-	if (cnt == 0) {
-		if (zTab == NULL) {
-			diag_set(ClientError, ER_SQL_CANT_RESOLVE_FIELD, zCol);
-		} else {
-			diag_set(ClientError, ER_NO_SUCH_FIELD_NAME_IN_SPACE,
-				 zCol, zTab);
-		}
-		pParse->is_aborted = true;
-		pTopNC->nErr++;
-	}
-
-	/* If a column from a table in pSrcList is referenced, then record
-	 * this fact in the pSrcList.a[].colUsed bitmask.  Column 0 causes
-	 * bit 0 to be set.  Column 1 sets bit 1.  And so forth.  If the
-	 * column number is greater than the number of bits in the bitmask
-	 * then set the high-order bit of the bitmask.
-	 */
-	if (pExpr->iColumn >= 0 && pMatch != 0) {
-		int n = pExpr->iColumn;
-		if (n >= BMS) {
-			n = BMS - 1;
-		}
-		assert(pMatch->iCursor == pExpr->iTable);
-		pMatch->colUsed |= ((Bitmask) 1) << n;
-	}
-
-	/* Clean up and return
-	 */
-	sql_expr_delete(pExpr->pLeft);
-	pExpr->pLeft = 0;
-	sql_expr_delete(pExpr->pRight);
-	pExpr->pRight = 0;
-	pExpr->op = (isTrigger ? TK_TRIGGER : TK_COLUMN_REF);
- lookupname_end:
-	sql_xfree(old_tab);
-	sql_xfree(old_col);
-	if (cnt == 1 && !pParse->is_aborted) {
-		assert(pNC != 0);
-		/* Increment the nRef value on all name contexts from TopNC up to
-		 * the point where the name matched.
-		 */
-		for (;;) {
-			assert(pTopNC != 0);
-			pTopNC->nRef++;
-			if (pTopNC == pNC)
-				break;
-			pTopNC = pTopNC->pNext;
-		}
-		return WRC_Prune;
-	} else {
-		return WRC_Abort;
-	}
-}
-
 struct Expr *
 sql_expr_new_column(struct SrcList *src_list, int src_idx, int column)
 {
@@ -778,440 +348,6 @@ sql_expr_new_column(struct SrcList *src_list, int src_idx, int column)
 	item->colUsed |= ((Bitmask) 1) << (column >= BMS ? BMS - 1 : column);
 	ExprSetProperty(expr, EP_Resolved);
 	return expr;
-}
-
-/*
- * Expression p should encode a floating point value between 1.0 and 0.0.
- * Return 1024 times this value.  Or return -1 if p is not a floating point
- * value between 1.0 and 0.0.
- */
-static int
-exprProbability(Expr * p)
-{
-	if (p->op != TK_FLOAT)
-		return -1;
-	double r = p->v.f;
-	if (r < 0.0 || r > 1.0)
-		return -1;
-	return (int)(r * 134217728.0);
-}
-
-/*
- * This routine is callback for sqlWalkExpr().
- *
- * Resolve symbolic names into TK_COLUMN_REF operators for the current
- * node in the expression tree.  Return 0 to continue the search down
- * the tree or 2 to abort the tree walk.
- *
- * This routine also does error checking and name resolution for
- * function names.  The operator for aggregate functions is changed
- * to TK_AGG_FUNCTION.
- */
-static int
-resolveExprStep(Walker * pWalker, Expr * pExpr)
-{
-	NameContext *pNC;
-	Parse *pParse;
-
-	pNC = pWalker->u.pNC;
-	assert(pNC != 0);
-	pParse = pNC->pParse;
-	assert(pParse == pWalker->pParse);
-
-	if (ExprHasProperty(pExpr, EP_Resolved))
-		return WRC_Prune;
-	ExprSetProperty(pExpr, EP_Resolved);
-#ifndef NDEBUG
-	if (pNC->pSrcList && pNC->pSrcList->nAlloc > 0) {
-		SrcList *pSrcList = pNC->pSrcList;
-		int i;
-		for (i = 0; i < pNC->pSrcList->nSrc; i++) {
-			assert(pSrcList->a[i].iCursor >= 0
-			       && pSrcList->a[i].iCursor < pParse->nTab);
-		}
-	}
-#endif
-	switch (pExpr->op) {
-		/* A lone identifier is the name of a column.
-		 */
-	case TK_ID:{
-			if ((pNC->ncFlags & NC_AllowAgg) != 0)
-				pNC->ncFlags |= NC_HasUnaggregatedId;
-			return lookupName(pParse, pExpr, pNC);
-		}
-
-	/* A table name and column name: ID.ID. */
-	case TK_DOT:
-		return lookupName(pParse, pExpr, pNC);
-
-		/* Resolve function names
-		 */
-	case TK_FUNCTION:{
-			ExprList *pList = pExpr->x.pList;	/* The argument list */
-			int n = pList ? pList->nExpr : 0;	/* Number of arguments */
-			int nId;	/* Number of characters in function name */
-			const char *zId;	/* The function name. */
-
-			assert(!ExprHasProperty(pExpr, EP_xIsSelect));
-			zId = pExpr->u.zToken;
-			nId = sqlStrlen30(zId);
-			uint32_t flags = sql_func_flags(pExpr);
-			bool is_agg = (flags & SQL_FUNC_AGG) != 0;
-			if ((flags & SQL_FUNC_UNLIKELY) != 0 && n == 2) {
-				ExprSetProperty(pExpr, EP_Unlikely | EP_Skip);
-				pExpr->iTable =
-					exprProbability(pList->a[1].pExpr);
-				if (pExpr->iTable < 0) {
-					diag_set(IllegalParams,
-						 "second argument to "
-						 "LIKELIHOOD() must be a "
-						 "constant between 0.0 and "
-						 "1.0");
-					pParse->is_aborted = true;
-					pNC->nErr++;
-					return WRC_Abort;
-				}
-			} else if ((flags & SQL_FUNC_UNLIKELY) != 0) {
-				ExprSetProperty(pExpr, EP_Unlikely | EP_Skip);
-				/*
-				 * unlikely() probability is
-				 * 0.0625, likely() is 0.9375
-				 */
-				pExpr->iTable = zId[0] == 'u' || zId[0] == 'U' ?
-						8388608 : 125829120;
-			}
-			if (is_agg && (pNC->ncFlags & NC_AllowAgg) == 0) {
-				const char *err =
-					tt_sprintf("misuse of aggregate "\
-						   "function %.*s()", nId, zId);
-				diag_set(ClientError, ER_SQL_PARSER_GENERIC, err);
-				pParse->is_aborted = true;
-				pNC->nErr++;
-				is_agg = 0;
-			}
-			if (is_agg)
-				pNC->ncFlags &= ~NC_AllowAgg;
-			sqlWalkExprList(pWalker, pList);
-			if (pParse->is_aborted)
-				break;
-			if (is_agg) {
-				NameContext *pNC2 = pNC;
-				pExpr->op = TK_AGG_FUNCTION;
-				pExpr->op2 = 0;
-				while (pNC2
-				       && !sqlFunctionUsesThisSrc(pExpr,
-								      pNC2->
-								      pSrcList))
-				{
-					pExpr->op2++;
-					pNC2 = pNC2->pNext;
-				}
-				if (pNC2) {
-					pNC2->ncFlags |= NC_HasAgg;
-					if ((flags & (SQL_FUNC_MIN |
-						      SQL_FUNC_MAX)) != 0)
-						pNC2->ncFlags |= NC_MinMaxAgg;
-				}
-				pNC->ncFlags |= NC_AllowAgg;
-			}
-			struct func *func = sql_func_find(pExpr);
-			if (func == NULL) {
-				pParse->is_aborted = true;
-				pNC->nErr++;
-				return WRC_Abort;
-			}
-			pExpr->type = func->def->returns;
-			/*
-			 * In case a user-defined aggregate function was called,
-			 * the result type will be the result type of the
-			 * FINALIZE part of the function.
-			 */
-			if (func->def->language != FUNC_LANGUAGE_SQL_BUILTIN &&
-			    func->def->aggregate == FUNC_AGGREGATE_GROUP) {
-				const char *name = func->def->name;
-				struct func *finalize = sql_func_finalize(name);
-				if (finalize != NULL)
-					pExpr->type = finalize->def->returns;
-			}
-			if (func->def->is_deterministic)
-				ExprSetProperty(pExpr, EP_ConstFunc);
-			return WRC_Prune;
-		}
-	case TK_SELECT:
-	case TK_EXISTS:
-	case TK_IN:{
-			if (ExprHasProperty(pExpr, EP_xIsSelect)) {
-				int nRef = pNC->nRef;
-				sqlWalkSelect(pWalker, pExpr->x.pSelect);
-				assert(pNC->nRef >= nRef);
-				if (nRef != pNC->nRef) {
-					ExprSetProperty(pExpr, EP_VarSelect);
-					pNC->ncFlags |= NC_VarSelect;
-				}
-			}
-			break;
-		}
-	case TK_BETWEEN:
-	case TK_EQ:
-	case TK_NE:
-	case TK_LT:
-	case TK_LE:
-	case TK_GT:
-	case TK_GE:{
-			int nLeft, nRight;
-			assert(pExpr->pLeft != 0);
-			nLeft = sqlExprVectorSize(pExpr->pLeft);
-			if (pExpr->op == TK_BETWEEN) {
-				nRight =
-				    sqlExprVectorSize(pExpr->x.pList->a[0].
-							  pExpr);
-				if (nRight == nLeft) {
-					nRight =
-					    sqlExprVectorSize(pExpr->x.
-								  pList->a[1].
-								  pExpr);
-				}
-			} else {
-				assert(pExpr->pRight != 0);
-				nRight = sqlExprVectorSize(pExpr->pRight);
-			}
-			if (nLeft != nRight) {
-				diag_set(ClientError, ER_SQL_COLUMN_COUNT,
-					 nLeft, nRight);
-				pParse->is_aborted = true;
-			}
-			break;
-		}
-	case TK_CASE:{
-			if (pExpr->pLeft == NULL)
-				break;
-			int nLeft = sqlExprVectorSize(pExpr->pLeft);
-			struct ExprList *list = pExpr->x.pList;
-			for (int i = 0; i + 1 < list->nExpr; i += 2) {
-				struct Expr *e = list->a[i].pExpr;
-				int nWhen = sqlExprVectorSize(e);
-				if (nWhen == nLeft)
-					continue;
-				diag_set(ClientError, ER_SQL_COLUMN_COUNT,
-					 nLeft, nWhen);
-				pParse->is_aborted = true;
-				break;
-			}
-			break;
-		}
-	}
-	return pParse->is_aborted ? WRC_Abort : WRC_Continue;
-}
-
-/*
- * pEList is a list of expressions which are really the result set of the
- * a SELECT statement.  pE is a term in an ORDER BY or GROUP BY clause.
- * This routine checks to see if pE is a simple identifier which corresponds
- * to the AS-name of one of the terms of the expression list.  If it is,
- * this routine return an integer between 1 and N where N is the number of
- * elements in pEList, corresponding to the matching entry.  If there is
- * no match, or if pE is not a simple identifier, then this routine
- * return 0.
- *
- * pEList has been resolved.  pE has not.
- */
-static int
-resolveAsName(Parse * pParse,	/* Parsing context for error messages */
-	      ExprList * pEList,	/* List of expressions to scan */
-	      Expr * pE		/* Expression we are trying to match */
-    )
-{
-	int i;			/* Loop counter */
-
-	UNUSED_PARAMETER(pParse);
-
-	if (pE->op == TK_ID) {
-		char *zCol = pE->u.zToken;
-		for (i = 0; i < pEList->nExpr; i++) {
-			char *zAs = pEList->a[i].zName;
-			if (zAs != 0 && strcmp(zAs, zCol) == 0) {
-				return i + 1;
-			}
-		}
-	}
-	return 0;
-}
-
-/*
- * pE is a pointer to an expression which is a single term in the
- * ORDER BY of a compound SELECT.  The expression has not been
- * name resolved.
- *
- * At the point this routine is called, we already know that the
- * ORDER BY term is not an integer index into the result set.  That
- * case is handled by the calling routine.
- *
- * Attempt to match pE against result set columns in the left-most
- * SELECT statement.  Return the index i of the matching column,
- * as an indication to the caller that it should sort by the i-th column.
- * The left-most column is 1.  In other words, the value returned is the
- * same integer value that would be used in the SQL statement to indicate
- * the column.
- *
- * If there is no match, return 0.  Return -1 if an error occurs.
- */
-static int
-resolveOrderByTermToExprList(Parse * pParse,	/* Parsing context for error messages */
-			     Select * pSelect,	/* The SELECT statement with the ORDER BY clause */
-			     Expr * pE	/* The specific ORDER BY term */
-    )
-{
-	int i;			/* Loop counter */
-	ExprList *pEList;	/* The columns of the result set */
-	NameContext nc;		/* Name context for resolving pE */
-	int rc;			/* Return code from subprocedures */
-
-	assert(sqlExprIsInteger(pE, &i) == 0);
-	pEList = pSelect->pEList;
-
-	/* Resolve all names in the ORDER BY term expression
-	 */
-	memset(&nc, 0, sizeof(nc));
-	nc.pParse = pParse;
-	nc.pSrcList = pSelect->pSrc;
-	nc.pEList = pEList;
-	nc.ncFlags = NC_AllowAgg;
-	nc.nErr = 0;
-	rc = sqlResolveExprNames(&nc, pE);
-	if (rc)
-		return 0;
-
-	/* Try to match the ORDER BY expression against an expression
-	 * in the result set.  Return an 1-based index of the matching
-	 * result-set entry.
-	 */
-	for (i = 0; i < pEList->nExpr; i++) {
-		if (sqlExprCompare(pEList->a[i].pExpr, pE, -1) < 2) {
-			return i + 1;
-		}
-	}
-
-	/* If no match, return 0. */
-	return 0;
-}
-
-/*
- * Analyze the ORDER BY clause in a compound SELECT statement.   Modify
- * each term of the ORDER BY clause is a constant integer between 1
- * and N where N is the number of columns in the compound SELECT.
- *
- * ORDER BY terms that are already an integer between 1 and N are
- * unmodified.  ORDER BY terms that are integers outside the range of
- * 1 through N generate an error.  ORDER BY terms that are expressions
- * are matched against result set expressions of compound SELECT
- * beginning with the left-most SELECT and working toward the right.
- * At the first match, the ORDER BY expression is transformed into
- * the integer column number.
- *
- * Return the number of errors seen.
- */
-static int
-resolveCompoundOrderBy(Parse * pParse,	/* Parsing context.  Leave error messages here */
-		       Select * pSelect	/* The SELECT statement containing the ORDER BY */
-    )
-{
-	int i;
-	ExprList *pOrderBy;
-	ExprList *pEList;
-	int moreToDo = 1;
-
-	pOrderBy = pSelect->pOrderBy;
-	if (pOrderBy == 0)
-		return 0;
-	if (pOrderBy->nExpr > SQL_MAX_COLUMN) {
-		diag_set(ClientError, ER_SQL_PARSER_LIMIT,
-			 "The number of terms in ORDER BY clause",
-			 pOrderBy->nExpr, SQL_MAX_COLUMN);
-		pParse->is_aborted = true;
-		return 1;
-	}
-	for (i = 0; i < pOrderBy->nExpr; i++) {
-		pOrderBy->a[i].done = 0;
-	}
-	pSelect->pNext = 0;
-	while (pSelect->pPrior) {
-		pSelect->pPrior->pNext = pSelect;
-		pSelect = pSelect->pPrior;
-	}
-	while (pSelect && moreToDo) {
-		struct ExprList_item *pItem;
-		moreToDo = 0;
-		pEList = pSelect->pEList;
-		assert(pEList != 0);
-		for (i = 0, pItem = pOrderBy->a; i < pOrderBy->nExpr;
-		     i++, pItem++) {
-			int iCol = -1;
-			Expr *pE, *pDup;
-			if (pItem->done)
-				continue;
-			pE = sqlExprSkipCollate(pItem->pExpr);
-			if (sqlExprIsInteger(pE, &iCol)) {
-				if (iCol <= 0 || iCol > pEList->nExpr) {
-					const char *err =
-						"Error at ORDER BY in place "\
-						"%d: term out of range - "\
-						"should be between 1 and %d";
-					err = tt_sprintf(err, i + 1,
-							 pEList->nExpr);
-					diag_set(ClientError,
-						 ER_SQL_PARSER_GENERIC, err);
-					pParse->is_aborted = true;
-					return 1;
-				}
-			} else {
-				iCol = resolveAsName(pParse, pEList, pE);
-				if (iCol == 0) {
-					pDup = sqlExprDup(pE, 0);
-					assert(pDup != NULL);
-					iCol = resolveOrderByTermToExprList(
-						pParse, pSelect, pDup);
-					sql_expr_delete(pDup);
-				}
-			}
-			if (iCol > 0) {
-				/* Convert the ORDER BY term into an integer column number iCol,
-				 * taking care to preserve the COLLATE clause if it exists
-				 */
-				struct Expr *pNew =
-					sql_expr_new_anon(TK_INTEGER);
-				pNew->v.u = iCol;
-				pNew->type = FIELD_TYPE_INTEGER;
-				if (pItem->pExpr == pE) {
-					pItem->pExpr = pNew;
-				} else {
-					Expr *pParent = pItem->pExpr;
-					assert(pParent->op == TK_COLLATE);
-					while (pParent->pLeft->op == TK_COLLATE)
-						pParent = pParent->pLeft;
-					assert(pParent->pLeft == pE);
-					pParent->pLeft = pNew;
-				}
-				sql_expr_delete(pE);
-				pItem->u.x.iOrderByCol = (u16) iCol;
-				pItem->done = 1;
-			} else {
-				moreToDo = 1;
-			}
-		}
-		pSelect = pSelect->pNext;
-	}
-	for (i = 0; i < pOrderBy->nExpr; i++) {
-		if (pOrderBy->a[i].done == 0) {
-			const char *err = "Error at ORDER BY in place %d: "\
-					  "term does not match any column in "\
-					  "the result set";
-			diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-				 tt_sprintf(err, i + 1));
-			pParse->is_aborted = true;
-			return 1;
-		}
-	}
-	return 0;
 }
 
 /*
@@ -1261,7 +397,6 @@ sqlResolveOrderGroupBy(Parse * pParse,	/* Parsing context.  Leave error messages
 			}
 			resolveAlias(pParse, pEList, pItem->u.x.iOrderByCol - 1,
 				     pItem->pExpr, zType, 0);
-			pParse->alias_count++;
 			if (pParse->is_aborted)
 				return 1;
 		}
@@ -1280,489 +415,6 @@ sqlResolveOrderGroupBy(Parse * pParse,	/* Parsing context.  Leave error messages
 		}
 	}
 	return 0;
-}
-
-/*
- * pOrderBy is an ORDER BY or GROUP BY clause in SELECT statement pSelect.
- * The Name context of the SELECT statement is pNC.  zType is either
- * "ORDER" or "GROUP" depending on which type of clause pOrderBy is.
- *
- * This routine resolves each term of the clause into an expression.
- * If the order-by term is an integer I between 1 and N (where N is the
- * number of columns in the result set of the SELECT) then the expression
- * in the resolution is a copy of the I-th result-set expression.  If
- * the order-by term is an identifier that corresponds to the AS-name of
- * a result-set expression, then the term resolves to a copy of the
- * result-set expression.  Otherwise, the expression is resolved in
- * the usual way - using sqlResolveExprNames().
- *
- * @retval 0 On success, not 0 elsewhere.
- */
-static int
-resolveOrderGroupBy(NameContext * pNC,	/* The name context of the SELECT statement */
-		    Select * pSelect,	/* The SELECT statement holding pOrderBy */
-		    ExprList * pOrderBy,	/* An ORDER BY or GROUP BY clause to resolve */
-		    const char *zType	/* Either "ORDER" or "GROUP", as appropriate */
-    )
-{
-	int i, j;		/* Loop counters */
-	int iCol;		/* Column number */
-	struct ExprList_item *pItem;	/* A term of the ORDER BY clause */
-	Parse *pParse;		/* Parsing context */
-	int nResult;		/* Number of terms in the result set */
-
-	if (pOrderBy == 0)
-		return 0;
-	nResult = pSelect->pEList->nExpr;
-	pParse = pNC->pParse;
-	for (i = 0, pItem = pOrderBy->a; i < pOrderBy->nExpr; i++, pItem++) {
-		Expr *pE = pItem->pExpr;
-		Expr *pE2 = sqlExprSkipCollate(pE);
-		if (zType[0] != 'G') {
-			iCol = resolveAsName(pParse, pSelect->pEList, pE2);
-			if (iCol > 0) {
-				/* If an AS-name match is found, mark this ORDER BY column as being
-				 * a copy of the iCol-th result-set column.  The subsequent call to
-				 * sqlResolveOrderGroupBy() will convert the expression to a
-				 * copy of the iCol-th result-set expression.
-				 */
-				pItem->u.x.iOrderByCol = (u16) iCol;
-				continue;
-			}
-		}
-		if (sqlExprIsInteger(pE2, &iCol)) {
-			/* The ORDER BY term is an integer constant.  Again, set the column
-			 * number so that sqlResolveOrderGroupBy() will convert the
-			 * order-by term to a copy of the result-set expression
-			 */
-			if (iCol < 1 || iCol > 0xffff) {
-				const char *err = "Error at %s BY in place "\
-						  "%d: term out of range - "\
-						  "should be between 1 and %d";
-				err = tt_sprintf(err, zType, i + 1, nResult);
-				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-					 err);
-				pParse->is_aborted = true;
-				return 1;
-			}
-			pItem->u.x.iOrderByCol = (u16) iCol;
-			continue;
-		}
-
-		/* Otherwise, treat the ORDER BY term as an ordinary expression */
-		pItem->u.x.iOrderByCol = 0;
-		if (sqlResolveExprNames(pNC, pE)) {
-			return 1;
-		}
-		for (j = 0; j < pSelect->pEList->nExpr; j++) {
-			if (sqlExprCompare
-			    (pE, pSelect->pEList->a[j].pExpr, -1) == 0) {
-				pItem->u.x.iOrderByCol = j + 1;
-			}
-		}
-	}
-	return sqlResolveOrderGroupBy(pParse, pSelect, pOrderBy, zType);
-}
-
-/*
- * Resolve names in the SELECT statement p and all of its descendants.
- */
-static int
-resolveSelectStep(Walker * pWalker, Select * p)
-{
-	NameContext *pOuterNC;	/* Context that contains this SELECT */
-	NameContext sNC;	/* Name context of this SELECT */
-	int isCompound;		/* True if p is a compound select */
-	int nCompound;		/* Number of compound terms processed so far */
-	Parse *pParse;		/* Parsing context */
-	int i;			/* Loop counter */
-	ExprList *pGroupBy;	/* The GROUP BY clause */
-	Select *pLeftmost;	/* Left-most of SELECT of a compound */
-
-	assert(p != 0);
-	if (p->selFlags & SF_Resolved) {
-		return WRC_Prune;
-	}
-	pOuterNC = pWalker->u.pNC;
-	pParse = pWalker->pParse;
-
-	/* Normally sqlSelectExpand() will be called first and will have
-	 * already expanded this SELECT.  However, if this is a subquery within
-	 * an expression, sqlResolveExprNames() will be called without a
-	 * prior call to sqlSelectExpand().  When that happens, let
-	 * sqlSelectPrep() do all of the processing for this SELECT.
-	 * sqlSelectPrep() will invoke both sqlSelectExpand() and
-	 * this routine in the correct order.
-	 */
-	if ((p->selFlags & SF_Expanded) == 0) {
-		sqlSelectPrep(pParse, p, pOuterNC);
-		return pParse->is_aborted ? WRC_Abort : WRC_Prune;
-	}
-
-	isCompound = p->pPrior != 0;
-	nCompound = 0;
-	pLeftmost = p;
-	while (p) {
-		assert((p->selFlags & SF_Expanded) != 0);
-		assert((p->selFlags & SF_Resolved) == 0);
-		p->selFlags |= SF_Resolved;
-
-		/* Resolve the expressions in the LIMIT and OFFSET clauses. These
-		 * are not allowed to refer to any names, so pass an empty NameContext.
-		 */
-		memset(&sNC, 0, sizeof(sNC));
-		sNC.pParse = pParse;
-		if (sqlResolveExprNames(&sNC, p->pLimit) ||
-		    sqlResolveExprNames(&sNC, p->pOffset)) {
-			return WRC_Abort;
-		}
-
-		/* If the SF_Converted flags is set, then this Select object was
-		 * was created by the convertCompoundSelectToSubquery() function.
-		 * In this case the ORDER BY clause (p->pOrderBy) should be resolved
-		 * as if it were part of the sub-query, not the parent. This block
-		 * moves the pOrderBy down to the sub-query. It will be moved back
-		 * after the names have been resolved.
-		 */
-		if (p->selFlags & SF_Converted) {
-			Select *pSub = p->pSrc->a[0].pSelect;
-			assert(p->pSrc->nSrc == 1 && p->pOrderBy);
-			assert(pSub->pPrior && pSub->pOrderBy == 0);
-			pSub->pOrderBy = p->pOrderBy;
-			p->pOrderBy = 0;
-		}
-
-		/* Recursively resolve names in all subqueries
-		 */
-		for (i = 0; i < p->pSrc->nSrc; i++) {
-			struct SrcList_item *pItem = &p->pSrc->a[i];
-			if (pItem->pSelect) {
-				NameContext *pNC;	/* Used to iterate name contexts */
-				int nRef = 0;	/* Refcount for pOuterNC and outer contexts */
-
-				/* Count the total number of references to pOuterNC and all of its
-				 * parent contexts. After resolving references to expressions in
-				 * pItem->pSelect, check if this value has changed. If so, then
-				 * SELECT statement pItem->pSelect must be correlated. Set the
-				 * pItem->fg.isCorrelated flag if this is the case.
-				 */
-				for (pNC = pOuterNC; pNC; pNC = pNC->pNext)
-					nRef += pNC->nRef;
-
-				sqlResolveSelectNames(pParse,
-							  pItem->pSelect,
-							  pOuterNC);
-				if (pParse->is_aborted)
-					return WRC_Abort;
-
-				for (pNC = pOuterNC; pNC; pNC = pNC->pNext)
-					nRef -= pNC->nRef;
-				assert(pItem->fg.isCorrelated == 0
-				       && nRef <= 0);
-				pItem->fg.isCorrelated = (nRef != 0);
-			}
-		}
-
-		/* Set up the local name-context to pass to sqlResolveExprNames() to
-		 * resolve the result-set expression list.
-		 */
-		sNC.ncFlags = NC_AllowAgg;
-		sNC.pSrcList = p->pSrc;
-		sNC.pNext = pOuterNC;
-		if (sqlResolveExprListNames(&sNC, p->pEList) != 0)
-			return WRC_Abort;
-
-		/*
-		 * If there are no aggregate functions in the
-		 * result-set, and no GROUP BY or HAVING
-		 * expression, do not allow aggregates in any
-		 * of the other expressions.
-		 */
-		assert((p->selFlags & SF_Aggregate) == 0);
-		pGroupBy = p->pGroupBy;
-		if (pGroupBy != NULL || p->pHaving != NULL ||
-		    (sNC.ncFlags & NC_HasAgg) != 0) {
-			assert(NC_MinMaxAgg == SF_MinMaxAgg);
-			p->selFlags |=
-			    SF_Aggregate | (sNC.ncFlags & NC_MinMaxAgg);
-		} else {
-			sNC.ncFlags &= ~NC_AllowAgg;
-		}
-
-		/*
-		 * Add the output column list to the name-context
-		 * before parsing the other expressions in the
-		 * SELECT statement. This is so that expressions
-		 * in the WHERE clause (etc.) can refer to
-		 * expressions by aliases in the result set.
-		 *
-		 * Minor point: If this is the case, then the
-		 * expression will be re-evaluated for each
-		 * reference to it.
-		 */
-		sNC.pEList = p->pEList;
-		/*
-		 * If a HAVING clause is present, then there must
-		 * be a GROUP BY clause or aggregate function
-		 * should be specified.
-		 */
-		if (p->pHaving != NULL && pGroupBy == NULL) {
-			sNC.ncFlags |= NC_AllowAgg;
-			if (sqlResolveExprNames(&sNC, p->pHaving) != 0)
-				return WRC_Abort;
-			if ((sNC.ncFlags & NC_HasAgg) == 0 ||
-			    (sNC.ncFlags & NC_HasUnaggregatedId) != 0) {
-				diag_set(ClientError, ER_SQL_EXECUTE, "HAVING "
-					 "argument must appear in the GROUP BY "
-					 "clause or be used in an aggregate "
-					 "function");
-				pParse->is_aborted = true;
-				return WRC_Abort;
-			}
-			/*
-			 * Aggregate functions may return only
-			 * one tuple, so user-defined LIMITs have
-			 * no sense (most DBs don't support such
-			 * LIMIT but there is no reason to
-			 * restrict it directly).
-			 */
-			sql_expr_delete(p->pLimit);
-			p->pLimit = sql_expr_new(TK_INTEGER, NULL);
-			p->pLimit->v.u = 1;
-			p->pLimit->type = FIELD_TYPE_INTEGER;
-		} else {
-			if (sqlResolveExprNames(&sNC, p->pHaving))
-				return WRC_Abort;
-		}
-		if (sqlResolveExprNames(&sNC, p->pWhere))
-			return WRC_Abort;
-
-		/* The ORDER BY and GROUP BY clauses may not refer to terms in
-		 * outer queries
-		 */
-		sNC.pNext = 0;
-		sNC.ncFlags |= NC_AllowAgg;
-
-		/* If this is a converted compound query, move the ORDER BY clause from
-		 * the sub-query back to the parent query. At this point each term
-		 * within the ORDER BY clause has been transformed to an integer value.
-		 * These integers will be replaced by copies of the corresponding result
-		 * set expressions by the call to resolveOrderGroupBy() below.
-		 */
-		if (p->selFlags & SF_Converted) {
-			Select *pSub = p->pSrc->a[0].pSelect;
-			p->pOrderBy = pSub->pOrderBy;
-			pSub->pOrderBy = 0;
-		}
-
-		/* Process the ORDER BY clause for singleton SELECT statements.
-		 * The ORDER BY clause for compounds SELECT statements is handled
-		 * below, after all of the result-sets for all of the elements of
-		 * the compound have been resolved.
-		 *
-		 * If there is an ORDER BY clause on a term of a compound-select other
-		 * than the right-most term, then that is a syntax error.  But the error
-		 * is not detected until much later, and so we need to go ahead and
-		 * resolve those symbols on the incorrect ORDER BY for consistency.
-		 */
-		if (isCompound <= nCompound	/* Defer right-most ORDER BY of a compound */
-		    && resolveOrderGroupBy(&sNC, p, p->pOrderBy, "ORDER")
-		    ) {
-			return WRC_Abort;
-		}
-
-		/* Resolve the GROUP BY clause.  At the same time, make sure
-		 * the GROUP BY clause does not contain aggregate functions.
-		 */
-		if (pGroupBy) {
-			struct ExprList_item *pItem;
-
-			if (resolveOrderGroupBy(&sNC, p, pGroupBy,
-						"GROUP") != 0)
-				return WRC_Abort;
-			const char *err_msg = "aggregate functions are not "\
-					      "allowed in the GROUP BY clause";
-			for (i = 0, pItem = pGroupBy->a; i < pGroupBy->nExpr;
-			     i++, pItem++) {
-				if (ExprHasProperty(pItem->pExpr, EP_Agg)) {
-					diag_set(ClientError,
-						 ER_SQL_PARSER_GENERIC,
-						 err_msg);
-					pParse->is_aborted = true;
-					return WRC_Abort;
-				}
-			}
-		}
-
-		/* If this is part of a compound SELECT, check that it has the right
-		 * number of expressions in the select list.
-		 */
-		if (p->pNext && p->pEList->nExpr != p->pNext->pEList->nExpr) {
-			if (p->pNext->selFlags & SF_Values) {
-				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-					 "all VALUES must have the same "\
-					 "number of terms");
-			} else {
-				const char *err =
-					"SELECTs to the left and right of %s "\
-					"do not have the same number of "\
-					"result columns";
-				const char *op =
-					sql_select_op_name(p->pNext->op);
-				diag_set(ClientError, ER_SQL_PARSER_GENERIC,
-					 tt_sprintf(err, op));
-			}
-			pParse->is_aborted = true;
-			return WRC_Abort;
-		}
-		/* Advance to the next term of the compound
-		 */
-		p = p->pPrior;
-		nCompound++;
-	}
-
-	/* Resolve the ORDER BY on a compound SELECT after all terms of
-	 * the compound have been resolved.
-	 */
-	if (isCompound && resolveCompoundOrderBy(pParse, pLeftmost)) {
-		return WRC_Abort;
-	}
-
-	return WRC_Prune;
-}
-
-/*
- * This routine walks an expression tree and resolves references to
- * table columns and result-set columns.  At the same time, do error
- * checking on function usage and set a flag if any aggregate functions
- * are seen.
- *
- * To resolve table columns references we look for nodes (or subtrees) of the
- * form X.Y.Z or Y.Z or just Z where
- *
- *      X:   The name of a database.  Ex:  "main" or "temp" or
- *           the symbolic name assigned to an ATTACH-ed database.
- *
- *      Y:   The name of a table in a FROM clause.  Or in a trigger
- *           one of the special names "old" or "new".
- *
- *      Z:   The name of a column in table Y.
- *
- * The node at the root of the subtree is modified as follows:
- *
- *    Expr.op        Changed to TK_COLUMN_REF
- *    Expr.pTab      Points to the Table object for X.Y
- *    Expr.iColumn   The column index in X.Y.  -1 for the rowid.
- *    Expr.iTable    The VDBE cursor number for X.Y
- *
- *
- * To resolve result-set references, look for expression nodes of the
- * form Z (with no X and Y prefix) where the Z matches the right-hand
- * size of an AS clause in the result-set of a SELECT.  The Z expression
- * is replaced by a copy of the left-hand side of the result-set expression.
- * Table-name and function resolution occurs on the substituted expression
- * tree.  For example, in:
- *
- *      SELECT a+b AS x, c+d AS y FROM t1 ORDER BY x;
- *
- * The "x" term of the order by is replaced by "a+b" to render:
- *
- *      SELECT a+b AS x, c+d AS y FROM t1 ORDER BY a+b;
- *
- * Function calls are checked to make sure that the function is
- * defined and that the correct number of arguments are specified.
- * If the function is an aggregate function, then the NC_HasAgg flag is
- * set and the opcode is changed from TK_FUNCTION to TK_AGG_FUNCTION.
- * If an expression contains aggregate functions then the EP_Agg
- * property on the expression is set.
- *
- * An error message is left in pParse if anything is amiss.  The number
- * if errors is returned.
- */
-int
-sqlResolveExprNames(NameContext * pNC,	/* Namespace to resolve expressions in. */
-			Expr * pExpr	/* The expression to be analyzed. */
-    )
-{
-	u16 savedHasAgg;
-	Walker w;
-
-	if (pExpr == 0)
-		return 0;
-	if (sqlExprCheckHeight(pNC->pParse, pExpr->nHeight) != 0)
-		return 1;
-	savedHasAgg = pNC->ncFlags & (NC_HasAgg | NC_MinMaxAgg);
-	pNC->ncFlags &= ~(NC_HasAgg | NC_MinMaxAgg);
-	w.pParse = pNC->pParse;
-	w.xExprCallback = resolveExprStep;
-	w.xSelectCallback = resolveSelectStep;
-	w.xSelectCallback2 = 0;
-	w.walkerDepth = 0;
-	w.eCode = 0;
-	w.u.pNC = pNC;
-	uint32_t alias_count = w.pParse->alias_count;
-	sqlWalkExpr(&w, pExpr);
-	if (w.pParse->alias_count != alias_count && !w.pParse->is_aborted) {
-		sql_expr_update_height(pExpr);
-		sqlExprCheckHeight(w.pParse, pExpr->nHeight);
-	}
-	if (pNC->nErr > 0 || w.pParse->is_aborted) {
-		ExprSetProperty(pExpr, EP_Error);
-	}
-	if (pNC->ncFlags & NC_HasAgg) {
-		ExprSetProperty(pExpr, EP_Agg);
-	}
-	pNC->ncFlags |= savedHasAgg;
-	return ExprHasProperty(pExpr, EP_Error);
-}
-
-/*
- * Resolve all names for all expression in an expression list.  This is
- * just like sqlResolveExprNames() except that it works for an expression
- * list rather than a single expression.
- */
-int
-sqlResolveExprListNames(NameContext * pNC,	/* Namespace to resolve expressions in. */
-			    ExprList * pList	/* The expression list to be analyzed. */
-    )
-{
-	int i;
-	if (pList) {
-		for (i = 0; i < pList->nExpr; i++) {
-			if (sqlResolveExprNames(pNC, pList->a[i].pExpr))
-				return WRC_Abort;
-		}
-	}
-	return WRC_Continue;
-}
-
-/*
- * Resolve all names in all expressions of a SELECT and in all
- * decendents of the SELECT, including compounds off of p->pPrior,
- * subqueries in expressions, and subqueries used as FROM clause
- * terms.
- *
- * See sqlResolveExprNames() for a description of the kinds of
- * transformations that occur.
- *
- * All SELECT statements should have been expanded using
- * sqlSelectExpand() prior to invoking this routine.
- */
-void
-sqlResolveSelectNames(Parse * pParse,	/* The parser context */
-			  Select * p,	/* The SELECT statement being coded. */
-			  NameContext * pOuterNC	/* Name context for parent SELECT statement */
-    )
-{
-	Walker w;
-
-	assert(p != 0);
-	memset(&w, 0, sizeof(w));
-	w.xExprCallback = resolveExprStep;
-	w.xSelectCallback = resolveSelectStep;
-	w.pParse = pParse;
-	w.u.pNC = pOuterNC;
-	sqlWalkSelect(&w, p);
 }
 
 int
@@ -2465,9 +1117,8 @@ span_part_is(const char *part, uint32_t len, const char *name,
 /**
  * Check if the span of the given column of a parenthesized list of sources,
  * which is `source.column`, matches the given column name, if it is not NULL,
- * qualified with the given source name, if it is not NULL, as
- * sqlMatchSpanName() does. The names also match their legacy forms, if they
- * are not NULL.
+ * qualified with the given source name, if it is not NULL. The names also
+ * match their legacy forms, if they are not NULL.
  */
 static bool
 rast_span_matches(const struct rast_expr_list_entry *column,
@@ -3431,10 +2082,10 @@ asterisk_column_count(struct sql_resolve_context *ctx,
 
 /**
  * Set the span of the given column of a parenthesized list of sources, which
- * comes from the field with the given number of the given source, as
- * selectExpander() does: it is the span of the field if the source is itself a
- * parenthesized list of sources, and the name of the source and the name of
- * the field joined with a dot otherwise.
+ * comes from the field with the given number of the given source: it is the
+ * span of the field if the source is itself a parenthesized list of sources,
+ * and the name of the source and the name of the field joined with a dot
+ * otherwise.
  */
 static void
 set_nested_column_span(struct region *region, const struct rast_source *src,
@@ -4127,8 +2778,8 @@ resolve_space_source(struct sql_resolve_context *ctx,
 
 /**
  * Create the definition of a subquery source with the given name from the
- * given AST and resolved leftmost parts of its SELECT, as selectExpander()
- * does. As in sqlColumnsFromExprList(), a field is named after the given
+ * given AST and resolved leftmost parts of its SELECT. As in
+ * sqlColumnsFromExprList(), a field is named after the given
  * column name, if the names are given, or else after the name of its column,
  * which is a column reference as written if it has no alias. The AST part is
  * not needed if all columns have names. The types of the fields are unknown
@@ -4203,7 +2854,7 @@ subquery_def_new(struct sql_resolve_context *ctx, const char *name,
 
 /**
  * Resolve the given AST SELECT of a subquery source into the given
- * rast_source. As in selectExpander(), the source is named after its address.
+ * rast_source. The source is named after its address.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -4237,8 +2888,7 @@ cte_entry(const struct sql_resolve_with *with, uint32_t pos)
 /**
  * Check that the number of the given columns of the leftmost part of the
  * SELECT of the table with the given position of the given WITH clause is
- * the number of the column names of the table, if they are given, as
- * withExpand() does.
+ * the number of the column names of the table, if they are given.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -4286,8 +2936,8 @@ find_cte(struct sql_resolve_context *ctx, const char *name, uint32_t *pos)
 
 /**
  * Check if the given AST source is a reference to the recursive table of a WITH
- * clause with the given name from its SELECT, as withExpand() checks: the name
- * of the source is the name of the table, compared case-insensitively.
+ * clause with the given name from its SELECT: the name of the source is the
+ * name of the table, compared case-insensitively.
  */
 static bool
 ast_is_recursive_ref(struct sql_resolve_context *ctx,
@@ -4302,8 +2952,8 @@ ast_is_recursive_ref(struct sql_resolve_context *ctx,
 
 /**
  * Return the number of the references to the table of a WITH clause with the
- * given name from the given AST SELECT of the table, as withExpand() counts
- * them: the sources of the rightmost part of a SELECT joined by UNION or UNION
+ * given name from the given AST SELECT of the table, which are the sources of
+ * the rightmost part of a SELECT joined by UNION or UNION
  * ALL, see ast_is_recursive_ref().
  */
 static uint32_t
@@ -4325,8 +2975,8 @@ ast_cte_recursive_refs(struct sql_resolve_context *ctx,
 
 /**
  * Resolve the given AST source, which refers to the table with the given
- * position of the given WITH clause, into the given rast_source, as
- * withExpand() does. As for a view, the SELECT of the table is resolved for
+ * position of the given WITH clause, into the given rast_source. As for a
+ * view, the SELECT of the table is resolved for
  * every use, in the scope enclosing the SELECT using it and with the given
  * WITH clause innermost. A reference to the table while its SELECT is being
  * resolved is an error. The fields of the table are named after the given
@@ -4434,7 +3084,7 @@ resolve_source(struct sql_resolve_context *ctx, const struct ast_source *ast,
 
 /**
  * Resolve the NATURAL join of the source with the given position in the given
- * sources, as sqlProcessJoin() does: every field of the source is joined to
+ * sources: every field of the source is joined to
  * the field with exactly the same name of the leftmost source having one.
  */
 static void
@@ -4467,7 +3117,7 @@ resolve_natural_join(struct sql_resolve_context *ctx,
 
 /**
  * Resolve the given AST USING clause of the source with the given position in
- * the given sources, as sqlProcessJoin() does: every name is joined to the
+ * the given sources: every name is joined to the
  * field of the leftmost source having it. As in the legacy code, a field is
  * looked up by the name as is and, if the name is not quoted, by the name in
  * upper case.
@@ -4522,8 +3172,7 @@ resolve_using(struct sql_resolve_context *ctx, const struct ast_id_list *ast,
 
 /**
  * Resolve the NATURAL joins and the USING clauses of the given AST FROM
- * clause into the given rast_source_list, checking them as sqlProcessJoin()
- * does.
+ * clause into the given rast_source_list.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -4624,9 +3273,8 @@ resolve_sources(struct sql_resolve_context *ctx,
 }
 
 /**
- * Check if the given compound SELECT is turned into a SELECT from a subquery,
- * as convertCompoundSelectToSubquery() does: it is not UNION ALL and has a
- * COLLATE clause in its ORDER BY.
+ * Check if the given compound SELECT is turned into a SELECT from a subquery:
+ * it is not UNION ALL and has a COLLATE clause in its ORDER BY.
  */
 static bool
 ast_is_converted_compound(const struct ast_select *ast)
@@ -4774,7 +3422,6 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 	int rc = resolve_column_list(ctx, ast->columns, &res->columns);
 	if (rc != 0)
 		return rc;
-	/* Mirrors the legacy aggregate detection in resolveSelectStep(). */
 	res->flags |= scope.agg_flags;
 	if (ast->group_by != NULL || ast->having != NULL)
 		res->flags |= SF_Aggregate;
@@ -4856,10 +3503,6 @@ resolve_select_clauses(struct sql_resolve_context *ctx,
 			return -1;
 		}
 	}
-	/*
-	 * Mirrors the legacy check in sqlSelectExpand() (select.c), which is
-	 * skipped once this SELECT is marked resolved.
-	 */
 	if (res->columns.len > SQL_MAX_COLUMN) {
 		diag_set(ClientError, ER_SQL_PARSER_LIMIT, "The number of "
 			 "columns in result set", (int)res->columns.len,
@@ -5080,13 +3723,13 @@ check_compound_parts(const struct rast_select *select)
 
 /**
  * Turn the given resolved compound SELECT, resolved from the given AST one,
- * into a SELECT from a subquery, as convertCompoundSelectToSubquery() does:
- * the compound SELECT without its ORDER BY, LIMIT and OFFSET becomes the only
- * source of a SELECT of all its columns, which takes the ORDER BY, LIMIT and
- * OFFSET. The terms of ORDER BY, already replaced with the positions of the
- * columns, are resolved as in a SELECT that is not compound. The subquery is
- * correlated if the compound SELECT refers to the names of the given scope or
- * the scopes enclosing it, which had the given number of references before.
+ * into a SELECT from a subquery: the compound SELECT without its ORDER BY,
+ * LIMIT and OFFSET becomes the only source of a SELECT of all its columns,
+ * which takes the ORDER BY, LIMIT and OFFSET. The terms of ORDER BY, already
+ * replaced with the positions of the columns, are resolved as in a SELECT that
+ * is not compound. The subquery is correlated if the compound SELECT refers to
+ * the names of the given scope or the scopes enclosing it, which had the given
+ * number of references before.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -5172,7 +3815,7 @@ resolve_compound_select(struct sql_resolve_context *ctx,
 	const struct rlist *head = &ast->link;
 	bool is_compound = head->next != head;
 	/*
-	 * As withExpand() does, the parts of the SELECT of a table of a WITH
+	 * The parts of the SELECT of a table of a WITH
 	 * clause joined by UNION or UNION ALL to the left of the rightmost one
 	 * are set up first, while a reference to the table is a circular one,
 	 * and then the rightmost part, while a reference to the table is a
@@ -5893,7 +4536,7 @@ resolve_create_trigger(struct sql_resolve_context *ctx,
 
 /**
  * Find the field with the given name of a column of an index in the given
- * space definition, as lookupName() does. If the given unquoted identifier is
+ * space definition. If the given unquoted identifier is
  * not NULL, the name is also looked up in the legacy form of the identifier.
  * A name of more than one field is ambiguous: it is possible for a space being
  * created.
@@ -7059,8 +5702,7 @@ resolve_target(struct sql_resolve_context *ctx, const struct Token *name,
 
 /**
  * Resolve SELECT * FROM the view with the given name and the given WHERE
- * clause into the given rast_select, realizing the view as
- * sql_materialize_view() does.
+ * clause into the given rast_select, realizing the view.
  *
  * Returns 0 on success and -1 on error.
  */
@@ -7135,8 +5777,8 @@ resolve_delete_in(struct sql_resolve_context *ctx, const struct ast_delete *ast,
 }
 
 /**
- * Resolve the given AST DELETE statement into the given rast_delete. As
- * sql_table_delete_from() does, the space is checked before the WHERE clause,
+ * Resolve the given AST DELETE statement into the given rast_delete. As in the
+ * legacy code, the space is checked before the WHERE clause,
  * which is resolved in the scope of the space without allowing aggregate
  * functions.
  *
@@ -7328,8 +5970,8 @@ resolve_update_in(struct sql_resolve_context *ctx, const struct ast_update *ast,
 }
 
 /**
- * Resolve the given AST UPDATE statement into the given rast_update. As
- * sqlUpdate() does, the space is checked before the SET clause, whose values
+ * Resolve the given AST UPDATE statement into the given rast_update. As in the
+ * legacy code, the space is checked before the SET clause, whose values
  * are resolved and whose columns are looked up in turn, and then the WHERE
  * clause is resolved, all in the scope of the space without allowing
  * aggregate functions.
@@ -7991,7 +6633,7 @@ join_column_from_rast(struct Parse *parser, struct SrcList *src,
 /**
  * Create the WHERE expression of the given resolved SELECT, with the given
  * scope of sources, from its WHERE clause, the columns joined by NATURAL or
- * USING and the ON clauses of its sources. As in sqlProcessJoin(), they are
+ * USING and the ON clauses of its sources. As in the legacy code, they are
  * joined to WHERE with AND in the order of the sources, and the terms of an
  * outer join are marked as a part of the join restriction.
  *
@@ -8046,11 +6688,7 @@ select_part_from_rast(struct Parse *parser,
 		sqlSrcListDelete(scope.src);
 		return NULL;
 	}
-	/*
-	 * The SELECT is already fully resolved, so the legacy resolver
-	 * (sqlSelectPrep()) must not walk this SELECT again.
-	 */
-	uint32_t flags = select->flags | SF_Resolved | SF_HasTypeInfo;
+	uint32_t flags = select->flags | SF_Resolved;
 	struct Expr *where = where_from_rast(parser, &scope, select);
 	struct ExprList *group_by = expr_list_from_rast(parser, &scope,
 							&select->group_by);

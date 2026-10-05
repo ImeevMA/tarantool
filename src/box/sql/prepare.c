@@ -222,8 +222,6 @@ sql_parser_destroy(Parse *parser)
 		parser->pTriggerPrg = pT->pNext;
 		sql_xfree(pT);
 	}
-	if (parser->pWithToFree)
-		sqlWithDelete(parser->pWithToFree);
 	sql_xfree(parser->pVList);
 	sql_xfree(parser->aLabel);
 	sql_expr_list_delete(parser->pConstExpr);

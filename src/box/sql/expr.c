@@ -846,8 +846,7 @@ codeVectorCompare(Parse * pParse,	/* Code generator context */
 
 	/*
 	 * Situation when vectors have different dimensions is
-	 * filtred way before - during expr resolution:
-	 * see resolveExprStep().
+	 * filtred way before - during expr resolution.
 	 */
 	assert(nLeft == sqlExprVectorSize(pRight));
 	assert(pExpr->op == TK_EQ || pExpr->op == TK_NE
@@ -5155,7 +5154,7 @@ analyzeAggregatesInSelect(Walker * pWalker, Select * pSelect)
  * necessary.
  *
  * This routine should only be called after the expression has been
- * analyzed by sqlResolveExprNames().
+ * resolved.
  */
 void
 sqlExprAnalyzeAggregates(NameContext * pNC, Expr * pExpr)

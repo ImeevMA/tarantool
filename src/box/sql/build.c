@@ -931,14 +931,8 @@ sql_create_view(struct Parse *parse_context, const char *sql,
 
 	/* Find result of SELECT. */
 	struct Select *select = view_select;
-	uint32_t saved_flags = parse_context->sql_flags;
-	parse_context->sql_flags = 0;
-	sqlSelectPrep(parse_context, select, 0);
-	if (parse_context->is_aborted)
-		goto create_view_fail;
 	while (select->pPrior)
 		select = select->pPrior;
-	parse_context->sql_flags = saved_flags;
 
 	struct ExprList *columns = aliases;
 	if (columns != NULL) {
