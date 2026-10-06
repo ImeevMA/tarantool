@@ -641,8 +641,10 @@ struct ast_alter_add_column {
 struct ast_set_session {
 	/** Name of session option. */
 	struct Token name;
-	/** Value of session option. */
-	struct ast_expr *value;
+	/** Value of session option: TRUE, FALSE or a string literal. */
+	struct Token value;
+	/** Token code of the value: TK_TRUE, TK_FALSE or TK_STRING. */
+	uint8_t value_op;
 };
 
 /** Description of PRAGMA statement. */

@@ -4441,11 +4441,13 @@ sql_add_autoincrement(struct Parse *parse_context, uint32_t fieldno);
  *
  * @param parse_context Parsing context.
  * @param name Name of the session setting.
- * @param value New value of the session setting.
+ * @param value New value of the session setting: TRUE, FALSE or a string
+ *        literal.
+ * @param value_op Token code of the value.
  */
 void
 sql_setting_set(struct Parse *parse_context, struct Token *name,
-		struct Expr *value);
+		const struct Token *value, uint8_t value_op);
 
 /**
  * Return a string of the form "COLUMN_N", where N is @a number.

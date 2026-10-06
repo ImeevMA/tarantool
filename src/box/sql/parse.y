@@ -1199,11 +1199,12 @@ cmd(A) ::= DROP INDEX ifexists(E) nm(X) ON nm(Y). {
 
 ///////////////////////////// The SET SESSION command ////////////////////////
 //
-cmd(A) ::= SET SESSION nm(X) EQ term(Y). {
+cmd(A) ::= SET SESSION nm(X) EQ TRUE|FALSE|STRING(Y). {
   A = sql_ast_new(ctx->region);
   A->type = SQL_AST_SET_SESSION;
   A->set_session.name = X;
   A->set_session.value = Y;
+  A->set_session.value_op = @Y;
 }
 
 ///////////////////////////// The PRAGMA command /////////////////////////////

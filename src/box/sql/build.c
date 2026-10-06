@@ -3553,15 +3553,22 @@ sql_session_settings_init(void)
 
 void
 sql_setting_set(struct Parse *parse_context, struct Token *name,
-		struct Expr *expr)
+		const struct Token *value, uint8_t value_op)
 {
 	struct Vdbe *vdbe = sqlGetVdbe(parse_context);
 	sqlVdbeCountChanges(vdbe);
 	char *key = sql_name_from_token(name);
 	int target = ++parse_context->nMem;
-	sqlExprCode(parse_context, expr, target);
+	if (value_op == TK_STRING) {
+		char *str = sql_xstrndup(value->z, value->n);
+		sqlDequote(str);
+		sqlVdbeAddOp4(vdbe, OP_String8, 0, target, 0, str,
+			      P4_DYNAMIC);
+	} else {
+		assert(value_op == TK_TRUE || value_op == TK_FALSE);
+		sqlVdbeAddOp2(vdbe, OP_Bool, value_op == TK_TRUE, target);
+	}
 	sqlVdbeAddOp4(vdbe, OP_SetSession, target, 0, 0, key, P4_DYNAMIC);
-	return;
 }
 
 /** Emit VDBE instructions for "SHOW CREATE TABLE table_name;" statement. */
