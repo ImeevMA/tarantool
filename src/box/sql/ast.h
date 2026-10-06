@@ -300,6 +300,15 @@ struct ast_expr {
 			/** Keys. */
 			struct ast_expr_list *keys;
 		} getitem;
+		/** Operands of a TK_TRIM expression. */
+		struct {
+			/** Expression to trim. */
+			struct ast_expr *value;
+			/** Characters to remove, or NULL for the default. */
+			struct ast_expr *chars;
+			/** Side to trim: TK_LEADING, TK_TRAILING or TK_BOTH. */
+			uint8_t side;
+		} trim;
 		/** Message and action of a TK_RAISE expression. */
 		struct {
 			/** Message token, or NULL for the IGNORE action. */
@@ -836,6 +845,14 @@ ast_expr_new_case(struct region *region, struct ast_expr *value,
 struct ast_expr *
 ast_expr_new_getitem(struct region *region, struct ast_expr *value,
 		     struct ast_expr_list *keys);
+
+/**
+ * Create a TRIM expression. The side is TK_LEADING, TK_TRAILING or TK_BOTH,
+ * the characters to remove are NULL if they are not specified.
+ */
+struct ast_expr *
+ast_expr_new_trim(struct region *region, uint8_t side, struct ast_expr *value,
+		  struct ast_expr *chars);
 
 /** Create a RAISE expression. The message is NULL for the IGNORE action. */
 struct ast_expr *

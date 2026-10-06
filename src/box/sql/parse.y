@@ -1007,28 +1007,17 @@ nmaplist(A) ::= expr(X) COLON expr(Y). {
   A = ast_expr_list_append(ctx->region, A, Y);
 }
 
-expr(A) ::= TRIM(X) LP trim_operands(Y) RP. {
-  A = ast_expr_new_function(ctx->region, &X, false, Y);
+expr(A) ::= TRIM LP expr(Y) RP. {
+  A = ast_expr_new_trim(ctx->region, TK_BOTH, Y, NULL);
 }
-
-%type trim_operands {struct ast_expr_list *}
-trim_operands(A) ::= LEADING|TRAILING|BOTH(N) expr(Z) FROM expr(Y). {
-  struct ast_expr *spec = ast_expr_new_leaf(ctx->region, N.z, N.n, @N);
-  A = ast_expr_list_append(ctx->region, NULL, Y);
-  A = ast_expr_list_append(ctx->region, A, spec);
-  A = ast_expr_list_append(ctx->region, A, Z);
+expr(A) ::= TRIM LP expr(Z) FROM expr(Y) RP. {
+  A = ast_expr_new_trim(ctx->region, TK_BOTH, Y, Z);
 }
-trim_operands(A) ::= LEADING|TRAILING|BOTH(N) FROM expr(Y). {
-  struct ast_expr *spec = ast_expr_new_leaf(ctx->region, N.z, N.n, @N);
-  A = ast_expr_list_append(ctx->region, NULL, Y);
-  A = ast_expr_list_append(ctx->region, A, spec);
+expr(A) ::= TRIM LP LEADING|TRAILING|BOTH(S) FROM expr(Y) RP. {
+  A = ast_expr_new_trim(ctx->region, @S, Y, NULL);
 }
-trim_operands(A) ::= expr(Z) FROM expr(Y). {
-  A = ast_expr_list_append(ctx->region, NULL, Y);
-  A = ast_expr_list_append(ctx->region, A, Z);
-}
-trim_operands(A) ::= expr(Y). {
-  A = ast_expr_list_append(ctx->region, NULL, Y);
+expr(A) ::= TRIM LP LEADING|TRAILING|BOTH(S) expr(Z) FROM expr(Y) RP. {
+  A = ast_expr_new_trim(ctx->region, @S, Y, Z);
 }
 
 expr(A) ::= id(X) LP distinct(D) exprlist(Y) RP. {

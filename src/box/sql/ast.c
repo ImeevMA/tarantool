@@ -454,6 +454,20 @@ ast_expr_new_getitem(struct region *region, struct ast_expr *value,
 }
 
 struct ast_expr *
+ast_expr_new_trim(struct region *region, uint8_t side, struct ast_expr *value,
+		  struct ast_expr *chars)
+{
+	assert(side == TK_LEADING || side == TK_TRAILING || side == TK_BOTH);
+	struct ast_expr *expr = ast_expr_new(region, TK_TRIM);
+	expr->trim.value = value;
+	expr->trim.chars = chars;
+	expr->trim.side = side;
+	uint32_t height = chars != NULL ? chars->height : 0;
+	expr->height = MAX(value->height, height) + 1;
+	return expr;
+}
+
+struct ast_expr *
 ast_expr_new_raise(struct region *region, const struct Token *message,
 		   enum on_conflict_action action)
 {
@@ -769,6 +783,37 @@ expr_function(struct Parse *parser, struct ast_expr *expr)
 }
 
 /**
+ * Build a `struct Expr` for a TRIM expression: a call of the TRIM() function,
+ * that has the side to trim set in the flags.
+ *
+ * Return NULL on error.
+ */
+static struct Expr *
+expr_trim(struct Parse *parser, struct ast_expr *expr)
+{
+	struct Expr *value = expr_from_ast(parser, expr->trim.value);
+	if (parser->is_aborted)
+		return NULL;
+	struct ExprList *args = sql_expr_list_append(NULL, value);
+	if (expr->trim.chars != NULL) {
+		struct Expr *chars = expr_from_ast(parser, expr->trim.chars);
+		if (parser->is_aborted) {
+			sql_expr_list_delete(args);
+			return NULL;
+		}
+		args = sql_expr_list_append(args, chars);
+	}
+	struct Expr *res = expr_id(TK_FUNCTION, "TRIM", strlen("TRIM"));
+	res->x.pList = args;
+	if (expr->trim.side == TK_LEADING)
+		res->flags |= EP_TrimLeading;
+	else if (expr->trim.side == TK_TRAILING)
+		res->flags |= EP_TrimTrailing;
+	sql_expr_propagate_flags(res);
+	return res;
+}
+
+/**
  * Build a `struct Expr` for an IN expression (subquery or value list).
  *
  * Return NULL on error.
@@ -935,6 +980,9 @@ expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 		break;
 	case TK_FUNCTION:
 		res = expr_function(parser, expr);
+		break;
+	case TK_TRIM:
+		res = expr_trim(parser, expr);
 		break;
 	case TK_BETWEEN:
 		res = expr_between(parser, expr);

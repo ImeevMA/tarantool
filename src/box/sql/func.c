@@ -371,10 +371,8 @@ func_nullif(struct sql_context *ctx, int argc, const struct Mem *argv)
 /** Return the position of the last not removed byte. */
 static inline size_t
 trim_bin_end(const char *str, size_t end, const char *octets,
-	     size_t octets_size, int flags)
+	     size_t octets_size)
 {
-	if ((flags & TRIM_TRAILING) == 0)
-		return end;
 	while (end > 0) {
 		bool is_trimmed = false;
 		char c = str[end - 1];
@@ -390,10 +388,8 @@ trim_bin_end(const char *str, size_t end, const char *octets,
 /** Return the position of the first not removed byte. */
 static inline size_t
 trim_bin_start(const char *str, size_t end, const char *octets,
-	       size_t octets_size, int flags)
+	       size_t octets_size)
 {
-	if ((flags & TRIM_LEADING) == 0)
-		return 0;
 	size_t start = 0;
 	while (start < end) {
 		bool is_trimmed = false;
@@ -411,48 +407,32 @@ trim_bin_start(const char *str, size_t end, const char *octets,
 static void
 func_trim_bin(struct sql_context *ctx, int argc, const struct Mem *argv)
 {
+	assert(argc == 1 || argc == 2);
 	if (mem_is_null(&argv[0]))
 		return;
-	int flags = TRIM_BOTH;
 	const char *str = argv[0].z;
-	size_t size = argv[0].n;
 	const char *octets = "\0";
 	size_t octets_size = 1;
 	if (argc == 2) {
 		if (mem_is_null(&argv[1]))
 			return;
-		if (mem_is_bin(&argv[1])) {
-			if (argv[1].n > SQL_MAX_LENGTH) {
-				ctx->is_aborted = true;
-				diag_set(ClientError, ER_SQL_EXECUTE,
-					 "string or blob too big");
-				return;
-			}
-			octets = argv[1].z;
-			octets_size = argv[1].n;
-		} else {
-			assert(mem_is_uint(&argv[1]));
-			flags = argv[1].u.u;
-		}
-	} else if (argc == 3) {
-		if (mem_is_null(&argv[2]))
-			return;
-		assert(mem_is_uint(&argv[1]) && mem_is_bin(&argv[2]));
-		flags = argv[1].u.u;
-		if (argv[2].n > SQL_MAX_LENGTH) {
+		assert(mem_is_bin(&argv[1]));
+		if (argv[1].n > SQL_MAX_LENGTH) {
 			ctx->is_aborted = true;
 			diag_set(ClientError, ER_SQL_EXECUTE,
 				 "string or blob too big");
 			return;
 		}
-		octets = argv[2].z;
-		octets_size = argv[2].n;
+		octets = argv[1].z;
+		octets_size = argv[1].n;
 	}
-
-	size_t end = trim_bin_end(str, size, octets, octets_size, flags);
-	size_t start = trim_bin_start(str, end, octets, octets_size, flags);
-
-	if (start >= end)
+	size_t end = argv[0].n;
+	if ((ctx->trim_side & TRIM_TRAILING) != 0)
+		end = trim_bin_end(str, end, octets, octets_size);
+	size_t start = 0;
+	if ((ctx->trim_side & TRIM_LEADING) != 0)
+		start = trim_bin_start(str, end, octets, octets_size);
+	if (start == end)
 		return mem_set_bin_static(ctx->pOut, "", 0);
 	mem_copy_bin(ctx->pOut, &str[start], end - start);
 }
@@ -460,10 +440,8 @@ func_trim_bin(struct sql_context *ctx, int argc, const struct Mem *argv)
 /** Return the position of the last not removed character. */
 static inline int32_t
 trim_str_end(const char *str, int32_t end, const char *chars,
-	     uint8_t *chars_len, size_t chars_count, int flags)
+	     uint8_t *chars_len, size_t chars_count)
 {
-	if ((flags & TRIM_TRAILING) == 0)
-		return end;
 	while (end > 0) {
 		bool is_trimmed = false;
 		const char *c = chars;
@@ -485,10 +463,8 @@ trim_str_end(const char *str, int32_t end, const char *chars,
 /** Return the position of the first not removed character. */
 static inline int32_t
 trim_str_start(const char *str, int32_t end, const char *chars,
-	       uint8_t *chars_len, size_t chars_count, int flags)
+	       uint8_t *chars_len, size_t chars_count)
 {
-	if ((flags & TRIM_LEADING) == 0)
-		return 0;
 	int32_t start = 0;
 	while (start < end) {
 		bool is_trimmed = false;
@@ -513,6 +489,7 @@ trim_str_start(const char *str, int32_t end, const char *chars,
 static void
 func_trim_str(struct sql_context *ctx, int argc, const struct Mem *argv)
 {
+	assert(argc == 1 || argc == 2);
 	if (mem_is_null(&argv[0]))
 		return;
 	const char *str = argv[0].z;
@@ -521,39 +498,20 @@ func_trim_str(struct sql_context *ctx, int argc, const struct Mem *argv)
 		diag_set(ClientError, ER_SQL_EXECUTE, "string or blob too big");
 		return;
 	}
-	int32_t size = argv[0].n;
-	uint64_t flags = TRIM_BOTH;
 	const char *chars = " ";
 	int32_t chars_size = 1;
 	if (argc == 2) {
 		if (mem_is_null(&argv[1]))
 			return;
-		if (mem_is_str(&argv[1])) {
-			if (argv[1].n > SQL_MAX_LENGTH) {
-				ctx->is_aborted = true;
-				diag_set(ClientError, ER_SQL_EXECUTE,
-					 "string or blob too big");
-				return;
-			}
-			chars = argv[1].z;
-			chars_size = argv[1].n;
-		} else {
-			assert(mem_is_uint(&argv[1]));
-			flags = argv[1].u.u;
-		}
-	} else if (argc == 3) {
-		if (mem_is_null(&argv[2]))
-			return;
-		assert(mem_is_uint(&argv[1]) && mem_is_str(&argv[2]));
-		flags = argv[1].u.u;
-		if (argv[2].n > SQL_MAX_LENGTH) {
+		assert(mem_is_str(&argv[1]));
+		if (argv[1].n > SQL_MAX_LENGTH) {
 			ctx->is_aborted = true;
 			diag_set(ClientError, ER_SQL_EXECUTE,
 				 "string or blob too big");
 			return;
 		}
-		chars = argv[2].z;
-		chars_size = argv[2].n;
+		chars = argv[1].z;
+		chars_size = argv[1].n;
 	}
 
 	struct region *region = &fiber()->gc;
@@ -562,7 +520,6 @@ func_trim_str(struct sql_context *ctx, int argc, const struct Mem *argv)
 	if (chars_size > 0)
 		chars_len = xregion_alloc(region, chars_size);
 	size_t chars_count = 0;
-
 	int32_t offset = 0;
 	while (offset < chars_size) {
 		UChar32 c;
@@ -571,13 +528,18 @@ func_trim_str(struct sql_context *ctx, int argc, const struct Mem *argv)
 		chars_len[chars_count++] = offset - prev;
 	}
 
-	int32_t end = trim_str_end(str, size, chars, chars_len, chars_count,
-				   flags);
-	int32_t start = trim_str_start(str, end, chars, chars_len, chars_count,
-				       flags);
+	int32_t end = argv[0].n;
+	if ((ctx->trim_side & TRIM_TRAILING) != 0) {
+		end = trim_str_end(str, end, chars, chars_len,
+				   chars_count);
+	}
+	int32_t start = 0;
+	if ((ctx->trim_side & TRIM_LEADING) != 0) {
+		start = trim_str_start(str, end, chars, chars_len,
+				       chars_count);
+	}
 	region_truncate(region, svp);
-
-	if (start >= end)
+	if (start == end)
 		return mem_set_str0_static(ctx->pOut, "");
 	mem_copy_str(ctx->pOut, &str[start], end - start);
 }
@@ -1874,7 +1836,7 @@ static struct sql_func_dictionary dictionaries[] = {
 	{"SUBSTR", 2, 3, SQL_FUNC_DERIVEDCOLL, true, 0, NULL},
 	{"SUM", 1, 1, SQL_FUNC_AGG, false, 0, NULL},
 	{"TOTAL", 1, 1, SQL_FUNC_AGG, false, 0, NULL},
-	{"TRIM", 1, 3, SQL_FUNC_DERIVEDCOLL, true, 0, NULL},
+	{"TRIM", 1, 2, SQL_FUNC_DERIVEDCOLL, true, 0, NULL},
 	{"TYPEOF", 1, 1, SQL_FUNC_TYPEOF, true, 0, NULL},
 	{"UNICODE", 1, 1, 0, true, 0, NULL},
 	{"UNLIKELY", 1, 1, SQL_FUNC_UNLIKELY, true, 0, NULL},
@@ -2095,18 +2057,9 @@ static struct sql_func_definition definitions[] = {
 	 NULL},
 	{"TRIM", 2, {FIELD_TYPE_STRING, FIELD_TYPE_STRING}, FIELD_TYPE_STRING,
 	 func_trim_str, NULL},
-	{"TRIM", 2, {FIELD_TYPE_STRING, FIELD_TYPE_INTEGER}, FIELD_TYPE_STRING,
-	 func_trim_str, NULL},
-	{"TRIM", 3, {FIELD_TYPE_STRING, FIELD_TYPE_INTEGER, FIELD_TYPE_STRING},
-	 FIELD_TYPE_STRING, func_trim_str, NULL},
 	{"TRIM", 1, {FIELD_TYPE_VARBINARY}, FIELD_TYPE_VARBINARY, func_trim_bin,
 	 NULL},
 	{"TRIM", 2, {FIELD_TYPE_VARBINARY, FIELD_TYPE_VARBINARY},
-	 FIELD_TYPE_VARBINARY, func_trim_bin, NULL},
-	{"TRIM", 2, {FIELD_TYPE_VARBINARY, FIELD_TYPE_INTEGER},
-	 FIELD_TYPE_VARBINARY, func_trim_bin, NULL},
-	{"TRIM", 3,
-	 {FIELD_TYPE_VARBINARY, FIELD_TYPE_INTEGER, FIELD_TYPE_VARBINARY},
 	 FIELD_TYPE_VARBINARY, func_trim_bin, NULL},
 
 	{"TYPEOF", 1, {field_type_MAX}, FIELD_TYPE_STRING, func_typeof, NULL},

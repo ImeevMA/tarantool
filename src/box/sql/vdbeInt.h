@@ -179,6 +179,8 @@ struct sql_context {
 	 */
 	bool is_aborted;
 	u8 skipFlag;		/* Skip accumulator loading if true */
+	/** Sides of the value to trim, used by TRIM() only. */
+	enum trim_side_mask trim_side;
 };
 
 /* A bitfield type for use inside of structures.  Always follow with :N where

@@ -167,10 +167,6 @@ sql_expr_type(struct Expr *pExpr)
 	case TK_BITNOT:
 		assert(pExpr->pRight == NULL);
 		return sql_expr_type(pExpr->pLeft);
-	case TK_LEADING:
-	case TK_TRAILING:
-	case TK_BOTH:
-		return FIELD_TYPE_INTEGER;
 	}
 	return pExpr->type;
 }
@@ -3851,6 +3847,12 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			if (func->def->language == FUNC_LANGUAGE_SQL_BUILTIN) {
 				struct sql_context *ctx =
 					sql_context_new(func, coll);
+				enum trim_side_mask side = TRIM_BOTH;
+				if ((pExpr->flags & EP_TrimLeading) != 0)
+					side = TRIM_LEADING;
+				else if ((pExpr->flags & EP_TrimTrailing) != 0)
+					side = TRIM_TRAILING;
+				sql_context_set_trim_side(ctx, side);
 				sqlVdbeAddOp4(v, OP_BuiltinFunction, nFarg,
 					      r1, target, (char *)ctx,
 					      P4_FUNCCTX);
@@ -3866,15 +3868,6 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 			}
 			return target;
 		}
-	case TK_LEADING:
-		sqlVdbeAddOp2(v, OP_Integer, TRIM_LEADING, target);
-		break;
-	case TK_TRAILING:
-		sqlVdbeAddOp2(v, OP_Integer, TRIM_TRAILING, target);
-		break;
-	case TK_BOTH:
-		sqlVdbeAddOp2(v, OP_Integer, TRIM_BOTH, target);
-		break;
 	case TK_EXISTS:
 	case TK_SELECT:{
 			if (pParse->vdbe_field_ref_reg > 0) {
@@ -4725,7 +4718,8 @@ sqlExprCompare(Expr * pA, Expr * pB, int iTab)
 			return pA->op == TK_COLLATE ? 1 : 2;
 		}
 	}
-	if ((pA->flags & EP_Distinct) != (pB->flags & EP_Distinct))
+	u32 call_flags = EP_Distinct | EP_TrimLeading | EP_TrimTrailing;
+	if ((pA->flags & call_flags) != (pB->flags & call_flags))
 		return 2;
 	if (ALWAYS((combinedFlags & EP_TokenOnly) == 0)) {
 		if (combinedFlags & EP_xIsSelect)

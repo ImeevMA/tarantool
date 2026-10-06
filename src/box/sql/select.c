@@ -6328,7 +6328,15 @@ sql_context_new(struct func *func, struct coll *coll)
 	ctx->is_aborted = false;
 	ctx->skipFlag = 0;
 	ctx->coll = coll;
+	ctx->trim_side = TRIM_BOTH;
 	return ctx;
+}
+
+void
+sql_context_set_trim_side(struct sql_context *ctx,
+			  enum trim_side_mask trim_side)
+{
+	ctx->trim_side = trim_side;
 }
 
 void

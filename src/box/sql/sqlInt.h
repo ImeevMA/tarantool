@@ -982,11 +982,7 @@ enum {
  */
 #define SQL_FUNC_DERIVEDCOLL 0x4000
 
-/*
- * Trim side mask components. TRIM_LEADING means to trim left side
- * only. TRIM_TRAILING is to trim right side only. TRIM_BOTH is to
- * trim both sides.
- */
+/** Sides of the value from which TRIM() removes characters. */
 enum trim_side_mask {
 	TRIM_LEADING = 1,
 	TRIM_TRAILING = 2,
@@ -1309,7 +1305,11 @@ struct Expr {
 #define EP_VarSelect 0x000020	/* pSelect is correlated, not constant */
 /** Second lookup could be performed for the ID. */
 #define EP_Lookup2   0x000040
+/** TRIM() function that removes only the leading characters. */
+#define EP_TrimLeading 0x000080
 #define EP_Collate   0x000100	/* Tree contains a TK_COLLATE operator */
+/** TRIM() function that removes only the trailing characters. */
+#define EP_TrimTrailing 0x000200
 #define EP_IntValue  0x000400	/* Integer value contained in u.iValue */
 #define EP_xIsSelect 0x000800	/* x.pSelect is valid (otherwise x.pList is) */
 #define EP_Skip      0x001000	/* COLLATE, AS, or UNLIKELY */
@@ -4178,6 +4178,11 @@ sql_context_new(struct func *func, struct coll *coll);
 
 void
 sql_context_delete(struct sql_context *ctx);
+
+/** Set the sides of the value to trim, used by TRIM() only. */
+void
+sql_context_set_trim_side(struct sql_context *ctx,
+			  enum trim_side_mask trim_side);
 
 /*
  * Create an expression to load @a column from datasource
