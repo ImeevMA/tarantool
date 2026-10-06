@@ -249,7 +249,52 @@ ast_expr_new(struct region *region, uint8_t op)
 	struct ast_expr *expr = xregion_alloc_object(region, typeof(*expr));
 	memset(expr, 0, sizeof(*expr));
 	expr->op = op;
+	expr->height = 1;
 	return expr;
+}
+
+/** Return the maximum height of the expressions of the list. */
+static uint32_t
+ast_expr_list_height(struct ast_expr_list *list)
+{
+	if (list == NULL)
+		return 0;
+	uint32_t height = 0;
+	struct ast_expr_list_entry *entry;
+	stailq_foreach_entry(entry, &list->head, link)
+		height = MAX(height, entry->expr->height);
+	return height;
+}
+
+/**
+ * Return the maximum height of the expressions of the SELECT, including all
+ * parts of the compound SELECT. The FROM clause is not taken into account.
+ */
+static uint32_t
+ast_select_height(struct ast_select *select)
+{
+	uint32_t height = 0;
+	struct ast_select *part = select;
+	do {
+		uint32_t columns = ast_expr_list_height(part->columns);
+		uint32_t group_by = ast_expr_list_height(part->group_by);
+		uint32_t order_by = ast_expr_list_height(part->order_by);
+		uint32_t where = part->where != NULL ? part->where->height : 0;
+		uint32_t having = part->having != NULL ?
+				  part->having->height : 0;
+		uint32_t limit = part->limit != NULL ? part->limit->height : 0;
+		uint32_t offset = part->offset != NULL ?
+				  part->offset->height : 0;
+		height = MAX(height, columns);
+		height = MAX(height, group_by);
+		height = MAX(height, order_by);
+		height = MAX(height, where);
+		height = MAX(height, having);
+		height = MAX(height, limit);
+		height = MAX(height, offset);
+		part = rlist_next_entry(part, link);
+	} while (part != select);
+	return height;
 }
 
 struct ast_expr *
@@ -283,6 +328,7 @@ ast_expr_new_unary(struct region *region, uint8_t op, struct ast_expr *operand)
 {
 	struct ast_expr *expr = ast_expr_new(region, op);
 	expr->expr = operand;
+	expr->height = operand->height + 1;
 	return expr;
 }
 
@@ -293,6 +339,7 @@ ast_expr_new_binary(struct region *region, uint8_t op, struct ast_expr *left,
 	struct ast_expr *expr = ast_expr_new(region, op);
 	expr->left = left;
 	expr->right = right;
+	expr->height = MAX(left->height, right->height) + 1;
 	return expr;
 }
 
@@ -302,6 +349,7 @@ ast_expr_new_list(struct region *region, uint8_t op,
 {
 	struct ast_expr *expr = ast_expr_new(region, op);
 	expr->list = list;
+	expr->height = ast_expr_list_height(list) + 1;
 	return expr;
 }
 
@@ -311,6 +359,7 @@ ast_expr_new_select(struct region *region, uint8_t op,
 {
 	struct ast_expr *expr = ast_expr_new(region, op);
 	expr->select = select;
+	expr->height = ast_select_height(select) + 1;
 	return expr;
 }
 
@@ -321,6 +370,7 @@ ast_expr_new_cast(struct region *region, struct ast_expr *operand,
 	struct ast_expr *expr = ast_expr_new(region, TK_CAST);
 	expr->cast.expr = operand;
 	expr->cast.type = type;
+	expr->height = operand->height + 1;
 	return expr;
 }
 
@@ -332,6 +382,7 @@ ast_expr_new_collate(struct region *region, struct ast_expr *operand,
 	expr->coll.expr = operand;
 	expr->coll.name = name->z;
 	expr->coll.name_len = name->n;
+	expr->height = operand->height + 1;
 	return expr;
 }
 
@@ -344,6 +395,7 @@ ast_expr_new_function(struct region *region, const struct Token *name,
 	expr->func.name_len = name->n;
 	expr->func.is_distinct = is_distinct;
 	expr->func.args = args;
+	expr->height = ast_expr_list_height(args) + 1;
 	return expr;
 }
 
@@ -356,6 +408,9 @@ ast_expr_new_in(struct region *region, struct ast_expr *value,
 	expr->in.value = value;
 	expr->in.list = list;
 	expr->in.select = select;
+	uint32_t height = select != NULL ? ast_select_height(select) :
+			  ast_expr_list_height(list);
+	expr->height = MAX(value->height, height) + 1;
 	return expr;
 }
 
@@ -367,6 +422,8 @@ ast_expr_new_between(struct region *region, struct ast_expr *value,
 	expr->between.value = value;
 	expr->between.lower = lower;
 	expr->between.upper = upper;
+	uint32_t height = MAX(lower->height, upper->height);
+	expr->height = MAX(value->height, height) + 1;
 	return expr;
 }
 
@@ -377,6 +434,10 @@ ast_expr_new_case(struct region *region, struct ast_expr *value,
 	struct ast_expr *expr = ast_expr_new(region, TK_CASE);
 	expr->cs.value = value;
 	expr->cs.list = list;
+	uint32_t height = ast_expr_list_height(list);
+	if (value != NULL && value->height > height)
+		height = value->height;
+	expr->height = height + 1;
 	return expr;
 }
 
@@ -387,6 +448,8 @@ ast_expr_new_getitem(struct region *region, struct ast_expr *value,
 	struct ast_expr *expr = ast_expr_new(region, TK_GETITEM);
 	expr->getitem.value = value;
 	expr->getitem.keys = keys;
+	uint32_t height = ast_expr_list_height(keys);
+	expr->height = MAX(value->height, height) + 1;
 	return expr;
 }
 
@@ -581,12 +644,7 @@ expr_unary(struct Parse *parser, uint8_t op, struct ast_expr *operand)
 	struct Expr *left = expr_from_ast(parser, operand);
 	if (parser->is_aborted)
 		return NULL;
-	struct Expr *res = sqlPExpr(parser, op, left, NULL);
-	if (parser->is_aborted) {
-		sql_expr_delete(res);
-		return NULL;
-	}
-	return res;
+	return sqlPExpr(parser, op, left, NULL);
 }
 
 /**
@@ -605,12 +663,7 @@ expr_binary(struct Parse *parser, struct ast_expr *expr)
 		sql_expr_delete(left);
 		return NULL;
 	}
-	struct Expr *res = sqlPExpr(parser, expr->op, left, right);
-	if (parser->is_aborted) {
-		sql_expr_delete(res);
-		return NULL;
-	}
-	return res;
+	return sqlPExpr(parser, expr->op, left, right);
 }
 
 /**
@@ -625,7 +678,7 @@ expr_list(struct Parse *parser, uint8_t op, struct ast_expr_list *list,
 	struct Expr *res = sql_expr_new_anon(op);
 	res->x.pList = expr_list_from_ast(parser, list);
 	res->type = type;
-	sqlExprSetHeightAndFlags(parser, res);
+	sql_expr_propagate_flags(res);
 	if (parser->is_aborted) {
 		sql_expr_delete(res);
 		return NULL;
@@ -647,7 +700,7 @@ expr_left_and_list(struct Parse *parser, uint8_t op, struct ast_expr *left_ast,
 		return NULL;
 	struct Expr *res = sqlPExpr(parser, op, left, NULL);
 	res->x.pList = expr_list_from_ast(parser, list);
-	sqlExprSetHeightAndFlags(parser, res);
+	sql_expr_propagate_flags(res);
 	if (parser->is_aborted) {
 		sql_expr_delete(res);
 		return NULL;
@@ -679,11 +732,7 @@ expr_between(struct Parse *parser, struct ast_expr *expr)
 		return NULL;
 	}
 	res->x.pList = sql_expr_list_append(res->x.pList, upper);
-	sqlExprSetHeightAndFlags(parser, res);
-	if (parser->is_aborted) {
-		sql_expr_delete(res);
-		return NULL;
-	}
+	sql_expr_propagate_flags(res);
 	return res;
 }
 
@@ -711,7 +760,7 @@ expr_function(struct Parse *parser, struct ast_expr *expr)
 		return NULL;
 	}
 	res->x.pList = expr_list_from_ast(parser, expr->func.args);
-	sqlExprSetHeightAndFlags(parser, res);
+	sql_expr_propagate_flags(res);
 	if (parser->is_aborted) {
 		sql_expr_delete(res);
 		return NULL;
@@ -738,11 +787,7 @@ expr_in(struct Parse *parser, struct ast_expr *expr)
 			return NULL;
 		}
 		struct Expr *res = sqlPExpr(parser, expr->op, left, NULL);
-		sqlPExprAddSelect(parser, res, select);
-		if (parser->is_aborted) {
-			sql_expr_delete(res);
-			return NULL;
-		}
+		sqlPExprAddSelect(res, select);
 		return res;
 	}
 	if (expr->in.list == NULL || expr->in.list->len == 0) {
@@ -762,19 +807,14 @@ expr_in(struct Parse *parser, struct ast_expr *expr)
 			sql_expr_delete(left);
 			return NULL;
 		}
-		struct Expr *res = sqlPExpr(parser, TK_EQ, left, right);
-		if (parser->is_aborted) {
-			sql_expr_delete(res);
-			return NULL;
-		}
-		return res;
+		return sqlPExpr(parser, TK_EQ, left, right);
 	}
 	struct Expr *left = expr_from_ast(parser, expr->in.value);
 	if (parser->is_aborted)
 		return NULL;
 	struct Expr *res = sqlPExpr(parser, expr->op, left, NULL);
 	res->x.pList = expr_list_from_ast(parser, expr->in.list);
-	sqlExprSetHeightAndFlags(parser, res);
+	sql_expr_propagate_flags(res);
 	if (parser->is_aborted) {
 		sql_expr_delete(res);
 		return NULL;
@@ -801,11 +841,7 @@ expr_getitem(struct Parse *parser, struct ast_expr *expr)
 	struct Expr *res = sql_expr_new_anon(expr->op);
 	res->x.pList = sql_expr_list_append(list, left);
 	res->type = FIELD_TYPE_ANY;
-	sqlExprSetHeightAndFlags(parser, res);
-	if (parser->is_aborted) {
-		sql_expr_delete(res);
-		return NULL;
-	}
+	sql_expr_propagate_flags(res);
 	return res;
 }
 
@@ -814,6 +850,13 @@ expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 {
 	if (expr == NULL)
 		return NULL;
+	if (expr->height > SQL_MAX_EXPR_DEPTH) {
+		diag_set(ClientError, ER_SQL_PARSER_LIMIT,
+			 "Number of nodes in expression tree", expr->height,
+			 SQL_MAX_EXPR_DEPTH);
+		parser->is_aborted = true;
+		return NULL;
+	}
 	struct Expr *res = NULL;
 	switch (expr->op) {
 	case TK_STRING:
@@ -911,7 +954,7 @@ expr_from_ast(struct Parse *parser, struct ast_expr *expr)
 		if (parser->is_aborted)
 			return NULL;
 		res = sql_expr_new_anon(expr->op);
-		sqlPExprAddSelect(parser, res, select);
+		sqlPExprAddSelect(res, select);
 		break;
 	}
 	case TK_RAISE:
