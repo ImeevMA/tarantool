@@ -907,7 +907,7 @@ test:do_catchsql_test(
     [[
         CREATE TABLE t11_8 (i INT, a INT, PRIMARY KEY(a, 1 AUTOINCREMENT));
     ]], {
-        1, "Expressions are prohibited in an index definition"
+        1, "Syntax error at line 1 near '1'"
 })
 
 test:finish_test()

@@ -1540,11 +1540,7 @@ void
 sql_resolve_self_reference(struct Parse *parser, struct space_def *def,
 			   struct Expr *expr)
 {
-	if (sqlExprSkipCollate(expr)->op != TK_ID) {
-		diag_set(ClientError, ER_INDEX_DEF_UNSUPPORTED, "Expressions");
-		parser->is_aborted = true;
-		return;
-	}
+	assert(sqlExprSkipCollate(expr)->op == TK_ID);
 
 	/* Fake SrcList for parser->new_space */
 	SrcList sSrc;

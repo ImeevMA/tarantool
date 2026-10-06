@@ -362,12 +362,12 @@ table_constraint(A) ::= CHECK LP span_start(S) expr(X) span_end(E) RP. {
   A->span = S;
   A->span_len = E - S;
 }
-table_constraint(A) ::= UNIQUE LP sortlist(L) RP. {
+table_constraint(A) ::= UNIQUE LP index_column_list(L) RP. {
   A = ast_property_new(ctx->region);
   A->type = SQL_AST_PROPERTY_UNIQUE;
   A->columns = L;
 }
-table_constraint(A) ::= PRIMARY KEY LP sortlist_autoinc(L) RP. {
+table_constraint(A) ::= PRIMARY KEY LP index_column_list_autoinc(L) RP. {
   A = ast_property_new(ctx->region);
   A->type = SQL_AST_PROPERTY_PRIMARY_KEY;
   A->columns = L;
@@ -393,14 +393,15 @@ table_constraint_named(A) ::= CONSTRAINT nm(N) CHECK LP span_start(S) expr(X)
   A->span = S;
   A->span_len = E - S;
 }
-table_constraint_named(A) ::= CONSTRAINT nm(N) UNIQUE LP sortlist(L) RP. {
+table_constraint_named(A) ::= CONSTRAINT nm(N) UNIQUE
+                              LP index_column_list(L) RP. {
   A = ast_property_new(ctx->region);
   A->type = SQL_AST_PROPERTY_UNIQUE;
   A->name = N;
   A->columns = L;
 }
 table_constraint_named(A) ::= CONSTRAINT nm(N) PRIMARY KEY
-                              LP sortlist_autoinc(L) RP. {
+                              LP index_column_list_autoinc(L) RP. {
   A = ast_property_new(ctx->region);
   A->type = SQL_AST_PROPERTY_PRIMARY_KEY;
   A->name = N;
@@ -754,17 +755,39 @@ sortlist(A) ::= expr(Y) sortorder(Z). {
   ast_expr_list_set_order(A, Z);
 }
 
-%type sortlist_autoinc {struct ast_expr_list *}
-sortlist_autoinc(A) ::= sortlist_autoinc(A) COMMA expr(Y) sortorder(Z)
-                        autoinc(I). {
+// The list of the columns of an index, of a UNIQUE or of a PRIMARY KEY
+// constraint.
+%type index_column_list {struct ast_expr_list *}
+index_column_list(A) ::= index_column_list(A) COMMA index_column(Y)
+                         sortorder(Z). {
+  A = ast_expr_list_append(ctx->region, A, Y);
+  ast_expr_list_set_order(A, Z);
+}
+index_column_list(A) ::= index_column(Y) sortorder(Z). {
+  A = ast_expr_list_append(ctx->region, NULL, Y);
+  ast_expr_list_set_order(A, Z);
+}
+
+%type index_column_list_autoinc {struct ast_expr_list *}
+index_column_list_autoinc(A) ::= index_column_list_autoinc(A) COMMA
+                                 index_column(Y) sortorder(Z) autoinc(I). {
   A = ast_expr_list_append(ctx->region, A, Y);
   ast_expr_list_set_order(A, Z);
   ast_expr_list_set_autoinc(A, I != 0);
 }
-sortlist_autoinc(A) ::= expr(Y) sortorder(Z) autoinc(I). {
+index_column_list_autoinc(A) ::= index_column(Y) sortorder(Z) autoinc(I). {
   A = ast_expr_list_append(ctx->region, NULL, Y);
   ast_expr_list_set_order(A, Z);
   ast_expr_list_set_autoinc(A, I != 0);
+}
+
+%type index_column {struct ast_expr *}
+index_column(A) ::= nm(X). {
+  A = ast_expr_new_leaf(ctx->region, X.z, X.n, TK_ID);
+}
+index_column(A) ::= nm(X) COLLATE id(C). {
+  struct ast_expr *column = ast_expr_new_leaf(ctx->region, X.z, X.n, TK_ID);
+  A = ast_expr_new_collate(ctx->region, column, &C);
 }
 
 %type sortorder {int}
@@ -1168,7 +1191,8 @@ nexprlist(A) ::= expr(Y). {
 
 ///////////////////////////// The CREATE INDEX command ///////////////////////
 //
-cmd(A) ::= CREATE INDEX ifnotexists(E) nm(X) ON nm(Y) LP sortlist(Z) RP. {
+cmd(A) ::= CREATE INDEX ifnotexists(E) nm(X) ON nm(Y)
+           LP index_column_list(Z) RP. {
   A = sql_ast_new(ctx->region);
   A->type = SQL_AST_CREATE_INDEX;
   A->create_index.name = X;
@@ -1177,7 +1201,7 @@ cmd(A) ::= CREATE INDEX ifnotexists(E) nm(X) ON nm(Y) LP sortlist(Z) RP. {
   A->create_index.if_not_exists = E;
 }
 cmd(A) ::= CREATE UNIQUE INDEX ifnotexists(E) nm(X) ON nm(Y)
-           LP sortlist(Z) RP. {
+           LP index_column_list(Z) RP. {
   A = sql_ast_new(ctx->region);
   A->type = SQL_AST_CREATE_INDEX;
   A->create_index.name = X;

@@ -305,7 +305,7 @@ test:do_catchsql_test(
 		CREATE TABLE t26 (i INT, PRIMARY KEY('i'));
 	]], {
 		-- <sql-errors-1.26>
-		1,"Expressions are prohibited in an index definition"
+        1,"Syntax error at line 1 near ''i''"
 		-- </sql-errors-1.26>
 	})
 
@@ -325,7 +325,7 @@ test:do_catchsql_test(
 		CREATE INDEX i28 ON t0(t0.i);
 	]], {
 		-- <sql-errors-1.28>
-		1,"Expressions are prohibited in an index definition"
+        1,"Syntax error at line 1 near '.'"
 		-- </sql-errors-1.28>
 	})
 
@@ -335,7 +335,7 @@ test:do_catchsql_test(
 		CREATE INDEX i29 ON t0($1);
 	]], {
 		-- <sql-errors-1.29>
-        1, "Expressions are prohibited in an index definition"
+        1, "Syntax error at line 1 near '$1'"
 		-- </sql-errors-1.29>
 	})
 

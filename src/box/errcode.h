@@ -332,7 +332,7 @@ struct errcode_record {
 	_(ER_HEX_LITERAL_MAX, 189,		"Hex literal %s length %d exceeds the supported limit (%d)", "value", STRING) \
 	_(ER_INT_LITERAL_MAX, 190,		"Integer literal %s exceeds the supported range [-9223372036854775808, 18446744073709551615]", "literal", STRING) \
 	_(ER_SQL_PARSER_LIMIT, 191,		"%s %d exceeds the limit (%d)", "parameter", STRING, "value", INT, "max", INT) \
-	_(ER_INDEX_DEF_UNSUPPORTED, 192,	"%s are prohibited in an index definition", "feature", STRING) \
+	/* ER_INDEX_DEF_UNSUPPORTED, 192, Unused */ \
 	/* ER_CK_DEF_UNSUPPORTED, 193, Unused */ \
 	_(ER_MULTIKEY_INDEX_MISMATCH, 194,	"Field %s is used as multikey in one index and as single key in another", "field", STRING) \
 	_(ER_CREATE_CK_CONSTRAINT, 195,		"Failed to create check constraint '%s': %s", "constraint", STRING, "details", STRING) \

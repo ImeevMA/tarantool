@@ -87,9 +87,9 @@ g.test_message_func_indexes = function(cg)
                                       count INTEGER);]])
 
         -- Expressions that're supposed to create functional indexes
-        -- should return certain message.
+        -- should return a syntax error.
         local _, err = box.execute("CREATE INDEX i1 ON t1(a + 1);")
-        local exp_err = "Expressions are prohibited in an index definition"
+        local exp_err = "Syntax error at line 1 near '+'"
         t.assert_equals(err.message, exp_err)
         local res = box.execute("CREATE INDEX i2 ON t1(a);")
         t.assert_equals(res, {row_count = 1})
@@ -100,7 +100,7 @@ g.test_message_func_indexes = function(cg)
         _, err = box.execute("CREATE INDEX i5 ON t2(count + 1);")
         t.assert_equals(err.message, exp_err)
         _, err = box.execute("CREATE INDEX i6 ON t2(count * price);")
-        t.assert_equals(err.message, exp_err)
+        t.assert_equals(err.message, "Syntax error at line 1 near '*'")
 
         -- Cleaning up.
         box.execute("DROP TABLE t1;")
@@ -152,5 +152,42 @@ g.test_on_conflict = function(cg)
               "a INTEGER CHECK (a > 5) ON CONFLICT REPLACE);"
         _, err = box.execute(sql)
         t.assert_str_contains(err.message, exp_err)
+    end)
+end
+
+--
+-- Make sure that only a column name with an optional collation, sort order
+-- and AUTOINCREMENT is accepted as a part of an index, of a UNIQUE or of
+-- a PRIMARY KEY constraint.
+--
+g.test_index_column_syntax = function(cg)
+    cg.server:exec(function()
+        box.execute([[CREATE TABLE t (i INT, s STRING,
+                      PRIMARY KEY (i DESC AUTOINCREMENT),
+                      UNIQUE (s COLLATE "unicode_ci" DESC));]])
+        t.assert_equals(box.space.t.index[1].parts[1].collation, 'unicode_ci')
+        t.assert_not_equals(box.space.t.index[0].sequence_id, nil)
+
+        local _, err = box.execute([[CREATE INDEX i1 ON t ("s", i);]])
+        t.assert_equals(err, nil)
+
+        local cases = {
+            {'(s)', "Syntax error at line 1 near '('"},
+            {'(s) COLLATE "unicode"', "Syntax error at line 1 near '('"},
+            {'s COLLATE "unicode" COLLATE "binary"',
+             "At line 1 at or near position 43: keyword 'COLLATE' is " ..
+             "reserved. Please use double quotes if 'COLLATE' is an " ..
+             "identifier."},
+            {'t.s', "Syntax error at line 1 near '.'"},
+            {"'s'", "Syntax error at line 1 near ''s''"},
+        }
+        for _, case in pairs(cases) do
+            _, err = box.execute('CREATE INDEX i2 ON t (' .. case[1] .. ');')
+            t.assert_equals(err.message, case[2], case[1])
+        end
+
+        _, err = box.execute([[ALTER TABLE t ADD CONSTRAINT u UNIQUE ((s));]])
+        t.assert_equals(err.message, "Syntax error at line 1 near '('")
+        box.execute([[DROP TABLE t;]])
     end)
 end

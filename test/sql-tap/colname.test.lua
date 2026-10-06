@@ -633,20 +633,20 @@ test:do_test(
 test:do_catchsql_test(
     "colname-11.1",
     [[ create table t1(a INT, b INT, c INT, primary key('A'))]],
-    {1, "Expressions are prohibited in an index definition"})
+    {1, "Syntax error at line 1 near ''A''"})
 
 test:do_catchsql_test(
     "colname-11.2",
     [[CREATE TABLE t1(a INT, b INT, c INT, d INT, e INT,
       PRIMARY KEY(a), UNIQUE('b' COLLATE "unicode_ci" DESC));]],
-    {1, "Expressions are prohibited in an index definition"})
+    {1, "Syntax error at line 2 near ''b''"})
 
 test:execsql("create table table1(a  INT primary key, b INT, c INT)")
 
 test:do_catchsql_test(
     "colname-11.3",
     [[ CREATE INDEX t1c ON table1('c'); ]],
-    {1, "Expressions are prohibited in an index definition"})
+    {1, "Syntax error at line 1 near ''c''"})
 
 --
 -- gh-3962: Check auto generated names in different selects.
