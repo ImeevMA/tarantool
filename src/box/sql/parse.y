@@ -1007,6 +1007,7 @@ expr(A) ::= VARIABLE(X). {
 }
 expr(A) ::= expr(A) COLLATE id(C). {
   A.pExpr = sqlExprAddCollateToken(A.pExpr, &C, 1);
+  sqlExprSetHeightAndFlags(pParse, A.pExpr);
   A.zEnd = &C.z[C.n];
 }
 
